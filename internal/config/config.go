@@ -79,6 +79,9 @@ type Profile struct {
 	SharedPaths []string `yaml:"shared_paths,omitempty" json:"shared_paths,omitempty"`
 	// WorktreeRoot is where lane worktrees go. Empty means <workspace>/<repo>-worktrees.
 	WorktreeRoot string `yaml:"worktree_root,omitempty" json:"worktree_root,omitempty"`
+	// Setup runs in each new lane's worktree, with SHEPHERD_REPO set to the repo's main
+	// checkout: what a fresh worktree needs before its gate can run (an .env, vendor/).
+	Setup string `yaml:"setup,omitempty" json:"setup,omitempty"`
 	// CoordFile is a coordination file (AGENTS-COORD.md) Shepherd keeps a generated view
 	// of its lanes in, between markers, during a cutover; "" for none.
 	CoordFile string `yaml:"coord_file,omitempty" json:"coord_file,omitempty"`
@@ -265,6 +268,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.WorktreeRoot != "" {
 		out.WorktreeRoot = over.WorktreeRoot
+	}
+	if over.Setup != "" {
+		out.Setup = over.Setup
 	}
 	if over.CoordFile != "" {
 		out.CoordFile = over.CoordFile

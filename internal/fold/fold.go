@@ -7,15 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -159,11 +163,44 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneOpen); err != nil {
 		return Opened{}, err
 	}
+	if note := f.setup(ctx, repo, prof.Setup, wt); note != "" {
+		out.Notes = append(out.Notes, note)
+	}
 	if note := f.ensureHook(ctx, repo.Path); note != "" {
 		out.Notes = append(out.Notes, note)
 	}
 	out.Lane, err = f.Store.Lane(ctx, lane.ID)
 	return out, err
+}
+
+// SetupTimeout bounds a lane's setup command.
+const SetupTimeout = 15 * time.Minute
+
+// setup runs the repo's setup command in a new worktree. A failure is a note on the
+// open, not a failed open: the lane exists, and the person can finish the setup.
+func (f *Fold) setup(ctx context.Context, repo store.Repo, cmdline, dir string) string {
+	if strings.TrimSpace(cmdline) == "" {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, SetupTimeout)
+	defer cancel()
+	var cmd *exec.Cmd
+	if runtime.GOOS == "windows" {
+		cmd = exec.CommandContext(ctx, "cmd", "/C", cmdline)
+	} else {
+		cmd = exec.CommandContext(ctx, "sh", "-c", cmdline)
+	}
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "SHEPHERD_REPO="+repo.Path, "SHEPHERD_WORKTREE="+dir)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		lines := strings.Split(strings.TrimSpace(redact.String(string(out))), "\n")
+		if len(lines) > 5 {
+			lines = lines[len(lines)-5:]
+		}
+		return fmt.Sprintf("setup failed (%v); finish it by hand in the worktree:\n    %s", err, strings.Join(lines, "\n    "))
+	}
+	return "setup done: " + cmdline
 }
 
 // worktreePath is <workspace>/<repo>-worktrees/<lane>, or under the profile's root.

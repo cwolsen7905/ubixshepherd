@@ -164,3 +164,25 @@ func TestHookInstallStates(t *testing.T) {
 		t.Errorf("notes = %v", o.Notes)
 	}
 }
+
+func TestLaneSetup(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	os.WriteFile(filepath.Join(f.repo.Path, ".env"), []byte("SECRET=1\n"), 0o600)
+	f.fold.Config, _ = config.Parse([]byte("repos:\n  app:\n    setup: cp \"$SHEPHERD_REPO/.env\" .env\n"))
+	o, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "with-setup", Scope: []string{"src/**"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(o.Worktree, ".env")); err != nil || string(b) != "SECRET=1\n" {
+		t.Errorf(".env not set up: %q %v", b, err)
+	}
+	if len(o.Notes) == 0 || !strings.Contains(o.Notes[0], "setup done") {
+		t.Errorf("notes = %v", o.Notes)
+	}
+	f.fold.Config, _ = config.Parse([]byte("repos:\n  app:\n    setup: echo nope; exit 3\n"))
+	o, err = f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "bad-setup", Scope: []string{"docs/**"}})
+	if err != nil || o.State != "open" || !strings.Contains(o.Notes[0], "setup failed") || !strings.Contains(o.Notes[0], "nope") {
+		t.Errorf("failed setup: %+v %v", o, err)
+	}
+}
