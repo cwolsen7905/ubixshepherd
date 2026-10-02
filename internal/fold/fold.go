@@ -256,6 +256,64 @@ func checkScope(scope []string) error {
 	return nil
 }
 
+// Rescope adds globs to a lane's scope and removes others. An addition that overlaps
+// another open lane's scope is refused, as at lane open.
+func (f *Fold) Rescope(ctx context.Context, laneID int64, add, remove []string) (store.Lane, error) {
+	lane, err := f.Store.Lane(ctx, laneID)
+	if err != nil {
+		return lane, err
+	}
+	if lane.State != store.LaneOpen {
+		return lane, refuse("lane %s is %s", lane.Name, lane.State)
+	}
+	if len(add) > 0 {
+		if err := checkScope(add); err != nil {
+			return lane, err
+		}
+	}
+	lock := f.repoLock(lane.RepoID)
+	lock.Lock()
+	defer lock.Unlock()
+	repo, err := f.Store.Repo(ctx, lane.RepoID)
+	if err != nil {
+		return lane, err
+	}
+	if len(add) > 0 {
+		files, _ := listFiles(ctx, repo.Path, "HEAD")
+		others, err := f.Store.Lanes(ctx, repo.ID)
+		if err != nil {
+			return lane, err
+		}
+		for _, o := range others {
+			if o.ID == lane.ID {
+				continue
+			}
+			if both := scope.Overlap(add, o.Scope, files); len(both) > 0 {
+				return lane, refuse("adding %s overlaps lane %s (scope %s) on %s", strings.Join(add, ", "), o.Name, strings.Join(o.Scope, ", "), firstN(both, 5))
+			}
+		}
+	}
+	drop := map[string]bool{}
+	for _, r := range remove {
+		drop[r] = true
+	}
+	var next []string
+	seen := map[string]bool{}
+	for _, g := range append(append([]string{}, lane.Scope...), add...) {
+		if !drop[g] && !seen[g] {
+			seen[g] = true
+			next = append(next, g)
+		}
+	}
+	if len(next) == 0 {
+		return lane, refuse("a lane needs a scope; that would leave lane %s with none", lane.Name)
+	}
+	if err := f.Store.SetLaneScope(ctx, lane.ID, next); err != nil {
+		return lane, err
+	}
+	return f.Store.Lane(ctx, lane.ID)
+}
+
 // CloseResult says what closing did.
 type CloseResult struct {
 	Lane          store.Lane `json:"lane"`
