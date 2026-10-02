@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -79,6 +80,7 @@ type fakeAPI struct {
 	settings map[string]string
 	ds       []api.DecisionView
 	spent    float64
+	asked    []string
 }
 
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
@@ -113,6 +115,13 @@ func (f *fakeAPI) SpendToday(context.Context) (api.SpendToday, error) {
 func (f *fakeAPI) AddSpend(_ context.Context, sp store.Spend) error {
 	f.spent += sp.USD
 	return nil
+}
+func (f *fakeAPI) Sessions(context.Context, int64) ([]api.SessionView, error) {
+	return []api.SessionView{{Conversation: store.Conversation{ID: "71ffa009-aaaa", Title: "Stripe integration", Dir: "/w/app"}, Repo: "app"}}, nil
+}
+func (f *fakeAPI) AskSession(_ context.Context, id, q string) (convo.Answer, error) {
+	f.asked = append(f.asked, id+": "+q)
+	return convo.Answer{Text: "The webhook secret is in Vault."}, nil
 }
 func (f *fakeAPI) Setting(_ context.Context, k string) (string, error) { return f.settings[k], nil }
 func (f *fakeAPI) SetSetting(_ context.Context, k, v string) error {
@@ -270,5 +279,28 @@ func TestDeskCostIsRecordedNotShown(t *testing.T) {
 	drive(t, m, cmd)
 	if a.spent != 0.4 || has(m.Lines(), KindCost, "") {
 		t.Errorf("spent %v, lines %+v", a.spent, m.Lines())
+	}
+}
+
+func TestConversationsInTheChat(t *testing.T) {
+	m, d, a := newTestModel()
+	drive(t, m, m.pollPanel())
+	if v := m.View(); !strings.Contains(v, "CONVERSATIONS") || !strings.Contains(v, "71ffa009") {
+		t.Errorf("panel lacks conversations:\n%s", v)
+	}
+	typeLine(t, m, "/sessions")
+	if !has(m.Lines(), KindInfo, "Stripe integration") {
+		t.Errorf("/sessions: %+v", m.Lines())
+	}
+	typeLine(t, m, "/ask 71ff where are the webhooks?")
+	if len(a.asked) != 1 || a.asked[0] != "71ffa009-aaaa: where are the webhooks?" || !has(m.Lines(), KindDesk, "secret is in Vault") {
+		t.Errorf("/ask: asked %v, lines %+v", a.asked, m.Lines())
+	}
+	if len(d.got) != 0 {
+		t.Error("/ask went through the desk")
+	}
+	typeLine(t, m, "/ask nope hello")
+	if !has(m.Lines(), KindError, "no conversation starts with nope") {
+		t.Error("unknown conversation not reported")
 	}
 }

@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -28,6 +30,8 @@ type API interface {
 	SetSetting(ctx context.Context, key, value string) error
 	SpendToday(ctx context.Context) (api.SpendToday, error)
 	AddSpend(ctx context.Context, sp store.Spend) error
+	Sessions(ctx context.Context, repoID int64) ([]api.SessionView, error)
+	AskSession(ctx context.Context, id, question string) (convo.Answer, error)
 }
 
 // Settings the chat keeps in the daemon.
@@ -62,7 +66,8 @@ type Model struct {
 	lanes    []api.LaneView
 	runs     []api.RunView
 
-	spend api.SpendToday
+	spend    api.SpendToday
+	sessions []api.SessionView
 
 	logRun    int64
 	logText   strings.Builder
@@ -97,9 +102,10 @@ type (
 	tickMsg  struct{}
 	feedMsg  api.Feed
 	panelMsg struct {
-		lanes []api.LaneView
-		runs  []api.RunView
-		spend api.SpendToday
+		lanes    []api.LaneView
+		runs     []api.RunView
+		spend    api.SpendToday
+		sessions []api.SessionView
 	}
 	sessionMsg  string
 	deskLineMsg Line
@@ -170,7 +176,8 @@ func (m *Model) pollPanel() tea.Cmd {
 			return errorMsg{err}
 		}
 		sp, _ := m.api.SpendToday(m.ctx)
-		return panelMsg{lanes, runs, sp}
+		ss, _ := m.api.Sessions(m.ctx, 0)
+		return panelMsg{lanes, runs, sp, ss}
 	}
 }
 
@@ -234,7 +241,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case feedMsg:
 		cmds = append(cmds, m.onFeed(api.Feed(msg)))
 	case panelMsg:
-		m.lanes, m.runs, m.spend = msg.lanes, msg.runs, msg.spend
+		m.lanes, m.runs, m.spend, m.sessions = msg.lanes, msg.runs, msg.spend, msg.sessions
 	case deskLineMsg:
 		if msg.Kind == KindCost {
 			usd, _ := strconv.ParseFloat(msg.Text, 64)
@@ -268,6 +275,7 @@ func (m *Model) handle(text string) tea.Cmd {
 	switch f[0] {
 	case "/help":
 		m.add(Line{KindInfo, "/answer <decision> <option number or words>   answer a decision yourself\n" +
+			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (Esc to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n/quit   leave (Ctrl-C too)"})
 	case "/quit", "/exit":
@@ -310,6 +318,74 @@ func (m *Model) handle(text string) tea.Cmd {
 		answer := strings.Join(f[2:], " ")
 		m.add(Line{KindYou, fmt.Sprintf("answer to decision %d: %s", id, answer)})
 		return m.answer(id, answer)
+	case "/sessions":
+		return func() tea.Msg {
+			ss, err := m.api.Sessions(m.ctx, 0)
+			if err != nil {
+				return errorMsg{err}
+			}
+			if len(ss) == 0 {
+				return lineMsg{KindInfo, "No conversations adopted. From a shell: shepherd session import"}
+			}
+			var b strings.Builder
+			for _, s := range ss {
+				open := ""
+				if s.InUse {
+					open = " (may be open)"
+				}
+				fmt.Fprintf(&b, "%s  %-10s %s  ·  %s%s\n", s.ID[:8], s.Repo, clipTo(s.Title, 70), s.Last.Local().Format("Jan 2"), open)
+			}
+			b.WriteString("/attach <id> to reopen one here; /ask <id> <question> to ask it")
+			return lineMsg{KindInfo, b.String()}
+		}
+	case "/attach":
+		if len(f) != 2 {
+			m.add(Line{KindError, "usage: /attach <conversation id>"})
+			return nil
+		}
+		s, err := m.conversation(f[1])
+		if err != nil {
+			m.add(Line{KindError, err.Error()})
+			return nil
+		}
+		bin, err := exec.LookPath("claude")
+		if err != nil {
+			m.add(Line{KindError, "claude is not on PATH"})
+			return nil
+		}
+		if s.InUse {
+			m.add(Line{KindInfo, "That conversation changed in the last few minutes; if it is open in another terminal, use that one."})
+		}
+		m.add(Line{KindInfo, fmt.Sprintf("Opening conversation %s (%s) in Claude Code; exit it to come back here.", s.ID[:8], clipTo(s.Title, 60))})
+		cmd := exec.Command(bin, "--resume", s.ID)
+		cmd.Dir = s.Dir
+		id := s.ID[:8]
+		return tea.ExecProcess(cmd, func(err error) tea.Msg {
+			if err != nil {
+				return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s (%v).", id, err)}
+			}
+			return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s.", id)}
+		})
+	case "/ask":
+		if len(f) < 3 {
+			m.add(Line{KindError, "usage: /ask <conversation id> <question>"})
+			return nil
+		}
+		s, err := m.conversation(f[1])
+		if err != nil {
+			m.add(Line{KindError, err.Error()})
+			return nil
+		}
+		q := strings.Join(f[2:], " ")
+		m.add(Line{KindYou, fmt.Sprintf("to conversation %s: %s", s.ID[:8], q)})
+		id, title := s.ID, s.Title
+		return func() tea.Msg {
+			a, err := m.api.AskSession(m.ctx, id, q)
+			if err != nil {
+				return errorMsg{err}
+			}
+			return lineMsg{KindDesk, fmt.Sprintf("conversation %s (%s):\n%s", id[:8], clipTo(title, 50), a.Text)}
+		}
 	case "/log":
 		if len(f) != 2 {
 			m.add(Line{KindError, "usage: /log <run>"})
@@ -351,6 +427,23 @@ func (m *Model) answer(id int64, answer string) tea.Cmd {
 		}
 		return lineMsg{KindInfo, fmt.Sprintf("Answered decision %d; the agent gets it when its turn ends.", d.ID)}
 	}
+}
+
+// session finds an adopted conversation by id or prefix, among those last polled.
+func (m *Model) conversation(prefix string) (api.SessionView, error) {
+	var hit []api.SessionView
+	for _, s := range m.sessions {
+		if strings.HasPrefix(s.ID, prefix) {
+			hit = append(hit, s)
+		}
+	}
+	switch len(hit) {
+	case 0:
+		return api.SessionView{}, fmt.Errorf("no conversation starts with %s (/sessions)", prefix)
+	case 1:
+		return hit[0], nil
+	}
+	return api.SessionView{}, fmt.Errorf("%d conversations start with %s; give more of the id", len(hit), prefix)
 }
 
 func decisionText(d api.DecisionView) string {
@@ -546,6 +639,17 @@ func (m *Model) renderPanel() string {
 	}
 	if len(m.runs) > 0 {
 		b.WriteString(styleInfo.Render("/log <run> to watch one") + "\n")
+	}
+	if len(m.sessions) > 0 {
+		b.WriteString("\n" + styleHead.Render("CONVERSATIONS") + "\n")
+		for i, s := range m.sessions {
+			if i == 5 {
+				b.WriteString(styleInfo.Render(fmt.Sprintf("+%d more: /sessions", len(m.sessions)-5)) + "\n")
+				break
+			}
+			b.WriteString(clipTo(fmt.Sprintf("%s %s", s.ID[:8], s.Title), panelWidth-2) + "\n")
+		}
+		b.WriteString(styleInfo.Render("/attach <id> · /ask <id> …") + "\n")
 	}
 	return stylePanel.Height(m.thread.Height).Render(b.String())
 }
