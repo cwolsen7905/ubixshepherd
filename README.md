@@ -92,6 +92,9 @@ Lanes and live runs are listed beside the thread. The conversation is kept betwe
 | `/decisions` | what is waiting for you |
 | `/log 22` | run 22's live output; Esc back to the thread |
 | `/auto off` | keep swarm events from reaching the desk on their own |
+| `/sessions` | your adopted conversations (also listed beside the thread) |
+| `/attach 71ffa009` | step into that conversation in Claude Code; exit it to come back |
+| `/ask 71ffa009 …` | ask that conversation a question; the answer lands in the thread |
 | `/new` | start a new conversation with the desk |
 
 ### Moving a repo onto Shepherd
