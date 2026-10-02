@@ -15,12 +15,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -34,6 +36,7 @@ type Server struct {
 	ConfigPath string
 	Token      string
 	Log        *slog.Logger
+	Fold       *fold.Fold
 	started    time.Time
 	stop       chan struct{}
 	stopOnce   sync.Once
@@ -47,6 +50,7 @@ func NewServer(st store.Store, cfg config.Config, cfgPath string, log *slog.Logg
 	}
 	return &Server{
 		Store: st, Config: cfg, ConfigPath: cfgPath, Token: tok, Log: log,
+		Fold:    &fold.Fold{Store: st, Config: cfg},
 		started: time.Now().UTC(), stop: make(chan struct{}),
 	}, nil
 }
@@ -72,6 +76,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathWorkspaces, s.saveWorkspace)
 	mux.HandleFunc("GET "+api.PathResolve, s.resolve)
 	mux.HandleFunc("POST "+api.PathShutdown, s.shutdown)
+	mux.HandleFunc("GET "+api.PathLanes, s.listLanes)
+	mux.HandleFunc("POST "+api.PathLanes, s.openLane)
+	mux.HandleFunc("POST "+api.PathLanes+"/{id}/close", s.closeLane)
+	mux.HandleFunc("GET "+api.PathFoldGC, s.foldGC)
 	return s.auth(mux)
 }
 
@@ -260,6 +268,110 @@ func Resolve(ctx context.Context, st store.Store, cfg config.Config, p string) (
 		res.Profile = &prof
 	}
 	return res, nil
+}
+
+func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	wsID, err1 := strconv.ParseInt(r.URL.Query().Get("workspace_id"), 10, 64)
+	if err1 != nil {
+		writeError(w, http.StatusBadRequest, errors.New("workspace_id is required"))
+		return
+	}
+	repoID, _ := strconv.ParseInt(r.URL.Query().Get("repo_id"), 10, 64)
+	repos, err := s.Store.Repos(ctx, wsID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.LaneView{}
+	for _, rp := range repos {
+		if repoID != 0 && rp.ID != repoID {
+			continue
+		}
+		lanes, err := s.Store.Lanes(ctx, rp.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, l := range lanes {
+			out = append(out, api.LaneView{Lane: l, Repo: rp.Name})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
+	var req fold.OpenRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	lane, err := s.Fold.Open(r.Context(), req)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree)
+	writeJSON(w, http.StatusOK, lane)
+}
+
+func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req api.CloseLane
+	if !decode(w, r, &req) {
+		return
+	}
+	res, err := s.Fold.Close(r.Context(), id, req.Force)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Log.Info("lane closed", "lane", res.Lane.Name, "force", req.Force, "branch_deleted", res.BranchDeleted)
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) foldGC(w http.ResponseWriter, r *http.Request) {
+	wsID, err := strconv.ParseInt(r.URL.Query().Get("workspace_id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("workspace_id is required"))
+		return
+	}
+	stale, err := s.Fold.GC(r.Context(), wsID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if stale == nil {
+		stale = []fold.Stale{}
+	}
+	writeJSON(w, http.StatusOK, stale)
+}
+
+// foldError answers a refusal with 409 and its reason, a missing lane or repo with 404,
+// and anything else as a failure.
+func (s *Server) foldError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, fold.ErrRefused):
+		writeError(w, http.StatusConflict, err)
+	case errors.Is(err, store.ErrNotFound):
+		writeError(w, http.StatusNotFound, err)
+	default:
+		s.fail(w, err)
+	}
+}
+
+// decode reads a JSON body strictly, answering 400 itself when it cannot.
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return false
+	}
+	return true
 }
 
 // shutdown asks Run to stop. The daemon then exits cleanly, which a service manager

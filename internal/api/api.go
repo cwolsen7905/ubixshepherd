@@ -3,6 +3,7 @@
 package api
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -15,7 +16,12 @@ const (
 	PathWorkspaces = "/v1/workspaces"
 	PathResolve    = "/v1/resolve"
 	PathShutdown   = "/v1/shutdown"
+	PathLanes      = "/v1/lanes"
+	PathFoldGC     = "/v1/fold/gc"
 )
+
+// PathLaneClose is POST /v1/lanes/{id}/close.
+func PathLaneClose(id int64) string { return fmt.Sprintf("%s/%d/close", PathLanes, id) }
 
 // Runtime is what a running daemon writes to its runtime file so clients can find it.
 type Runtime struct {
@@ -66,6 +72,17 @@ type Resolution struct {
 	Lane      *store.Lane      `json:"lane,omitempty"`
 	// Profile is the repo's effective profile when Repo is set.
 	Profile *config.Profile `json:"profile,omitempty"`
+}
+
+// LaneView is a lane with its repo's name, as lists show it.
+type LaneView struct {
+	store.Lane
+	Repo string `json:"repo"`
+}
+
+// CloseLane is the body of POST /v1/lanes/{id}/close.
+type CloseLane struct {
+	Force bool `json:"force"`
 }
 
 // Error is the body of every non-2xx response.

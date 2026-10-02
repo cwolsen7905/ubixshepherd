@@ -12,6 +12,17 @@ import (
 // ErrNotFound is returned when a lookup matches nothing.
 var ErrNotFound = errors.New("not found")
 
+// ErrConflict is returned when a write collides with something already there.
+var ErrConflict = errors.New("conflict")
+
+// Lane states.
+const (
+	// LaneOpening: recorded, branch and worktree being created.
+	LaneOpening = "opening"
+	LaneOpen    = "open"
+	LaneClosed  = "closed"
+)
+
 // Workspace is a directory of repos that one Shepherd works over.
 type Workspace struct {
 	ID      int64     `json:"id"`
@@ -36,13 +47,18 @@ type Repo struct {
 
 // Lane is one stream of work in a repo, on its own branch and worktree.
 type Lane struct {
-	ID       int64     `json:"id"`
-	RepoID   int64     `json:"repo_id"`
-	Name     string    `json:"name"`
-	Branch   string    `json:"branch"`
-	Worktree string    `json:"worktree"`
-	State    string    `json:"state"`
-	Created  time.Time `json:"created"`
+	ID     int64  `json:"id"`
+	RepoID int64  `json:"repo_id"`
+	Name   string `json:"name"`
+	Branch string `json:"branch"`
+	// Base is the branch the lane was cut from and lands on.
+	Base     string `json:"base"`
+	Worktree string `json:"worktree"`
+	// Scope is the globs, relative to the repo, the lane's work stays inside.
+	Scope   []string   `json:"scope"`
+	State   string     `json:"state"`
+	Created time.Time  `json:"created"`
+	Closed  *time.Time `json:"closed,omitempty"`
 }
 
 // Store is Shepherd's state.
@@ -52,7 +68,16 @@ type Store interface {
 	SaveWorkspace(ctx context.Context, ws Workspace, repos []Repo) (Workspace, error)
 	Workspaces(ctx context.Context) ([]Workspace, error)
 	Repos(ctx context.Context, workspaceID int64) ([]Repo, error)
+	Repo(ctx context.Context, id int64) (Repo, error)
+	// Lanes returns a repo's lanes that are not closed.
 	Lanes(ctx context.Context, repoID int64) ([]Lane, error)
+	Lane(ctx context.Context, id int64) (Lane, error)
+	// CreateLane records a lane; ErrConflict if its name or worktree is taken by a lane
+	// that is not closed.
+	CreateLane(ctx context.Context, l Lane) (Lane, error)
+	SetLaneState(ctx context.Context, id int64, state string) error
+	// DeleteLane forgets a lane that never opened.
+	DeleteLane(ctx context.Context, id int64) error
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

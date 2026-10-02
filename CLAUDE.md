@@ -41,6 +41,9 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
 - `internal/store` is an interface; `store/sqlite` uses a pure-Go driver so `CGO_ENABLED=0`
   cross-compiles. Schema changes are appended migrations, never edits.
 - Text that stores or shows agent output goes through `internal/redact`.
+- `internal/fold` is lanes (and next, leases and reservations). It drives the git CLI
+  through `internal/git`, never a git library, so hooks and config behave as for people.
+  Its tests build real repos with a bare origin; keep them that way.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 
@@ -50,6 +51,9 @@ func commands() []command {
 			"shepherd daemon [run | start | stop | restart | status | install | uninstall]", runDaemon},
 		{"init", "Register a workspace and choose which of its repos Shepherd manages",
 			"shepherd init [dir] [--name NAME] [--yes | --all | --only a,b]", runInit},
+		{"lane", "Open, list and close lanes: a branch and worktree per stream of work",
+			"shepherd lane open <name> --scope '<globs>' [--branch B] [--repo R] | list [--all] [--json] | close [name] [--force]", runLane},
+		{"fold", "Find stale worktrees across the workspace", "shepherd fold gc [--json]", runFold},
 		{"status", "Show the daemon, its workspaces, and where you are", "shepherd status [--json]", runStatus},
 		{"where", "Show the workspace, repo and lane for a directory", "shepherd where [dir] [--json]", runWhere},
 		{"version", "Print the version", "shepherd version", runVersion},
@@ -173,7 +177,9 @@ func connect(ctx context.Context, env Env) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := c.Status(ctx); err != nil {
+	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, err := c.Status(probe); err != nil {
 		return nil, err
 	}
 	return c, nil

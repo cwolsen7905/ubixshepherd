@@ -9,8 +9,9 @@ are yours for you, and reports back in one thread.
 
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
-> The first milestone (M1, the skeleton) is in: the daemon, its API, the store, config and
-> repo profiles, and workspaces. Lanes and everything after them are still design.
+> In so far: the daemon, its API, the store, config and repo profiles, workspaces (M1),
+> and lanes (the start of M2). Leases, tag reservations, the pre-push hook and everything
+> after them are still design.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
@@ -28,6 +29,27 @@ bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shep
 bin/shepherd status         # the daemon, its workspaces, and where you are
 bin/shepherd where          # the workspace, repo and lane for this directory, with its profile
 ```
+
+### Lanes
+
+A lane is one stream of work in a repo: its own branch, cut from a fresh fetch of the
+repo's base branch, its own worktree, and a declared scope.
+
+```sh
+cd ~/git/myrepo
+shepherd lane open feat/login --scope 'src/auth/**' --scope docs/auth.md
+cd ~/git/myrepo-worktrees/feat-login      # work here, or start an agent here
+shepherd lane list                          # this repo's lanes; --all, or run at ~/git, for every repo
+shepherd lane close                         # from inside the worktree, or: shepherd lane close feat/login
+shepherd fold gc                            # worktrees that look finished, across the workspace
+```
+
+`lane open` refuses a name, branch or worktree path already in use. `lane close` refuses a
+worktree with uncommitted changes, and a branch git cannot see merged into the base. A
+squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
+keeps the branch. `fold gc` only lists; it removes nothing.
+
+### The daemon
 
 Any command starts the daemon in the background if it is not running, and says so. To
 have it start at login and restart if it crashes, register it with the OS service manager

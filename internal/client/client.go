@@ -15,6 +15,8 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // ErrNoDaemon means no daemon is running for this Shepherd home.
@@ -29,7 +31,9 @@ type Client struct {
 
 // New returns a client for the daemon at base (for example http://127.0.0.1:7400).
 func New(base, token string) *Client {
-	return &Client{base: base, token: token, http: &http.Client{Timeout: 30 * time.Second}}
+	// Lane calls fetch from remotes, so the ceiling is generous; callers that only probe
+	// pass a context with a short deadline.
+	return &Client{base: base, token: token, http: &http.Client{Timeout: 5 * time.Minute}}
 }
 
 // FromRuntime returns a client for the daemon described by the runtime file at path.
@@ -53,6 +57,30 @@ func (c *Client) Status(ctx context.Context) (api.Status, error) {
 func (c *Client) Shutdown(ctx context.Context) error {
 	var out struct{}
 	return c.do(ctx, http.MethodPost, api.PathShutdown, nil, &out)
+}
+
+func (c *Client) Lanes(ctx context.Context, workspaceID, repoID int64) ([]api.LaneView, error) {
+	var out []api.LaneView
+	q := fmt.Sprintf("%s?workspace_id=%d", api.PathLanes, workspaceID)
+	if repoID != 0 {
+		q += fmt.Sprintf("&repo_id=%d", repoID)
+	}
+	return out, c.do(ctx, http.MethodGet, q, nil, &out)
+}
+
+func (c *Client) OpenLane(ctx context.Context, req fold.OpenRequest) (store.Lane, error) {
+	var out store.Lane
+	return out, c.do(ctx, http.MethodPost, api.PathLanes, req, &out)
+}
+
+func (c *Client) CloseLane(ctx context.Context, id int64, force bool) (fold.CloseResult, error) {
+	var out fold.CloseResult
+	return out, c.do(ctx, http.MethodPost, api.PathLaneClose(id), api.CloseLane{Force: force}, &out)
+}
+
+func (c *Client) FoldGC(ctx context.Context, workspaceID int64) ([]fold.Stale, error) {
+	var out []fold.Stale
+	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?workspace_id=%d", api.PathFoldGC, workspaceID), nil, &out)
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]api.WorkspaceDetail, error) {
