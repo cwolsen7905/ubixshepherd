@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -41,6 +43,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneRun(ctx, env, args[1:])
 	case "scope":
 		return laneScope(ctx, env, args[1:])
+	case "review":
+		return laneReview(ctx, env, args[1:])
 	}
 	return errUsage
 }
@@ -54,6 +58,8 @@ func runFold(ctx context.Context, env Env, args []string) error {
 		return foldImport(ctx, env, args[1:])
 	case "view":
 		return foldView(ctx, env, args[1:])
+	case "retire":
+		return foldRetire(ctx, env, args[1:])
 	case "gc":
 	default:
 		return errUsage
@@ -452,5 +458,120 @@ func laneScope(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "lane %s scope: %s\n", lane.Name, strings.Join(lane.Scope, ", "))
+	return nil
+}
+
+// laneReview judges each of a repo's worktrees: finished, live, or unclear.
+func laneReview(ctx context.Context, env Env, args []string) error {
+	fs := flags("lane review", env)
+	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	asJSON := fs.Bool("json", false, "print JSON")
+	only := fs.String("only", "", "show only one verdict: finished, live or unclear")
+	if pos, err := parse(fs, args); err != nil {
+		return err
+	} else if len(pos) > 0 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	if h.Repo == nil {
+		return errors.New("which repo? run this inside one, or pass --repo")
+	}
+	reviews, err := c.FoldReview(ctx, h.Repo.ID)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(env, reviews)
+	}
+	count := map[string]int{}
+	for _, r := range reviews {
+		count[r.Verdict]++
+	}
+	w := env.Stdout
+	fmt.Fprintf(w, "%s: %d worktree(s): %d finished, %d live, %d unclear (nothing changed)\n",
+		h.Repo.Name, len(reviews), count[fold.Finished], count[fold.Live], count[fold.Unclear])
+	for _, verdict := range []string{fold.Unclear, fold.Live, fold.Finished} {
+		if *only != "" && *only != verdict {
+			continue
+		}
+		var group []fold.Review
+		for _, r := range reviews {
+			if r.Verdict == verdict {
+				group = append(group, r)
+			}
+		}
+		if len(group) == 0 {
+			continue
+		}
+		fmt.Fprintf(w, "\n%s (%d)\n", strings.ToUpper(verdict), len(group))
+		for _, r := range group {
+			name := orNone(r.Branch)
+			if r.Lane != "" {
+				name += "  [lane]"
+			}
+			fmt.Fprintf(w, "  %-44s %s\n      %s\n", name, filepath.Base(r.Worktree), r.Why)
+			if verdict != fold.Finished {
+				fmt.Fprintf(w, "      evidence: %s\n", strings.Join(r.Evidence, "; "))
+				for _, u := range r.Unlanded {
+					fmt.Fprintf(w, "        %s\n", u)
+				}
+			}
+		}
+	}
+	if count[fold.Finished] > 0 {
+		fmt.Fprintln(w, "\nRetire a finished worktree (its branch is kept): shepherd fold retire <worktree> [--repo R]")
+	}
+	return nil
+}
+
+// foldRetire removes finished worktrees that are not lanes, keeping their branches.
+func foldRetire(ctx context.Context, env Env, args []string) error {
+	fs := flags("fold retire", env)
+	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) == 0 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	if h.Repo == nil {
+		return errors.New("which repo? run this inside one, or pass --repo")
+	}
+	failed := false
+	for _, wt := range pos {
+		if !filepath.IsAbs(wt) {
+			if _, err := os.Stat(wt); err != nil {
+				wt = filepath.Join(h.Repo.Path+"-worktrees", wt)
+			} else {
+				wt = filepath.Join(env.Cwd, wt)
+			}
+		}
+		r, err := c.FoldRetire(ctx, h.Repo.ID, wt)
+		if err != nil {
+			fmt.Fprintf(env.Stderr, "  kept %s: %v\n", filepath.Base(wt), err)
+			failed = true
+			continue
+		}
+		fmt.Fprintf(env.Stdout, "  retired %s (%s); branch kept\n", filepath.Base(r.Worktree), r.Branch)
+	}
+	if failed {
+		return errSilent
+	}
 	return nil
 }

@@ -26,11 +26,19 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
-// Fold import and view routes (POST).
+// Fold import, view, review and retire routes (POST).
 const (
 	PathFoldImport = "/v1/fold/import"
 	PathFoldView   = "/v1/fold/view"
+	PathFoldReview = "/v1/fold/review"
+	PathFoldRetire = "/v1/fold/retire"
 )
+
+// FoldRetire is the body of POST /v1/fold/retire.
+type FoldRetire struct {
+	RepoID   int64  `json:"repo_id"`
+	Worktree string `json:"worktree"`
+}
 
 // FoldImport is the body of POST /v1/fold/import.
 type FoldImport struct {

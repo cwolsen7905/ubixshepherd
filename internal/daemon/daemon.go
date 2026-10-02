@@ -102,6 +102,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathFeed, s.feed)
 	mux.HandleFunc("POST "+api.PathFoldImport, s.foldImport)
 	mux.HandleFunc("POST "+api.PathFoldView, s.foldView)
+	mux.HandleFunc("POST "+api.PathFoldReview, s.foldReview)
+	mux.HandleFunc("POST "+api.PathFoldRetire, s.foldRetire)
 	mux.HandleFunc("POST "+api.PathSessionsImport, s.importSessions)
 	mux.HandleFunc("GET "+api.PathSessions, s.listSessions)
 	mux.HandleFunc("POST "+api.PathSessions+"/{id}/ask", s.askSession)
@@ -736,6 +738,37 @@ func (s *Server) foldImport(w http.ResponseWriter, r *http.Request) {
 		s.refreshView(req.RepoID)
 	}
 	writeJSON(w, http.StatusOK, plan)
+}
+
+func (s *Server) foldReview(w http.ResponseWriter, r *http.Request) {
+	var req api.FoldImport
+	if !decode(w, r, &req) {
+		return
+	}
+	reviews, err := s.Fold.ReviewRepo(r.Context(), req.RepoID)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	if reviews == nil {
+		reviews = []fold.Review{}
+	}
+	writeJSON(w, http.StatusOK, reviews)
+}
+
+func (s *Server) foldRetire(w http.ResponseWriter, r *http.Request) {
+	var req api.FoldRetire
+	if !decode(w, r, &req) {
+		return
+	}
+	rev, err := s.Fold.Retire(r.Context(), req.RepoID, req.Worktree)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Log.Info("worktree retired", "worktree", rev.Worktree, "branch", rev.Branch)
+	s.Store.AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("retired worktree %s (%s): %s; branch kept", filepath.Base(rev.Worktree), rev.Branch, rev.Why), req.RepoID)
+	writeJSON(w, http.StatusOK, rev)
 }
 
 func (s *Server) foldView(w http.ResponseWriter, r *http.Request) {

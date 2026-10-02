@@ -108,10 +108,18 @@ shepherd fold import --repo myrepo --apply   # do it
 ```
 
 Each worktree whose branch matches a row's branch prefix becomes a lane with that row's
-scope (the backticked paths in it). Worktrees whose branch is already in the base are
+scope (the backticked paths in it; when a row names none, the directories the branch
+changed, marked as inferred). Worktrees whose branch is already in the base are
 reported as finished, worktrees no row claims as unregistered, rows with no worktree as
 claims with nothing in flight, and overlapping scopes are listed: the old file allowed
 them, Shepherd refuses new ones.
+
+`shepherd lane review` judges every worktree, lane or not, and shows its evidence:
+**finished** (every change in the base by content, or in a merged request), **live**
+(uncommitted work, an open request, or a commit or conversation in the last two weeks),
+or **unclear** (work in neither, nothing recent: yours to decide). It changes nothing.
+`shepherd fold retire <worktree>` removes a finished one and keeps its branch; it refuses
+anything else, and lanes.
 
 While sessions not yet on Shepherd still read the file, set `coord_file: AGENTS-COORD.md`
 in the repo's profile: Shepherd then keeps a generated table of its lanes and tag
