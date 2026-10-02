@@ -195,6 +195,37 @@ unpushed commits.
 
 GitHub as a lane's forge comes later; GitHub's role in v1 is the release mirror.
 
+### When a repo you depend on releases
+
+A framework tags a version, and every app on it needs a branch that moves to it. A
+`follows` entry in the app's profile has Shepherd do that: when the followed repo's
+newest release tag appears on its remote and the tag's pipeline passes (so the package is
+published), Shepherd opens a lane in the app and hands its agent the task, with the
+tag's message and the commit subjects since the last release in the prompt.
+
+```yaml
+repos:
+  my-app:
+    follows:
+      - repo: framework          # its name in the workspace
+        min_bump: minor          # patch, minor (the default) or major
+        after: published         # or tagged, for a repo with no pipeline on its tags
+        lane: chore/{repo}-{major}.{minor}
+        scope: [composer.json, composer.lock]
+        agent: claude
+        task: |
+          Move the framework requirement in composer.json to ^{major}.{minor}, run
+          composer update for it alone, run the gate, and commit.
+```
+
+`lane` and `task` take `{repo}`, `{tag}`, `{version}`, `{major}`, `{minor}`, `{patch}`
+and `{previous}`. The first look only records the release the app is on, so turning a
+follow on never starts work for releases that were already out. A release skipped by
+`min_bump`, a tag whose pipeline is still running, and one whose pipeline failed are each
+a line in the thread; a failed release waits until a run of its pipeline passes. Several
+releases at once open one lane, for the newest. The run counts against the daily budget,
+and pushing follows the app's `autonomy.push` like any other run.
+
 ### Conversations you had outside Shepherd
 
 Claude Code sessions you ran by hand in a managed repo (or its worktrees) can be adopted:

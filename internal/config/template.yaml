@@ -69,3 +69,18 @@
 #     base_branch: dev
 #     branch_model: promotion
 #     promotion: [dev, staging, main]
+#     ## Repos this one depends on. When one releases (its tag's pipeline passed), Shepherd
+#     ## opens a lane here and hands the agent the task. Lane and task may use {repo},
+#     ## {tag}, {version}, {major}, {minor}, {patch} and {previous}.
+#     follows:
+#       - repo: framework
+#         ## The smallest release worth a lane: patch, minor or major.
+#         min_bump: minor
+#         ## published (the tag's pipeline passed) or tagged (the tag alone).
+#         after: published
+#         lane: chore/{repo}-{major}.{minor}
+#         scope: [composer.json, composer.lock]
+#         agent: claude
+#         task: |
+#           Move the framework requirement in composer.json to ^{major}.{minor},
+#           run composer update for it alone, run the gate, and commit.

@@ -60,6 +60,26 @@ func TestGitLabMRForBranch(t *testing.T) {
 	}
 }
 
+func TestGitLabRefPipeline(t *testing.T) {
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		switch path := args[len(args)-1]; {
+		case strings.Contains(path, "pipelines?ref=v1.2.0&"):
+			return []byte(`[{"id":11,"status":"success","sha":"abc","web_url":"p"}]`), nil
+		case strings.Contains(path, "pipelines?ref="):
+			return []byte(`[]`), nil
+		default:
+			return nil, fmt.Errorf("unexpected %s", path)
+		}
+	}}
+	p, err := g.RefPipeline(context.Background(), "v1.2.0")
+	if err != nil || p == nil || p.ID != 11 || p.Status != "success" {
+		t.Fatalf("pipeline = %+v, %v", p, err)
+	}
+	if p, err := g.RefPipeline(context.Background(), "v9.9.9"); p != nil || err != nil {
+		t.Errorf("no pipeline = %+v, %v", p, err)
+	}
+}
+
 func TestCleanLog(t *testing.T) {
 	raw := "2026-10-02T01:08:32.769621Z 01O \x1b[32;1m$ make check\x1b[0;m\n" +
 		"2026-10-02T01:08:32.769643Z 01O --- FAIL: TestX (0.00s)\n" +

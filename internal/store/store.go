@@ -200,6 +200,7 @@ const (
 	FeedTag            = "tag"
 	FeedSession        = "session"
 	FeedPipeline       = "pipeline"
+	FeedRelease        = "release"
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's

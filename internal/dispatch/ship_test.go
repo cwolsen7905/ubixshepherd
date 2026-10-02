@@ -18,10 +18,11 @@ type shipForge struct {
 	created []string
 }
 
-func (f *shipForge) Name() string                                           { return "fake" }
-func (f *shipForge) MRForBranch(context.Context, string) (*forge.MR, error) { return nil, nil }
-func (f *shipForge) FailedJobs(context.Context, int64) ([]forge.Job, error) { return nil, nil }
-func (f *shipForge) JobLog(context.Context, int64, int) (string, error)     { return "", nil }
+func (f *shipForge) Name() string                                                 { return "fake" }
+func (f *shipForge) MRForBranch(context.Context, string) (*forge.MR, error)       { return nil, nil }
+func (f *shipForge) FailedJobs(context.Context, int64) ([]forge.Job, error)       { return nil, nil }
+func (f *shipForge) RefPipeline(context.Context, string) (*forge.Pipeline, error) { return nil, nil }
+func (f *shipForge) JobLog(context.Context, int64, int) (string, error)           { return "", nil }
 func (f *shipForge) CreateMR(_ context.Context, source, target, title, body string) (*forge.MR, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

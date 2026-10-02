@@ -52,6 +52,8 @@ type Forge interface {
 	JobLog(ctx context.Context, job int64, lines int) (string, error)
 	// CreateMR opens a merge request from source into target.
 	CreateMR(ctx context.Context, source, target, title, description string) (*MR, error)
+	// RefPipeline is the latest pipeline for a branch or tag, or nil.
+	RefPipeline(ctx context.Context, ref string) (*Pipeline, error)
 }
 
 // Remote is a git remote URL split into host and repository path.
@@ -199,6 +201,23 @@ func (g *GitLab) CreateMR(ctx context.Context, source, target, title, descriptio
 		return nil, fmt.Errorf("create merge request: %w", err)
 	}
 	return &MR{IID: m.IID, State: m.State, SHA: m.SHA, URL: m.WebURL}, nil
+}
+
+func (g *GitLab) RefPipeline(ctx context.Context, ref string) (*Pipeline, error) {
+	var list []struct {
+		ID     int64  `json:"id"`
+		Status string `json:"status"`
+		SHA    string `json:"sha"`
+		WebURL string `json:"web_url"`
+	}
+	if err := g.api(ctx, fmt.Sprintf("%s/pipelines?ref=%s&order_by=id&sort=desc&per_page=1", g.project(), url.QueryEscape(ref)), &list); err != nil {
+		return nil, err
+	}
+	if len(list) == 0 {
+		return nil, nil
+	}
+	p := list[0]
+	return &Pipeline{ID: p.ID, Status: p.Status, SHA: p.SHA, URL: p.WebURL}, nil
 }
 
 func (g *GitLab) FailedJobs(ctx context.Context, pipeline int64) ([]Job, error) {

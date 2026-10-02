@@ -25,6 +25,8 @@ import (
 type fakeForge struct {
 	mr   *forge.MR
 	jobs []forge.Job
+	// pipes are the pipelines by ref, for RefPipeline.
+	pipes map[string]*forge.Pipeline
 }
 
 func (f *fakeForge) Name() string { return "fake" }
@@ -36,6 +38,9 @@ func (f *fakeForge) MRForBranch(context.Context, string) (*forge.MR, error) {
 	return &c, nil
 }
 func (f *fakeForge) FailedJobs(context.Context, int64) ([]forge.Job, error) { return f.jobs, nil }
+func (f *fakeForge) RefPipeline(_ context.Context, ref string) (*forge.Pipeline, error) {
+	return f.pipes[ref], nil
+}
 func (f *fakeForge) CreateMR(context.Context, string, string, string, string) (*forge.MR, error) {
 	return &forge.MR{IID: 1, State: "opened"}, nil
 }

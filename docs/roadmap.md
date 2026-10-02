@@ -102,7 +102,7 @@ generated `AGENTS-COORD.md`, `fold import`, `shepherd note`.
   `--output-schema`); explicit permission modes, never blanket "bypass" by default.
 - ★ **Price table and budget kill switch**: only Claude reports cost in dollars, so
   Shepherd computes it from tokens and stops a task (and a day) at its budget itself.
-- ★ **Dependent and cross-repo work orders** (framework → tag → host pin bump).
+- ★ **Dependent and cross-repo work orders** (framework → tag → host pin bump). The release half is in: a repo `follows` another, and the followed repo's published release opens a lane and an agent run in it. Next: one work order spanning both repos, typed at the front desk.
 - ★ **Diff-size cap per work order**, and a cross-provider review **before** the task
   reaches the human, to protect his review time.
 - ★ **Concurrency limit that counts CI runners.**
