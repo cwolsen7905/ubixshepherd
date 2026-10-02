@@ -96,6 +96,53 @@ type Profile struct {
 	// pushes ("(?i)co-authored-by"); a match goes back to the agent to amend.
 	Forbid   []string `yaml:"forbid,omitempty" json:"forbid,omitempty"`
 	Autonomy Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
+	// Follows are the repos this one depends on: a release of one opens a lane here and
+	// hands it to an agent (a framework's tag, the host's version bump).
+	Follows []Follow `yaml:"follows,omitempty" json:"follows,omitempty"`
+}
+
+// When a follow acts on a release.
+const (
+	// Published: the release tag's pipeline passed, so what it publishes is there.
+	Published = "published"
+	// Tagged: the tag alone, for a repo with no pipeline on its tags.
+	Tagged = "tagged"
+)
+
+// Follow is one repo a repo follows, and what to do here when it releases. Lane and
+// Task may use {repo}, {tag}, {version}, {major}, {minor}, {patch} and {previous}.
+type Follow struct {
+	// Repo is the followed repo's name in the workspace.
+	Repo string `yaml:"repo" json:"repo"`
+	// MinBump is the smallest release worth a lane: patch, minor (the default) or major.
+	MinBump string `yaml:"min_bump,omitempty" json:"min_bump,omitempty"`
+	// After is published (the default) or tagged.
+	After string `yaml:"after,omitempty" json:"after,omitempty"`
+	// Lane names the lane; "chore/{repo}-{version}" by default.
+	Lane  string   `yaml:"lane,omitempty" json:"lane,omitempty"`
+	Scope []string `yaml:"scope" json:"scope"`
+	// Agent does the work: claude (the default), copilot or cursor.
+	Agent string `yaml:"agent,omitempty" json:"agent,omitempty"`
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Task is what the agent is asked to do.
+	Task string `yaml:"task" json:"task"`
+}
+
+// Effective fills a follow's defaults.
+func (f Follow) Effective() Follow {
+	if f.MinBump == "" {
+		f.MinBump = "minor"
+	}
+	if f.After == "" {
+		f.After = Published
+	}
+	if f.Lane == "" {
+		f.Lane = "chore/{repo}-{version}"
+	}
+	if f.Agent == "" {
+		f.Agent = "claude"
+	}
+	return f
 }
 
 // Autonomy records what agents may do unasked in a repo.
@@ -244,6 +291,27 @@ func (p Profile) validate(at string) []error {
 	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
 	}
+	for i, f := range p.Follows {
+		f, at := f.Effective(), fmt.Sprintf("%s.follows[%d]", at, i)
+		if strings.TrimSpace(f.Repo) == "" {
+			errs = append(errs, fmt.Errorf("%s.repo: empty", at))
+		}
+		if len(f.Scope) == 0 {
+			errs = append(errs, fmt.Errorf("%s.scope: a follow's lane needs a scope", at))
+		}
+		if strings.TrimSpace(f.Task) == "" {
+			errs = append(errs, fmt.Errorf("%s.task: empty", at))
+		}
+		if !slices.Contains([]string{"patch", "minor", "major"}, f.MinBump) {
+			errs = append(errs, fmt.Errorf("%s.min_bump: %q is not patch, minor or major", at, f.MinBump))
+		}
+		if f.After != Published && f.After != Tagged {
+			errs = append(errs, fmt.Errorf("%s.after: %q is not %s or %s", at, f.After, Published, Tagged))
+		}
+		if !slices.Contains([]string{"claude", "copilot", "cursor"}, f.Agent) {
+			errs = append(errs, fmt.Errorf("%s.agent: %q is not claude, copilot or cursor", at, f.Agent))
+		}
+	}
 	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
 	return errs
 }
@@ -301,6 +369,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Autonomy.PlanFirst != nil {
 		out.Autonomy.PlanFirst = over.Autonomy.PlanFirst
+	}
+	if over.Follows != nil {
+		out.Follows = over.Follows
 	}
 	return out
 }

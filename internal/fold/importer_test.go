@@ -154,8 +154,9 @@ func (m mergedForge) MRForBranch(_ context.Context, b string) (*forge.MR, error)
 	}
 	return nil, nil
 }
-func (mergedForge) FailedJobs(context.Context, int64) ([]forge.Job, error) { return nil, nil }
-func (mergedForge) JobLog(context.Context, int64, int) (string, error)     { return "", nil }
+func (mergedForge) FailedJobs(context.Context, int64) ([]forge.Job, error)       { return nil, nil }
+func (mergedForge) RefPipeline(context.Context, string) (*forge.Pipeline, error) { return nil, nil }
+func (mergedForge) JobLog(context.Context, int64, int) (string, error)           { return "", nil }
 func (mergedForge) CreateMR(context.Context, string, string, string, string) (*forge.MR, error) {
 	return nil, nil
 }

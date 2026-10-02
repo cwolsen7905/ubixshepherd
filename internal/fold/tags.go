@@ -71,8 +71,8 @@ func Next(prefix, bump string, remoteTags []string, reserved []string) (Version,
 	return top.Bump(bump)
 }
 
-// remoteTags lists the remote's tags as they are now, not as the last fetch saw them.
-func remoteTags(ctx context.Context, repo string) ([]string, error) {
+// RemoteTags lists the remote's tags as they are now, not as the last fetch saw them.
+func RemoteTags(ctx context.Context, repo string) ([]string, error) {
 	if !git.HasRemote(ctx, repo, "origin") {
 		out, err := git.Run(ctx, repo, "tag", "--list")
 		if err != nil || out == "" {
@@ -115,7 +115,7 @@ func (f *Fold) Reserve(ctx context.Context, repoID, laneID int64, bump string) (
 	defer lock.Unlock()
 
 	prefix := f.Config.Profile(repo.Name).TagPrefix
-	tags, err := remoteTags(ctx, repo.Path)
+	tags, err := RemoteTags(ctx, repo.Path)
 	if err != nil {
 		return store.Reservation{}, err
 	}

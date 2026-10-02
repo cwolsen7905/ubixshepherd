@@ -1,7 +1,8 @@
 // Package watch keeps lanes in step with their forge: it polls the merge request for
 // each open lane's branch and acts on what changed. A merged request is proof, and the
 // lane closes; a failed pipeline goes back to the lane's agent to fix; everything else
-// is a line in the person's thread. Polling, because a Shepherd on a laptop cannot
+// is a line in the person's thread. It also watches the repos others follow, and a
+// release of one opens a lane in each follower (follow.go). Polling, because a Shepherd on a laptop cannot
 // receive webhooks.
 package watch
 
@@ -35,7 +36,8 @@ type Watcher struct {
 	ForgeFor func(remote string) (forge.Forge, error)
 
 	mu      sync.Mutex
-	skipped map[int64]bool // repos with no readable forge, logged once
+	skipped map[int64]bool  // repos with no readable forge, logged once
+	noted   map[string]bool // follow problems, logged once
 }
 
 // Run checks every Interval until ctx is done.
@@ -52,7 +54,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
-// Check looks at every open lane once.
+// Check looks at every open lane, and every followed repo's releases, once.
 func (w *Watcher) Check(ctx context.Context) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -88,6 +90,7 @@ func (w *Watcher) Check(ctx context.Context) {
 				}
 			}
 		}
+		w.checkFollows(ctx, repos)
 	}
 }
 
