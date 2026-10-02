@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -35,7 +36,9 @@ import (
 
 // Server serves the API over a store.
 type Server struct {
-	Store      store.Store
+	Store store.Store
+	// Config is the config the daemon started with; read LiveConfig, which a reload
+	// (SIGHUP) replaces.
 	Config     config.Config
 	ConfigPath string
 	Token      string
@@ -47,6 +50,8 @@ type Server struct {
 	stopOnce   sync.Once
 	sessMu     sync.Mutex
 	sessLocks  map[string]*sync.Mutex
+	live       atomic.Pointer[config.Config]
+	reloadMu   sync.Mutex
 }
 
 // NewServer returns a Server with a fresh random token.
@@ -293,7 +298,7 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("path %q: must be absolute", p))
 		return
 	}
-	res, err := Resolve(r.Context(), s.Store, s.Config, p)
+	res, err := Resolve(r.Context(), s.Store, s.LiveConfig(), p)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -511,7 +516,7 @@ func (s *Server) prePush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("path %q: must be absolute", req.Path))
 		return
 	}
-	res, err := Resolve(r.Context(), s.Store, s.Config, req.Path)
+	res, err := Resolve(r.Context(), s.Store, s.LiveConfig(), req.Path)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -842,7 +847,7 @@ func (s *Server) foldView(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	out := api.FoldView{RepoID: repo.ID, View: view, File: s.Config.Profile(repo.Name).CoordFile}
+	out := api.FoldView{RepoID: repo.ID, View: view, File: s.LiveConfig().Profile(repo.Name).CoordFile}
 	if req.Write {
 		if out.File == "" {
 			writeError(w, http.StatusConflict, fmt.Errorf("repo %s has no coord_file in its profile", repo.Name))
@@ -890,7 +895,7 @@ func (s *Server) importSessions(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			roots := []string{repo.Path, repo.Path + "-worktrees"}
-			if wr := s.Config.Profile(repo.Name).WorktreeRoot; wr != "" {
+			if wr := s.LiveConfig().Profile(repo.Name).WorktreeRoot; wr != "" {
 				if !filepath.IsAbs(wr) {
 					wr = filepath.Join(filepath.Dir(repo.Path), wr)
 				}
@@ -1067,16 +1072,17 @@ func (s *Server) releaseTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) spendToday(w http.ResponseWriter, r *http.Request) {
-	total, by, err := dispatch.Spent(r.Context(), s.Store, s.Config)
+	cfg := s.LiveConfig()
+	total, by, err := dispatch.Spent(r.Context(), s.Store, cfg)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := api.SpendToday{Day: dispatch.Today(), USD: total, BySource: by}
-	if b := s.Config.Daemon.Budget; b != nil {
+	if b := cfg.Daemon.Budget; b != nil {
 		out.Budget = *b
 	}
-	if c := s.Config.Daemon.CreditUSD; c != nil {
+	if c := cfg.Daemon.CreditUSD; c != nil {
 		out.CreditUSD = *c
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -1275,6 +1281,11 @@ func writeError(w http.ResponseWriter, code int, err error) {
 // Run takes the home's lock, listens, writes the runtime file, serves until ctx is done
 // or a shutdown is requested, then removes the runtime file. The lock makes a second
 // daemon on the same home refuse to start, even when two start at the same moment.
+//
+// A SIGHUP reloads the config (ReloadConfig). Agents the daemon started are its to end:
+// a stop ends them (Runner.Shutdown) and records their runs interrupted. A daemon that
+// crashed or was killed could not, so the next one stops any it left running
+// (ReapOrphans) before marking their runs interrupted (Runner.Recover).
 func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	lock, err := acquireLock(filepath.Join(filepath.Dir(runtimePath), "daemon.lock"))
 	if err != nil {
@@ -1285,7 +1296,7 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	}
 	defer lock.Close()
 
-	ln, err := net.Listen("tcp", s.Config.Daemon.Listen)
+	ln, err := net.Listen("tcp", s.LiveConfig().Daemon.Listen)
 	if err != nil {
 		return err
 	}
@@ -1293,6 +1304,11 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 		Addr: ln.Addr().String(), PID: os.Getpid(), Token: s.Token,
 		Version: version.Version, Started: s.started,
 	}
+	// Listen for SIGHUP before the runtime file says where the daemon is, so a reload
+	// sent as soon as it answers cannot kill it.
+	reloadCtx, stopReload := context.WithCancel(ctx)
+	reloadDone := watchReload(reloadCtx, s)
+	defer func() { stopReload(); <-reloadDone }()
 	if err := writeRuntime(runtimePath, rt); err != nil {
 		ln.Close()
 		return err
@@ -1300,6 +1316,7 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	defer os.Remove(runtimePath)
 
 	if s.Runner != nil {
+		s.ReapOrphans(ctx)
 		if err := s.Runner.Recover(ctx); err != nil {
 			return err
 		}
