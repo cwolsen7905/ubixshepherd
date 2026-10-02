@@ -179,6 +179,48 @@ type ImportPlan struct {
 	Applied  bool     `json:"applied"`
 }
 
+// inferScope is the directories of the files a branch changed since it left the base:
+// each changed file's directory, as dir/**, a file at the root as itself. Twelve or more
+// collapse to their parents, so a broad branch gets a broad scope rather than a long one.
+func inferScope(ctx context.Context, repo, branch, target string) []string {
+	base, err := git.Run(ctx, repo, "merge-base", target, "refs/heads/"+branch)
+	if err != nil {
+		return nil
+	}
+	out, err := git.Run(ctx, repo, "diff", "--name-only", "--no-renames", base, "refs/heads/"+branch)
+	if err != nil || out == "" {
+		return nil
+	}
+	files := strings.Split(out, "\n")
+	for depth := 6; depth >= 1; depth-- {
+		seen := map[string]bool{}
+		var globs []string
+		for _, f := range files {
+			dir := path.Dir(f)
+			if dir == "." {
+				if !seen[f] {
+					seen[f] = true
+					globs = append(globs, f)
+				}
+				continue
+			}
+			parts := strings.Split(dir, "/")
+			if len(parts) > depth {
+				parts = parts[:depth]
+			}
+			g := strings.Join(parts, "/") + "/**"
+			if !seen[g] {
+				seen[g] = true
+				globs = append(globs, g)
+			}
+		}
+		if len(globs) < 12 || depth == 1 {
+			return globs
+		}
+	}
+	return nil
+}
+
 var laneUnsafe = regexp.MustCompile(`[^a-z0-9._/-]+`)
 
 // laneNameFor turns a branch into a lane name: lowercase, at most one slash.
@@ -296,8 +338,13 @@ func (f *Fold) Import(ctx context.Context, repoID int64, coordFile string, apply
 				matched[row] = true
 				it.Agent, it.Scope, it.Lane = rows[row].Agent, rows[row].Scope, laneNameFor(wt.Branch)
 				if len(it.Scope) == 0 {
-					it.Why = "its row names no paths Shepherd can read; scope set to the whole repo"
-					it.Scope = []string{"**"}
+					if inferred := inferScope(ctx, repo.Path, wt.Branch, target); len(inferred) > 0 {
+						it.Scope = inferred
+						it.Why = "its row names no paths, so the scope is inferred from what the branch changed: check it"
+					} else {
+						it.Why = "its row names no paths and the branch changes nothing yet; scope set to the whole repo"
+						it.Scope = []string{"**"}
+					}
 				} else if d := rows[row].Dropped; len(d) > 0 {
 					it.Why = "the row also names " + strings.Join(d, ", ") + ", which are not paths: check the scope covers what it meant"
 				}

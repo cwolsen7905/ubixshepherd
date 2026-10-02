@@ -198,6 +198,16 @@ func (c *Client) FoldImport(ctx context.Context, req api.FoldImport) (fold.Impor
 	return out, c.do(ctx, http.MethodPost, api.PathFoldImport, req, &out)
 }
 
+func (c *Client) FoldReview(ctx context.Context, repoID int64) ([]fold.Review, error) {
+	var out []fold.Review
+	return out, c.do(ctx, http.MethodPost, api.PathFoldReview, api.FoldImport{RepoID: repoID}, &out)
+}
+
+func (c *Client) FoldRetire(ctx context.Context, repoID int64, worktree string) (fold.Review, error) {
+	var out fold.Review
+	return out, c.do(ctx, http.MethodPost, api.PathFoldRetire, api.FoldRetire{RepoID: repoID, Worktree: worktree}, &out)
+}
+
 func (c *Client) FoldView(ctx context.Context, req api.FoldView) (api.FoldView, error) {
 	var out api.FoldView
 	return out, c.do(ctx, http.MethodPost, api.PathFoldView, req, &out)

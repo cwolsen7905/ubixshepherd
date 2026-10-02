@@ -203,6 +203,15 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name: "lane_review",
+			Description: "Judge each of a repo's worktrees, lanes or not: finished (everything in the base or a merged request), live (uncommitted work, an open request, recent activity) or unclear (unlanded work, nothing recent), with the evidence. Changes nothing. " +
+				"Use it to tell the person which old worktrees are safe to retire; retiring is theirs to ask for.",
+			InputSchema: obj(map[string]any{"repo": propRepo}, "repo"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"lane", "review", "--repo", str(a, "repo")}, nil
+			},
+		},
+		{
 			Name:        "session_list",
 			Description: "Conversations the person had with agents outside Shepherd (adopted Claude Code sessions): id, repo, title, dates, branches. Ask one with session_ask.",
 			InputSchema: obj(map[string]any{}),
