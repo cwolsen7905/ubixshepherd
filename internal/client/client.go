@@ -187,6 +187,16 @@ func (c *Client) AddSpend(ctx context.Context, sp store.Spend) error {
 	return c.do(ctx, http.MethodPost, api.PathSpend, sp, &out)
 }
 
+func (c *Client) FoldImport(ctx context.Context, req api.FoldImport) (fold.ImportPlan, error) {
+	var out fold.ImportPlan
+	return out, c.do(ctx, http.MethodPost, api.PathFoldImport, req, &out)
+}
+
+func (c *Client) FoldView(ctx context.Context, req api.FoldView) (api.FoldView, error) {
+	var out api.FoldView
+	return out, c.do(ctx, http.MethodPost, api.PathFoldView, req, &out)
+}
+
 func (c *Client) ReserveTag(ctx context.Context, req api.Reserve) (store.Reservation, error) {
 	var out store.Reservation
 	return out, c.do(ctx, http.MethodPost, api.PathTagsReserve, req, &out)

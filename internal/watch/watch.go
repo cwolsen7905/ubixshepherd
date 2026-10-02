@@ -165,6 +165,9 @@ func (w *Watcher) merged(ctx context.Context, lane store.Lane, mr *forge.MR) {
 		return
 	}
 	w.Log.Info("watch: lane closed on merge", "lane", lane.Name, "mr", mr.IID, "merge", mr.MergeSHA)
+	if err := w.Fold.WriteView(ctx, lane.RepoID); err != nil {
+		w.Log.Error("watch: coordination view", "err", err)
+	}
 	note := ""
 	if res.BranchDeleted {
 		note = ", local branch deleted"

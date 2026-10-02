@@ -31,6 +31,9 @@
 #   shared_paths: []
 #   ## Where lane worktrees go; empty means <workspace>/<repo>-worktrees.
 #   worktree_root: ""
+#   ## A coordination file (AGENTS-COORD.md) to keep a generated view of the lanes in,
+#   ## between markers, while sessions not on Shepherd still read it.
+#   coord_file: ""
 #   ## What comes before a release version in tags (v1.2.3); tag reserve hands these out.
 #   tag_prefix: v
 #   ## free, or reserved: every release tag pushed from the repo must be reserved first
