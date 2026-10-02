@@ -1,0 +1,390 @@
+# Design: what Shepherd does, and why it makes agents deterministic
+
+**Status:** Proposed (2026-10-01). Nothing here is built. v1's scope and stack are decided
+and live in [v1.md](v1.md); the rest is the thinking to argue with.
+
+## 1. Start from how the work actually happens today
+
+A developer running many agents already has a swarm. It just has no shepherd, so the
+developer is the shepherd. From the uBixCore sessions this design grew out of
+([origins.md](origins.md)):
+
+| What happens | What it costs |
+|---|---|
+| Several Claude sessions run at once across a framework, the products built on it, a docs site and a deployment repo, each in its own worktree and lane. | Every session must remember to read `AGENTS-COORD.md`, register, and claim. Claims are honour-system. |
+| The human relays state by hand: "203 merged", "is it still going?", pasting CI logs into the chat. | The human is the message bus. The agent idles until they type. |
+| The same rules live in a workspace-level `CLAUDE.md`, each repo's `CLAUDE.md`, the standards, and per-user agent memory. | Copies drift. The workspace file already says it: "a copy of these rules is a copy that goes stale." |
+| Rules exist only because a mistake happened once: push ≠ merge, local green ≠ pipeline green, "roadmap says Build" ≠ "there is no code", a release that forgot to update its docs site, stacked branches that merged an MR meant to be held back, two lanes taking the same tag (v0.39, v0.43). | Hours lost to each one. Each lesson lives as prose an agent may or may not read next time. |
+| A Gemini reviewer runs in CI; everything else is Claude. | Gemini never sees `CLAUDE.md` or Claude's memory. A second provider starts with none of the standards. |
+| Sessions run out of context and continue from a summary. | The hand-off is per-provider and per-session; nothing owns it. |
+| Some calls are the human's alone (money, pricing, published promises, destructive production actions, approving merges). | Each session works out for itself what is the human's; some ask too much, some too little. |
+
+The agents are good at the work. The overhead is all **coordination, verification and
+repeating the rules**, and that is the part Shepherd takes over.
+
+## 2. The uBixCore philosophy, applied to agents
+
+uBixCore does not make user input trustworthy. It makes the **boundary** strict: a
+`Payload` validates on the way in, a `DataType` wraps a scalar so an invalid value cannot
+exist, an `Enum` closes the set of states, a `Repository` is the only way to the data. The
+middle of the program is then predictable, even though its inputs are not.
+
+Agents are the same. An LLM's output cannot be made deterministic. **Everything around it
+can be**:
+
+| uBixCore | Shepherd |
+|---|---|
+| Typed contracts at the boundary (`Payload`, DTO, `DataType`) | Typed **work orders** in, typed **reports** out. No free-text "done". |
+| `Enum` closes a set of states | Every task has a closed **state machine**. A task is `merged` only with a merge SHA as proof. |
+| The machine gate (phpcs, phpstan, tests) enforces the checkable subset of the standards | Shepherd enforces the checkable subset of the **agent rules**: claims, branch base, tag reservation, reserved decisions. |
+| "Push clean, don't MR-loop-clean": a finding class that turns out mechanical is promoted into the gate | A correction an agent keeps needing is promoted from prose into a Shepherd rule. Prose is where rules start, not where they live. |
+| Hosts inherit the framework baseline (`<rule ref="Ubix"/>`, `phpstan.neon`, the skeleton) and extend it, never fork it | Repos inherit a **standards pack**; Shepherd renders it for each provider. One source, many outputs, drift-checked. |
+| The framework/product boundary test | Shepherd has no idea what product it is working on. The uBix rules are a pack it loads, not code inside it. |
+| Secrets come from uBixVault, never `.env` in an image | Agents get scoped, short-lived credentials from uBixVault through Shepherd, never keys in prompts. |
+| Decisions are recorded with dispositions (`Fixed:` / `Dismissed:` / `Deferred:`) | Every human decision and every agent outcome is an append-only, machine-readable record. |
+
+The organising rule follows from that:
+
+> **The shepherd is not a sheep.** Shepherd's control plane is ordinary, deterministic
+> code: state machines, rules, schemas, webhooks. LLMs do the work; Shepherd decides who
+> works on what, checks the result, and knows the state. Where Shepherd itself uses a model
+> (summarising, drafting a brief), the output is advisory and goes through the same typed
+> boundary as any agent's.
+
+A second rule makes it hold across providers:
+
+> **Enforce at the boundaries every provider must cross.** Claude Code has hooks, others
+> have different hooks, some have none. So Shepherd does not rely on any agent obeying a
+> prompt. It enforces where every agent has to pass anyway: **git** (hooks, server-side push
+> rules), the **MR** (sign-off, threads), **CI** (the gates), **Vault** (credentials), and
+> Shepherd's own **API** (claims, reports). An agent that ignores its instructions still
+> cannot push to a branch it does not hold, close a task without proof, or reach a secret it
+> was not leased.
+
+## 3. What Shepherd does
+
+### 3.1 One thread for the human
+
+The human talks to Shepherd in one place: a terminal, Discord, Slack, or a web page,
+undecided. What reaches that thread:
+
+- **Results**, already verified: "shop !405 merged at `3f9c1e07`, dev pipeline 6518 green."
+- **Decisions that are yours**, each one held with the trade-offs and a recommendation
+  (the "explain before asking to choose" rule, built in).
+- **Blockers that need a hand**, such as an owner action in Stripe.
+- **Nothing else.** "Still running" and "shall I continue?" are not messages.
+
+### 3.2 Standards, compiled once and rendered per provider
+
+A **standards pack** is the single source for how agents work in a family of repos: house
+rules (keep going; stop only for what is the human's; tell the truth; verify state),
+repo-specific facts (main branch, gate command, lane protocol), and pointers to the long
+standards documents.
+
+Shepherd renders it into whatever each provider reads: `CLAUDE.md`, `AGENTS.md`,
+`GEMINI.md`, Cursor rules, a CI reviewer's guide. Like the Ubix phpcs standard, a repo
+**inherits** the pack and adds its own section; it does not copy and edit. A gate check
+fails when a rendered file differs from its source, so the copies cannot drift.
+
+This alone gives a Gemini or Codex session the same rules a Claude session has, from the
+first message.
+
+### 3.3 Typed work orders
+
+Every task an agent gets is a work order, not a chat message. It is the uBixCore
+prompt template (`ai-coding-guidelines.md` §2) turned into a schema:
+
+```yaml
+id: wo-0142
+repo: shop
+goal: "Launch discount: 5% for 12 months on launch codes"
+scope:                 # paths this task may change; anything else needs a claim
+  - php/Shop/Service/Promotion/**
+  - tests/Service/Promotion/**
+  - docs/surfaces/payments/**
+base: dev              # Shepherd checks the branch really starts here
+gate: "php bin/ubix code:review"
+deliverables: [code, tests, tds-update, roadmap-row]
+reserved:              # stop and ask instead of deciding
+  - pricing
+  - published-copy
+done_when: merged      # opened | merged | deployed:<env>
+```
+
+The same order goes to Claude, Gemini or a local model; each provider adapter turns it
+into that provider's prompt plus the rendered standards.
+
+### 3.4 Typed reports and a closed task state machine
+
+Agents report through Shepherd's API (exposed to them as MCP tools), and each report is a
+state transition that has to carry its proof:
+
+```
+queued → claimed → working → gate-green → mr-open → awaiting-approval → merged → deployed
+                       ↘ blocked (needs: decision | owner-action | other-task)
+                       ↘ failed (with the output)
+```
+
+| Transition | Proof Shepherd checks itself |
+|---|---|
+| → `gate-green` | the gate ran on the current tree (commit SHA matches the branch head) |
+| → `mr-open` | the MR exists and targets the right branch |
+| → `merged` | GitLab says merged; merge SHA recorded |
+| → `deployed:<env>` | the deploy job for that SHA succeeded |
+
+"A push is not a merge" stops being a lesson an agent must remember: Shepherd will not
+record `merged` without a merge SHA it fetched from GitLab itself.
+
+### 3.5 The Fold: lanes and claims as a service
+
+`AGENTS-COORD.md` becomes state that Shepherd owns:
+
+- **Lanes** are registered by Shepherd when it hands out a work order, with a distinct
+  branch prefix and worktree, created by Shepherd. No agent forgets to register, because
+  no agent registers.
+- **Claims are leases.** Shared paths (root `README.md`, `CLAUDE.md`, `Routes.php`,
+  `Dependencies.php`, `composer.lock`, `.gitlab-ci.yml`, roadmap rows) are leased to one
+  lane at a time. A pre-push hook and a CI check refuse a change to a shared path the lane
+  does not hold.
+- **Reservations** for anything two lanes can race for: release tags (`v0.44.0`), migration
+  timestamps, version numbers. The tag collisions of 2026-09 become impossible.
+- **Conflict warnings before work starts**: two work orders whose scopes overlap are
+  serialised or flagged at dispatch, not discovered at rebase.
+
+The untracked live file can still be generated as a read-only view for humans.
+
+### 3.6 Events, not relaying
+
+Shepherd subscribes to what already happens: GitLab webhooks (through uBixOps, which
+already receives them), pipeline results, approvals, mirror failures. When something
+changes, Shepherd moves the task and wakes the agent that is waiting on it. The human
+never has to type "203 merged" again.
+
+### 3.7 Reserved decisions: a deterministic gate, with escalation only upward
+
+What is "his" is a rule set, not a mood:
+
+| Reserved class | How Shepherd detects it (examples) |
+|---|---|
+| money / pricing | paths like pricing templates, promotion services; Stripe live-mode calls |
+| published promises | marketing pages, public docs, emails to users |
+| destructive production | `Destructive:` migration marker, `kubectl delete` against prod, `data:reset` |
+| merge sign-off | always; agents never approve, 👍, or resolve AI-review threads |
+| product choice / no-default design | declared by the agent (the only class a model triggers) |
+
+Detection is code (paths, markers, commands). A model may **add** a reason to stop; it
+can never remove one. The held decision goes to the human thread with its options and a
+recommendation; the answer is recorded and released back to the agent.
+
+### 3.8 Playbooks: "missed once already" becomes "cannot be missed"
+
+A playbook is an event plus a condition that produces work orders, like a CI rule:
+
+- A project tags a release **and** has a page on its docs site → work order: update the
+  docs; if notable, a second one: the announcement post.
+- A change under `.github/workflows/` → check the GitHub mirror synced; work order if it
+  failed.
+- A Vault secret written for an app → reminder that its web tier needs a rollout restart.
+- New uBixCore tag → work order in each host: `composer update ubixsys/ubixcore`, commit the lock.
+
+Each of these is a lesson today written in a `CLAUDE.md` or an agent's memory. As a playbook it
+runs every time, for every provider.
+
+### 3.9 Hand-offs and memory, provider-neutral
+
+When a session ends or runs out of context, its last report plus Shepherd's own record of
+the task (state, proofs, decisions, open claims) is the hand-off packet. The next agent, on
+any provider, starts from that, not from a provider-specific summary. Durable lessons go to
+the standards pack or a playbook, where every provider sees them, not to one user's
+`~/.claude` memory.
+
+### 3.10 The learning loop
+
+Shepherd records every correction and every review finding by class (the
+`Fixed:` / `Dismissed:` / `Deferred:` convention already makes findings machine-readable).
+When a class repeats, Shepherd proposes promoting it: a gate check, a Fold rule, a playbook,
+or a line in the pack. Promotion is a normal MR the human approves. That is uBixCore's
+"push clean" principle, applied to agent behaviour.
+
+### 3.11 Routing: the right agent for the work
+
+A work order says what kind of work it is, not who does it. Shepherd picks the provider and
+model from a **rules table**, so the same order routes the same way every time and the
+choice can be read and argued with:
+
+```yaml
+rules:
+  - match: { kind: code-change, size: large }
+    route: claude:strongest
+    escalate: []                       # already at the top
+  - match: { kind: code-change }
+    route: claude:standard
+    escalate: [claude:strongest]       # after the gate fails twice
+  - match: { kind: docs }
+    route: gemini:fast
+    escalate: [claude:standard]
+  - match: { kind: review }
+    route: { not_provider_of: author, min_tier: author } # another provider, at least as strong
+```
+
+- **Kind, not model, is the input.** The front desk may draft the `kind` from your prompt;
+  like any model output it is advisory, schema-checked and shown back.
+- **Review needs another provider, at least as strong.** Models catch more of each other's
+  bugs than their own, but a weaker reviewer can make a stronger author's code worse
+  ([roadmap.md §2](roadmap.md#2-the-kinds-of-work-and-what-proves-each-one-done)).
+- **Escalation is a fixed ladder.** A task that fails the gate a set number of times moves
+  up the list, never down, and never down on reserved work.
+- **Names are aliases.** `claude:strongest` maps to a concrete model in config, because
+  models and prices change every few months and the tool has to stay useful verbatim to an
+  unrelated company.
+- **Evidence changes the table.** Every task records provider, model, kind, first-try gate
+  result, rework, time and cost ([v1.md](v1.md#dispatch-in-v1)). When a cheaper route does
+  a kind of work as well, Shepherd proposes the change as an MR the human approves. Nothing
+  re-routes itself.
+
+**Turning a prompt into a work order** is itself routed. Plain patterns (`review !205`, an
+MR link, `release <repo> minor`) become orders by rule, with no model. Otherwise the front
+desk drafts the order; where there is no front desk (the CLI, later the web page, Discord or
+a labelled issue), a `triage` task goes to the cheapest service the person has that their
+repo's data policy allows, with schema-constrained output, temperature 0 and a cache by
+prompt hash. Below a confidence threshold it asks rather than guesses. A small local
+classifier, trained on outcome records, is an option for offline or air-gapped installs.
+
+```yaml
+  - match: { kind: triage }
+    route: claude:fast                 # whichever cheap model this person has
+    escalate: [claude:standard]
+```
+
+A model choosing the model would be more flexible on day one and impossible to predict or
+audit. The table starts dumber and gets better from measured outcomes, which is the same
+trade uBixCore makes everywhere else.
+
+### 3.12 Packs: useful to anyone, best with uBixCore
+
+Shepherd is aimed at uBixCore and built for everyone. The core knows no product, framework
+or stack. What it knows about a kind of repo comes from a **pack**: repo profile defaults
+(branch model, shared paths, autonomy), gate commands, playbooks and a standards pack.
+
+- **The uBixCore pack** is the flagship and the deepest: `code:review` as the gate,
+  `ci:requireApproval` sign-off, uBixOps webhooks, uBixVault leasing, rules from uBixCore's
+  own standards, and the framework → tag → host pin-bump chain as a built-in work order
+  chain.
+- **Generic packs** (Go, Node/TypeScript, Python, plain PHP) give anyone value on day one.
+- **No pack at all** still gets lanes, worktrees and leases on the usual shared files
+  (lockfiles, CI config, root README).
+- `shepherd init` detects the stack and offers the right pack: a `composer.json` requiring
+  `ubixsys/ubixcore` gets the uBixCore pack.
+
+A CI check in this repo fails if core code names a product, the same framework boundary
+check uBixCore runs on itself.
+
+### 3.13 Forges: primary and mirror
+
+A repo has one **primary** forge, where MRs, CI and sign-off happen, and any number of
+**mirrors**. Both GitLab and GitHub implement one forge interface; which role each plays is
+per repo. A common setup is GitLab-primary with a GitHub mirror, where the GitHub side
+is not passive: a tag that reaches the mirror triggers the workflow that publishes the
+image to `ghcr.io`. In the uBix repos each step there has broken once already (a tag arriving with its
+workflow file and triggering nothing; a mirror token without `workflow` scope; a package
+left private; a history purge that had to reach the mirror's tags too). So the mirror is
+part of the proof chain:
+
+```
+merged → tagged → mirrored (GitHub has the merge and the tag)
+       → published (workflow run succeeded, artefact pullable) → deployed
+```
+
+A GitHub-primary repo uses the same interface with pull requests, reviews and branch
+protection in place of MRs and `require-approval`.
+
+### 3.14 Workspaces: one Shepherd over many repos
+
+Shepherd does not live in a repo. It runs **one daemon per machine** and works over a
+**workspace**: a directory of repos, such as `~/git`. Repos are members of a workspace.
+
+- **`shepherd init ~/git`** finds the git repos below it and detects a pack for each. Repos
+  are **opt-in**: Shepherd suggests, the human ticks. A directory of projects usually holds
+  scratch repos and deliberate duplicate working copies that should not be managed.
+- **The CLI knows where it was run from**, the way git finds `.git`: from the workspace
+  root it covers every repo and lane; from inside a repo it defaults to that repo; from a
+  lane's worktree, to that lane. Nothing has to run from a particular path.
+- **The front desk sits at the workspace root.** Every work order names its repo, so chains
+  across repos (a framework change, its tag, the host's pin bump; a release and the docs site
+  that describes it) are the normal case.
+- **Workspace-level leases and reservations** for what repos share: CI runner capacity, a
+  deployment repo several projects release through, a docs site every release updates.
+- **Workspace rules.** Rules that span projects (check the coordination state before
+  branching; a release updates its docs page) form a workspace-level pack, rendered into
+  the workspace root's `CLAUDE.md` / `AGENTS.md` like any other standards pack.
+- **Worktrees** default to `<workspace>/<repo>-worktrees/<lane>`, configurable per repo.
+- **Clone on demand**: a work order for a member repo that is not cloned yet clones it into
+  the workspace first.
+- **State lives in Shepherd's store**, not in the workspace directory, which need not be a
+  git repo. Per-repo views (the generated `AGENTS-COORD.md`) are still written into each
+  repo during the cutover.
+
+A machine can hold several workspaces. When Shepherd is hosted, a workspace becomes a team's
+or an organisation's: the same concept, with members and logins.
+
+## 4. Where the efficiency comes from
+
+| Today | With Shepherd |
+|---|---|
+| Human relays merges, pipelines and logs between sessions | Webhooks move tasks and wake agents |
+| Each session rediscovers the rules, repo by repo, provider by provider | One pack, rendered and drift-checked |
+| Collisions found at rebase or after a bad merge | Leases and reservations stop them at dispatch |
+| "Done" claims checked by the human | Proof-carrying state transitions |
+| Lessons re-learned after each new session | Playbooks and gate rules run every time |
+| Each agent asks, or fails to ask, in its own way | One decision queue, one format, one place |
+| Context loss means re-explaining | Hand-off packets from Shepherd's own record |
+| A second provider starts from zero | Same work order, same pack, same gates |
+
+The measure of success is simple: **messages from the human per merged MR** goes down,
+and **rework per merged MR** (re-opened tasks, reverted merges, review findings of a
+promoted class) goes toward zero.
+
+## 5. What Shepherd is not
+
+- **Not an agent.** It does not write product code. In-house agents are uBixFlock, later.
+- **Not a reviewer of last resort.** Human sign-off stays a human click.
+- **Not a replacement for CI.** It consumes gate results; the gates stay in each repo.
+- **Not uBix-only.** The uBix rules are one pack. Another company brings its own.
+
+## 6. A phased path (proposal)
+
+> **Superseded for v1 (2026-10-01):** the maintainer chose to build the Fold and dispatch
+> together first (phases 2 and 4 below, without Vault leasing), around ubixcore. See
+> [v1.md](v1.md). The standards pack (phase 1) comes next after v1. The list below is kept
+> as the original reasoning.
+
+Each phase is useful alone, and the first two need no LLM inside Shepherd at all.
+
+1. **Standards pack + renderer + drift check.** Pure files and a CLI. Immediately gives
+   every provider the same rules, and retires the hand-copied `CLAUDE.md` sections.
+2. **The Fold as a service + MCP tools**: lanes, leases, reservations, typed reports,
+   the state machine; git hook and CI check for leases. Existing Claude sessions use it
+   right away; the human view replaces `AGENTS-COORD.md`.
+3. **Events and the one thread**: GitLab webhooks via uBixOps, proof checks, the human
+   thread, the decision queue.
+4. **Dispatch**: Shepherd starts agents (Claude Code headless, Gemini CLI, others) from
+   work orders, in worktrees it creates, with credentials leased from uBixVault.
+5. **Playbooks and the learning loop.**
+
+## 7. Questions this design raises
+
+These feed [open-questions.md](open-questions.md):
+
+- **Stack.** *Decided 2026-10-01:* a **Go** core (one binary per OS: daemon, CLI, MCP
+  server, HTTP API; schemas in JSON Schema so any language can speak the contracts) and a
+  **TypeScript/React** web UI later, which the Go binary serves locally and which can be
+  wrapped as a desktop app or hosted. Chosen for Windows, macOS and Linux support from one
+  build and a path to a GUI. Webhook intake stays in uBixOps. See [v1.md](v1.md).
+- **Agent adapters.** Driving each provider's CLI headless is the uniform path; provider
+  SDKs give richer control but differ per provider. v1 proposes the CLIs (Claude Code and
+  Gemini CLI).
+- **Pack format.** Markdown with structured front matter, or a schema-first format that
+  renders to Markdown.
+- **Where the human thread lives first.** *Decided 2026-10-01:* the terminal, then a web
+  page; a hosted `shepherd.ubixsys.com` with logins is a future enterprise feature.
+  Discord stays a candidate for later.
