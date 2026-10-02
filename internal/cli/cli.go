@@ -67,6 +67,8 @@ func commands() []command {
 			"shepherd fold import [--repo R] [--file F] [--apply] | view [--repo R] [--write] | gc [--json]", runFold},
 		{"decision", "The questions agents hold for you: list and answer them",
 			"shepherd decision list [--all] | answer <id> \"answer\"", runDecision},
+		{"session", "Conversations had outside Shepherd: adopt, list, reopen and ask them",
+			"shepherd session import [--repo R] | list [--repo R] | attach <id> | ask <id> \"question\"", runSession},
 		{"tag", "Reserve release versions, so no two lanes take the same one",
 			"shepherd tag reserve major|minor|patch [--lane L | --no-lane] [--repo R] | list | release <tag>", runTag},
 		{"request", "Requests between lanes: list them, and route the ones Shepherd cannot",

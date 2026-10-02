@@ -184,6 +184,23 @@ unpushed commits.
 
 GitHub as a lane's forge comes later; GitHub's role in v1 is the release mirror.
 
+### Conversations you had outside Shepherd
+
+Claude Code sessions you ran by hand in a managed repo (or its worktrees) can be adopted:
+
+```sh
+shepherd session import            # every managed repo; --repo R for one
+shepherd session list              # id, repo, title, dates, branches
+shepherd session attach 71ffa009   # reopen it in Claude Code, in the directory it started in
+shepherd session ask 71ffa009 "Is the webhook secret in Vault yet?"
+```
+
+Shepherd reads only each session's metadata and a short title; it never changes the
+files. `session ask` continues the conversation headless with your question, able to
+read but not to edit or run anything, and prints its answer; the desk can do the same
+(`session_list`, `session_ask`) from `shepherd chat`. A session whose file changed in
+the last five minutes may be open in a terminal, and is not asked.
+
 ### Agent runs
 
 Shepherd can start an agent headless in a lane's worktree:

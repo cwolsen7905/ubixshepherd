@@ -183,6 +183,19 @@ var migrations = []string{
 	);
 	CREATE UNIQUE INDEX reservations_live ON reservations (repo_id, tag) WHERE state != 'released';
 	ALTER TABLE lane_forge ADD COLUMN merge_sha TEXT NOT NULL DEFAULT '';`,
+	// Conversations adopted from outside Shepherd: an agent's session, where it resumes.
+	`CREATE TABLE conversations (
+		id       TEXT PRIMARY KEY,
+		agent    TEXT NOT NULL,
+		repo_id  INTEGER NOT NULL DEFAULT 0,
+		dir      TEXT NOT NULL,
+		title    TEXT NOT NULL DEFAULT '',
+		branches TEXT NOT NULL DEFAULT '[]',
+		file     TEXT NOT NULL DEFAULT '',
+		started  TEXT NOT NULL DEFAULT '',
+		last     TEXT NOT NULL DEFAULT '',
+		imported TEXT NOT NULL
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -837,6 +850,41 @@ func (s *DB) Reservations(ctx context.Context, repoID int64) ([]store.Reservatio
 func (s *DB) SetReservation(ctx context.Context, id int64, state, sha string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE reservations SET state = ?, sha = CASE WHEN ? = '' THEN sha ELSE ? END WHERE id = ?`, state, sha, sha, id)
 	return err
+}
+
+// PutConversation adds an adopted conversation, or refreshes what is known about it.
+func (s *DB) PutConversation(ctx context.Context, c store.Conversation) error {
+	b, _ := json.Marshal(nonNil(c.Branches))
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO conversations (id, agent, repo_id, dir, title, branches, file, started, last, imported)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO UPDATE SET repo_id = excluded.repo_id, dir = excluded.dir, title = excluded.title,
+			branches = excluded.branches, file = excluded.file, started = excluded.started, last = excluded.last`,
+		c.ID, c.Agent, c.RepoID, c.Dir, c.Title, string(b), c.File,
+		c.Started.UTC().Format(time.RFC3339Nano), c.Last.UTC().Format(time.RFC3339Nano), now())
+	return err
+}
+
+// Conversations returns adopted conversations, most recent first; repoID 0 for all.
+func (s *DB) Conversations(ctx context.Context, repoID int64) ([]store.Conversation, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, agent, repo_id, dir, title, branches, file, started, last
+		FROM conversations WHERE (? = 0 OR repo_id = ?) ORDER BY last DESC`, repoID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Conversation
+	for rows.Next() {
+		var c store.Conversation
+		var branches, started, last string
+		if err := rows.Scan(&c.ID, &c.Agent, &c.RepoID, &c.Dir, &c.Title, &branches, &c.File, &started, &last); err != nil {
+			return nil, err
+		}
+		json.Unmarshal([]byte(branches), &c.Branches)
+		c.Started, c.Last = parseTime(started), parseTime(last)
+		out = append(out, c)
+	}
+	return out, rows.Err()
 }
 
 func nonNil(s []string) []string {

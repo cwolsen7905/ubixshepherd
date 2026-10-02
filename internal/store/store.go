@@ -198,6 +198,7 @@ const (
 	FeedMR             = "mr"
 	FeedBudget         = "budget"
 	FeedTag            = "tag"
+	FeedSession        = "session"
 	FeedPipeline       = "pipeline"
 )
 
@@ -246,6 +247,20 @@ type Reservation struct {
 	State   string    `json:"state"`
 	SHA     string    `json:"sha,omitempty"`
 	Created time.Time `json:"created"`
+}
+
+// Conversation is an agent session a person had outside Shepherd, adopted so it can be
+// listed, reopened and asked questions. Dir is where it was started and resumes.
+type Conversation struct {
+	ID       string    `json:"id"`
+	Agent    string    `json:"agent"`
+	RepoID   int64     `json:"repo_id,omitempty"`
+	Dir      string    `json:"dir"`
+	Title    string    `json:"title"`
+	Branches []string  `json:"branches,omitempty"`
+	File     string    `json:"file,omitempty"`
+	Started  time.Time `json:"started"`
+	Last     time.Time `json:"last"`
 }
 
 // Store is Shepherd's state.
@@ -302,6 +317,10 @@ type Store interface {
 	Reservations(ctx context.Context, repoID int64) ([]Reservation, error)
 	// SetReservation changes a reservation's state, and its commit when sha is not "".
 	SetReservation(ctx context.Context, id int64, state, sha string) error
+
+	PutConversation(ctx context.Context, c Conversation) error
+	// Conversations returns adopted conversations, most recent first; repoID 0 for all.
+	Conversations(ctx context.Context, repoID int64) ([]Conversation, error)
 
 	AddSpend(ctx context.Context, sp Spend) error
 	// SpendOn totals a day's spend by source.

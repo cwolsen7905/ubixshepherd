@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
@@ -200,6 +201,21 @@ func (c *Client) FoldImport(ctx context.Context, req api.FoldImport) (fold.Impor
 func (c *Client) FoldView(ctx context.Context, req api.FoldView) (api.FoldView, error) {
 	var out api.FoldView
 	return out, c.do(ctx, http.MethodPost, api.PathFoldView, req, &out)
+}
+
+func (c *Client) ImportSessions(ctx context.Context, repoID int64) ([]api.SessionView, error) {
+	var out []api.SessionView
+	return out, c.do(ctx, http.MethodPost, api.PathSessionsImport, api.SessionImport{RepoID: repoID}, &out)
+}
+
+func (c *Client) Sessions(ctx context.Context, repoID int64) ([]api.SessionView, error) {
+	var out []api.SessionView
+	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?repo_id=%d", api.PathSessions, repoID), nil, &out)
+}
+
+func (c *Client) AskSession(ctx context.Context, id, question string) (convo.Answer, error) {
+	var out convo.Answer
+	return out, c.do(ctx, http.MethodPost, api.PathSessionAsk(id), api.Ask{Question: question}, &out)
 }
 
 func (c *Client) ReserveTag(ctx context.Context, req api.Reserve) (store.Reservation, error) {
