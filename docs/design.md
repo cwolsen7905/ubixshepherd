@@ -327,6 +327,98 @@ Shepherd does not live in a repo. It runs **one daemon per machine** and works o
 A machine can hold several workspaces. When Shepherd is hosted, a workspace becomes a team's
 or an organisation's: the same concept, with members and logins.
 
+### 3.15 Shepherd's conversation: orchestrating agent systems
+
+**Status: proposal (2026-10-02), the maintainer's direction, to plan and evolve.**
+
+An agent CLI like Claude Code already orchestrates its own subagents: the human holds one
+conversation, the CLI spawns helpers the human never sees, and only their results come
+back. Shepherd is that, **one level up**: the one conversation sits above whole agent
+systems (Claude Code, Cursor, Copilot, Gemini), each working in its own lane, and they
+talk to each other **through Shepherd**. Only what needs the human reaches the human.
+
+- **The voice is an agent; the control plane is not.** The conversation the human holds is
+  a front-desk session that Shepherd briefs and runs, on a model the human chooses. Under
+  it, Shepherd's deterministic core decides and verifies: lanes, leases, rules, proofs,
+  routing ("the shepherd is not a sheep"). To the human it is one conversation, called
+  Shepherd.
+- **Every lane keeps its agent's conversation.** Agent CLIs can resume a session by id, so
+  a lane's agent can be continued (with a follow-up, an event, another agent's question)
+  and attached to, rather than started once and forgotten.
+- **Three ways out for every agent Shepherd starts**, and the brief says when to use each:
+
+| When | The agent calls | What happens |
+|---|---|---|
+| It needs another lane: an answer, a change outside its scope, a review | `ask_shepherd` | Shepherd continues the right lane's session with it and returns the answer to the asker's session. The human sees one line. |
+| It reaches something reserved for the human (§3.7): money, published copy, destructive actions, a scope or design call | `ask_human` | The question reaches the human's conversation with options and a recommendation; the agent waits. |
+| Progress, done, blocked | `report` | Shepherd records it and checks the claim (gate, commits) before believing it. |
+
+  Everything else, it keeps working without asking.
+- **Cross-talk is typed, recorded and capped.** A hand-off, a question, a review or a
+  notice, never free text into the void. Policy still applies (a hand-off cannot grant a
+  scope another lane holds; reserved decisions only escalate up, to the human). Rounds
+  per exchange, depth of a chain and budget per work order are limited, so agents cannot
+  ping-pong.
+- **Events continue sessions instead of the human.** "The MR merged", "the pipeline failed
+  on lint", "the framework tagged v0.45, bump the pin": today the human types these into
+  the right window. Shepherd sees them (§3.6, §3.13) and continues the right session.
+
+Build order: session continuation for lanes (continue, attach); the three tools for
+launched agents with the brief; routing between sessions; then the one conversation
+itself, a front-desk session that both the human's messages and the swarm's events
+continue (§3.16).
+
+### 3.16 The terminal: one thread, many feeds
+
+**Status: proposal (2026-10-02), to plan and evolve.** The human wants one terminal to work
+from, like an agent CLI, that also carries what every other agent is doing. Two easy shapes
+both fail the brief: piping every agent's raw output into one conversation turns the human
+back into the person watching five sessions, and tabs to switch between are a terminal
+multiplexer with the human still the coordinator.
+
+It builds on §3.1 (one thread for the human), §3.6 (events, not relaying) and §3.15. The
+proposal: **one thread by default, a way into any agent.**
+
+```
+┌ shepherd ─────────────────────────────────────────────────────────┐
+│ lanes & runs        │ the thread                                  │
+│ ● feat/login claude │ you: have copilot add tests for the parser  │
+│ ● fix/crash copilot │ shepherd: opened lane test/parser, started  │
+│ ○ docs/install      │   copilot (run 12)                          │
+│                     │ ▸ run 11 claude: committed 2, gate green    │
+│ ? 1 decision        │ ▸ run 12 copilot: asks "OK to change the    │
+│                     │   public API?" [y / n / open]               │
+│                     │ ▸ !214 merged, lane feat/login closed       │
+└─────────────────────┴─────────────────────────────────────────────┘
+   Enter on a run: its live output full screen; Esc back to the thread
+```
+
+- **Who the human talks to.** The human is the master coordinator; the **front desk** is
+  their voice: an ordinary agent session (Claude Code, Copilot, Cursor, any MCP client)
+  hosted in the terminal and wired to Shepherd's operator tools. It drafts work orders
+  and summarises. Shepherd does not run its own model for the conversation: the control
+  plane stays deterministic code ("the shepherd is not a sheep"), and the front desk can
+  be swapped without changing anything else.
+- **The thread carries events, not raw output.** A run started, committed, passed or
+  failed the gate, asked a question; an MR merged; a lane closed. Typed, one line each, so
+  the thread stays readable with ten agents going.
+- **Drill in, then attach.** Any run's live output opens full screen and closes back to
+  the thread. Attaching means talking to that agent directly (agent CLIs can resume a
+  headless session interactively); Shepherd keeps the record either way.
+- **Decisions come to the human.** A reserved decision (§3.7) appears in the thread with
+  options and a recommendation, and is answered in place.
+- **Another client of the HTTP API**, like the CLI and the web UI to come, so the same
+  thread can later live in a browser or the VS Code extension.
+
+How it could grow, each step useful alone:
+
+1. **`shepherd watch`**: the lanes-and-runs panel, the event feed and drill-down,
+   read-only, in a split beside the front desk.
+2. **Decisions** answered from the feed.
+3. **One window**: the front desk embedded as the main pane, with the swarm's events
+   available to it as well as to the human.
+4. **Attach** to a running or finished agent's session.
+
 ## 4. Where the efficiency comes from
 
 | Today | With Shepherd |

@@ -120,6 +120,14 @@ Across M3 to M5:
   artefact check). uBix releases already run through the GitHub mirror.
 - ★ **Triage** for prompts with no front desk in front of them, routed to the person's
   cheapest allowed service.
+- ★ **Shepherd's conversation** ([design.md §3.15](design.md#315-shepherds-conversation-orchestrating-agent-systems),
+  the maintainer's direction): lanes keep their agent's session (continue, attach);
+  launched agents get `ask_shepherd`, `ask_human` and `report`; Shepherd routes between
+  sessions; events continue sessions instead of the human.
+- ★ **The terminal** ([design.md §3.16](design.md#316-the-terminal-one-thread-many-feeds), a
+  proposal): `shepherd watch` (lanes, runs, event feed, drill into a run's output) as soon
+  as runs exist; decisions answered from the feed with M5's held decisions; then the front
+  desk embedded in the same window, and attach to an agent.
 - ★ **VS Code works as the front desk** from M4 through MCP (VS Code agent mode, Claude
   Code extension); nothing extra to build.
 
