@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -28,9 +29,13 @@ var ErrNoDaemon = errors.New("the shepherd daemon is not running (start it with:
 type Client struct {
 	// Name says who is calling (cli, mcp, hook), for the daemon's log.
 	Name  string
+	mu    sync.RWMutex
 	base  string
 	token string
 	http  *http.Client
+	// runtime is the daemon.json path FromRuntime remembered, so Redial can pick up a
+	// new address after the daemon restarts.
+	runtime string
 }
 
 // New returns a client for the daemon at base (for example http://127.0.0.1:7400).
@@ -49,7 +54,39 @@ func FromRuntime(path string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
-	return New("http://"+rt.Addr, rt.Token), nil
+	c := New("http://"+rt.Addr, rt.Token)
+	c.runtime = path
+	return c, nil
+}
+
+// Redial re-reads the runtime file and points the client at the address there. The
+// daemon picks a new port on each start; chat uses this after a connection failure.
+func (c *Client) Redial() error {
+	if c == nil || c.runtime == "" {
+		return ErrNoDaemon
+	}
+	rt, err := daemon.ReadRuntime(c.runtime)
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrNoDaemon
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", c.runtime, err)
+	}
+	c.mu.Lock()
+	c.base = "http://" + rt.Addr
+	c.token = rt.Token
+	c.mu.Unlock()
+	return nil
+}
+
+// Addr is the daemon base URL the client is currently using (for tests and status).
+func (c *Client) Addr() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.base
 }
 
 func (c *Client) Status(ctx context.Context) (api.Status, error) {
@@ -91,8 +128,12 @@ func (c *Client) CloseLane(ctx context.Context, id int64, force bool) (fold.Clos
 // waits as long as a gate may take.
 func (c *Client) ShipLane(ctx context.Context, id int64) (dispatch.Shipped, error) {
 	var out dispatch.Shipped
-	long := *c
-	long.http = &http.Client{Timeout: dispatch.GateTimeout + 5*time.Minute}
+	c.mu.RLock()
+	long := &Client{
+		Name: c.Name, base: c.base, token: c.token, runtime: c.runtime,
+		http: &http.Client{Timeout: dispatch.GateTimeout + 5*time.Minute},
+	}
+	c.mu.RUnlock()
 	return out, long.do(ctx, http.MethodPost, api.PathLaneShip(id), struct{}{}, &out)
 }
 
@@ -273,6 +314,9 @@ func (c *Client) Resolve(ctx context.Context, path string) (api.Resolution, erro
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	c.mu.RLock()
+	base, token := c.base, c.token
+	c.mu.RUnlock()
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -281,11 +325,11 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		}
 		rd = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, rd)
+	req, err := http.NewRequestWithContext(ctx, method, base+path, rd)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Authorization", "Bearer "+token)
 	if c.Name != "" {
 		req.Header.Set(api.ClientHeader, c.Name)
 	}

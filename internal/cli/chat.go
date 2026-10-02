@@ -40,7 +40,7 @@ func runChat(ctx context.Context, env Env, args []string) error {
 	}
 	desk := chat.ClaudeDesk{Bin: bin, Shepherd: env.Exe, Dir: h.Workspace.Path, Model: *model}
 	m := chat.New(ctx, c, desk, h.Workspace)
-	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx)).Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
+	if _, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithContext(ctx)).Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		return fmt.Errorf("chat: %w", err)
 	}
 	return nil
