@@ -281,6 +281,18 @@ func runRun(ctx context.Context, env Env, args []string) error {
 			return err
 		}
 		printRun(env, r)
+		if ev, err := c.RunEvents(ctx, id); err == nil {
+			for _, e := range ev.Events {
+				label := e.Kind
+				if e.Status != "" {
+					label += " " + e.Status
+				}
+				fmt.Fprintf(env.Stdout, "  %-16s %s  %s\n", label, e.Created.Local().Format("15:04"), oneLine(e.Text, 90))
+			}
+			for _, d := range ev.Decisions {
+				fmt.Fprintf(env.Stdout, "  decision %-7d %s  %s\n", d.ID, d.State, oneLine(d.Question, 90))
+			}
+		}
 		if *withLog {
 			fmt.Fprintln(env.Stdout, "\n--- log ---")
 			return printLog(ctx, env, c, id)

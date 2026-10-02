@@ -12,7 +12,7 @@ import (
 func mcpExchange(t *testing.T, env Env, lines ...string) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := serveMCP(context.Background(), env, strings.NewReader(strings.Join(lines, "\n")+"\n"), &out); err != nil {
+	if err := serveMCP(context.Background(), env, strings.NewReader(strings.Join(lines, "\n")+"\n"), &out, mcpTools(), mcpInstructions); err != nil {
 		t.Fatal(err)
 	}
 	var resps []map[string]any

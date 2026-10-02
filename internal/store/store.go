@@ -96,6 +96,40 @@ type Run struct {
 	Parent  int64  `json:"parent,omitempty"`
 }
 
+// Event is something an agent told Shepherd during a run.
+type Event struct {
+	ID    int64  `json:"id"`
+	RunID int64  `json:"run_id"`
+	Kind  string `json:"kind"` // report, ask_shepherd
+	// Status is a report's: progress, done or blocked.
+	Status  string    `json:"status,omitempty"`
+	Text    string    `json:"text"`
+	Created time.Time `json:"created"`
+}
+
+// Decision states.
+const (
+	DecisionOpen     = "open"
+	DecisionAnswered = "answered"
+)
+
+// Decision is a question an agent holds for a person.
+type Decision struct {
+	ID             int64    `json:"id"`
+	RunID          int64    `json:"run_id"`
+	Question       string   `json:"question"`
+	Options        []string `json:"options,omitempty"`
+	Recommendation string   `json:"recommendation,omitempty"`
+	// Why says why the agent judged it the person's call.
+	Why    string `json:"why,omitempty"`
+	State  string `json:"state"`
+	Answer string `json:"answer,omitempty"`
+	// AnswerRun is the run that carried the answer back into the agent's session.
+	AnswerRun int64      `json:"answer_run,omitempty"`
+	Created   time.Time  `json:"created"`
+	Answered  *time.Time `json:"answered,omitempty"`
+}
+
 // Store is Shepherd's state.
 type Store interface {
 	// SaveWorkspace creates the workspace at ws.Path, or renames the one already there,
@@ -119,6 +153,16 @@ type Store interface {
 	Run(ctx context.Context, id int64) (Run, error)
 	// Runs returns the newest first; laneID 0 means every lane, state "" every state.
 	Runs(ctx context.Context, laneID int64, state string, limit int) ([]Run, error)
+
+	AddEvent(ctx context.Context, e Event) (Event, error)
+	Events(ctx context.Context, runID int64) ([]Event, error)
+	CreateDecision(ctx context.Context, d Decision) (Decision, error)
+	Decision(ctx context.Context, id int64) (Decision, error)
+	// Decisions returns decisions in a state ("" for all), oldest first.
+	Decisions(ctx context.Context, state string) ([]Decision, error)
+	// AnswerDecision records the answer; ErrConflict if the decision is not open.
+	AnswerDecision(ctx context.Context, id int64, answer string) (Decision, error)
+	SetDecisionRun(ctx context.Context, id, runID int64) error
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

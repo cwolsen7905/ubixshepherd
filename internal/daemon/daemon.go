@@ -89,6 +89,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}", s.getRun)
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}/log", s.runLog)
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/stop", s.stopRun)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/events", s.addEvent)
+	mux.HandleFunc("GET "+api.PathRuns+"/{id}/events", s.runEvents)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
+	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
+	mux.HandleFunc("POST "+api.PathDecisions+"/{id}/answer", s.answerDecision)
 	return s.logRequests(s.auth(mux))
 }
 
@@ -532,6 +537,114 @@ func (s *Server) stopRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, struct{}{})
+}
+
+func (s *Server) addEvent(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	var e store.Event
+	if !decode(w, r, &e) {
+		return
+	}
+	e.RunID = run.ID
+	e, err := s.Runner.Record(r.Context(), e)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, e)
+}
+
+func (s *Server) runEvents(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	events, err := s.Store.Events(r.Context(), run.ID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	all, err := s.Store.Decisions(r.Context(), "")
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := api.RunEvents{Events: nonNilEvents(events), Decisions: []store.Decision{}}
+	for _, d := range all {
+		if d.RunID == run.ID {
+			out.Decisions = append(out.Decisions, d)
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func nonNilEvents(e []store.Event) []store.Event {
+	if e == nil {
+		return []store.Event{}
+	}
+	return e
+}
+
+func (s *Server) addDecision(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	var d store.Decision
+	if !decode(w, r, &d) {
+		return
+	}
+	d.RunID = run.ID
+	d, err := s.Runner.Ask(r.Context(), d)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
+func (s *Server) listDecisions(w http.ResponseWriter, r *http.Request) {
+	ds, err := s.Store.Decisions(r.Context(), r.URL.Query().Get("state"))
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.DecisionView{}
+	for _, d := range ds {
+		run, err := s.Store.Run(r.Context(), d.RunID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		v, err := s.runView(r.Context(), run)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out = append(out, api.DecisionView{Decision: d, Agent: run.Agent, Lane: v.Lane, Repo: v.Repo})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) answerDecision(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req api.Answer
+	if !decode(w, r, &req) {
+		return
+	}
+	d, err := s.Runner.Answer(r.Context(), id, req.Answer)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
 }
 
 func (s *Server) pathRun(w http.ResponseWriter, r *http.Request) (store.Run, bool) {

@@ -55,6 +55,9 @@ type Runner struct {
 	Config config.Config
 	// Dir holds the run logs.
 	Dir string
+	// Exe is the shepherd binary that serves agents their worker tools; "" gives
+	// agents none.
+	Exe string
 	Log *slog.Logger
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
@@ -201,10 +204,15 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	gate := r.Config.Profile(repo.Name).Gate
 	// A new session gets the full brief; a continuing one already has it.
 	prompt := req.Prompt
-	if !resume {
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate)
+	worker := ""
+	if r.Exe != "" && ad.WorkerReady() {
+		worker = r.Exe
 	}
-	cmd := exec.Command(bin, ad.Args(prompt, req.Model, gate, lane.Worktree, session, resume)...)
+	if !resume {
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "")
+	}
+	cmd := exec.Command(bin, ad.Args(Opts{Prompt: prompt, Model: req.Model, Gate: gate, Worktree: lane.Worktree,
+		Session: session, Resume: resume, Worker: worker})...)
 	cmd.Dir = lane.Worktree
 	cmd.Stdin = nil // reads from the null device: headless
 	cmd.Env = append(os.Environ(),
@@ -301,6 +309,105 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		r.Log.Error("record run outcome", "run", run.ID, "err", err)
 	}
 	r.Log.Info("run ended", "run", run.ID, "state", run.State, "exit", code, "commits", run.Commits, "outside", len(run.Outside))
+	r.deliverAnswers(ctx, run.ID)
+}
+
+// Answer records a person's answer to a decision and carries it back into the asking
+// agent's session: at once if the agent has ended its turn, or when its run ends.
+func (r *Runner) Answer(ctx context.Context, id int64, answer string) (store.Decision, error) {
+	if strings.TrimSpace(answer) == "" {
+		return store.Decision{}, refuse("an answer cannot be empty")
+	}
+	d, err := r.Store.AnswerDecision(ctx, id, answer)
+	if errors.Is(err, store.ErrConflict) {
+		return d, refuse("%v", err)
+	}
+	if err != nil {
+		return d, err
+	}
+	run, err := r.Store.Run(ctx, d.RunID)
+	if err != nil {
+		return d, err
+	}
+	if run.State == store.RunRunning {
+		r.Log.Info("answer held until the run ends", "decision", d.ID, "run", run.ID)
+		return d, nil
+	}
+	return r.deliver(ctx, d)
+}
+
+func (r *Runner) deliverAnswers(ctx context.Context, runID int64) {
+	answered, err := r.Store.Decisions(ctx, store.DecisionAnswered)
+	if err != nil {
+		r.Log.Error("load answered decisions", "err", err)
+		return
+	}
+	for _, d := range answered {
+		if d.RunID == runID && d.AnswerRun == 0 {
+			if _, err := r.deliver(ctx, d); err != nil {
+				r.Log.Error("deliver answer", "decision", d.ID, "err", err)
+			}
+		}
+	}
+}
+
+// deliver continues the asking run's session with the answer.
+func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision, error) {
+	prompt := fmt.Sprintf("The person answered your question (decision %d): %q\nAnswer: %s\nContinue the work with that.", d.ID, d.Question, d.Answer)
+	next, err := r.Start(ctx, StartRequest{Continue: d.RunID, Prompt: prompt})
+	if err != nil {
+		return d, fmt.Errorf("answer recorded, but continuing run %d failed: %w", d.RunID, err)
+	}
+	if err := r.Store.SetDecisionRun(ctx, d.ID, next.ID); err != nil {
+		return d, err
+	}
+	d.AnswerRun = next.ID
+	r.Log.Info("answer delivered", "decision", d.ID, "run", next.ID)
+	return d, nil
+}
+
+// Ask records a question an agent holds for a person.
+func (r *Runner) Ask(ctx context.Context, d store.Decision) (store.Decision, error) {
+	if strings.TrimSpace(d.Question) == "" {
+		return d, refuse("a question cannot be empty")
+	}
+	if _, err := r.Store.Run(ctx, d.RunID); err != nil {
+		return d, err
+	}
+	d, err := r.Store.CreateDecision(ctx, d)
+	if err == nil {
+		r.Log.Info("decision held for the person", "decision", d.ID, "run", d.RunID)
+	}
+	return d, err
+}
+
+// Event kinds and report statuses.
+const (
+	EventReport      = "report"
+	EventAskShepherd = "ask_shepherd"
+)
+
+var reportStatus = map[string]bool{"progress": true, "done": true, "blocked": true}
+
+// Record stores something an agent told Shepherd.
+func (r *Runner) Record(ctx context.Context, e store.Event) (store.Event, error) {
+	switch {
+	case e.Kind == EventReport && !reportStatus[e.Status]:
+		return e, refuse("report status %q: want progress, done or blocked", e.Status)
+	case e.Kind != EventReport && e.Kind != EventAskShepherd:
+		return e, refuse("event kind %q", e.Kind)
+	case strings.TrimSpace(e.Text) == "":
+		return e, refuse("say something")
+	}
+	if _, err := r.Store.Run(ctx, e.RunID); err != nil {
+		return e, err
+	}
+	e.Text = redact.String(e.Text)
+	e, err := r.Store.AddEvent(ctx, e)
+	if err == nil {
+		r.Log.Info("agent "+e.Kind, "run", e.RunID, "status", e.Status)
+	}
+	return e, err
 }
 
 // Stop asks a running agent to stop, and kills it if it has not after a grace period.

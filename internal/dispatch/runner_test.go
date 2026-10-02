@@ -220,7 +220,7 @@ func TestRecoverMarksInterrupted(t *testing.T) {
 
 func TestAdapterArgs(t *testing.T) {
 	a, _ := AdapterFor("claude")
-	args := a.Args("PROMPT", "opus", "make check", "/w", "S1", false)
+	args := a.Args(Opts{Prompt: "PROMPT", Model: "opus", Gate: "make check", Worktree: "/w", Session: "S1"})
 	if args[0] != "-p" || args[1] != "PROMPT" {
 		t.Errorf("claude: the prompt must follow -p before the tool lists: %v", args)
 	}
@@ -230,27 +230,27 @@ func TestAdapterArgs(t *testing.T) {
 			t.Errorf("claude args lack %q: %v", want, args)
 		}
 	}
-	if j := strings.Join(a.Args("P", "", "", "/w", "S1", true), " "); !strings.Contains(j, "--resume S1") || strings.Contains(j, "--session-id") {
+	if j := strings.Join(a.Args(Opts{Prompt: "P", Worktree: "/w", Session: "S1", Resume: true}), " "); !strings.Contains(j, "--resume S1") || strings.Contains(j, "--session-id") {
 		t.Errorf("claude resume args: %s", j)
 	}
 	c, _ := AdapterFor("copilot")
-	if j := strings.Join(c.Args("P", "", "make check", "/w", "", false), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--resume") {
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w"}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--resume") {
 		t.Errorf("copilot args: %s", j)
 	}
-	if j := strings.Join(c.Args("P", "", "", "/w", "S2", true), " "); !strings.Contains(j, "--resume=S2") {
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Worktree: "/w", Session: "S2", Resume: true}), " "); !strings.Contains(j, "--resume=S2") {
 		t.Errorf("copilot resume args: %s", j)
 	}
 	if got := c.SessionIn("Resume     copilot --resume=4dcd900f-729e-4b4f"); got != "4dcd900f-729e-4b4f" {
 		t.Errorf("copilot session from output = %q", got)
 	}
 	cu, _ := AdapterFor("cursor")
-	if j := strings.Join(cu.Args("P", "", "", "/w", "C1", false), " "); !strings.Contains(j, "--workspace /w") || !strings.Contains(j, "--resume C1") {
+	if j := strings.Join(cu.Args(Opts{Prompt: "P", Worktree: "/w", Session: "C1"}), " "); !strings.Contains(j, "--workspace /w") || !strings.Contains(j, "--resume C1") {
 		t.Errorf("cursor args: %s", j)
 	}
 	if id, _ := newUUID(); len(id) != 36 || id[14] != '4' {
 		t.Errorf("uuid = %q", id)
 	}
-	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check"); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
+	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", false); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
 		t.Errorf("brief:\n%s", b)
 	}
 }
@@ -343,5 +343,117 @@ func TestContinueRefusals(t *testing.T) {
 	old, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Log: "l"})
 	if _, err := f.runner.Start(ctx, StartRequest{Continue: old.ID, Prompt: "y"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "no session") {
 		t.Errorf("continue without a session: %v", err)
+	}
+}
+
+func TestWorkerToolsInjected(t *testing.T) {
+	a, _ := AdapterFor("claude")
+	j := strings.Join(a.Args(Opts{Prompt: "P", Worktree: "/w", Worker: "/bin/shepherd"}), " ")
+	for _, want := range []string{"--strict-mcp-config", `"command":"/bin/shepherd"`, `"args":["mcp","--worker"]`, "mcp__shepherd"} {
+		if !strings.Contains(j, want) {
+			t.Errorf("claude worker args lack %q: %s", want, j)
+		}
+	}
+	if j := strings.Join(a.Args(Opts{Prompt: "P"}), " "); strings.Contains(j, "mcp") {
+		t.Errorf("claude without worker mentions mcp: %s", j)
+	}
+	c, _ := AdapterFor("copilot")
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Worker: "/bin/shepherd"}), " "); !strings.Contains(j, "--additional-mcp-config") || !strings.Contains(j, `"tools":["*"]`) || !strings.Contains(j, "--allow-tool shepherd") {
+		t.Errorf("copilot worker args: %s", j)
+	}
+	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", true); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
+		t.Errorf("brief with tools:\n%s", b)
+	}
+}
+
+func TestAnswerContinuesTheAsker(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	run = f.wait(t, run.ID)
+
+	d, err := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Raise the price?", Options: []string{"yes", "no"}, Recommendation: "no"})
+	if err != nil || d.State != store.DecisionOpen {
+		t.Fatalf("ask: %+v %v", d, err)
+	}
+	d, err = f.runner.Answer(ctx, d.ID, "no, keep it")
+	if err != nil || d.AnswerRun == 0 {
+		t.Fatalf("answer: %+v %v", d, err)
+	}
+	next := f.wait(t, d.AnswerRun)
+	if next.Parent != run.ID || next.Session != run.Session {
+		t.Errorf("answer run = %+v", next)
+	}
+	if a := argsOf(t, next); !strings.Contains(a, "no, keep it") || !strings.Contains(a, "--resume "+run.Session) {
+		t.Errorf("answer prompt: %s", a)
+	}
+	if _, err := f.runner.Answer(ctx, d.ID, "again"); !errors.Is(err, ErrRefused) {
+		t.Errorf("answering twice: %v", err)
+	}
+}
+
+func TestAnswerWaitsForTheRunToEnd(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	d, _ := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Delete the table?", Recommendation: "no"})
+	d, err := f.runner.Answer(ctx, d.ID, "no")
+	if err != nil || d.AnswerRun != 0 {
+		t.Fatalf("answer during run: %+v %v", d, err)
+	}
+	os.Setenv("MODE", "quick") // the continuation should not sleep
+	f.runner.Stop(ctx, run.ID)
+	f.wait(t, run.ID)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, _ := f.st.Decision(ctx, d.ID); got.AnswerRun != 0 {
+			f.wait(t, got.AnswerRun)
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Error("the held answer was never delivered")
+}
+
+func TestRecordValidates(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "w"})
+	f.wait(t, run.ID)
+	if _, err := f.runner.Record(ctx, store.Event{RunID: run.ID, Kind: EventReport, Status: "finished", Text: "x"}); !errors.Is(err, ErrRefused) {
+		t.Errorf("bad status: %v", err)
+	}
+	e, err := f.runner.Record(ctx, store.Event{RunID: run.ID, Kind: EventReport, Status: "done", Text: "added tests, token glpat-AbCdEfGhIjKlMnOpQrStUv"})
+	if err != nil || strings.Contains(e.Text, "glpat-") {
+		t.Errorf("record: %+v %v", e, err)
+	}
+	events, _ := f.st.Events(ctx, run.ID)
+	if len(events) != 1 || events[0].Status != "done" {
+		t.Errorf("events = %+v", events)
+	}
+}
+
+func TestSetupCursorKeepsOtherServers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	os.MkdirAll(filepath.Join(home, ".cursor"), 0o755)
+	os.WriteFile(filepath.Join(home, ".cursor", "mcp.json"), []byte(`{"mcpServers":{"mine":{"command":"x"}},"other":1}`), 0o644)
+	if CursorWorkerReady() {
+		t.Fatal("ready before setup")
+	}
+	changed, err := SetupCursor("/bin/shepherd")
+	if err != nil || !changed || !CursorWorkerReady() {
+		t.Fatalf("setup: %v %v", changed, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(home, ".cursor", "mcp.json"))
+	if !strings.Contains(string(b), `"mine"`) || !strings.Contains(string(b), `"other": 1`) {
+		t.Errorf("other settings lost:\n%s", b)
+	}
+	if changed, _ := SetupCursor("/bin/shepherd"); changed {
+		t.Error("second setup changed the file")
+	}
+	os.WriteFile(filepath.Join(home, ".cursor", "mcp.json"), []byte("not json"), 0o644)
+	if _, err := SetupCursor("/bin/shepherd"); err == nil {
+		t.Error("setup overwrote an unreadable config")
 	}
 }

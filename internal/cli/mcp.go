@@ -203,6 +203,27 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "decision_list",
+			Description: "Questions agents are holding for the person, with their options and recommendations. Bring these to the person; do not answer them yourself.",
+			InputSchema: obj(map[string]any{}),
+			args:        func(map[string]any) ([]string, error) { return []string{"decision", "list"}, nil },
+		},
+		{
+			Name:        "decision_answer",
+			Description: "Record the person's answer to a decision; Shepherd continues the asking agent's conversation with it. Only with the person's own answer, never your guess at it.",
+			InputSchema: obj(map[string]any{
+				"id":     map[string]any{"type": "integer"},
+				"answer": map[string]any{"type": "string", "description": "The person's answer, in their words, or an option number."},
+			}, "id", "answer"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"decision", "answer", fmt.Sprint(int64(id)), str(a, "answer")}, nil
+			},
+		},
+		{
 			Name:        "fold_gc",
 			Description: "List worktrees across the workspace that look finished (merged, branch gone, missing) and lanes whose worktree is gone. Changes nothing.",
 			InputSchema: obj(map[string]any{}),
@@ -232,17 +253,83 @@ func strs(a map[string]any, k string) ([]string, error) {
 	return out, nil
 }
 
-func runMCP(ctx context.Context, env Env, args []string) error {
-	if len(args) > 0 {
-		return errUsage
+const workerInstructions = `You are an agent Shepherd started in a lane. These tools are how you reach Shepherd and the person. ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, production, a scope or design change with no clear default); give options and your recommendation, then end your turn, and you will be continued with the answer. ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review); then end your turn, and you will be continued with the reply. report: progress, done (what you did and how you checked it) or blocked (why). Everything else, keep working without asking.`
+
+func workerTools() []mcpTool {
+	return []mcpTool{
+		{
+			Name:        "report",
+			Description: "Tell Shepherd how the work stands: progress, done (what you did and how you checked it) or blocked (why). Shepherd checks a claim of done against the lane's commits and gate.",
+			InputSchema: obj(map[string]any{
+				"status":  map[string]any{"type": "string", "enum": []string{"progress", "done", "blocked"}},
+				"summary": map[string]any{"type": "string"},
+			}, "status", "summary"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"worker", "report", "--status", str(a, "status"), str(a, "summary")}, nil
+			},
+		},
+		{
+			Name: "ask_human",
+			Description: "Hold a decision for the person: money or pricing, published or user-facing text, deleting or overwriting data, production, or a scope or design change with no clear default. " +
+				"Give the options and your recommendation. Then end your turn: Shepherd continues this conversation with the answer.",
+			InputSchema: obj(map[string]any{
+				"question":       map[string]any{"type": "string"},
+				"options":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"recommendation": map[string]any{"type": "string", "description": "Which option you recommend, and why, in a sentence."},
+				"why":            map[string]any{"type": "string", "description": "Why this is the person's call rather than yours."},
+			}, "question", "recommendation"),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"worker", "ask-human", str(a, "question"), "--recommendation", str(a, "recommendation"), "--why", str(a, "why")}
+				if raw, ok := a["options"]; ok && raw != nil {
+					opts, err := strs(a, "options")
+					if err != nil {
+						return nil, err
+					}
+					for _, o := range opts {
+						out = append(out, "--option", o)
+					}
+				}
+				return out, nil
+			},
+		},
+		{
+			Name: "ask_shepherd",
+			Description: "Ask for something from another lane: a question to the agent working there, a hand-off of work outside your scope, or a review. " +
+				"Then end your turn: Shepherd continues this conversation with the reply.",
+			InputSchema: obj(map[string]any{
+				"kind":    map[string]any{"type": "string", "enum": []string{"question", "handoff", "review"}},
+				"message": map[string]any{"type": "string", "description": "What you need, as you would ask a colleague."},
+				"lane":    map[string]any{"type": "string", "description": "The lane it is for, if you know it."},
+			}, "kind", "message"),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"worker", "ask-shepherd", str(a, "message"), "--kind", str(a, "kind")}
+				if l := str(a, "lane"); l != "" {
+					out = append(out, "--lane", l)
+				}
+				return out, nil
+			},
+		},
 	}
-	return serveMCP(ctx, env, env.Stdin, env.Stdout)
 }
 
-func serveMCP(ctx context.Context, env Env, in io.Reader, out io.Writer) error {
+func runMCP(ctx context.Context, env Env, args []string) error {
+	fs := flags("mcp", env)
+	worker := fs.Bool("worker", false, "serve the worker tools, for an agent Shepherd started")
+	if pos, err := parse(fs, args); err != nil {
+		return err
+	} else if len(pos) > 0 {
+		return errUsage
+	}
+	if *worker {
+		return serveMCP(ctx, env, env.Stdin, env.Stdout, workerTools(), workerInstructions)
+	}
+	return serveMCP(ctx, env, env.Stdin, env.Stdout, mcpTools(), mcpInstructions)
+}
+
+func serveMCP(ctx context.Context, env Env, in io.Reader, out io.Writer, toolset []mcpTool, instructions string) error {
 	tools := map[string]mcpTool{}
 	var list []mcpTool
-	for _, t := range mcpTools() {
+	for _, t := range toolset {
 		tools[t.Name] = t
 		list = append(list, t)
 	}
@@ -279,7 +366,7 @@ func serveMCP(ctx context.Context, env Env, in io.Reader, out io.Writer) error {
 				"protocolVersion": v,
 				"capabilities":    map[string]any{"tools": map[string]any{}},
 				"serverInfo":      map[string]any{"name": "shepherd", "version": version.Version},
-				"instructions":    mcpInstructions,
+				"instructions":    instructions,
 			}
 		case "ping":
 			resp.Result = map[string]any{}
