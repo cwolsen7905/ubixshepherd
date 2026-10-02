@@ -170,7 +170,7 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if note := f.setup(ctx, repo, prof.Setup, wt); note != "" {
 		out.Notes = append(out.Notes, note)
 	}
-	if note := f.ensureHook(ctx, repo.Path); note != "" {
+	if note := f.ensureHook(ctx, repo.Path, wt); note != "" {
 		out.Notes = append(out.Notes, note)
 	}
 	out.Lane, err = f.Store.Lane(ctx, lane.ID)
