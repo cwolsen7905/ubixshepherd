@@ -181,6 +181,8 @@ const (
 	FeedRequestStuck   = "request_needs_routing"
 	FeedRequestReplied = "request_replied"
 	FeedRequestFailed  = "request_failed"
+	FeedMR             = "mr"
+	FeedPipeline       = "pipeline"
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's
@@ -191,6 +193,18 @@ type FeedItem struct {
 	Text    string    `json:"text"`
 	Ref     int64     `json:"ref,omitempty"`
 	Created time.Time `json:"created"`
+}
+
+// LaneForge is what the forge last said about a lane's branch.
+type LaneForge struct {
+	LaneID         int64  `json:"lane_id"`
+	MR             int    `json:"mr,omitempty"`
+	MRState        string `json:"mr_state,omitempty"`
+	MRURL          string `json:"mr_url,omitempty"`
+	Pipeline       int64  `json:"pipeline,omitempty"`
+	PipelineStatus string `json:"pipeline_status,omitempty"`
+	// FixTries counts the times Shepherd asked the lane's agent to fix a failed pipeline.
+	FixTries int `json:"fix_tries,omitempty"`
 }
 
 // Store is Shepherd's state.
@@ -240,6 +254,10 @@ type Store interface {
 	// Setting returns "" for a key never set.
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
+
+	// LaneForge returns a zero value (with LaneID set) for a lane the forge never saw.
+	LaneForge(ctx context.Context, laneID int64) (LaneForge, error)
+	PutLaneForge(ctx context.Context, f LaneForge) error
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

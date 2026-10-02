@@ -1,0 +1,76 @@
+package forge
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func TestParseRemote(t *testing.T) {
+	cases := map[string]Remote{
+		"git@gitlab.example.com:group/app.git":        {"gitlab.example.com", "group/app"},
+		"ssh://git@gitlab.example.com:2222/a/b/c.git": {"gitlab.example.com", "a/b/c"},
+		"https://gitlab.example.com/group/app":        {"gitlab.example.com", "group/app"},
+		"https://u:tok@github.com/o/r.git/":           {"github.com", "o/r"},
+	}
+	for in, want := range cases {
+		got, err := ParseRemote(in)
+		if err != nil || got != want {
+			t.Errorf("ParseRemote(%q) = %+v, %v; want %+v", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", "/local/path", "file"} {
+		if _, err := ParseRemote(bad); err == nil {
+			t.Errorf("ParseRemote(%q) accepted", bad)
+		}
+	}
+	if _, err := For("git@github.com:o/r.git"); err == nil {
+		t.Error("GitHub accepted as a lane forge")
+	}
+	if f, err := For("git@gitlab.example.com:g/a.git"); err != nil || f.Name() != "gitlab" {
+		t.Errorf("For gitlab = %v, %v", f, err)
+	}
+}
+
+func TestGitLabMRForBranch(t *testing.T) {
+	var calls []string
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		path := args[len(args)-1]
+		calls = append(calls, path)
+		switch {
+		case strings.Contains(path, "source_branch=feat%2Fx"):
+			return []byte(`[{"iid":7,"state":"opened"}]`), nil
+		case strings.HasSuffix(path, "merge_requests/7"):
+			return []byte(`{"iid":7,"state":"merged","sha":"abc","merge_commit_sha":"m1","squash_commit_sha":"s1","web_url":"u","head_pipeline":{"id":9,"status":"failed","sha":"abc","web_url":"p"}}`), nil
+		case strings.Contains(path, "source_branch="):
+			return []byte(`[]`), nil
+		}
+		return nil, fmt.Errorf("unexpected %s", path)
+	}}
+	mr, err := g.MRForBranch(context.Background(), "feat/x")
+	if err != nil || mr == nil || mr.IID != 7 || mr.MergeSHA != "m1" || mr.Pipeline.ID != 9 || mr.Pipeline.Status != "failed" {
+		t.Fatalf("mr = %+v, %v", mr, err)
+	}
+	if !strings.HasPrefix(calls[0], "projects/group%2Fapp/") {
+		t.Errorf("project not escaped: %s", calls[0])
+	}
+	if mr, err := g.MRForBranch(context.Background(), "none"); mr != nil || err != nil {
+		t.Errorf("no MR = %+v, %v", mr, err)
+	}
+}
+
+func TestCleanLog(t *testing.T) {
+	raw := "2026-10-02T01:08:32.769621Z 01O \x1b[32;1m$ make check\x1b[0;m\n" +
+		"2026-10-02T01:08:32.769643Z 01O --- FAIL: TestX (0.00s)\n" +
+		"2026-10-02T01:08:32.771208Z 00O section_end:1790903312:step_script\x1b[0K\n" +
+		"\n2026-10-02T01:08:33.990996Z 00O \x1b[31;1mERROR: Job failed: exit status 1\x1b[0;m\n"
+	got := CleanLog(raw, 10)
+	want := "$ make check\n--- FAIL: TestX (0.00s)\nERROR: Job failed: exit status 1"
+	if got != want {
+		t.Errorf("CleanLog =\n%q\nwant\n%q", got, want)
+	}
+	if got := CleanLog(raw, 1); got != "ERROR: Job failed: exit status 1" {
+		t.Errorf("last line = %q", got)
+	}
+}

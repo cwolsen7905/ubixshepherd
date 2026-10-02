@@ -11,6 +11,8 @@
 #   listen: 127.0.0.1:0
 #   ## How many agents (shepherd lane run) may run at once on this machine.
 #   max_runs: 4
+#   ## How often open lanes' merge requests are checked on the forge (off to stop).
+#   poll: 60s
 
 ## The profile every repo starts from.
 # defaults:
