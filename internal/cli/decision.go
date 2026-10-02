@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -144,6 +145,20 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 			return err
 		}
 		fmt.Fprintf(env.Stdout, "Held for the person as decision %d. End your turn now with a one-line summary of where you are; Shepherd continues this conversation with the answer.\n", d.ID)
+	case "tag-reserve":
+		run, err := c.Run(ctx, runID)
+		if err != nil {
+			return err
+		}
+		lane, err := c.Resolve(ctx, run.Worktree)
+		if err != nil || lane.Repo == nil {
+			return errors.New("cannot find this run's repo")
+		}
+		res, err := c.ReserveTag(ctx, api.Reserve{RepoID: lane.Repo.ID, LaneID: run.LaneID, Bump: pos[0]})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "%s is reserved for your lane. Tag exactly that, on a commit that includes your merged work.\n", res.Tag)
 	case "ask-shepherd":
 		q, err := c.RequestHelp(ctx, runID, store.Request{Kind: *kind, Lane: *lane, Message: pos[0]})
 		if err != nil {

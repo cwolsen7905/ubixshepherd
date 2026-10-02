@@ -137,6 +137,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 	}
 
 	if mr.State == "merged" && prev.MRState != "merged" {
+		next.MergeSHA = mr.MergeSHA
 		w.merged(ctx, lane, mr)
 	}
 	if mr.State == "closed" && prev.MRState != "closed" && mr.IID == prev.MR {
@@ -154,6 +155,9 @@ func (w *Watcher) merged(ctx context.Context, lane store.Lane, mr *forge.MR) {
 	if mr.MergeSHA == "" {
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d is merged but the forge gives no merge commit yet; lane %s stays open until it does", mr.IID, lane.Name)
 		return
+	}
+	for _, p := range w.Fold.VerifyTags(ctx, lane, mr.MergeSHA) {
+		w.feed(ctx, store.FeedMR, lane.ID, "!%d merged, but %s", mr.IID, p)
 	}
 	res, err := w.Fold.CloseMerged(ctx, lane.ID, mr.MergeSHA)
 	if err != nil {

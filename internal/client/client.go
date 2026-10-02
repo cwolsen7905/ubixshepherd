@@ -187,6 +187,21 @@ func (c *Client) AddSpend(ctx context.Context, sp store.Spend) error {
 	return c.do(ctx, http.MethodPost, api.PathSpend, sp, &out)
 }
 
+func (c *Client) ReserveTag(ctx context.Context, req api.Reserve) (store.Reservation, error) {
+	var out store.Reservation
+	return out, c.do(ctx, http.MethodPost, api.PathTagsReserve, req, &out)
+}
+
+func (c *Client) Tags(ctx context.Context, repoID int64) ([]api.ReservationView, error) {
+	var out []api.ReservationView
+	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?repo_id=%d", api.PathTags, repoID), nil, &out)
+}
+
+func (c *Client) ReleaseTag(ctx context.Context, repoID int64, tag string) error {
+	var out api.ReleaseTag
+	return c.do(ctx, http.MethodPost, api.PathTagsRelease, api.ReleaseTag{RepoID: repoID, Tag: tag}, &out)
+}
+
 func (c *Client) StopRun(ctx context.Context, id int64) error {
 	var out struct{}
 	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)

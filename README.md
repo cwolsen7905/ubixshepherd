@@ -91,6 +91,24 @@ Lanes and live runs are listed beside the thread. The conversation is kept betwe
 | `/auto off` | keep swarm events from reaching the desk on their own |
 | `/new` | start a new conversation with the desk |
 
+### Tags
+
+Two lanes in one repo can each take "the next version". `shepherd tag reserve` hands
+versions out one at a time, past the highest release tag on the remote (read fresh) and
+every live reservation:
+
+```sh
+shepherd tag reserve minor             # in a lane: v0.45.0 is yours
+shepherd tag reserve patch --no-lane   # for a release cut outside any lane
+shepherd tag list                      # reserved, pushed, verified
+shepherd tag release v0.45.0           # give one back
+```
+
+With `tags: reserved` in a repo's profile, the pre-push hook enforces it on every push
+from the repo, lane or not: a release tag must be reserved (from a lane, by that lane),
+and once its lane has merged, the tag must contain the merge, so a release cannot be cut
+before the work it is for. Agents reserve with their `tag_reserve` tool.
+
 ### What it costs
 
 Every run records what its agent reports: Claude Code's cost in dollars, Copilot's

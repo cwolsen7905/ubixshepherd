@@ -175,7 +175,7 @@ func TestRunRefusals(t *testing.T) {
 	if _, err := fo.Close(ctx, f.lane.ID, true); !errors.Is(err, fold.ErrRefused) {
 		t.Errorf("close during run: %v", err)
 	}
-	if v, _ := fo.CheckPush(ctx, &f.lane, f.lane.Worktree, nil); v.OK {
+	if v, _ := fo.CheckPush(ctx, &f.lane, nil, f.lane.Worktree, nil); v.OK {
 		t.Error("push allowed during a run")
 	}
 
