@@ -9,8 +9,9 @@ are yours for you, and reports back in one thread.
 
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
-> The first milestone (M1, the skeleton) is in: the daemon, its API, the store, config and
-> repo profiles, and workspaces. Lanes and everything after them are still design.
+> In so far: the daemon, its API, the store, config and repo profiles, workspaces (M1),
+> and lanes (the start of M2). Leases, tag reservations, the pre-push hook and everything
+> after them are still design.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
@@ -24,16 +25,54 @@ make build                  # bin/shepherd for this machine
 make check                  # gofmt, vet, tests, and the core boundary check
 make cross                  # dist/ for Linux, macOS and Windows on amd64 and arm64
 
-bin/shepherd daemon         # runs in the foreground; Ctrl-C stops it
 bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shepherd manages
 bin/shepherd status         # the daemon, its workspaces, and where you are
 bin/shepherd where          # the workspace, repo and lane for this directory, with its profile
 ```
 
-Shepherd keeps its files in `$SHEPHERD_HOME`, or `shepherd/` under the OS user config
-directory: `config.yaml` (optional), the SQLite store, and the running daemon's address and
-access token. The daemon listens on loopback only. A repo's profile comes from
-`config.yaml`, over cautious defaults (a human merges, tags and deploys; agents plan first):
+### Lanes
+
+A lane is one stream of work in a repo: its own branch, cut from a fresh fetch of the
+repo's base branch, its own worktree, and a declared scope.
+
+```sh
+cd ~/git/myrepo
+shepherd lane open feat/login --scope 'src/auth/**' --scope docs/auth.md
+cd ~/git/myrepo-worktrees/feat-login      # work here, or start an agent here
+shepherd lane list                          # this repo's lanes; --all, or run at ~/git, for every repo
+shepherd lane close                         # from inside the worktree, or: shepherd lane close feat/login
+shepherd fold gc                            # worktrees that look finished, across the workspace
+```
+
+`lane open` refuses a name, branch or worktree path already in use. `lane close` refuses a
+worktree with uncommitted changes, and a branch git cannot see merged into the base. A
+squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
+keeps the branch. `fold gc` only lists; it removes nothing.
+
+### The daemon
+
+Any command starts the daemon in the background if it is not running, and says so. To
+have it start at login and restart if it crashes, register it with the OS service manager
+(launchd on macOS, systemd on Linux; Windows to come):
+
+```sh
+bin/shepherd daemon install     # writes and loads the LaunchAgent or user unit, with your PATH
+bin/shepherd daemon status      # running or not, and whether it starts at login
+bin/shepherd daemon stop        # stays stopped until the next login or `daemon start`
+bin/shepherd daemon start | restart | uninstall
+bin/shepherd daemon             # in the foreground, for debugging; Ctrl-C stops it
+```
+
+`install` copies your current PATH into the service, because launchd and systemd start
+programs with a bare one that would hide git and the agent CLIs. Set
+`SHEPHERD_NO_AUTOSTART=1` to stop commands starting a daemon (scripts, CI).
+
+Shepherd keeps its files in `~/.shepherd` on every OS (or `$SHEPHERD_HOME`): the config,
+the SQLite store, the daemon's log, and the running daemon's address and access token. The daemon listens on
+loopback only. On its first start it writes `~/.shepherd/config.yaml` with every setting
+commented out, so the defaults apply until you change one; it never touches the file
+again. A repo's profile comes from that file, over cautious defaults (a human merges, tags
+and deploys; agents plan first):
 
 ```yaml
 defaults:

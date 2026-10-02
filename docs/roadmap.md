@@ -136,26 +136,37 @@ In the order the evidence suggests:
 
 1. **GitHub as a primary forge**: pull requests, reviews and branch protection, so repos
    that live on GitHub get everything GitLab repos do. The largest audience outside uBix.
-2. **A VS Code extension**: lanes, task states and the decision queue in the sidebar,
+2. **Releases and install**, so people other than the maintainer can run it. Tagged
+   releases publish binaries through the GitHub mirror with SHA-256 checksums. One layout
+   for every channel: the binary under `~/.shepherd/versions/<version>/` with a stable
+   symlink at `~/.local/bin/shepherd` (where Claude Code and other user-level tools
+   install), so an upgrade is a symlink switch and a rollback is switching it back. The
+   service manager registration (`shepherd daemon install`) points at the symlink and
+   survives upgrades. Channels: an install script for macOS and Linux and one for Windows
+   (`%LOCALAPPDATA%\Programs\shepherd`), a Homebrew tap (`brew services` for start at
+   login), and `go install`; later `shepherd update`. Also a remote CLI before full
+   hosting: the CLI talking to a daemon on another machine over an SSH tunnel, named by
+   an address setting instead of the local runtime file.
+3. **A VS Code extension**: lanes, task states and the decision queue in the sidebar,
    "open this lane's worktree", approve a held decision in place. TypeScript, another client
    of the HTTP API, sharing code with the web UI.
-3. **Standards pack, rendered to `AGENTS.md` first** (now the cross-vendor convention, with
+4. **Standards pack, rendered to `AGENTS.md` first** (now the cross-vendor convention, with
    Claude Code reported to read it when no `CLAUDE.md` exists), plus thin per-provider files
    and the drift check. Retires the hand-copied rules, which have already drifted (ubixcore's
    coordination template still says "branch off `dev`" after the trunk switch on 2026-09-12).
-4. **Scheduled audits**, the missing proactive cadence: a weekly security sweep (scanners →
+5. **Scheduled audits**, the missing proactive cadence: a weekly security sweep (scanners →
    triage → verify), secret scan before every tag, product-noun grep on the framework
    boundary, failed-Jobs sweep across environments, dependency updates.
-5. **Server deployment**: Shepherd on the k3s cluster, uBixOps forwarding webhooks, the CI
+6. **Server deployment**: Shepherd on the k3s cluster, uBixOps forwarding webhooks, the CI
    lease check, polling as fallback.
-6. **Web UI** (TypeScript/React on `@ubixsys/ubixcore`): status board, decision queue,
+7. **Web UI** (TypeScript/React on `@ubixsys/ubixcore`): status board, decision queue,
    outcome and cost dashboards.
-7. **Vault credential leasing** per task.
-8. **Playbooks**: release → ubixsys-web docs; uBixCore tag → host pin bumps; mirror-failure
+8. **Vault credential leasing** per task.
+9. **Playbooks**: release → ubixsys-web docs; uBixCore tag → host pin bumps; mirror-failure
    checks.
-9. **Remaining work kinds**: optimize, security audit as a work order, migration, graphics,
+10. **Remaining work kinds**: optimize, security audit as a work order, migration, graphics,
    research, each with its gate pack.
-10. **Learning loop**: outcome records propose routing and gate changes as MRs.
+11. **Learning loop**: outcome records propose routing and gate changes as MRs.
 
 ## 5. Nice-to-haves
 

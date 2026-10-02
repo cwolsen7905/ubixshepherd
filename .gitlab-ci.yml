@@ -39,7 +39,7 @@ public-boundary:
 go-check:
   extends: .go
   script:
-    - go_run 'go version && make check'
+    - go_run 'go version && git --version && make check'  # the Fold tests need git; never let them skip
 
 go-cross:
   extends: .go

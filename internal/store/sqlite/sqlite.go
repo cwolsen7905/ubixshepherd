@@ -6,8 +6,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -43,6 +45,26 @@ var migrations = []string{
 		created  TEXT NOT NULL,
 		UNIQUE (repo_id, name)
 	);`,
+	// Lanes keep their history: a closed lane frees its name, so uniqueness covers
+	// unclosed lanes only. Adds the lane's scope and when it closed.
+	`CREATE TABLE lanes_v2 (
+		id       INTEGER PRIMARY KEY,
+		repo_id  INTEGER NOT NULL REFERENCES repos(id),
+		name     TEXT NOT NULL,
+		branch   TEXT NOT NULL,
+		base     TEXT NOT NULL DEFAULT '',
+		worktree TEXT NOT NULL,
+		scope    TEXT NOT NULL DEFAULT '[]',
+		state    TEXT NOT NULL,
+		created  TEXT NOT NULL,
+		closed   TEXT NOT NULL DEFAULT ''
+	);
+	INSERT INTO lanes_v2 (id, repo_id, name, branch, worktree, state, created)
+		SELECT id, repo_id, name, branch, worktree, state, created FROM lanes;
+	DROP TABLE lanes;
+	ALTER TABLE lanes_v2 RENAME TO lanes;
+	CREATE UNIQUE INDEX lanes_live_name ON lanes (repo_id, name) WHERE state != 'closed';
+	CREATE UNIQUE INDEX lanes_live_worktree ON lanes (worktree) WHERE state != 'closed';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -191,25 +213,108 @@ func (s *DB) Repos(ctx context.Context, workspaceID int64) ([]store.Repo, error)
 	return out, rows.Err()
 }
 
+const laneCols = `id, repo_id, name, branch, base, worktree, scope, state, created, closed`
+
+func scanLane(sc interface{ Scan(...any) error }) (store.Lane, error) {
+	var l store.Lane
+	var scope, created, closed string
+	if err := sc.Scan(&l.ID, &l.RepoID, &l.Name, &l.Branch, &l.Base, &l.Worktree, &scope, &l.State, &created, &closed); err != nil {
+		return l, err
+	}
+	if err := json.Unmarshal([]byte(scope), &l.Scope); err != nil {
+		return l, fmt.Errorf("lane %q scope: %w", l.Name, err)
+	}
+	l.Created = parseTime(created)
+	if closed != "" {
+		t := parseTime(closed)
+		l.Closed = &t
+	}
+	return l, nil
+}
+
+// Lanes returns a repo's lanes that are not closed.
 func (s *DB) Lanes(ctx context.Context, repoID int64) ([]store.Lane, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, repo_id, name, branch, worktree, state, created
-		FROM lanes WHERE repo_id = ? ORDER BY name`, repoID)
+	rows, err := s.db.QueryContext(ctx, `SELECT `+laneCols+`
+		FROM lanes WHERE repo_id = ? AND state != ? ORDER BY name`, repoID, store.LaneClosed)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []store.Lane
 	for rows.Next() {
-		var l store.Lane
-		var created string
-		if err := rows.Scan(&l.ID, &l.RepoID, &l.Name, &l.Branch, &l.Worktree, &l.State, &created); err != nil {
+		l, err := scanLane(rows)
+		if err != nil {
 			return nil, err
 		}
-		l.Created = parseTime(created)
 		out = append(out, l)
 	}
 	return out, rows.Err()
+}
+
+func (s *DB) Lane(ctx context.Context, id int64) (store.Lane, error) {
+	l, err := scanLane(s.db.QueryRowContext(ctx, `SELECT `+laneCols+` FROM lanes WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return l, store.ErrNotFound
+	}
+	return l, err
+}
+
+func (s *DB) CreateLane(ctx context.Context, l store.Lane) (store.Lane, error) {
+	scope, err := json.Marshal(nonNil(l.Scope))
+	if err != nil {
+		return l, err
+	}
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO lanes (repo_id, name, branch, base, worktree, scope, state, created)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.RepoID, l.Name, l.Branch, l.Base, l.Worktree, string(scope), l.State, now())
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return l, fmt.Errorf("%w: a lane named %q or at %s is already open", store.ErrConflict, l.Name, l.Worktree)
+		}
+		return l, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return l, err
+	}
+	return s.Lane(ctx, id)
+}
+
+func (s *DB) SetLaneState(ctx context.Context, id int64, state string) error {
+	closed := ""
+	if state == store.LaneClosed {
+		closed = now()
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE lanes SET state = ?, closed = ? WHERE id = ?`, state, closed, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *DB) DeleteLane(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM lanes WHERE id = ?`, id)
+	return err
+}
+
+func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
+	var r store.Repo
+	var stacks, created string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, workspace_id, name, path, remote, stacks, created FROM repos WHERE id = ?`, id).
+		Scan(&r.ID, &r.WorkspaceID, &r.Name, &r.Path, &r.Remote, &stacks, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return r, store.ErrNotFound
+	}
+	if err != nil {
+		return r, err
+	}
+	r.Created = parseTime(created)
+	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
 }
 
 func nonNil(s []string) []string {

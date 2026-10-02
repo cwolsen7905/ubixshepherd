@@ -177,3 +177,81 @@ func TestParseSelection(t *testing.T) {
 		}
 	}
 }
+
+// laneWorkspace is a workspace with one repo, app, cloned from a bare origin with a
+// commit on main.
+func laneWorkspace(t *testing.T) (root, app string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	base, _ := paths.Canonical(t.TempDir())
+	g := func(dir string, args ...string) {
+		cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	origin := filepath.Join(base, "origin.git")
+	g(base, "init", "-q", "--bare", "-b", "main", origin)
+	seed := filepath.Join(base, "seed")
+	g(base, "clone", "-q", origin, seed)
+	os.WriteFile(filepath.Join(seed, "f"), []byte("x"), 0o644)
+	g(seed, "add", ".")
+	g(seed, "commit", "-q", "-m", "init")
+	g(seed, "push", "-q", "origin", "HEAD:main")
+	root = filepath.Join(base, "ws")
+	os.MkdirAll(root, 0o755)
+	app = filepath.Join(root, "app")
+	g(root, "clone", "-q", origin, app)
+	return root, app
+}
+
+func TestLaneOpenListCloseFromCLI(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, app := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+
+	h.env.Cwd = app
+	if code := h.run("lane", "open", "feat/x", "--scope", "src/**,docs/*.md"); code != 0 {
+		t.Fatalf("lane open: %d %s", code, h.err)
+	}
+	wt := filepath.Join(root, "app-worktrees", "feat-x")
+	if !strings.Contains(h.out.String(), "cd "+wt) {
+		t.Errorf("open output:\n%s", h.out)
+	}
+	if code := h.run("lane", "open", "feat/x", "--scope", "x"); code != 1 || !strings.Contains(h.err.String(), "already") {
+		t.Errorf("duplicate open: %d %s", code, h.err)
+	}
+	if code := h.run("lane", "open", "nope"); code != 1 || !strings.Contains(h.err.String(), "needs a scope") {
+		t.Errorf("open without scope: %d %s", code, h.err)
+	}
+
+	// From the workspace root, list covers every repo; from the worktree, where knows the lane.
+	h.env.Cwd = root
+	if code := h.run("lane", "list"); code != 0 || !strings.Contains(h.out.String(), "feat/x") || !strings.Contains(h.out.String(), "src/**, docs/*.md") {
+		t.Errorf("list: %d\n%s%s", code, h.out, h.err)
+	}
+	h.env.Cwd = wt
+	if code := h.run("where"); code != 0 || !strings.Contains(h.out.String(), "lane       feat/x") {
+		t.Errorf("where in lane:\n%s%s", h.out, h.err)
+	}
+	if code := h.run("lane", "list"); code != 0 || !strings.Contains(h.out.String(), "*feat/x") {
+		t.Errorf("list marks the current lane:\n%s", h.out)
+	}
+
+	// No commits: the branch is trivially in origin/main, so close needs no force.
+	if code := h.run("lane", "close"); code != 0 || !strings.Contains(h.out.String(), "deleted local branch feat/x") {
+		t.Errorf("close: %d\n%s%s", code, h.out, h.err)
+	}
+	h.env.Cwd = root
+	if code := h.run("lane", "list"); code != 0 || !strings.Contains(h.out.String(), "No open lanes") {
+		t.Errorf("list after close:\n%s", h.out)
+	}
+	if code := h.run("fold", "gc"); code != 0 || !strings.Contains(h.out.String(), "No stale worktrees") {
+		t.Errorf("gc: %d\n%s%s", code, h.out, h.err)
+	}
+}

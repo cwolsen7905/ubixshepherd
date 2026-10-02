@@ -1,0 +1,43 @@
+## uBixShepherd configuration.
+##
+## Written by the daemon on its first start. Every setting is commented out, so the
+## built-in defaults apply and keep improving with new releases. Uncomment only what
+## you want to change; the daemon reads this file when it starts.
+## An unknown key is an error, so a typo cannot fall back to a default quietly.
+
+## The daemon listens on loopback only. Port 0 picks a free port; clients find it in
+## daemon.json next to this file.
+# daemon:
+#   listen: 127.0.0.1:0
+
+## The profile every repo starts from.
+# defaults:
+#   base_branch: main
+#   ## trunk: work lands on base_branch, releases are tags.
+#   ## promotion: work lands on the first branch in `promotion` and moves up.
+#   branch_model: trunk
+#   ## Must pass in a lane's worktree before its work counts as green.
+#   gate: make check
+#   ## Globs more than one lane may want; a lane touching one takes a lease.
+#   shared_paths: []
+#   ## Where lane worktrees go; empty means <workspace>/<repo>-worktrees.
+#   worktree_root: ""
+#   ## What agents may do unasked: human or agent.
+#   autonomy:
+#     merge: human
+#     tag: human
+#     deploy: human
+#     ## Propose a plan and wait before changing anything.
+#     plan_first: true
+
+## Per-repo profiles, keyed by the repo's path in its workspace as `shepherd init`
+## lists it. Fields left out inherit from defaults.
+# repos:
+#   framework:
+#     shared_paths: [README.md, .gitlab-ci.yml]
+#     autonomy:
+#       tag: agent
+#   my-app:
+#     base_branch: dev
+#     branch_model: promotion
+#     promotion: [dev, staging, main]

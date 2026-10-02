@@ -15,17 +15,16 @@ import (
 const HomeEnv = "SHEPHERD_HOME"
 
 // Home is the directory holding the config, the store and the daemon's runtime file:
-// $SHEPHERD_HOME if set, otherwise "shepherd" under the OS's user config directory
-// (~/.config on Linux, ~/Library/Application Support on macOS, %AppData% on Windows).
+// $SHEPHERD_HOME if set, otherwise ~/.shepherd, the same path on every OS.
 func Home() (string, error) {
 	if h := os.Getenv(HomeEnv); h != "" {
 		return filepath.Abs(h)
 	}
-	base, err := os.UserConfigDir()
+	base, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, "shepherd"), nil
+	return filepath.Join(base, ".shepherd"), nil
 }
 
 // Layout names the files under a home directory.
@@ -35,6 +34,9 @@ type Layout struct {
 
 func (l Layout) Config() string { return filepath.Join(l.Home, "config.yaml") }
 func (l Layout) Store() string  { return filepath.Join(l.Home, "shepherd.db") }
+
+// Log is where a background daemon writes its log.
+func (l Layout) Log() string { return filepath.Join(l.Home, "daemon.log") }
 
 // Runtime is written by a running daemon: its address, pid and access token.
 func (l Layout) Runtime() string { return filepath.Join(l.Home, "daemon.json") }

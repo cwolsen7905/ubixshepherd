@@ -8,6 +8,7 @@ package config
 
 import (
 	"bytes"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -202,4 +203,27 @@ func merge(base, over Profile) Profile {
 		out.Autonomy.PlanFirst = over.Autonomy.PlanFirst
 	}
 	return out
+}
+
+//go:embed template.yaml
+var template []byte
+
+// Template is the commented config file the daemon writes on first start.
+func Template() []byte { return template }
+
+// WriteTemplate writes Template to path if nothing is there yet, and reports whether it
+// did. An existing file is never touched.
+func WriteTemplate(path string) (bool, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if errors.Is(err, os.ErrExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if _, err := f.Write(template); err != nil {
+		f.Close()
+		return false, err
+	}
+	return true, f.Close()
 }

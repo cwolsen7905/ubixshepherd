@@ -72,3 +72,15 @@ func TestHomeOverride(t *testing.T) {
 		t.Errorf("Home() = %q, want %q", h, dir)
 	}
 }
+
+func TestHomeDefault(t *testing.T) {
+	t.Setenv(HomeEnv, "")
+	h, err := Home()
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, _ := os.UserHomeDir()
+	if h != filepath.Join(user, ".shepherd") {
+		t.Errorf("Home() = %q, want ~/.shepherd", h)
+	}
+}

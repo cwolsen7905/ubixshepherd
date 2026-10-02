@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 
@@ -28,6 +29,10 @@ type Env struct {
 	Interactive bool
 	Layout      paths.Layout
 	Cwd         string
+	// Exe is this binary, used to start a daemon in the background. Autostart says
+	// whether commands may do that when no daemon answers.
+	Exe       string
+	Autostart bool
 }
 
 type command struct {
@@ -42,9 +47,13 @@ var errUsage = errors.New("usage")
 
 func commands() []command {
 	return []command{
-		{"daemon", "Run the daemon in the foreground", "shepherd daemon", runDaemon},
+		{"daemon", "Run or manage the daemon (start, stop, restart, status, install, uninstall)",
+			"shepherd daemon [run | start | stop | restart | status | install | uninstall]", runDaemon},
 		{"init", "Register a workspace and choose which of its repos Shepherd manages",
 			"shepherd init [dir] [--name NAME] [--yes | --all | --only a,b]", runInit},
+		{"lane", "Open, list and close lanes: a branch and worktree per stream of work",
+			"shepherd lane open <name> --scope '<globs>' [--branch B] [--repo R] | list [--all] [--json] | close [name] [--force]", runLane},
+		{"fold", "Find stale worktrees across the workspace", "shepherd fold gc [--json]", runFold},
 		{"status", "Show the daemon, its workspaces, and where you are", "shepherd status [--json]", runStatus},
 		{"where", "Show the workspace, repo and lane for a directory", "shepherd where [dir] [--json]", runWhere},
 		{"version", "Print the version", "shepherd version", runVersion},
@@ -67,6 +76,10 @@ func Main(args []string) int {
 		Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
 		Interactive: term.IsTerminal(int(os.Stdin.Fd())),
 		Layout:      paths.Layout{Home: home}, Cwd: cwd,
+		Autostart: os.Getenv(NoAutostartEnv) == "",
+	}
+	if exe, err := os.Executable(); err == nil {
+		env.Exe = exe
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -113,7 +126,7 @@ func usage(w io.Writer) {
 		fmt.Fprintf(w, "  %-9s %s\n", c.name, c.summary)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "Files live in $%s, or the OS user config directory under shepherd/.\n", paths.HomeEnv)
+	fmt.Fprintf(w, "Files live in ~/.shepherd, or $%s if set.\n", paths.HomeEnv)
 }
 
 // flags returns a FlagSet that reports errors instead of exiting, and parses
@@ -142,8 +155,34 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 	}
 }
 
-func dial(env Env) (*client.Client, error) {
-	return client.FromRuntime(env.Layout.Runtime())
+// NoAutostartEnv, when set, stops commands from starting a daemon (for scripts and CI,
+// where a daemon left running would be a surprise).
+const NoAutostartEnv = "SHEPHERD_NO_AUTOSTART"
+
+// dial returns a client for a running daemon, starting one first if none answers and
+// autostart is allowed.
+func dial(ctx context.Context, env Env) (*client.Client, error) {
+	if c, err := connect(ctx, env); err == nil {
+		return c, nil
+	}
+	if !env.Autostart || env.Exe == "" {
+		return nil, client.ErrNoDaemon
+	}
+	return startDaemon(ctx, env, true)
+}
+
+// connect returns a client for the daemon in the runtime file, if it answers.
+func connect(ctx context.Context, env Env) (*client.Client, error) {
+	c, err := client.FromRuntime(env.Layout.Runtime())
+	if err != nil {
+		return nil, err
+	}
+	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, err := c.Status(probe); err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 func plural(n int, one, many string) string {

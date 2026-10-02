@@ -9,9 +9,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
-	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
-	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
 	"github.com/ubixsys/ubixshepherd/internal/version"
 )
 
@@ -23,33 +21,6 @@ func runVersion(_ context.Context, env Env, args []string) error {
 	return nil
 }
 
-func runDaemon(ctx context.Context, env Env, args []string) error {
-	fs := flags("daemon", env)
-	if pos, err := parse(fs, args); err != nil {
-		return err
-	} else if len(pos) > 0 {
-		return errUsage
-	}
-	l := env.Layout
-	if err := os.MkdirAll(l.Home, 0o700); err != nil {
-		return err
-	}
-	cfg, err := config.Load(l.Config())
-	if err != nil {
-		return err
-	}
-	st, err := sqlite.Open(ctx, l.Store())
-	if err != nil {
-		return err
-	}
-	defer st.Close()
-	srv, err := daemon.NewServer(st, cfg, l.Config(), daemon.NewLogger())
-	if err != nil {
-		return err
-	}
-	return srv.Run(ctx, l.Runtime())
-}
-
 func runStatus(ctx context.Context, env Env, args []string) error {
 	fs := flags("status", env)
 	asJSON := fs.Bool("json", false, "print JSON")
@@ -58,7 +29,7 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 	} else if len(pos) > 0 {
 		return errUsage
 	}
-	c, err := dial(env)
+	c, err := dial(ctx, env)
 	if err != nil {
 		return err
 	}
@@ -112,7 +83,7 @@ func runWhere(ctx context.Context, env Env, args []string) error {
 	default:
 		return errUsage
 	}
-	c, err := dial(env)
+	c, err := dial(ctx, env)
 	if err != nil {
 		return err
 	}
