@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -23,7 +24,10 @@ import (
 // fakeAgent is a stand-in for an agent CLI: it commits a file in the scope, optionally
 // one outside it, then tries to push and records whether that worked.
 const fakeAgent = `#!/bin/sh
+if [ "$1" = create-chat ]; then echo "11111111-2222-4333-8444-555555555555"; exit 0; fi
 echo "fake agent in $(pwd), run $SHEPHERD_RUN, lane $SHEPHERD_LANE"
+echo "ARGS: $(printf '%s ' "$@" | tr '\n' ' ')"
+case "$MODE" in quick) echo "copilot --resume=cop-$SHEPHERD_RUN-session"; exit 0 ;; esac
 case "$MODE" in sleep) sleep 30 ;; esac
 mkdir -p src && echo work > src/work.txt
 git add src/work.txt && git commit -q -m "agent work"
@@ -216,25 +220,128 @@ func TestRecoverMarksInterrupted(t *testing.T) {
 
 func TestAdapterArgs(t *testing.T) {
 	a, _ := AdapterFor("claude")
-	args := a.Args("PROMPT", "opus", "make check", "/w")
+	args := a.Args("PROMPT", "opus", "make check", "/w", "S1", false)
 	if args[0] != "-p" || args[1] != "PROMPT" {
 		t.Errorf("claude: the prompt must follow -p before the tool lists: %v", args)
 	}
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"--disallowedTools Bash(git push:*)", "Bash(make check:*)", "--model opus", "--permission-mode acceptEdits"} {
+	for _, want := range []string{"--disallowedTools Bash(git push:*)", "Bash(make check:*)", "--model opus", "--permission-mode acceptEdits", "--session-id S1"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("claude args lack %q: %v", want, args)
 		}
 	}
+	if j := strings.Join(a.Args("P", "", "", "/w", "S1", true), " "); !strings.Contains(j, "--resume S1") || strings.Contains(j, "--session-id") {
+		t.Errorf("claude resume args: %s", j)
+	}
 	c, _ := AdapterFor("copilot")
-	if j := strings.Join(c.Args("P", "", "make check", "/w"), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") {
+	if j := strings.Join(c.Args("P", "", "make check", "/w", "", false), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--resume") {
 		t.Errorf("copilot args: %s", j)
 	}
+	if j := strings.Join(c.Args("P", "", "", "/w", "S2", true), " "); !strings.Contains(j, "--resume=S2") {
+		t.Errorf("copilot resume args: %s", j)
+	}
+	if got := c.SessionIn("Resume     copilot --resume=4dcd900f-729e-4b4f"); got != "4dcd900f-729e-4b4f" {
+		t.Errorf("copilot session from output = %q", got)
+	}
 	cu, _ := AdapterFor("cursor")
-	if j := strings.Join(cu.Args("P", "", "", "/w"), " "); !strings.Contains(j, "--workspace /w") {
+	if j := strings.Join(cu.Args("P", "", "", "/w", "C1", false), " "); !strings.Contains(j, "--workspace /w") || !strings.Contains(j, "--resume C1") {
 		t.Errorf("cursor args: %s", j)
+	}
+	if id, _ := newUUID(); len(id) != 36 || id[14] != '4' {
+		t.Errorf("uuid = %q", id)
 	}
 	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check"); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
 		t.Errorf("brief:\n%s", b)
+	}
+}
+
+func argsOf(t *testing.T, run store.Run) string {
+	t.Helper()
+	b, _ := os.ReadFile(run.Log)
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "ARGS: ") {
+			return line
+		}
+	}
+	t.Fatalf("no ARGS line in:\n%s", b)
+	return ""
+}
+
+func TestLaneKeepsItsConversation(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	first, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "first task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first = f.wait(t, first.ID)
+	if first.Session == "" || first.Parent != 0 {
+		t.Fatalf("first run = %+v", first)
+	}
+	if a := argsOf(t, first); !strings.Contains(a, "--session-id "+first.Session) || !strings.Contains(a, "Do not push") {
+		t.Errorf("first run args: %s", a)
+	}
+
+	// The next run in the lane with the same agent continues the session, without the brief.
+	second, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "now the tests"})
+	second = f.wait(t, second.ID)
+	if second.Session != first.Session || second.Parent != first.ID {
+		t.Errorf("second run = %+v", second)
+	}
+	if a := argsOf(t, second); !strings.Contains(a, "--resume "+first.Session) || strings.Contains(a, "Do not push") {
+		t.Errorf("second run args: %s", a)
+	}
+
+	// new_session starts fresh; continue names the run.
+	fresh, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", NewSession: true})
+	fresh = f.wait(t, fresh.ID)
+	if fresh.Session == first.Session || fresh.Parent != 0 {
+		t.Errorf("new session run = %+v", fresh)
+	}
+	again, err := f.runner.Start(ctx, StartRequest{Continue: first.ID, Prompt: "back to the first one"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again = f.wait(t, again.ID); again.Session != first.Session || again.Agent != "claude" || again.Parent != first.ID {
+		t.Errorf("explicit continue = %+v", again)
+	}
+	if _, err := f.runner.Start(ctx, StartRequest{Continue: first.ID, Agent: "copilot", Prompt: "x"}); !errors.Is(err, ErrRefused) {
+		t.Errorf("continue with another agent: %v", err)
+	}
+}
+
+func TestSessionLearnedFromOutput(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "x"})
+	run = f.wait(t, run.ID)
+	want := fmt.Sprintf("cop-%d-session", run.ID)
+	if run.Session != want {
+		t.Fatalf("copilot session = %q, want %q", run.Session, want)
+	}
+	next, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "y"})
+	next = f.wait(t, next.ID)
+	if a := argsOf(t, next); !strings.Contains(a, "--resume="+want) {
+		t.Errorf("copilot continuation args: %s", a)
+	}
+
+	cur, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "z"})
+	if cur = f.wait(t, cur.ID); cur.Session != "11111111-2222-4333-8444-555555555555" {
+		t.Errorf("cursor session from create-chat = %q", cur.Session)
+	}
+}
+
+func TestContinueRefusals(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	if _, err := f.runner.Start(ctx, StartRequest{Continue: run.ID, Prompt: "y"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "still going") {
+		t.Errorf("continue a running run: %v", err)
+	}
+	f.runner.Stop(ctx, run.ID)
+	f.wait(t, run.ID)
+	old, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+	if _, err := f.runner.Start(ctx, StartRequest{Continue: old.ID, Prompt: "y"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "no session") {
+		t.Errorf("continue without a session: %v", err)
 	}
 }

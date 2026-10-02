@@ -557,7 +557,7 @@ func (s *Server) runView(ctx context.Context, run store.Run) (api.RunView, error
 	if err != nil {
 		return api.RunView{}, err
 	}
-	return api.RunView{Run: run, Lane: lane.Name, Repo: repo.Name}, nil
+	return api.RunView{Run: run, Lane: lane.Name, Repo: repo.Name, Worktree: lane.Worktree}, nil
 }
 
 // foldError answers a refusal with 409 and its reason, a missing lane or repo with 404,

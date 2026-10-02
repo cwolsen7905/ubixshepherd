@@ -90,6 +90,10 @@ type Run struct {
 	Error    string     `json:"error,omitempty"`
 	Started  time.Time  `json:"started"`
 	Ended    *time.Time `json:"ended,omitempty"`
+	// Session is the agent's own conversation id; a run that continues another shares
+	// it, and Parent is the run it follows.
+	Session string `json:"session,omitempty"`
+	Parent  int64  `json:"parent,omitempty"`
 }
 
 // Store is Shepherd's state.

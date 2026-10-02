@@ -76,8 +76,17 @@ shepherd lane run --agent copilot "..."     # from inside the lane's worktree
 shepherd run list                            # this lane's runs; --all for every lane
 shepherd run show 7                          # state, time, exit code, commits, files outside the scope
 shepherd run logs -f 7                       # follow its output
+shepherd run continue 7 "the lint job failed: fix it"   # same agent, same conversation
+shepherd run attach 7                        # the agent's own CLI, resumed, with you at the keyboard
 shepherd run stop 7
 ```
+
+**A lane keeps its conversation.** Shepherd records each agent's session (Claude Code's
+session id, Copilot's resume id, Cursor's chat), so the next `lane run` in a lane with the
+same agent continues where it left off, with everything it already knows; `--new`
+starts fresh. `run continue` sends a follow-up to a finished run's session, and
+`run attach` opens that session interactively in the lane's worktree, where you work
+with your own permissions and the push hook still checks the scope.
 
 Agents: `claude` (Claude Code), `copilot` (GitHub Copilot CLI), `cursor` (Cursor's
 `cursor-agent`), each with its own login on this machine. The daemon owns the run, so

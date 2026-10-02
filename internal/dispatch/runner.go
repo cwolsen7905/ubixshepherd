@@ -36,11 +36,17 @@ func refuse(format string, a ...any) error { return refusal{fmt.Sprintf(format, 
 const noPush = "shepherd-run-blocks-push://"
 
 // StartRequest asks for an agent to be started in a lane.
+//
+// By default a lane keeps its conversation: a run continues the lane's last session
+// with the same agent. NewSession starts a fresh one; Continue names the run whose
+// session to continue (and so the lane and agent).
 type StartRequest struct {
-	LaneID int64  `json:"lane_id"`
-	Agent  string `json:"agent"`
-	Model  string `json:"model,omitempty"`
-	Prompt string `json:"prompt"`
+	LaneID     int64  `json:"lane_id,omitempty"`
+	Agent      string `json:"agent,omitempty"`
+	Model      string `json:"model,omitempty"`
+	Prompt     string `json:"prompt"`
+	NewSession bool   `json:"new_session,omitempty"`
+	Continue   int64  `json:"continue,omitempty"`
 }
 
 // Runner starts agents and watches them until they exit.
@@ -83,6 +89,25 @@ func (r *Runner) Recover(ctx context.Context) error {
 // Start starts an agent in a lane and returns at once; the run is watched in the
 // background and recorded when it exits.
 func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error) {
+	var parent store.Run
+	if req.Continue != 0 {
+		p, err := r.Store.Run(ctx, req.Continue)
+		if err != nil {
+			return store.Run{}, err
+		}
+		switch {
+		case p.State == store.RunRunning:
+			return store.Run{}, refuse("run %d is still going; wait for it, or stop it first", p.ID)
+		case p.Session == "":
+			return store.Run{}, refuse("run %d has no session to continue (it started before Shepherd kept sessions, or its agent never reported one)", p.ID)
+		case req.Agent != "" && req.Agent != p.Agent:
+			return store.Run{}, refuse("run %d was %s; a session continues with the same agent", p.ID, p.Agent)
+		}
+		parent, req.LaneID, req.Agent = p, p.LaneID, p.Agent
+		if req.Model == "" {
+			req.Model = p.Model
+		}
+	}
 	ad, err := AdapterFor(req.Agent)
 	if err != nil {
 		return store.Run{}, refuse("%v", err)
@@ -131,12 +156,34 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		return store.Run{}, refuse("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
 	}
 
+	// The lane's conversation: continue its last session with this agent unless asked
+	// for a new one.
+	if parent.ID == 0 && !req.NewSession {
+		prev, err := r.Store.Runs(ctx, lane.ID, "", 50)
+		if err != nil {
+			return store.Run{}, err
+		}
+		for _, p := range prev {
+			if p.Agent == ad.Name && p.Session != "" {
+				parent = p
+				break
+			}
+		}
+	}
+	session, resume := parent.Session, parent.ID != 0
+	if !resume {
+		if session, err = ad.NewSession(ctx, bin, lane.Worktree); err != nil {
+			return store.Run{}, err
+		}
+	}
+
 	startSHA, err := git.Run(ctx, lane.Worktree, "rev-parse", "HEAD")
 	if err != nil {
 		return store.Run{}, err
 	}
 	run, err := r.Store.CreateRun(ctx, store.Run{
 		LaneID: lane.ID, Agent: ad.Name, Model: req.Model, Prompt: req.Prompt,
+		Session: session, Parent: parent.ID,
 		State: store.RunRunning, StartSHA: startSHA, Log: "pending",
 	})
 	if err != nil {
@@ -152,8 +199,12 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 
 	gate := r.Config.Profile(repo.Name).Gate
-	prompt := Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate)
-	cmd := exec.Command(bin, ad.Args(prompt, req.Model, gate, lane.Worktree)...)
+	// A new session gets the full brief; a continuing one already has it.
+	prompt := req.Prompt
+	if !resume {
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate)
+	}
+	cmd := exec.Command(bin, ad.Args(prompt, req.Model, gate, lane.Worktree, session, resume)...)
 	cmd.Dir = lane.Worktree
 	cmd.Stdin = nil // reads from the null device: headless
 	cmd.Env = append(os.Environ(),
@@ -169,8 +220,12 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 	cmd.Stderr = cmd.Stdout // one ordered stream
 
-	fmt.Fprintf(logf, "# shepherd run %d: %s in lane %s (%s), started %s\n# task: %s\n\n",
-		run.ID, ad.Name, lane.Name, repo.Name, time.Now().Format(time.RFC3339), redact.String(firstLine(req.Prompt)))
+	how := "new session"
+	if resume {
+		how = fmt.Sprintf("continues run %d", parent.ID)
+	}
+	fmt.Fprintf(logf, "# shepherd run %d: %s in lane %s (%s), %s, started %s\n# task: %s\n\n",
+		run.ID, ad.Name, lane.Name, repo.Name, how, time.Now().Format(time.RFC3339), redact.String(firstLine(req.Prompt)))
 	if err := cmd.Start(); err != nil {
 		logf.Close()
 		return run, r.fail(ctx, run, err)
@@ -182,19 +237,24 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	p := &proc{cmd: cmd}
 	r.procs[run.ID] = p
 	r.wg.Add(1)
-	go r.watch(run, lane, p, out, logf)
+	go r.watch(run, ad, lane, p, out, logf)
 	r.Log.Info("run started", "run", run.ID, "agent", ad.Name, "lane", lane.Name, "pid", run.PID)
 	return run, nil
 }
 
 // watch copies the agent's output to the log line by line, redacted, then records the
 // outcome when the agent exits.
-func (r *Runner) watch(run store.Run, lane store.Lane, p *proc, out io.Reader, logf *os.File) {
+func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out io.Reader, logf *os.File) {
 	defer r.wg.Done()
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	for sc.Scan() {
-		fmt.Fprintln(logf, redact.String(sc.Text()))
+		line := sc.Text()
+		// The latest id an agent reports wins, in case resuming ever moves a session.
+		if id := ad.SessionIn(line); id != "" {
+			run.Session = id
+		}
+		fmt.Fprintln(logf, redact.String(line))
 	}
 	err := p.cmd.Wait()
 

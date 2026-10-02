@@ -85,6 +85,10 @@ var migrations = []string{
 		ended     TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX runs_lane ON runs (lane_id);`,
+	// The agent's own session id, so a lane keeps its conversation, and the run a
+	// continuation follows.
+	`ALTER TABLE runs ADD COLUMN session TEXT NOT NULL DEFAULT '';
+	ALTER TABLE runs ADD COLUMN parent INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -337,14 +341,14 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
 }
 
-const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended`
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent`
 
 func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	var r store.Run
 	var outside, started, ended string
 	var exit sql.NullInt64
 	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
-		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended); err != nil {
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent); err != nil {
 		return r, err
 	}
 	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
@@ -364,9 +368,9 @@ func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 
 func (s *DB) CreateRun(ctx context.Context, r store.Run) (store.Run, error) {
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO runs (lane_id, agent, model, prompt, state, log, start_sha, started)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.LaneID, r.Agent, r.Model, r.Prompt, r.State, r.Log, r.StartSHA, now())
+		INSERT INTO runs (lane_id, agent, model, prompt, state, log, start_sha, started, session, parent)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.LaneID, r.Agent, r.Model, r.Prompt, r.State, r.Log, r.StartSHA, now(), r.Session, r.Parent)
 	if err != nil {
 		return r, err
 	}
@@ -393,8 +397,8 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 	}
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
-			exit_code = ?, error = ?, ended = ? WHERE id = ?`,
-		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.ID)
+			exit_code = ?, error = ?, ended = ?, session = ? WHERE id = ?`,
+		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.ID)
 	return err
 }
 

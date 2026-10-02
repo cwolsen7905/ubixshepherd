@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +23,7 @@ func laneRun(ctx context.Context, env Env, args []string) error {
 	model := fs.String("model", "", "model, if not the agent's default")
 	repo := fs.String("repo", "", "repo, by its name in the workspace")
 	detach := fs.Bool("detach", false, "start it and return; follow later with shepherd run logs -f")
+	fresh := fs.Bool("new", false, "start a new conversation instead of continuing the lane's last one with this agent")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -50,12 +53,21 @@ func laneRun(ctx context.Context, env Env, args []string) error {
 		}
 		laneID = h.Lane.ID
 	}
-	run, err := c.StartRun(ctx, dispatch.StartRequest{LaneID: laneID, Agent: *agent, Model: *model, Prompt: task})
+	run, err := c.StartRun(ctx, dispatch.StartRequest{LaneID: laneID, Agent: *agent, Model: *model, Prompt: task, NewSession: *fresh})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(env.Stdout, "started run %d: %s in lane %s (%s)\n", run.ID, run.Agent, run.Lane, run.Repo)
-	if *detach {
+	return started(ctx, env, c, run, *detach)
+}
+
+// started reports a new run and follows it unless detached.
+func started(ctx context.Context, env Env, c *client.Client, run api.RunView, detach bool) error {
+	how := "new conversation"
+	if run.Parent != 0 {
+		how = fmt.Sprintf("continuing run %d's conversation", run.Parent)
+	}
+	fmt.Fprintf(env.Stdout, "started run %d: %s in lane %s (%s), %s\n", run.ID, run.Agent, run.Lane, run.Repo, how)
+	if detach {
 		fmt.Fprintf(env.Stdout, "follow it: shepherd run logs -f %d\n", run.ID)
 		return nil
 	}
@@ -135,6 +147,13 @@ func printRun(env Env, r api.RunView) {
 		model = "default model"
 	}
 	fmt.Fprintf(w, "  agent     %s (%s)\n", r.Agent, model)
+	if r.Session != "" {
+		fmt.Fprintf(w, "  session   %s", r.Session)
+		if r.Parent != 0 {
+			fmt.Fprintf(w, " (continues run %d)", r.Parent)
+		}
+		fmt.Fprintln(w)
+	}
 	fmt.Fprintf(w, "  task      %s\n", oneLine(r.Prompt, 100))
 	took := "running for " + time.Since(r.Started).Round(time.Second).String()
 	if r.Ended != nil {
@@ -200,6 +219,8 @@ func runRun(ctx context.Context, env Env, args []string) error {
 	followFlag := fs.Bool("f", false, "follow until the run ends")
 	all := fs.Bool("all", false, "every lane's runs, not only this lane's")
 	withLog := fs.Bool("with-log", false, "show: also print the run's log")
+	model := fs.String("model", "", "continue: model, if not the one the run used")
+	detach := fs.Bool("detach", false, "continue: start it and return")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
 		return err
@@ -232,6 +253,20 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		}
 		return nil
 	}
+	if sub == "continue" {
+		if len(pos) != 2 {
+			return errUsage
+		}
+		id, err := strconv.ParseInt(pos[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("run id %q is not a number", pos[0])
+		}
+		run, err := c.StartRun(ctx, dispatch.StartRequest{Continue: id, Prompt: pos[1], Model: *model})
+		if err != nil {
+			return err
+		}
+		return started(ctx, env, c, run, *detach)
+	}
 	if len(pos) != 1 {
 		return errUsage
 	}
@@ -256,6 +291,12 @@ func runRun(ctx context.Context, env Env, args []string) error {
 			return follow(ctx, env, c, id)
 		}
 		return printLog(ctx, env, c, id)
+	case "attach":
+		r, err := c.Run(ctx, id)
+		if err != nil {
+			return err
+		}
+		return attach(ctx, env, r)
 	case "stop":
 		if err := c.StopRun(ctx, id); err != nil {
 			return err
@@ -264,4 +305,39 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	return errUsage
+}
+
+// attach opens the run's agent interactively in its lane's worktree, resuming its
+// session, with the person at the keyboard. Shepherd's push hook still checks the
+// lane's scope; the person's own permissions apply otherwise.
+func attach(ctx context.Context, env Env, r api.RunView) error {
+	switch {
+	case r.State == store.RunRunning:
+		return fmt.Errorf("run %d is still going; wait for it (shepherd run logs -f %d) or stop it first", r.ID, r.ID)
+	case r.Session == "":
+		return fmt.Errorf("run %d has no session to attach to", r.ID)
+	case !env.Interactive:
+		return errors.New("attach needs a terminal")
+	}
+	ad, err := dispatch.AdapterFor(r.Agent)
+	if err != nil {
+		return err
+	}
+	bin, err := exec.LookPath(ad.Bin)
+	if err != nil {
+		return fmt.Errorf("%s is not installed (%s not on PATH)", ad.Name, ad.Bin)
+	}
+	fmt.Fprintf(env.Stdout, "attaching to %s, session %s, in lane %s\n  %s\n", r.Agent, r.Session, r.Lane, r.Worktree)
+	fmt.Fprintf(env.Stdout, "when you exit, carry on headless with: shepherd run continue %d \"...\"\n\n", r.ID)
+	cmd := exec.CommandContext(ctx, bin, ad.Attach(r.Session, r.Worktree)...)
+	cmd.Dir = r.Worktree
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return errSilent
+		}
+		return err
+	}
+	return nil
 }

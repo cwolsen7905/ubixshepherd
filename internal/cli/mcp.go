@@ -136,21 +136,40 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name: "lane_run",
-			Description: "Start an agent (claude, copilot or cursor) headless in a lane's worktree on a task, and return at once with the run id. " +
+			Description: "Start an agent (claude, copilot or cursor) headless in a lane's worktree on a task, and return at once with the run id. The lane keeps its conversation: by default this continues the lane's last session with the same agent. " +
 				"The agent may edit and commit inside the lane's scope and run the repo's gate; it can never push. One agent per lane. Check on it with run_status.",
 			InputSchema: obj(map[string]any{
-				"repo":  propRepo,
-				"lane":  map[string]any{"type": "string", "description": "The lane's name; open it first with lane_open."},
-				"agent": map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor"}},
-				"task":  map[string]any{"type": "string", "description": "What the agent should do, as you would brief a colleague. Shepherd adds the lane, scope and rules."},
-				"model": map[string]any{"type": "string", "description": "Model, if not the agent's default."},
+				"repo":        propRepo,
+				"lane":        map[string]any{"type": "string", "description": "The lane's name; open it first with lane_open."},
+				"agent":       map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor"}},
+				"task":        map[string]any{"type": "string", "description": "What the agent should do, as you would brief a colleague. Shepherd adds the lane, scope and rules."},
+				"model":       map[string]any{"type": "string", "description": "Model, if not the agent's default."},
+				"new_session": map[string]any{"type": "boolean", "description": "Start a new conversation. By default the lane keeps its conversation: the run continues the lane's last session with this agent."},
 			}, "repo", "lane", "agent", "task"),
 			args: func(a map[string]any) ([]string, error) {
 				out := []string{"lane", "run", str(a, "lane"), str(a, "task"), "--repo", str(a, "repo"), "--agent", str(a, "agent"), "--detach"}
 				if m := str(a, "model"); m != "" {
 					out = append(out, "--model", m)
 				}
+				if n, _ := a["new_session"].(bool); n {
+					out = append(out, "--new")
+				}
 				return out, nil
+			},
+		},
+		{
+			Name:        "run_continue",
+			Description: "Continue a finished run's conversation with a follow-up (same agent, same session, same lane): a correction, the next step, a pipeline failure to fix. Returns the new run's id at once.",
+			InputSchema: obj(map[string]any{
+				"id":      map[string]any{"type": "integer", "description": "The run whose conversation to continue."},
+				"message": map[string]any{"type": "string", "description": "What to tell the agent next."},
+			}, "id", "message"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"run", "continue", fmt.Sprint(int64(id)), str(a, "message"), "--detach"}, nil
 			},
 		},
 		{

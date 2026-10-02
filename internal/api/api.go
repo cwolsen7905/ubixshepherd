@@ -33,8 +33,9 @@ func PathRunStop(id int64) string { return fmt.Sprintf("%s/%d/stop", PathRuns, i
 // RunView is a run with its lane's and repo's names.
 type RunView struct {
 	store.Run
-	Lane string `json:"lane"`
-	Repo string `json:"repo"`
+	Lane     string `json:"lane"`
+	Repo     string `json:"repo"`
+	Worktree string `json:"worktree"`
 }
 
 // RunLog answers GET /v1/runs/{id}/log?offset=N: the next piece of the log.

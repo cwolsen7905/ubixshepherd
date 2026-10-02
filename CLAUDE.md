@@ -49,7 +49,9 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
 - `internal/dispatch` starts agents (`lane run`). An adapter per CLI builds its headless
   command line; the runner briefs the agent, blocks pushing for the whole run, redacts
   its output into `~/.shepherd/runs/`, and records the outcome. Its tests use a fake agent
-  script; a real run of each CLI is a manual check before changing an adapter.
+  script; a real run of each CLI is a manual check before changing an adapter. Each
+  adapter also says how its CLI names a session (chosen up front, created first, or
+  printed in the output), how to resume it headless, and how to attach to it.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.
