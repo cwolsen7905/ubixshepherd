@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -64,7 +65,9 @@ type Runner struct {
 	Exe string
 	// ForgeFor returns a repo's forge, for opening merge requests; tests replace it.
 	ForgeFor func(remote string) (forge.Forge, error)
-	Log      *slog.Logger
+	// AskConversation answers a question from an adopted conversation; tests replace it.
+	AskConversation func(ctx context.Context, c store.Conversation, question string) (convo.Answer, error)
+	Log             *slog.Logger
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 

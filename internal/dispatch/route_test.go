@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/convo"
+
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -153,5 +155,39 @@ func TestChainDepthIsCapped(t *testing.T) {
 	}
 	if _, err := f.runner.RequestHelp(ctx, store.Request{FromRun: from, Kind: KindReview, Message: "once more"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "ask_human") {
 		t.Errorf("past the cap: %v", err)
+	}
+}
+
+func TestQuestionToALaneAnsweredByItsConversation(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	pay := openLane(t, f, "feat/payments", "pay/**")
+	// A conversation the person had by hand on that branch, long since quiet.
+	f.st.PutConversation(ctx, store.Conversation{ID: "71ffa009-0000", Agent: "claude", RepoID: pay.RepoID, Dir: f.lane.Worktree,
+		Title: "Stripe integration", Branches: []string{"dev", "feat/payments"}, Last: time.Now().Add(-time.Hour)})
+	var asked string
+	f.runner.AskConversation = func(_ context.Context, c store.Conversation, q string) (convo.Answer, error) {
+		asked = c.ID + ": " + q
+		return convo.Answer{Text: "The webhook secret is in Vault at payments/stripe.", USD: 0.5}, nil
+	}
+	asker, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, asker.ID)
+	q, err := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindQuestion, Lane: "feat/payments", Message: "Where is the webhook secret?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q = waitRequest(t, f, q.ID, store.RequestReplied)
+	if !strings.HasPrefix(asked, "71ffa009-0000: ") || !strings.Contains(asked, "Where is the webhook secret?") || !strings.Contains(asked, "Do not change anything") {
+		t.Errorf("asked = %q", asked)
+	}
+	if q.Agent != "conversation 71ffa009" || !strings.Contains(q.Reply, "payments/stripe") {
+		t.Errorf("request = %+v", q)
+	}
+	back := f.wait(t, q.ReplyRun)
+	if back.Parent != asker.ID || !strings.Contains(back.Prompt, "payments/stripe") {
+		t.Errorf("reply run = %+v", back)
+	}
+	if spent, _, _ := f.runner.Spent(ctx); spent < 0.5 {
+		t.Errorf("the conversation's cost was not counted: %v", spent)
 	}
 }
