@@ -180,3 +180,11 @@ func TestImportSkipsBranchesTheForgeSaysAreMerged(t *testing.T) {
 		}
 	}
 }
+
+func TestParseCoordSkipsShepherdsOwnView(t *testing.T) {
+	view := viewBegin + "\n\n| Lane | Branch | Agent | Scope | Since |\n| -- | -- | -- | -- | -- |\n| x | `feat/x` | by hand | `x/**` | today |\n\n" + viewEnd
+	rows := ParseCoord(InsertView(coordDoc, view))
+	if len(rows) != 3 || rows[0].Agent != "billing (Claude)" {
+		t.Errorf("rows = %+v", rows)
+	}
+}
