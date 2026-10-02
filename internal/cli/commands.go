@@ -120,6 +120,7 @@ func printWhere(env Env, r api.Resolution) {
 	fmt.Fprintf(w, "  repo       %s\n", r.Repo.Name)
 	if r.Lane != nil {
 		fmt.Fprintf(w, "  lane       %s (%s, %s)\n", r.Lane.Name, r.Lane.Branch, r.Lane.State)
+		fmt.Fprintf(w, "  opened by  %s\n", openedBy(r.Lane.Origin))
 	}
 	if p := r.Profile; p != nil {
 		model := p.BranchModel

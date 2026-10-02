@@ -38,7 +38,11 @@ func (f *Fold) RenderView(ctx context.Context, repo store.Repo) (string, error) 
 	} else {
 		b.WriteString("| Lane | Branch | Agent | Scope | Since |\n| ---- | ------ | ----- | ----- | ----- |\n")
 		for _, l := range lanes {
-			agent := "by hand"
+			// No run yet: say what opened the lane, not a guess at who.
+			agent := "via " + l.Origin.Surface()
+			if l.Origin.Agent != "" {
+				agent = l.Origin.Agent + " " + agent
+			}
 			if runs, err := f.Store.Runs(ctx, l.ID, "", 1); err == nil && len(runs) > 0 {
 				agent = runs[0].Agent
 				if runs[0].State == store.RunRunning {

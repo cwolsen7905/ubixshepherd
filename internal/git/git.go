@@ -36,6 +36,20 @@ func Run(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
+// ClearEnvConfig drops git configuration passed in through the environment
+// (GIT_CONFIG_COUNT with its keys and values, and GIT_CONFIG_PARAMETERS). Test suites
+// call it from TestMain: their git works on repos they make, and must not inherit the
+// config of whatever started them, such as the push block of an agent run.
+func ClearEnvConfig() {
+	for _, kv := range os.Environ() {
+		k, _, _ := strings.Cut(kv, "=")
+		if k == "GIT_CONFIG_COUNT" || k == "GIT_CONFIG_PARAMETERS" ||
+			strings.HasPrefix(k, "GIT_CONFIG_KEY_") || strings.HasPrefix(k, "GIT_CONFIG_VALUE_") {
+			os.Unsetenv(k)
+		}
+	}
+}
+
 // Ok runs git and reports only whether it exited 0 (for --verify, --is-ancestor and the
 // like, where a non-zero exit is an answer, not a failure).
 func Ok(ctx context.Context, dir string, args ...string) bool {

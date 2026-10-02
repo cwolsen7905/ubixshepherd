@@ -87,17 +87,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathLanes, s.openLane)
 	mux.HandleFunc("POST "+api.PathLanes+"/{id}/close", s.closeLane)
 	mux.HandleFunc("POST "+api.PathLanes+"/{id}/scope", s.rescopeLane)
+	mux.HandleFunc("POST "+api.PathLanes+"/{id}/ship", s.withRunner(s.shipLane))
 	mux.HandleFunc("GET "+api.PathFoldGC, s.foldGC)
 	mux.HandleFunc("POST "+api.PathPrePush, s.prePush)
 	mux.HandleFunc("POST /v1/repos/{id}/hook", s.repoHook)
-	mux.HandleFunc("POST "+api.PathRuns, s.startRun)
+	mux.HandleFunc("POST "+api.PathRuns, s.withRunner(s.startRun))
 	mux.HandleFunc("GET "+api.PathRuns, s.listRuns)
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}", s.getRun)
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}/log", s.runLog)
-	mux.HandleFunc("POST "+api.PathRuns+"/{id}/stop", s.stopRun)
-	mux.HandleFunc("POST "+api.PathRuns+"/{id}/events", s.addEvent)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/stop", s.withRunner(s.stopRun))
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/events", s.withRunner(s.addEvent))
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}/events", s.runEvents)
-	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.withRunner(s.addDecision))
 	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
 	mux.HandleFunc("GET "+api.PathFeed, s.feed)
 	mux.HandleFunc("POST "+api.PathFoldImport, s.foldImport)
@@ -111,14 +112,26 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathTagsReserve, s.reserveTag)
 	mux.HandleFunc("POST "+api.PathTagsRelease, s.releaseTag)
 	mux.HandleFunc("GET "+api.PathSpend, s.spendToday)
-	mux.HandleFunc("POST "+api.PathSpend, s.addSpend)
+	mux.HandleFunc("POST "+api.PathSpend, s.withRunner(s.addSpend))
 	mux.HandleFunc("GET "+api.PathSettings+"/{key}", s.getSetting)
 	mux.HandleFunc("PUT "+api.PathSettings+"/{key}", s.putSetting)
-	mux.HandleFunc("POST "+api.PathRuns+"/{id}/requests", s.addRequest)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/requests", s.withRunner(s.addRequest))
 	mux.HandleFunc("GET "+api.PathRequests, s.listRequests)
-	mux.HandleFunc("POST "+api.PathRequests+"/{id}/route", s.routeRequest)
-	mux.HandleFunc("POST "+api.PathDecisions+"/{id}/answer", s.answerDecision)
+	mux.HandleFunc("POST "+api.PathRequests+"/{id}/route", s.withRunner(s.routeRequest))
+	mux.HandleFunc("POST "+api.PathDecisions+"/{id}/answer", s.withRunner(s.answerDecision))
 	return s.logRequests(s.auth(mux))
+}
+
+// withRunner refuses a request that needs agents when this server has no Runner (a
+// server built for tests, or embedded without dispatch), rather than panicking.
+func (s *Server) withRunner(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.Runner == nil {
+			writeError(w, http.StatusServiceUnavailable, errors.New("this daemon does not run agents"))
+			return
+		}
+		h(w, r)
+	}
 }
 
 // statusWriter remembers the status a handler wrote.
@@ -377,15 +390,43 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	req.Origin = s.fillOrigin(r, req.Origin)
 	lane, err := s.Fold.Open(r.Context(), req)
 	if err != nil {
 		s.foldError(w, err)
 		return
 	}
-	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree)
-	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree, "origin", lane.Origin.String())
+	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened via %s (scope %s)", lane.Name, lane.Origin.Surface(), strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, lane)
+}
+
+// fillOrigin completes what a client said about itself with what the daemon knows: the
+// client its request named, the agent and session of the run it came from, and the
+// front desk's session (the desk is resumed per turn, so it is the one in use). It never
+// guesses: what nothing says stays empty.
+func (s *Server) fillOrigin(r *http.Request, o store.Origin) store.Origin {
+	if o.Via == "" {
+		o.Via = r.Header.Get(api.ClientHeader)
+	}
+	ctx := r.Context()
+	if o.Run != 0 {
+		if run, err := s.Store.Run(ctx, o.Run); err == nil {
+			if o.Agent == "" {
+				o.Agent = run.Agent
+			}
+			if o.Session == "" {
+				o.Session = run.Session
+			}
+		} else {
+			o.Run = 0 // not a run this daemon knows: do not point at one
+		}
+	}
+	if o.Via == store.OriginDesk && o.Session == "" {
+		o.Session, _ = s.Store.Setting(ctx, "desk.session")
+	}
+	return o
 }
 
 func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {
@@ -427,6 +468,21 @@ func (s *Server) rescopeLane(w http.ResponseWriter, r *http.Request) {
 	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, lane)
+}
+
+func (s *Server) shipLane(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	res, err := s.Runner.Ship(r.Context(), id)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Log.Info("lane ship", "lane", res.Lane, "pushed", res.Pushed, "mr", res.MR)
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) foldGC(w http.ResponseWriter, r *http.Request) {
@@ -918,8 +974,10 @@ func (s *Server) askSession(w http.ResponseWriter, r *http.Request) {
 	}
 	defer lock.Unlock()
 	a, err := convo.Ask(r.Context(), bin, *c, req.Question)
-	if a.USD > 0 {
+	if a.USD > 0 && s.Runner != nil {
 		s.Runner.Spend(r.Context(), store.Spend{Source: "session", USD: a.USD})
+	} else if a.USD > 0 {
+		s.Store.AddSpend(r.Context(), store.Spend{Day: dispatch.Today(), Source: "session", USD: a.USD})
 	}
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
@@ -1009,7 +1067,7 @@ func (s *Server) releaseTag(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) spendToday(w http.ResponseWriter, r *http.Request) {
-	total, by, err := s.Runner.Spent(r.Context())
+	total, by, err := dispatch.Spent(r.Context(), s.Store, s.Config)
 	if err != nil {
 		s.fail(w, err)
 		return

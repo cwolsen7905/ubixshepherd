@@ -2,7 +2,10 @@ package dispatch
 
 import (
 	"context"
+	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -160,4 +163,84 @@ func TestShipEnforcesCommitRules(t *testing.T) {
 	if !found {
 		t.Errorf("no fix run asking to amend among %d runs", len(runs))
 	}
+}
+
+// commitInLane commits a file in the lane's worktree, as work done outside a run.
+func commitInLane(t *testing.T, f *fixture, file, msg string) {
+	t.Helper()
+	path := filepath.Join(f.lane.Worktree, file)
+	os.MkdirAll(filepath.Dir(path), 0o755)
+	os.WriteFile(path, []byte(msg+"\n"), 0o644)
+	for _, args := range [][]string{{"add", file}, {"commit", "-q", "-m", msg}} {
+		if out, err := exec.Command("git", append([]string{"-C", f.lane.Worktree}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+}
+
+func TestShipLaneShipsExistingCommits(t *testing.T) {
+	f, sf := shipFixture(t, "ok", pushes)
+	ctx := context.Background()
+	commitInLane(t, f, "src/a.txt", "feat: work done before")
+	res, err := f.runner.Ship(ctx, f.lane.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Pushed || res.MR != 42 || res.Commits != 1 || !strings.Contains(res.Message, "opened !42") || !originHas(t, f, "work") {
+		t.Errorf("ship = %+v", res)
+	}
+	if len(sf.created) != 1 || !strings.Contains(sf.created[0], "feat: work done before") || !strings.Contains(sf.created[0], "(shepherd lane ship)") {
+		t.Errorf("created = %q", sf.created)
+	}
+	// Everything is pushed now: nothing more to ship.
+	if _, err := f.runner.Ship(ctx, f.lane.ID); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "nothing to ship") {
+		t.Errorf("second ship: %v", err)
+	}
+}
+
+func TestShipLaneRefuses(t *testing.T) {
+	ctx := context.Background()
+	refused := func(t *testing.T, f *fixture, sf *shipForge, want string) {
+		t.Helper()
+		_, err := f.runner.Ship(ctx, f.lane.ID)
+		if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), want) {
+			t.Errorf("ship: %v, want a refusal with %q", err, want)
+		}
+		if originHas(t, f, "work") || len(sf.created) != 0 {
+			t.Error("pushed although refused")
+		}
+	}
+	t.Run("not opted in", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", "repos:\n  app:\n    gate: \"true\"\n")
+		commitInLane(t, f, "src/a.txt", "feat: a")
+		refused(t, f, sf, "app has not opted in to Shepherd pushing")
+	})
+	t.Run("nothing committed", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		refused(t, f, sf, "nothing to ship")
+	})
+	t.Run("uncommitted changes", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		commitInLane(t, f, "src/a.txt", "feat: a")
+		os.WriteFile(filepath.Join(f.lane.Worktree, "src", "a.txt"), []byte("changed"), 0o644)
+		refused(t, f, sf, "uncommitted changes")
+	})
+	t.Run("outside the scope", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		commitInLane(t, f, "stray.txt", "feat: stray")
+		refused(t, f, sf, "outside its scope (stray.txt)")
+	})
+	t.Run("commit rules", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes+"    forbid: [\"(?i)wip\"]\n")
+		commitInLane(t, f, "src/a.txt", "WIP: a")
+		refused(t, f, sf, `contains "WIP"`)
+	})
+	t.Run("gate fails", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", strings.Replace(pushes, `gate: "true"`, `gate: "echo gate says no; exit 1"`, 1))
+		commitInLane(t, f, "src/a.txt", "feat: a")
+		refused(t, f, sf, "gate says no")
+		if runs, _ := f.st.Runs(ctx, f.lane.ID, "", 5); len(runs) != 0 {
+			t.Errorf("an explicit ship started %d runs; it should only refuse", len(runs))
+		}
+	})
 }

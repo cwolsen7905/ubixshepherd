@@ -268,6 +268,10 @@ type LaneView struct {
 	Repo string `json:"repo"`
 }
 
+// PathLaneShip is POST /v1/lanes/{id}/ship: push the lane's committed work and open or
+// update its merge request, after Shepherd's own checks.
+func PathLaneShip(id int64) string { return fmt.Sprintf("%s/%d/ship", PathLanes, id) }
+
 // PathLaneScope is POST /v1/lanes/{id}/scope.
 func PathLaneScope(id int64) string { return fmt.Sprintf("%s/%d/scope", PathLanes, id) }
 

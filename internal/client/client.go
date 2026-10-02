@@ -87,6 +87,15 @@ func (c *Client) CloseLane(ctx context.Context, id int64, force bool) (fold.Clos
 	return out, c.do(ctx, http.MethodPost, api.PathLaneClose(id), api.CloseLane{Force: force}, &out)
 }
 
+// ShipLane pushes a lane's committed work after the daemon runs the repo's gate, so it
+// waits as long as a gate may take.
+func (c *Client) ShipLane(ctx context.Context, id int64) (dispatch.Shipped, error) {
+	var out dispatch.Shipped
+	long := *c
+	long.http = &http.Client{Timeout: dispatch.GateTimeout + 5*time.Minute}
+	return out, long.do(ctx, http.MethodPost, api.PathLaneShip(id), struct{}{}, &out)
+}
+
 func (c *Client) FoldGC(ctx context.Context, workspaceID int64) ([]fold.Stale, error) {
 	var out []fold.Stale
 	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?workspace_id=%d", api.PathFoldGC, workspaceID), nil, &out)

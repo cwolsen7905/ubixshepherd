@@ -171,7 +171,8 @@ func (w *Watcher) startFollow(ctx context.Context, repo, up store.Repo, f config
 		"{major}", strconv.Itoa(v.Major), "{minor}", strconv.Itoa(v.Minor), "{patch}", strconv.Itoa(v.Patch),
 	).Replace
 	name := expand(f.Lane)
-	opened, err := w.Fold.Open(ctx, fold.OpenRequest{RepoID: repo.ID, Name: name, Scope: f.Scope})
+	opened, err := w.Fold.Open(ctx, fold.OpenRequest{RepoID: repo.ID, Name: name, Scope: f.Scope,
+		Origin: store.Origin{Via: store.OriginFollow, Detail: "release " + up.Name + " " + tag}})
 	if err != nil {
 		w.feed(ctx, store.FeedRelease, 0, "%s released %s, but lane %s could not open in %s: %s", up.Name, tag, name, repo.Name, firstLine(err.Error()))
 		return

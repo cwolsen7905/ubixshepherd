@@ -43,6 +43,12 @@ type Adapter struct {
 	Note string
 	// Read turns a line of the agent's output into the run log's line and any cost.
 	Read func(line string) Output
+	// SessionCost says the cost the CLI reports is the whole session's so far, not
+	// this invocation's: the runner keeps the latest figure and records what the run
+	// added beyond the earlier runs of the session. It applies to whatever Read
+	// returns, dollars or credits, so an adapter that starts reading a cost sets it
+	// when its CLI counts the session.
+	SessionCost bool
 }
 
 // Opts are what a run's command line is built from.
@@ -115,6 +121,8 @@ var adapters = map[string]Adapter{
 		SessionIn:  func(string) string { return "" },
 		Attach:     func(session, _ string) []string { return []string{"--resume", session} },
 		Read:       claudeOutput,
+		// total_cost_usd on a resumed session is the session's total, not the run's.
+		SessionCost: true,
 	},
 	"copilot": {
 		Name: "copilot", Bin: "copilot",
@@ -150,6 +158,8 @@ var adapters = map[string]Adapter{
 		// `exit` or `true` in a headless run.
 		Note: "Run each git command on its own (git add, then git commit), not chained with &&, || or ;. Chained commands need an approval nobody can give in this run.",
 		Read: copilotOutput,
+		// Its "AI Credits" line counts the session: a continued run reports the total.
+		SessionCost: true,
 	},
 	"cursor": {
 		Name: "cursor", Bin: "cursor-agent",

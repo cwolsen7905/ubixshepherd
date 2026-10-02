@@ -58,7 +58,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_list", "fold_gc", "shepherd_where"} {
+	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_ship", "lane_list", "fold_gc", "shepherd_where"} {
 		if !names[n] {
 			t.Errorf("tool %s missing", n)
 		}
@@ -83,7 +83,8 @@ func TestMCPLaneTools(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lane_open","arguments":{"repo":"app","name":"feat/other","scope":["src/x/**"]}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"lane_list","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"lane_open","arguments":{"repo":"app","name":"bad","scope":"src/**"}}}`,
-		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"lane_close","arguments":{"repo":"app","name":"feat/mcp"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"lane_ship","arguments":{"repo":"app","name":"feat/mcp"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"lane_close","arguments":{"repo":"app","name":"feat/mcp"}}}`,
 	)
 	text, isErr := toolText(t, resps[0])
 	if isErr || !strings.Contains(text, filepath.Join("app-worktrees", "feat-mcp")) {
@@ -100,7 +101,12 @@ func TestMCPLaneTools(t *testing.T) {
 	if _, isErr = toolText(t, resps[3]); !isErr {
 		t.Error("scope as a string accepted")
 	}
+	// app has not opted in to Shepherd pushing: lane_ship refuses and says why.
 	text, isErr = toolText(t, resps[4])
+	if !isErr || !strings.Contains(text, "app has not opted in to Shepherd pushing") || !strings.Contains(text, "push lane feat/mcp yourself") {
+		t.Errorf("lane_ship: %v %s", isErr, text)
+	}
+	text, isErr = toolText(t, resps[5])
 	if isErr || !strings.Contains(text, "closed lane feat/mcp") {
 		t.Errorf("lane_close: %v %s", isErr, text)
 	}

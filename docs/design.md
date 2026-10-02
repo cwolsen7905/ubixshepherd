@@ -142,6 +142,11 @@ record `merged` without a merge SHA it fetched from GitLab itself.
 - **Lanes** are registered by Shepherd when it hands out a work order, with a distinct
   branch prefix and worktree, created by Shepherd. No agent forgets to register, because
   no agent registers.
+- **Every lane records its origin**: the surface it was opened through (the CLI, an
+  agent's MCP client, the front desk, an import, a followed release) and, where the
+  caller can say, the agent, its run and session, the calling process and the directory.
+  A lane with no run still shows who opened it; a lane from before origins were recorded
+  shows as unknown, never a guess.
 - **Claims are leases.** Shared paths (root `README.md`, `CLAUDE.md`, `Routes.php`,
   `Dependencies.php`, `composer.lock`, `.gitlab-ci.yml`, roadmap rows) are leased to one
   lane at a time. A pre-push hook and a CI check refuse a change to a shared path the lane

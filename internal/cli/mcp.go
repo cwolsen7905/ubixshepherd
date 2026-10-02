@@ -85,7 +85,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "lane_list",
-			Description: "Open lanes: repo, name, state, age and scope. Without repo, every repo in the workspace.",
+			Description: "Open lanes: repo, name, state, age, scope, and who opened each (the surface, with agent, run, session, pid and directory where known; unknown for lanes from before Shepherd recorded it). Without repo, every repo in the workspace.",
 			InputSchema: obj(map[string]any{"repo": propRepo}),
 			args: func(a map[string]any) ([]string, error) {
 				if r := str(a, "repo"); r != "" {
@@ -132,6 +132,18 @@ func mcpTools() []mcpTool {
 					out = append(out, "--force")
 				}
 				return out, nil
+			},
+		},
+		{
+			Name: "lane_ship",
+			Description: "Push a lane's committed, unpushed work and open or update its merge request, the way a run's work is shipped when it ends. Shepherd checks the scope and the repo's commit rules and runs the repo's gate itself first (this can take minutes), and refuses with the reason if any fails. " +
+				"Only for repos whose profile has autonomy.push: shepherd. Never merges: the merge request is the person's to review.",
+			InputSchema: obj(map[string]any{
+				"repo": propRepo,
+				"name": map[string]any{"type": "string", "description": "The lane's name."},
+			}, "repo", "name"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"lane", "ship", str(a, "name"), "--repo", str(a, "repo")}, nil
 			},
 		},
 		{

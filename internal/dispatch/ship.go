@@ -16,6 +16,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
+	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -58,40 +59,144 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 		r.gateFailed(ctx, run, lane, "the repo's commit rules", bad+"\nAmend your unpushed commits (git commit --amend, or git rebase) so no commit message matches.", "", &lf)
 		return
 	}
-	ok, tail, logPath := r.gate(ctx, run, lane, prof.Gate)
+	ok, tail, logPath := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("%d.gate.log", run.ID))
 	if !ok {
 		r.gateFailed(ctx, run, lane, "the repo's gate, `"+prof.Gate+"`,", tail, logPath, &lf)
 		return
 	}
 	lf.GateTries = 0
 	r.Store.PutLaneForge(ctx, lf)
+	r.publish(ctx, lane, repo, prof.Gate, fmt.Sprintf("run %d", run.ID))
+}
 
-	if _, err := git.Run(ctx, lane.Worktree, "push", "--quiet", "-u", "origin", lane.Branch); err != nil {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "gate passed in lane %s, but the push failed: %s", lane.Name, clip(err.Error(), 300))
-		return
+// Shipped is what an explicit ship did.
+type Shipped struct {
+	Lane    string `json:"lane"`
+	Commits int    `json:"commits"`
+	Pushed  bool   `json:"pushed"`
+	MR      int    `json:"mr,omitempty"`
+	URL     string `json:"url,omitempty"`
+	// Message says what happened, as the feed says it.
+	Message string `json:"message"`
+}
+
+// Ship pushes a lane's existing unpushed commits and opens or updates its merge request:
+// the path a run takes when it ends, for work that is already committed. It checks the
+// same things first (the scope, the repo's commit rules, Shepherd's own gate run) and
+// refuses, saying why, rather than hand anything to an agent. Only for repos whose
+// profile says Shepherd pushes; it never merges.
+func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
+	lane, err := r.Store.Lane(ctx, laneID)
+	if err != nil {
+		return Shipped{}, err
 	}
+	out := Shipped{Lane: lane.Name}
+	if lane.State != store.LaneOpen {
+		return out, refuse("lane %s is %s, not open", lane.Name, lane.State)
+	}
+	repo, err := r.Store.Repo(ctx, lane.RepoID)
+	if err != nil {
+		return out, err
+	}
+	prof := r.Config.Profile(repo.Name)
+	if prof.Autonomy.Push != config.Shepherd {
+		return out, refuse("%s has not opted in to Shepherd pushing (its profile's autonomy.push is %q, not %q): push lane %s yourself",
+			repo.Name, prof.Autonomy.Push, config.Shepherd, lane.Name)
+	}
+	if prof.Gate == "" {
+		return out, refuse("%s has no gate: Shepherd pushes only after running the repo's gate itself", repo.Name)
+	}
+	if busy, _ := r.Store.Runs(ctx, lane.ID, store.RunRunning, 1); len(busy) > 0 {
+		return out, refuse("run %d is going in lane %s; ship when it ends", busy[0].ID, lane.Name)
+	}
+	if dirty, err := git.Dirty(ctx, lane.Worktree); err != nil {
+		return out, err
+	} else if dirty != "" {
+		return out, refuse("lane %s has uncommitted changes; commit or discard them first, so the gate checks what is pushed", lane.Name)
+	}
+	pushed := lane.Base
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Branch) {
+		pushed = "origin/" + lane.Branch
+	} else if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Base) {
+		pushed = "origin/" + lane.Base
+	}
+	n, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", pushed+"..HEAD")
+	if err != nil {
+		return out, err
+	}
+	fmt.Sscan(n, &out.Commits)
+	if out.Commits == 0 {
+		return out, refuse("lane %s has no commits beyond %s: nothing to ship", lane.Name, pushed)
+	}
+	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
+		return out, refuse("not shipping lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
+	}
+	if bad := forbidden(ctx, lane, prof.Forbid); bad != "" {
+		return out, refuse("not shipping lane %s: %s", lane.Name, bad)
+	}
+	if ok, tail, logPath := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("lane-%d.gate.log", lane.ID)); !ok {
+		r.feed(ctx, store.FeedPipeline, lane.ID, "the repo's gate, `%s`, failed in lane %s; not pushing (%s)", prof.Gate, lane.Name, logPath)
+		return out, refuse("the repo's gate, `%s`, failed in lane %s; not pushing. The whole output is in %s; it ended:\n%s", prof.Gate, lane.Name, logPath, tail)
+	}
+	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship")
+	res.Lane, res.Commits = out.Lane, out.Commits
+	return res, nil
+}
+
+// outsideScope lists the files the lane's branch changes, since it left its base, that
+// its scope does not cover.
+func (r *Runner) outsideScope(ctx context.Context, lane store.Lane) []string {
+	base := lane.Base
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+base) {
+		base = "origin/" + base
+	}
+	files, err := git.Run(ctx, lane.Worktree, "diff", "--name-only", "--no-renames", base+"...HEAD")
+	if err != nil {
+		return nil
+	}
+	var outside []string
+	for _, f := range strings.Split(files, "\n") {
+		if f != "" && !scope.Any(lane.Scope, f) {
+			outside = append(outside, f)
+		}
+	}
+	return outside
+}
+
+// publish pushes a lane whose gate has passed and opens its merge request, or says the
+// open one is updated, telling the feed either way. from says what shipped it, for the
+// request's description ("run 12", "shepherd lane ship").
+func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, gate, from string) Shipped {
+	out := Shipped{Lane: lane.Name}
+	say := func(kind, format string, a ...any) Shipped {
+		out.Message = fmt.Sprintf(format, a...)
+		r.feed(ctx, kind, lane.ID, "%s", out.Message)
+		return out
+	}
+	if _, err := git.Run(ctx, lane.Worktree, "push", "--quiet", "-u", "origin", lane.Branch); err != nil {
+		return say(store.FeedPipeline, "gate passed in lane %s, but the push failed: %s", lane.Name, clip(err.Error(), 300))
+	}
+	out.Pushed = true
 	f, err := r.forgeFor(repo.Remote)
 	if err != nil {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "pushed lane %s (gate passed); open the merge request yourself: %v", lane.Name, err)
-		return
+		return say(store.FeedPipeline, "pushed lane %s (gate passed); open the merge request yourself: %v", lane.Name, err)
 	}
 	mr, err := f.MRForBranch(ctx, lane.Branch)
 	if err != nil {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "pushed lane %s (gate passed); could not look up its merge request: %s", lane.Name, clip(err.Error(), 200))
-		return
+		return say(store.FeedPipeline, "pushed lane %s (gate passed); could not look up its merge request: %s", lane.Name, clip(err.Error(), 200))
 	}
 	if mr != nil && mr.State == "opened" {
-		r.feed(ctx, store.FeedMR, lane.ID, "pushed lane %s (gate `%s` passed); !%d updated: %s", lane.Name, prof.Gate, mr.IID, mr.URL)
-		return
+		out.MR, out.URL = mr.IID, mr.URL
+		return say(store.FeedMR, "pushed lane %s (gate `%s` passed); !%d updated: %s", lane.Name, gate, mr.IID, mr.URL)
 	}
-	title, body := r.mrText(ctx, run, lane, prof.Gate)
+	title, body := r.mrText(ctx, lane, gate, from)
 	mr, err = f.CreateMR(ctx, lane.Branch, lane.Base, title, body)
 	if err != nil {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "pushed lane %s (gate passed), but opening the merge request failed: %s", lane.Name, clip(err.Error(), 300))
-		return
+		return say(store.FeedPipeline, "pushed lane %s (gate passed), but opening the merge request failed: %s", lane.Name, clip(err.Error(), 300))
 	}
 	r.Log.Info("lane shipped", "lane", lane.Name, "mr", mr.IID)
-	r.feed(ctx, store.FeedMR, lane.ID, "pushed lane %s (gate `%s` passed) and opened !%d for you to review: %s", lane.Name, prof.Gate, mr.IID, mr.URL)
+	out.MR, out.URL = mr.IID, mr.URL
+	return say(store.FeedMR, "pushed lane %s (gate `%s` passed) and opened !%d for you to review: %s", lane.Name, gate, mr.IID, mr.URL)
 }
 
 // forbidden checks the lane's unpushed commit messages against the repo's patterns and
@@ -166,8 +271,8 @@ func (r *Runner) forgeFor(remote string) (forge.Forge, error) {
 }
 
 // gate runs the repo's gate in the lane's worktree. It reports whether it passed, the
-// end of its output, and where the whole output is.
-func (r *Runner) gate(ctx context.Context, run store.Run, lane store.Lane, gate string) (bool, string, string) {
+// end of its output, and where the whole output is (logName, in the runs directory).
+func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string) (bool, string, string) {
 	ctx, cancel := context.WithTimeout(ctx, GateTimeout)
 	defer cancel()
 	var cmd *exec.Cmd
@@ -182,7 +287,8 @@ func (r *Runner) gate(ctx context.Context, run store.Run, lane store.Lane, gate 
 	r.feed(ctx, store.FeedPipeline, lane.ID, "running the gate `%s` in lane %s before pushing", gate, lane.Name)
 	err := cmd.Run()
 	text := redact.String(out.String())
-	logPath := filepath.Join(r.Dir, fmt.Sprintf("%d.gate.log", run.ID))
+	logPath := filepath.Join(r.Dir, logName)
+	os.MkdirAll(r.Dir, 0o700)
 	os.WriteFile(logPath, []byte(text), 0o600)
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	if len(lines) > 60 {
@@ -227,7 +333,7 @@ func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane,
 }
 
 // mrText is the merge request's title and description, from the lane's commits.
-func (r *Runner) mrText(ctx context.Context, run store.Run, lane store.Lane, gate string) (string, string) {
+func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string) (string, string) {
 	base := lane.Base
 	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+base) {
 		base = "origin/" + base
@@ -239,7 +345,7 @@ func (r *Runner) mrText(ctx context.Context, run store.Run, lane store.Lane, gat
 		title = subjects[0]
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Opened by uBixShepherd from lane `%s` (run %d). The gate, `%s`, passed in the lane before the push.\n\n", lane.Name, run.ID, gate)
+	fmt.Fprintf(&b, "Opened by uBixShepherd from lane `%s` (%s). The gate, `%s`, passed in the lane before the push.\n\n", lane.Name, from, gate)
 	b.WriteString("Commits:\n")
 	for _, s := range subjects {
 		if s != "" {

@@ -27,7 +27,7 @@ const fakeAgent = `#!/bin/sh
 if [ "$1" = create-chat ]; then echo "11111111-2222-4333-8444-555555555555"; exit 0; fi
 echo "fake agent in $(pwd), run $SHEPHERD_RUN, lane $SHEPHERD_LANE"
 echo "ARGS: $(printf '%s ' "$@" | tr '\n' ' ')"
-case "$MODE" in quick) echo "copilot --resume=cop-$SHEPHERD_RUN-session"; exit 0 ;; esac
+case "$MODE" in quick) [ -n "$CREDITS" ] && echo "AI Credits $CREDITS (13s)"; [ -n "$COST" ] && echo "{\"type\":\"result\",\"subtype\":\"success\",\"total_cost_usd\":$COST}"; echo "copilot --resume=cop-$SHEPHERD_RUN-session"; exit 0 ;; esac
 case "$MODE" in sleep) sleep 30 ;; esac
 mkdir -p src && echo "work $SHEPHERD_RUN" >> src/work.txt
 git add src/work.txt && git commit -q -m "agent work"

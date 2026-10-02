@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -45,6 +46,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneScope(ctx, env, args[1:])
 	case "review":
 		return laneReview(ctx, env, args[1:])
+	case "ship":
+		return laneShip(ctx, env, args[1:])
 	}
 	return errUsage
 }
@@ -178,7 +181,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	lane, err := c.OpenLane(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope})
+	lane, err := c.OpenLane(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Origin: callerOrigin(env)})
 	if err != nil {
 		return err
 	}
@@ -187,6 +190,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	fmt.Fprintf(w, "  branch    %s (from %s)\n", lane.Branch, lane.Base)
 	fmt.Fprintf(w, "  worktree  %s\n", lane.Worktree)
 	fmt.Fprintf(w, "  scope     %s\n", strings.Join(lane.Scope, ", "))
+	fmt.Fprintf(w, "  opened by %s\n", lane.Origin.String())
 	if len(lane.Shared) > 0 {
 		fmt.Fprintf(w, "  shared    %s (held by this lane until it closes)\n", strings.Join(lane.Shared, ", "))
 	}
@@ -195,6 +199,32 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	}
 	fmt.Fprintf(w, "cd %s\n", shellQuote(lane.Worktree))
 	return nil
+}
+
+// callerOrigin is what this process can say about who is opening a lane: the surface
+// (cli, mcp, or desk when the front desk runs the MCP server), the run Shepherd started
+// it in, the agent CLI it runs under, the calling process and the directory.
+func callerOrigin(env Env) store.Origin {
+	o := store.Origin{Via: env.Client, Dir: env.Cwd, PID: os.Getppid()}
+	if o.Via == store.OriginMCP && os.Getenv("SHEPHERD_CLIENT") == store.OriginDesk {
+		o.Via = store.OriginDesk
+	}
+	if id, err := strconv.ParseInt(os.Getenv("SHEPHERD_RUN"), 10, 64); err == nil && id > 0 {
+		o.Run = id
+	}
+	// Claude Code marks the processes it starts, its tools and MCP servers alike.
+	if os.Getenv("CLAUDECODE") == "1" {
+		o.Agent = "claude"
+	}
+	return o
+}
+
+// openedBy is a lane's origin with the directory it was opened from.
+func openedBy(o store.Origin) string {
+	if o.Dir == "" {
+		return o.String()
+	}
+	return o.String() + " from " + o.Dir
 }
 
 func laneList(ctx context.Context, env Env, args []string) error {
@@ -231,13 +261,16 @@ func laneList(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	w := env.Stdout
-	fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %s\n", "REPO", "LANE", "STATE", "AGE", "SCOPE")
+	fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %-8s %s\n", "REPO", "LANE", "STATE", "AGE", "VIA", "SCOPE")
 	for _, l := range lanes {
 		mark := " "
 		if h.Lane != nil && h.Lane.ID == l.ID {
 			mark = "*"
 		}
-		fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %s\n", l.Repo, mark+l.Name, l.State, age(l.Created), strings.Join(l.Scope, ", "))
+		fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %-8s %s\n", l.Repo, mark+l.Name, l.State, age(l.Created), l.Origin.Surface(), strings.Join(l.Scope, ", "))
+		if by := openedBy(l.Origin); by != l.Origin.Surface() {
+			fmt.Fprintf(w, "%-20s  opened by %s\n", "", by)
+		}
 	}
 	return nil
 }
@@ -261,32 +294,9 @@ func laneClose(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	var target *api.LaneView
-	if len(pos) == 0 {
-		if h.Lane == nil {
-			return errors.New("which lane? run this inside its worktree, or name it")
-		}
-		target = &api.LaneView{Lane: *h.Lane}
-	} else {
-		var repoID int64
-		if h.Repo != nil {
-			repoID = h.Repo.ID
-		}
-		lanes, err := c.Lanes(ctx, h.Workspace.ID, repoID)
-		if err != nil {
-			return err
-		}
-		for i := range lanes {
-			if lanes[i].Name == pos[0] {
-				if target != nil {
-					return fmt.Errorf("lane %s is open in %s and %s; pass --repo", pos[0], target.Repo, lanes[i].Repo)
-				}
-				target = &lanes[i]
-			}
-		}
-		if target == nil {
-			return fmt.Errorf("no open lane %s", pos[0])
-		}
+	target, err := pickLane(ctx, c, h, pos)
+	if err != nil {
+		return err
 	}
 	res, err := c.CloseLane(ctx, target.ID, *force)
 	if err != nil {
@@ -298,6 +308,79 @@ func laneClose(ctx context.Context, env Env, args []string) error {
 	}
 	for _, n := range res.Notes {
 		fmt.Fprintf(env.Stdout, "  %s\n", n)
+	}
+	return nil
+}
+
+// pickLane is the lane a command names, or the one whose worktree it runs in.
+func pickLane(ctx context.Context, c *client.Client, h here, pos []string) (*api.LaneView, error) {
+	if len(pos) == 0 {
+		if h.Lane == nil {
+			return nil, errors.New("which lane? run this inside its worktree, or name it")
+		}
+		return &api.LaneView{Lane: *h.Lane}, nil
+	}
+	var repoID int64
+	if h.Repo != nil {
+		repoID = h.Repo.ID
+	}
+	lanes, err := c.Lanes(ctx, h.Workspace.ID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	var target *api.LaneView
+	for i := range lanes {
+		if lanes[i].Name == pos[0] {
+			if target != nil {
+				return nil, fmt.Errorf("lane %s is open in %s and %s; pass --repo", pos[0], target.Repo, lanes[i].Repo)
+			}
+			target = &lanes[i]
+		}
+	}
+	if target == nil {
+		return nil, fmt.Errorf("no open lane %s", pos[0])
+	}
+	return target, nil
+}
+
+// laneShip pushes a lane's committed work through Shepherd: the scope and commit rules,
+// the repo's gate run by Shepherd, the push, the merge request. Never a merge.
+func laneShip(ctx context.Context, env Env, args []string) error {
+	fs := flags("lane ship", env)
+	repo := fs.String("repo", "", "repo, by its name in the workspace")
+	asJSON := fs.Bool("json", false, "print JSON")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 1 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	target, err := pickLane(ctx, c, h, pos)
+	if err != nil {
+		return err
+	}
+	if !*asJSON {
+		fmt.Fprintf(env.Stderr, "shipping lane %s: checking its commits and running the repo's gate first...\n", target.Name)
+	}
+	res, err := c.ShipLane(ctx, target.ID)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(env, res)
+	}
+	fmt.Fprintln(env.Stdout, res.Message)
+	if !res.Pushed {
+		return errSilent
 	}
 	return nil
 }

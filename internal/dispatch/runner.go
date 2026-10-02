@@ -33,8 +33,8 @@ func (r refusal) Is(target error) bool { return target == ErrRefused }
 
 func refuse(format string, a ...any) error { return refusal{fmt.Sprintf(format, a...)} }
 
-// noPush is the push URL git uses for origin while an agent runs: it cannot connect,
-// so `git push` fails whatever flags the agent passes, --no-verify included.
+// noPush is where git sends the lane repo's pushes while an agent runs (see pushBlock):
+// it cannot connect, so `git push` fails whatever flags the agent passes.
 const noPush = "shepherd-run-blocks-push://"
 
 // StartRequest asks for an agent to be started in a lane.
@@ -236,9 +236,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	cmd.Stdin = nil // reads from the null device: headless
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
-		"GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=remote.origin.pushurl", "GIT_CONFIG_VALUE_0="+noPush,
 		fmt.Sprintf("SHEPHERD_RUN=%d", run.ID), "SHEPHERD_LANE="+lane.Name,
 	)
+	cmd.Env = append(cmd.Env, pushBlock(ctx, lane.Worktree)...)
 	cmd.SysProcAttr = groupAttr()
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -290,8 +290,13 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		if ad.Read != nil {
 			out = ad.Read(line)
 		}
-		run.CostUSD += out.USD
-		run.Credits += out.Credits
+		switch {
+		case !ad.SessionCost:
+			run.CostUSD += out.USD
+			run.Credits += out.Credits
+		case out.USD > 0 || out.Credits > 0:
+			run.CostUSD, run.Credits = out.USD, out.Credits // the session's latest total
+		}
 		if out.Show != "" {
 			fmt.Fprintln(logf, redact.String(out.Show))
 		}
@@ -330,6 +335,9 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 				}
 			}
 		}
+	}
+	if ad.SessionCost {
+		r.sessionCost(ctx, &run)
 	}
 	r.Spend(ctx, store.Spend{Source: run.Agent, Ref: run.ID, USD: run.CostUSD, Credits: run.Credits})
 	fmt.Fprintf(logf, "\n# shepherd: run %d %s (exit %d) with %d commit(s)", run.ID, run.State, code, run.Commits)
