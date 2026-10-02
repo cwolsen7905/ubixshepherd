@@ -144,6 +144,17 @@ var migrations = []string{
 		key   TEXT PRIMARY KEY,
 		value TEXT NOT NULL
 	);`,
+	// What the forge last said about each lane's branch, so the watcher acts on changes.
+	`CREATE TABLE lane_forge (
+		lane_id         INTEGER PRIMARY KEY REFERENCES lanes(id),
+		mr              INTEGER NOT NULL DEFAULT 0,
+		mr_state        TEXT NOT NULL DEFAULT '',
+		mr_url          TEXT NOT NULL DEFAULT '',
+		pipeline        INTEGER NOT NULL DEFAULT 0,
+		pipeline_status TEXT NOT NULL DEFAULT '',
+		fix_tries       INTEGER NOT NULL DEFAULT 0,
+		updated         TEXT NOT NULL
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -703,6 +714,27 @@ func (s *DB) Setting(ctx context.Context, key string) (string, error) {
 func (s *DB) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
 		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
+}
+
+func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, error) {
+	f := store.LaneForge{LaneID: laneID}
+	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries FROM lane_forge WHERE lane_id = ?`, laneID).
+		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries)
+	if errors.Is(err, sql.ErrNoRows) {
+		return f, nil
+	}
+	return f, err
+}
+
+func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (lane_id) DO UPDATE SET mr = excluded.mr, mr_state = excluded.mr_state, mr_url = excluded.mr_url,
+			pipeline = excluded.pipeline, pipeline_status = excluded.pipeline_status, fix_tries = excluded.fix_tries,
+			updated = excluded.updated`,
+		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, now())
 	return err
 }
 

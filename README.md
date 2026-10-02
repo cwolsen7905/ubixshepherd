@@ -91,6 +91,22 @@ Lanes and live runs are listed beside the thread. The conversation is kept betwe
 | `/auto off` | keep swarm events from reaching the desk on their own |
 | `/new` | start a new conversation with the desk |
 
+### Watching the forge
+
+Every minute (`daemon.poll`, `off` to stop), Shepherd looks up the merge request for each
+open lane's branch on GitLab, through your own `glab` login, so it keeps no forge
+credentials. What changed lands in the thread, and some of it is acted on:
+
+- **Merged:** the forge's merge (or squash) commit is the proof. The lane closes and its
+  local branch goes, no `--force` needed after a squash merge. A worktree with
+  uncommitted changes, or an agent still running, keeps the lane open and says why.
+- **Pipeline failed:** the failed jobs' logs go back into the lane's agent conversation
+  with "fix it and commit", at most twice per merge request; then it is yours. The agent
+  still cannot push: you push its fix.
+- **Opened, pipeline passed, canceled, closed without merging:** a line in the thread.
+
+GitHub as a lane's forge comes later; GitHub's role in v1 is the release mirror.
+
 ### Agent runs
 
 Shepherd can start an agent headless in a lane's worktree:

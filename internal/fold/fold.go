@@ -297,6 +297,64 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	return res, err
 }
 
+// CloseMerged closes a lane whose merge the forge has proven (proof is the merge or
+// squash commit), so a squash merge needs no --force. It still refuses a worktree with
+// uncommitted changes, and a lane with an agent running: those are someone's work.
+func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof string) (CloseResult, error) {
+	lane, err := f.Store.Lane(ctx, laneID)
+	if err != nil {
+		return CloseResult{}, err
+	}
+	if lane.State == store.LaneClosed {
+		return CloseResult{}, refuse("lane %s is already closed", lane.Name)
+	}
+	if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
+		return CloseResult{}, refuse("agent run %d is going in lane %s", running[0].ID, lane.Name)
+	}
+	repo, err := f.Store.Repo(ctx, lane.RepoID)
+	if err != nil {
+		return CloseResult{}, err
+	}
+	lock := f.repoLock(repo.ID)
+	lock.Lock()
+	defer lock.Unlock()
+
+	res := CloseResult{}
+	if _, err := os.Stat(lane.Worktree); err == nil {
+		dirty, err := git.Dirty(ctx, lane.Worktree)
+		if err != nil {
+			return res, err
+		}
+		if dirty != "" {
+			return res, refuse("%s has uncommitted changes:\n%s", lane.Worktree, firstLines(dirty, 10))
+		}
+		if _, err := git.Run(ctx, repo.Path, "worktree", "remove", lane.Worktree); err != nil {
+			return res, err
+		}
+	} else {
+		git.Run(ctx, repo.Path, "worktree", "prune")
+	}
+	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
+		if _, err := git.Run(ctx, repo.Path, "branch", "-D", lane.Branch); err != nil {
+			return res, err
+		}
+		res.BranchDeleted = true
+	}
+	res.Notes = append(res.Notes, "merged at "+shortSHA(proof)+", per the forge")
+	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneClosed); err != nil {
+		return res, err
+	}
+	res.Lane, err = f.Store.Lane(ctx, lane.ID)
+	return res, err
+}
+
+func shortSHA(s string) string {
+	if len(s) > 9 {
+		return s[:9]
+	}
+	return s
+}
+
 // merged reports whether the lane's branch is contained in its base, fetching origin
 // first when there is one. A branch that no longer exists counts as merged only if the
 // worktree has nothing on it either, which Close has already checked.

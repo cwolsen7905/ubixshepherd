@@ -538,3 +538,6 @@ func ReadLog(path string, offset int64, max int) ([]byte, int64, error) {
 	}
 	return buf[:n], offset + int64(n), nil
 }
+
+// SetLookPath replaces how a runner finds agent executables (for tests in other packages).
+func SetLookPath(r *Runner, f func(string) (string, error)) { r.lookPath = f }

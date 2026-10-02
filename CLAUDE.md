@@ -63,6 +63,10 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
   front desk (`ClaudeDesk`) run headless and resumed per turn. The desk gets operator
   tools and reads only (`--disallowedTools Edit Write Bash`); its standing instruction is
   `DeskBrief`. Test the model with fakes (`chat_test.go`); the desk needs a real check.
+- `internal/forge` reads a forge through its CLI (`glab api`), never a stored token;
+  `internal/watch` polls it for open lanes and acts on changes (`Fold.CloseMerged` on a
+  merge commit, the agent continued on a failed pipeline, capped at `MaxFixTries`). Test
+  the watcher with a fake forge; check the forge reader against a real MR read-only.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

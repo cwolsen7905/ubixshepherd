@@ -16,6 +16,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/service"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
+	"github.com/ubixsys/ubixshepherd/internal/watch"
 )
 
 // serviceFor finds the OS service manager; tests replace it.
@@ -96,6 +97,11 @@ func daemonRun(ctx context.Context, env Env) error {
 	}
 	srv.Fold.Exe = env.Exe
 	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
+	if cfg.Daemon.Poll != "off" {
+		every, _ := time.ParseDuration(cfg.Daemon.Poll)
+		w := &watch.Watcher{Store: st, Fold: srv.Fold, Runner: srv.Runner, Log: srv.Log, Interval: every}
+		go w.Run(ctx)
+	}
 	return srv.Run(ctx, l.Runtime())
 }
 
