@@ -26,6 +26,32 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
+// Tag reservation routes.
+const (
+	PathTags        = "/v1/tags"
+	PathTagsReserve = "/v1/tags/reserve"
+	PathTagsRelease = "/v1/tags/release"
+)
+
+// Reserve is the body of POST /v1/tags/reserve.
+type Reserve struct {
+	RepoID int64  `json:"repo_id"`
+	LaneID int64  `json:"lane_id,omitempty"`
+	Bump   string `json:"bump"`
+}
+
+// ReleaseTag is the body of POST /v1/tags/release.
+type ReleaseTag struct {
+	RepoID int64  `json:"repo_id"`
+	Tag    string `json:"tag"`
+}
+
+// ReservationView is a reservation with its lane's name.
+type ReservationView struct {
+	store.Reservation
+	Lane string `json:"lane,omitempty"`
+}
+
 // PathSpend is GET (today's spend) and POST (record a front desk turn's cost).
 const PathSpend = "/v1/spend"
 

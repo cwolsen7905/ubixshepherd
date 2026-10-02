@@ -66,6 +66,8 @@ func commands() []command {
 		{"fold", "Find stale worktrees across the workspace", "shepherd fold gc [--json]", runFold},
 		{"decision", "The questions agents hold for you: list and answer them",
 			"shepherd decision list [--all] | answer <id> \"answer\"", runDecision},
+		{"tag", "Reserve release versions, so no two lanes take the same one",
+			"shepherd tag reserve major|minor|patch [--lane L | --no-lane] [--repo R] | list | release <tag>", runTag},
 		{"request", "Requests between lanes: list them, and route the ones Shepherd cannot",
 			"shepherd request list [--all] | route <id> --lane L [--agent A]", runRequest},
 		{"agents", "Set up an agent CLI for Shepherd", "shepherd agents setup cursor", runAgents},

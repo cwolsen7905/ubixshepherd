@@ -94,6 +94,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
 	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
 	mux.HandleFunc("GET "+api.PathFeed, s.feed)
+	mux.HandleFunc("GET "+api.PathTags, s.listTags)
+	mux.HandleFunc("POST "+api.PathTagsReserve, s.reserveTag)
+	mux.HandleFunc("POST "+api.PathTagsRelease, s.releaseTag)
 	mux.HandleFunc("GET "+api.PathSpend, s.spendToday)
 	mux.HandleFunc("POST "+api.PathSpend, s.addSpend)
 	mux.HandleFunc("GET "+api.PathSettings+"/{key}", s.getSetting)
@@ -422,7 +425,7 @@ func (s *Server) prePush(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	v, err := s.Fold.CheckPush(r.Context(), res.Lane, req.Path, req.Refs)
+	v, err := s.Fold.CheckPush(r.Context(), res.Lane, res.Repo, req.Path, req.Refs)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -677,6 +680,63 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, q)
+}
+
+func (s *Server) reserveTag(w http.ResponseWriter, r *http.Request) {
+	var req api.Reserve
+	if !decode(w, r, &req) {
+		return
+	}
+	res, err := s.Fold.Reserve(r.Context(), req.RepoID, req.LaneID, req.Bump)
+	if errors.Is(err, store.ErrConflict) {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	who := "no lane"
+	if l, err := s.Store.Lane(r.Context(), res.LaneID); err == nil {
+		who = "lane " + l.Name
+	}
+	s.Store.AddFeed(r.Context(), store.FeedTag, fmt.Sprintf("%s reserved for %s", res.Tag, who), res.ID)
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
+	repoID, err := strconv.ParseInt(r.URL.Query().Get("repo_id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, errors.New("repo_id is required"))
+		return
+	}
+	rs, err := s.Store.Reservations(r.Context(), repoID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.ReservationView{}
+	for _, res := range rs {
+		v := api.ReservationView{Reservation: res}
+		if l, err := s.Store.Lane(r.Context(), res.LaneID); err == nil {
+			v.Lane = l.Name
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) releaseTag(w http.ResponseWriter, r *http.Request) {
+	var req api.ReleaseTag
+	if !decode(w, r, &req) {
+		return
+	}
+	if err := s.Fold.ReleaseTag(r.Context(), req.RepoID, req.Tag); err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Store.AddFeed(r.Context(), store.FeedTag, req.Tag+" released", 0)
+	writeJSON(w, http.StatusOK, req)
 }
 
 func (s *Server) spendToday(w http.ResponseWriter, r *http.Request) {

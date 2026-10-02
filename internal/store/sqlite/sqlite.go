@@ -171,6 +171,18 @@ var migrations = []string{
 		created TEXT NOT NULL
 	);
 	CREATE INDEX spend_day ON spend (day);`,
+	// Tag reservations: a version handed to a lane, so no two lanes take the same one.
+	`CREATE TABLE reservations (
+		id      INTEGER PRIMARY KEY,
+		repo_id INTEGER NOT NULL REFERENCES repos(id),
+		lane_id INTEGER NOT NULL DEFAULT 0,
+		tag     TEXT NOT NULL,
+		state   TEXT NOT NULL,
+		sha     TEXT NOT NULL DEFAULT '',
+		created TEXT NOT NULL
+	);
+	CREATE UNIQUE INDEX reservations_live ON reservations (repo_id, tag) WHERE state != 'released';
+	ALTER TABLE lane_forge ADD COLUMN merge_sha TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -735,8 +747,8 @@ func (s *DB) SetSetting(ctx context.Context, key, value string) error {
 
 func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, error) {
 	f := store.LaneForge{LaneID: laneID}
-	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries FROM lane_forge WHERE lane_id = ?`, laneID).
-		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries)
+	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha FROM lane_forge WHERE lane_id = ?`, laneID).
+		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries, &f.MergeSHA)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
@@ -745,12 +757,12 @@ func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, erro
 
 func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (lane_id) DO UPDATE SET mr = excluded.mr, mr_state = excluded.mr_state, mr_url = excluded.mr_url,
 			pipeline = excluded.pipeline, pipeline_status = excluded.pipeline_status, fix_tries = excluded.fix_tries,
-			gate_tries = excluded.gate_tries, updated = excluded.updated`,
-		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, now())
+			gate_tries = excluded.gate_tries, merge_sha = excluded.merge_sha, updated = excluded.updated`,
+		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, f.MergeSHA, now())
 	return err
 }
 
@@ -777,6 +789,45 @@ func (s *DB) SpendOn(ctx context.Context, day string) (map[string]store.Spend, e
 		out[sp.Source] = sp
 	}
 	return out, rows.Err()
+}
+
+func (s *DB) CreateReservation(ctx context.Context, r store.Reservation) (store.Reservation, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO reservations (repo_id, lane_id, tag, state, created) VALUES (?, ?, ?, ?, ?)`,
+		r.RepoID, r.LaneID, r.Tag, r.State, now())
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return r, fmt.Errorf("%w: %s is already reserved", store.ErrConflict, r.Tag)
+		}
+		return r, err
+	}
+	r.ID, _ = res.LastInsertId()
+	return r, nil
+}
+
+// Reservations returns a repo's live reservations (not released), oldest first.
+func (s *DB) Reservations(ctx context.Context, repoID int64) ([]store.Reservation, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, repo_id, lane_id, tag, state, sha, created FROM reservations
+		WHERE repo_id = ? AND state != ? ORDER BY id`, repoID, store.TagReleased)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Reservation
+	for rows.Next() {
+		var r store.Reservation
+		var created string
+		if err := rows.Scan(&r.ID, &r.RepoID, &r.LaneID, &r.Tag, &r.State, &r.SHA, &created); err != nil {
+			return nil, err
+		}
+		r.Created = parseTime(created)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func (s *DB) SetReservation(ctx context.Context, id int64, state, sha string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE reservations SET state = ?, sha = CASE WHEN ? = '' THEN sha ELSE ? END WHERE id = ?`, state, sha, sha, id)
+	return err
 }
 
 func nonNil(s []string) []string {

@@ -203,6 +203,32 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "tag_reserve",
+			Description: "Reserve the next release version in a repo (major, minor or patch) for a lane, atomically against the remote's tags and other reservations. In repos whose tags are reserved, a release tag must be reserved before it is pushed.",
+			InputSchema: obj(map[string]any{
+				"repo": propRepo,
+				"bump": map[string]any{"type": "string", "enum": []string{"major", "minor", "patch"}},
+				"lane": map[string]any{"type": "string", "description": "The lane it is for; leave out for a release cut outside any lane."},
+			}, "repo", "bump"),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"tag", "reserve", str(a, "bump"), "--repo", str(a, "repo")}
+				if l := str(a, "lane"); l != "" {
+					out = append(out, "--lane", l)
+				} else {
+					out = append(out, "--no-lane")
+				}
+				return out, nil
+			},
+		},
+		{
+			Name:        "tag_list",
+			Description: "A repo's live tag reservations: version, state (reserved, pushed, verified) and lane.",
+			InputSchema: obj(map[string]any{"repo": propRepo}, "repo"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"tag", "list", "--repo", str(a, "repo")}, nil
+			},
+		},
+		{
 			Name:        "decision_list",
 			Description: "Questions agents are holding for the person, with their options and recommendations. Bring these to the person; do not answer them yourself.",
 			InputSchema: obj(map[string]any{}),
@@ -316,6 +342,14 @@ func workerTools() []mcpTool {
 					}
 				}
 				return out, nil
+			},
+		},
+		{
+			Name:        "tag_reserve",
+			Description: "Reserve the next release version for your lane (major, minor or patch) before you tag. Tag exactly the version you are given, on a commit that includes your merged work.",
+			InputSchema: obj(map[string]any{"bump": map[string]any{"type": "string", "enum": []string{"major", "minor", "patch"}}}, "bump"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"worker", "tag-reserve", str(a, "bump")}, nil
 			},
 		},
 		{

@@ -54,6 +54,12 @@ const (
 	Promotion = "promotion"
 )
 
+// Tag modes.
+const (
+	TagsFree     = "free"
+	TagsReserved = "reserved"
+)
+
 // Who may take an action.
 const (
 	Human = "human"
@@ -73,6 +79,11 @@ type Profile struct {
 	SharedPaths []string `yaml:"shared_paths,omitempty" json:"shared_paths,omitempty"`
 	// WorktreeRoot is where lane worktrees go. Empty means <workspace>/<repo>-worktrees.
 	WorktreeRoot string `yaml:"worktree_root,omitempty" json:"worktree_root,omitempty"`
+	// TagPrefix comes before a release version in the repo's tags; "v" by default.
+	TagPrefix string `yaml:"tag_prefix,omitempty" json:"tag_prefix,omitempty"`
+	// Tags is "free" (the default) or "reserved": every release tag pushed from the repo
+	// must be reserved first (shepherd tag reserve), and contain its lane's merge.
+	Tags string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// Brief is added to every agent's brief in the repo: its own rules.
 	Brief string `yaml:"brief,omitempty" json:"brief,omitempty"`
 	// Forbid are regular expressions commit messages must not match before Shepherd
@@ -100,6 +111,8 @@ func Default() Config {
 		Daemon: Daemon{Listen: "127.0.0.1:0", MaxRuns: 4, Poll: "60s", Budget: ptr(20.0), CreditUSD: ptr(0.04)},
 		Defaults: Profile{
 			BaseBranch:  "main",
+			TagPrefix:   "v",
+			Tags:        TagsFree,
 			BranchModel: Trunk,
 			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, Push: Human, PlanFirst: &yes},
 		},
@@ -216,6 +229,9 @@ func (p Profile) validate(at string) []error {
 			errs = append(errs, fmt.Errorf("%s.shared_paths: empty glob", at))
 		}
 	}
+	if p.Tags != TagsFree && p.Tags != TagsReserved {
+		errs = append(errs, fmt.Errorf("%s.tags: %q is not %s or %s", at, p.Tags, TagsFree, TagsReserved))
+	}
 	if p.Autonomy.Push != Human && p.Autonomy.Push != Shepherd {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: %q is not %s or %s", at, p.Autonomy.Push, Human, Shepherd))
 	}
@@ -246,6 +262,12 @@ func merge(base, over Profile) Profile {
 	}
 	if over.WorktreeRoot != "" {
 		out.WorktreeRoot = over.WorktreeRoot
+	}
+	if over.Tags != "" {
+		out.Tags = over.Tags
+	}
+	if over.TagPrefix != "" {
+		out.TagPrefix = over.TagPrefix
 	}
 	if over.Brief != "" {
 		out.Brief = over.Brief

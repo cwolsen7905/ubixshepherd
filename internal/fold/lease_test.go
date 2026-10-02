@@ -56,33 +56,33 @@ func TestCheckPush(t *testing.T) {
 	l := f.open("work") // scope src/**
 	f.commit(l.Worktree, "src/ok.go")
 
-	v, err := f.fold.CheckPush(ctx, &l, l.Worktree, []PushRef{pushRef(t, l.Worktree, "work")})
+	v, err := f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{pushRef(t, l.Worktree, "work")})
 	if err != nil || !v.OK {
 		t.Fatalf("in-scope push: %+v %v", v, err)
 	}
 
 	f.commit(l.Worktree, "docs/stray.md")
-	v, _ = f.fold.CheckPush(ctx, &l, l.Worktree, []PushRef{pushRef(t, l.Worktree, "work")})
+	v, _ = f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{pushRef(t, l.Worktree, "work")})
 	if v.OK || len(v.Problems) != 1 || !strings.Contains(v.Problems[0], "docs/stray.md") || strings.Contains(v.Problems[0], "src/ok.go") {
 		t.Errorf("out-of-scope push: %+v", v)
 	}
 
 	other := pushRef(t, l.Worktree, "work")
 	other.RemoteRef = "refs/heads/main"
-	v, _ = f.fold.CheckPush(ctx, &l, l.Worktree, []PushRef{other})
+	v, _ = f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{other})
 	if v.OK || !strings.Contains(v.Problems[0], "pushes only its branch") {
 		t.Errorf("push to main: %+v", v)
 	}
 
 	tag := pushRef(t, l.Worktree, "work")
 	tag.RemoteRef = "refs/tags/v1.0.0"
-	v, _ = f.fold.CheckPush(ctx, &l, l.Worktree, []PushRef{tag})
-	if !v.OK || len(v.Notes) != 1 {
-		t.Errorf("tag push: %+v", v)
+	v, _ = f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{tag})
+	if !v.OK || len(v.Problems) != 0 {
+		t.Errorf("tag push in a repo whose tags are free: %+v", v)
 	}
 
 	// Not a lane: Shepherd stays out of the way.
-	v, _ = f.fold.CheckPush(ctx, nil, f.repo.Path, nil)
+	v, _ = f.fold.CheckPush(ctx, nil, nil, f.repo.Path, nil)
 	if !v.OK || v.Lane != "" {
 		t.Errorf("non-lane push: %+v", v)
 	}
@@ -98,7 +98,7 @@ func TestCheckPushCountsOnlyNewCommits(t *testing.T) {
 	f.commit(l.Worktree, "src/b.go")
 	r := pushRef(t, l.Worktree, "inc")
 	r.RemoteSHA = remote
-	v, err := f.fold.CheckPush(ctx, &l, l.Worktree, []PushRef{r})
+	v, err := f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{r})
 	if err != nil || !v.OK {
 		t.Errorf("incremental push: %+v %v", v, err)
 	}

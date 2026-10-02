@@ -197,6 +197,7 @@ const (
 	FeedRequestFailed  = "request_failed"
 	FeedMR             = "mr"
 	FeedBudget         = "budget"
+	FeedTag            = "tag"
 	FeedPipeline       = "pipeline"
 )
 
@@ -222,6 +223,29 @@ type LaneForge struct {
 	FixTries int `json:"fix_tries,omitempty"`
 	// GateTries counts gate failures handed back to the agent before a push.
 	GateTries int `json:"gate_tries,omitempty"`
+	// MergeSHA is the commit that landed the lane, once the forge reports it merged.
+	MergeSHA string `json:"merge_sha,omitempty"`
+}
+
+// Reservation states.
+const (
+	TagReserved = "reserved"
+	// TagPushed: the lane pushed the tag; SHA is the commit it points at.
+	TagPushed = "pushed"
+	// TagVerified: the tag contains the lane's merge.
+	TagVerified = "verified"
+	TagReleased = "released" // given back
+)
+
+// Reservation is a release version handed to a lane before it tags.
+type Reservation struct {
+	ID      int64     `json:"id"`
+	RepoID  int64     `json:"repo_id"`
+	LaneID  int64     `json:"lane_id,omitempty"`
+	Tag     string    `json:"tag"`
+	State   string    `json:"state"`
+	SHA     string    `json:"sha,omitempty"`
+	Created time.Time `json:"created"`
 }
 
 // Store is Shepherd's state.
@@ -271,6 +295,12 @@ type Store interface {
 	// Setting returns "" for a key never set.
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
+
+	CreateReservation(ctx context.Context, r Reservation) (Reservation, error)
+	// Reservations returns a repo's live reservations (not released), oldest first.
+	Reservations(ctx context.Context, repoID int64) ([]Reservation, error)
+	// SetReservation changes a reservation's state, and its commit when sha is not "".
+	SetReservation(ctx context.Context, id int64, state, sha string) error
 
 	AddSpend(ctx context.Context, sp Spend) error
 	// SpendOn totals a day's spend by source.

@@ -31,6 +31,11 @@
 #   shared_paths: []
 #   ## Where lane worktrees go; empty means <workspace>/<repo>-worktrees.
 #   worktree_root: ""
+#   ## What comes before a release version in tags (v1.2.3); tag reserve hands these out.
+#   tag_prefix: v
+#   ## free, or reserved: every release tag pushed from the repo must be reserved first
+#   ## (shepherd tag reserve) and contain its lane's merge. Needs the pre-push hook.
+#   tags: free
 #   ## Added to every agent's brief in the repo: its own rules.
 #   brief: No Co-authored-by or AI tool trailers in commit messages.
 #   ## Patterns commit messages must not match before Shepherd pushes; a match goes

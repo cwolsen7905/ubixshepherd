@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/scope"
@@ -50,27 +51,43 @@ type Verdict struct {
 	Notes    []string `json:"notes,omitempty"`
 }
 
-// CheckPush decides whether a push from the worktree at dir may go ahead: from a lane,
-// only the lane's branch, and only changes inside its scope.
-func (f *Fold) CheckPush(ctx context.Context, lane *store.Lane, dir string, refs []PushRef) (Verdict, error) {
-	if lane == nil {
-		return Verdict{OK: true}, nil
+// CheckPush decides whether a push may go ahead. From a lane: only the lane's branch,
+// only changes inside its scope, and no push while an agent runs in it. From any
+// checkout of a repo whose tags are reserved: release tags must be reserved, and contain
+// their lane's merge. Everything else is left alone.
+func (f *Fold) CheckPush(ctx context.Context, lane *store.Lane, repo *store.Repo, dir string, refs []PushRef) (Verdict, error) {
+	v := Verdict{OK: true}
+	if lane != nil {
+		v.Lane = lane.Name
+		if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
+			v.OK = false
+			v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) is going in lane %s; agents Shepherd starts never push. Review the lane's commits when it ends, then push yourself",
+				running[0].ID, running[0].Agent, lane.Name))
+			return v, nil
+		}
 	}
-	v := Verdict{OK: true, Lane: lane.Name}
-	if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
-		v.OK = false
-		v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) is going in lane %s; agents Shepherd starts never push. Review the lane's commits when it ends, then push yourself",
-			running[0].ID, running[0].Agent, lane.Name))
-		return v, nil
-	}
+	reserved := repo != nil && f.Config.Profile(repo.Name).Tags == config.TagsReserved
 	for _, r := range refs {
-		switch {
-		case zero(r.LocalSHA):
+		if zero(r.LocalSHA) {
 			continue // deleting a remote ref
-		case strings.HasPrefix(r.RemoteRef, "refs/tags/"):
-			v.Notes = append(v.Notes, "tag "+strings.TrimPrefix(r.RemoteRef, "refs/tags/")+" not checked (tag reservations come later)")
+		}
+		if strings.HasPrefix(r.RemoteRef, "refs/tags/") {
+			if !reserved {
+				continue
+			}
+			problem, err := f.checkTag(ctx, *repo, lane, dir, strings.TrimPrefix(r.RemoteRef, "refs/tags/"), r.LocalSHA)
+			if err != nil {
+				return v, err
+			}
+			if problem != "" {
+				v.Problems = append(v.Problems, problem)
+			}
 			continue
-		case r.RemoteRef != "refs/heads/"+lane.Branch:
+		}
+		if lane == nil {
+			continue
+		}
+		if r.RemoteRef != "refs/heads/"+lane.Branch {
 			v.Problems = append(v.Problems, fmt.Sprintf("lane %s pushes only its branch %s; this pushes to %s",
 				lane.Name, lane.Branch, strings.TrimPrefix(r.RemoteRef, "refs/heads/")))
 			continue
