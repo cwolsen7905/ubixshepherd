@@ -85,7 +85,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "lane_list",
-			Description: "Open lanes: repo, name, state, age and scope. Without repo, every repo in the workspace.",
+			Description: "Open lanes: repo, name, state, age, scope, and who opened each (the surface, with agent, run, session, pid and directory where known; unknown for lanes from before Shepherd recorded it). Without repo, every repo in the workspace.",
 			InputSchema: obj(map[string]any{"repo": propRepo}),
 			args: func(a map[string]any) ([]string, error) {
 				if r := str(a, "repo"); r != "" {

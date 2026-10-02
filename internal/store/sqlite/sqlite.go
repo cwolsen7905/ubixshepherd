@@ -196,6 +196,15 @@ var migrations = []string{
 		last     TEXT NOT NULL DEFAULT '',
 		imported TEXT NOT NULL
 	);`,
+	// Who opened each lane, and from where. Lanes from before keep an empty origin,
+	// which reads as unknown.
+	`ALTER TABLE lanes ADD COLUMN origin_via TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lanes ADD COLUMN origin_agent TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lanes ADD COLUMN origin_session TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lanes ADD COLUMN origin_run INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE lanes ADD COLUMN origin_pid INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE lanes ADD COLUMN origin_dir TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lanes ADD COLUMN origin_detail TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -344,12 +353,15 @@ func (s *DB) Repos(ctx context.Context, workspaceID int64) ([]store.Repo, error)
 	return out, rows.Err()
 }
 
-const laneCols = `id, repo_id, name, branch, base, worktree, scope, state, created, closed`
+const laneCols = `id, repo_id, name, branch, base, worktree, scope, state, created, closed,
+	origin_via, origin_agent, origin_session, origin_run, origin_pid, origin_dir, origin_detail`
 
 func scanLane(sc interface{ Scan(...any) error }) (store.Lane, error) {
 	var l store.Lane
 	var scope, created, closed string
-	if err := sc.Scan(&l.ID, &l.RepoID, &l.Name, &l.Branch, &l.Base, &l.Worktree, &scope, &l.State, &created, &closed); err != nil {
+	o := &l.Origin
+	if err := sc.Scan(&l.ID, &l.RepoID, &l.Name, &l.Branch, &l.Base, &l.Worktree, &scope, &l.State, &created, &closed,
+		&o.Via, &o.Agent, &o.Session, &o.Run, &o.PID, &o.Dir, &o.Detail); err != nil {
 		return l, err
 	}
 	if err := json.Unmarshal([]byte(scope), &l.Scope); err != nil {
@@ -396,9 +408,11 @@ func (s *DB) CreateLane(ctx context.Context, l store.Lane) (store.Lane, error) {
 		return l, err
 	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO lanes (repo_id, name, branch, base, worktree, scope, state, created)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		l.RepoID, l.Name, l.Branch, l.Base, l.Worktree, string(scope), l.State, now())
+		INSERT INTO lanes (repo_id, name, branch, base, worktree, scope, state, created,
+			origin_via, origin_agent, origin_session, origin_run, origin_pid, origin_dir, origin_detail)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		l.RepoID, l.Name, l.Branch, l.Base, l.Worktree, string(scope), l.State, now(),
+		l.Origin.Via, l.Origin.Agent, l.Origin.Session, l.Origin.Run, l.Origin.PID, l.Origin.Dir, l.Origin.Detail)
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
 			return l, fmt.Errorf("%w: a lane named %q or at %s is already open", store.ErrConflict, l.Name, l.Worktree)

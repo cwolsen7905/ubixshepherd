@@ -6,6 +6,8 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -59,6 +61,72 @@ type Lane struct {
 	State   string     `json:"state"`
 	Created time.Time  `json:"created"`
 	Closed  *time.Time `json:"closed,omitempty"`
+	// Origin is who opened the lane, and from where. Lanes opened before Shepherd
+	// recorded it have none: their Via is empty, shown as unknown.
+	Origin Origin `json:"origin"`
+}
+
+// Lane origins: the surface a lane was opened through.
+const (
+	OriginCLI    = "cli"    // shepherd lane open, by a person or an agent's shell
+	OriginMCP    = "mcp"    // the lane_open tool, from an agent's MCP client
+	OriginDesk   = "desk"   // the lane_open tool, from Shepherd's front desk
+	OriginImport = "import" // fold import, from a coordination file or an adopted branch
+	OriginFollow = "follow" // a release of a repo this one follows
+)
+
+// Origin records who opened a lane and from where. Each field is what was known at the
+// time; empty means not known, never a guess.
+type Origin struct {
+	Via string `json:"via,omitempty"`
+	// Agent is the agent CLI behind the call (claude, copilot, cursor), when it said.
+	Agent string `json:"agent,omitempty"`
+	// Session is the agent's session: the run's, or the front desk's.
+	Session string `json:"session,omitempty"`
+	// Run is the Shepherd run the call came from, for agents Shepherd started.
+	Run int64 `json:"run,omitempty"`
+	// PID is the calling process: the shell that ran the CLI, or the agent that runs
+	// the MCP server.
+	PID int `json:"pid,omitempty"`
+	// Dir is the directory the call was made from.
+	Dir string `json:"dir,omitempty"`
+	// Detail says more where the surface has more to say (the release a follow is for).
+	Detail string `json:"detail,omitempty"`
+}
+
+// Surface is Via, or "unknown" for a lane opened before Shepherd recorded it.
+func (o Origin) Surface() string {
+	if o.Via == "" {
+		return "unknown"
+	}
+	return o.Via
+}
+
+// String is the origin in one line: "mcp (claude, pid 4242)", or "unknown".
+func (o Origin) String() string {
+	if o.Via == "" {
+		return o.Surface()
+	}
+	var parts []string
+	if o.Agent != "" {
+		parts = append(parts, o.Agent)
+	}
+	if o.Run != 0 {
+		parts = append(parts, fmt.Sprintf("run %d", o.Run))
+	}
+	if o.Session != "" {
+		parts = append(parts, "session "+o.Session)
+	}
+	if o.PID != 0 {
+		parts = append(parts, fmt.Sprintf("pid %d", o.PID))
+	}
+	if o.Detail != "" {
+		parts = append(parts, o.Detail)
+	}
+	if len(parts) == 0 {
+		return o.Via
+	}
+	return o.Via + " (" + strings.Join(parts, ", ") + ")"
 }
 
 // Run states.

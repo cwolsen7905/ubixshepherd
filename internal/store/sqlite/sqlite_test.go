@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -81,6 +83,53 @@ func TestReopenKeepsData(t *testing.T) {
 	ws, err := db2.Workspaces(ctx)
 	if err != nil || len(ws) != 1 {
 		t.Errorf("after reopen: %+v, %v", ws, err)
+	}
+}
+
+// A store from before lanes had an origin migrates, and its lanes read as unknown.
+func TestLaneOriginMigrates(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "shepherd.db")
+	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := len(migrations) - 1
+	for i := 0; i < old; i++ {
+		if _, err := raw.ExecContext(ctx, migrations[i]); err != nil {
+			t.Fatalf("migration %d: %v", i+1, err)
+		}
+	}
+	for _, q := range []string{
+		fmt.Sprintf(`PRAGMA user_version = %d`, old),
+		`INSERT INTO workspaces (name, path, created) VALUES ('w', '/w', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO repos (workspace_id, name, path, created) VALUES (1, 'a', '/w/a', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO lanes (repo_id, name, branch, worktree, state, created) VALUES (1, 'old', 'old', '/w/a-worktrees/old', 'open', '2026-01-01T00:00:00Z')`,
+	} {
+		if _, err := raw.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	raw.Close()
+
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	o := store.Origin{Via: store.OriginDesk, Agent: "claude", Session: "s-1", Run: 7, PID: 42, Dir: "/w", Detail: "d"}
+	if _, err := db.CreateLane(ctx, store.Lane{RepoID: 1, Name: "new", Branch: "new", Worktree: "/w/a-worktrees/new", State: store.LaneOpen, Origin: o}); err != nil {
+		t.Fatal(err)
+	}
+	lanes, err := db.Lanes(ctx, 1)
+	if err != nil || len(lanes) != 2 {
+		t.Fatalf("lanes = %+v, %v", lanes, err)
+	}
+	if lanes[1].Name != "old" || lanes[1].Origin != (store.Origin{}) || lanes[1].Origin.String() != "unknown" {
+		t.Errorf("migrated lane origin = %+v", lanes[1].Origin)
+	}
+	if lanes[0].Origin != o {
+		t.Errorf("new lane origin = %+v, want %+v", lanes[0].Origin, o)
 	}
 }
 

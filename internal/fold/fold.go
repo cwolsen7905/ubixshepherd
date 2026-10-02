@@ -73,6 +73,8 @@ type OpenRequest struct {
 	// Branch defaults to Name.
 	Branch string   `json:"branch,omitempty"`
 	Scope  []string `json:"scope"`
+	// Origin is who asks, and from where; the lane keeps it.
+	Origin store.Origin `json:"origin"`
 }
 
 // A lane name is a branch-like slug with at most one slash: fix-login, feat/m2-leases.
@@ -148,7 +150,7 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	// Record first, so a concurrent open of the same name loses at the store.
 	lane, err := f.Store.CreateLane(ctx, store.Lane{
 		RepoID: repo.ID, Name: req.Name, Branch: req.Branch, Base: prof.BaseBranch,
-		Worktree: wt, Scope: req.Scope, State: store.LaneOpening,
+		Worktree: wt, Scope: req.Scope, State: store.LaneOpening, Origin: req.Origin,
 	})
 	if errors.Is(err, store.ErrConflict) {
 		return Opened{}, refuse("%v", err)

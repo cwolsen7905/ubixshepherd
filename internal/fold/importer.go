@@ -156,6 +156,9 @@ func expandBraces(s string) []string {
 	return out
 }
 
+// adoptedAgent is the Agent of an item adopted with no row to name one.
+const adoptedAgent = "(adopted, no row)"
+
 // ImportItem is one worktree's fate in an import.
 type ImportItem struct {
 	Worktree string   `json:"worktree"`
@@ -344,7 +347,7 @@ func (f *Fold) ImportAdopt(ctx context.Context, repoID int64, coordFile string, 
 				}
 			}
 			if row < 0 && adopting[wt.Branch] {
-				it.Lane, it.Agent, it.Action = laneNameFor(wt.Branch), "(adopted, no row)", "import"
+				it.Lane, it.Agent, it.Action = laneNameFor(wt.Branch), adoptedAgent, "import"
 				if it.Scope = inferScope(ctx, repo.Path, wt.Branch, target); len(it.Scope) == 0 {
 					it.Scope = []string{"**"}
 					it.Why = "adopted; the branch changes nothing yet, so the scope is the whole repo"
@@ -371,8 +374,12 @@ func (f *Fold) ImportAdopt(ctx context.Context, repoID int64, coordFile string, 
 			}
 		}
 		if it.Action == "import" && apply {
+			origin := store.Origin{Via: store.OriginImport, Detail: "claimed by " + it.Agent}
+			if it.Agent == adoptedAgent {
+				origin.Detail = "adopted branch"
+			}
 			l, err := f.Store.CreateLane(ctx, store.Lane{RepoID: repo.ID, Name: it.Lane, Branch: it.Branch, Base: base,
-				Worktree: canon, Scope: it.Scope, State: store.LaneOpen})
+				Worktree: canon, Scope: it.Scope, State: store.LaneOpen, Origin: origin})
 			if err != nil {
 				it.Action, it.Why = "skip", err.Error()
 			} else {

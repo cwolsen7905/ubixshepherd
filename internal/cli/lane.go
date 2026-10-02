@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,7 +179,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	lane, err := c.OpenLane(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope})
+	lane, err := c.OpenLane(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Origin: callerOrigin(env)})
 	if err != nil {
 		return err
 	}
@@ -187,6 +188,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	fmt.Fprintf(w, "  branch    %s (from %s)\n", lane.Branch, lane.Base)
 	fmt.Fprintf(w, "  worktree  %s\n", lane.Worktree)
 	fmt.Fprintf(w, "  scope     %s\n", strings.Join(lane.Scope, ", "))
+	fmt.Fprintf(w, "  opened by %s\n", lane.Origin.String())
 	if len(lane.Shared) > 0 {
 		fmt.Fprintf(w, "  shared    %s (held by this lane until it closes)\n", strings.Join(lane.Shared, ", "))
 	}
@@ -195,6 +197,32 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	}
 	fmt.Fprintf(w, "cd %s\n", shellQuote(lane.Worktree))
 	return nil
+}
+
+// callerOrigin is what this process can say about who is opening a lane: the surface
+// (cli, mcp, or desk when the front desk runs the MCP server), the run Shepherd started
+// it in, the agent CLI it runs under, the calling process and the directory.
+func callerOrigin(env Env) store.Origin {
+	o := store.Origin{Via: env.Client, Dir: env.Cwd, PID: os.Getppid()}
+	if o.Via == store.OriginMCP && os.Getenv("SHEPHERD_CLIENT") == store.OriginDesk {
+		o.Via = store.OriginDesk
+	}
+	if id, err := strconv.ParseInt(os.Getenv("SHEPHERD_RUN"), 10, 64); err == nil && id > 0 {
+		o.Run = id
+	}
+	// Claude Code marks the processes it starts, its tools and MCP servers alike.
+	if os.Getenv("CLAUDECODE") == "1" {
+		o.Agent = "claude"
+	}
+	return o
+}
+
+// openedBy is a lane's origin with the directory it was opened from.
+func openedBy(o store.Origin) string {
+	if o.Dir == "" {
+		return o.String()
+	}
+	return o.String() + " from " + o.Dir
 }
 
 func laneList(ctx context.Context, env Env, args []string) error {
@@ -231,13 +259,16 @@ func laneList(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	w := env.Stdout
-	fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %s\n", "REPO", "LANE", "STATE", "AGE", "SCOPE")
+	fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %-8s %s\n", "REPO", "LANE", "STATE", "AGE", "VIA", "SCOPE")
 	for _, l := range lanes {
 		mark := " "
 		if h.Lane != nil && h.Lane.ID == l.ID {
 			mark = "*"
 		}
-		fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %s\n", l.Repo, mark+l.Name, l.State, age(l.Created), strings.Join(l.Scope, ", "))
+		fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %-8s %s\n", l.Repo, mark+l.Name, l.State, age(l.Created), l.Origin.Surface(), strings.Join(l.Scope, ", "))
+		if by := openedBy(l.Origin); by != l.Origin.Surface() {
+			fmt.Fprintf(w, "%-20s  opened by %s\n", "", by)
+		}
 	}
 	return nil
 }

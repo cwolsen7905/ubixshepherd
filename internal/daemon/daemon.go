@@ -377,15 +377,43 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	req.Origin = s.fillOrigin(r, req.Origin)
 	lane, err := s.Fold.Open(r.Context(), req)
 	if err != nil {
 		s.foldError(w, err)
 		return
 	}
-	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree)
-	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree, "origin", lane.Origin.String())
+	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened via %s (scope %s)", lane.Name, lane.Origin.Surface(), strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, lane)
+}
+
+// fillOrigin completes what a client said about itself with what the daemon knows: the
+// client its request named, the agent and session of the run it came from, and the
+// front desk's session (the desk is resumed per turn, so it is the one in use). It never
+// guesses: what nothing says stays empty.
+func (s *Server) fillOrigin(r *http.Request, o store.Origin) store.Origin {
+	if o.Via == "" {
+		o.Via = r.Header.Get(api.ClientHeader)
+	}
+	ctx := r.Context()
+	if o.Run != 0 {
+		if run, err := s.Store.Run(ctx, o.Run); err == nil {
+			if o.Agent == "" {
+				o.Agent = run.Agent
+			}
+			if o.Session == "" {
+				o.Session = run.Session
+			}
+		} else {
+			o.Run = 0 // not a run this daemon knows: do not point at one
+		}
+	}
+	if o.Via == store.OriginDesk && o.Session == "" {
+		o.Session, _ = s.Store.Setting(ctx, "desk.session")
+	}
+	return o
 }
 
 func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {

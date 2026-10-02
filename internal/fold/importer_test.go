@@ -138,7 +138,7 @@ func TestWriteViewOnlyWithACoordFile(t *testing.T) {
 	}
 	b, _ := os.ReadFile(file)
 	s := string(b)
-	for _, want := range []string{viewBegin, "| feat/view | `feat/view` | by hand | `src/**`", "`v0.1.0` (no lane, reserved)", "- 2026-01-01 someone did something"} {
+	for _, want := range []string{viewBegin, "| feat/view | `feat/view` | via unknown | `src/**`", "`v0.1.0` (no lane, reserved)", "- 2026-01-01 someone did something"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("view lacks %q:\n%s", want, s)
 		}
