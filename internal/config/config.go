@@ -38,6 +38,11 @@ type Daemon struct {
 	MaxRuns int `yaml:"max_runs" json:"max_runs"`
 	// Poll is how often open lanes' merge requests are checked: "60s", "2m"; "off" stops it.
 	Poll string `yaml:"poll" json:"poll"`
+	// Budget is the daily spend, in dollars, past which Shepherd holds the runs it would
+	// start on its own (fixes, routed requests); 0 means no cap. It warns at 80%.
+	Budget *float64 `yaml:"budget" json:"budget"`
+	// CreditUSD prices one Copilot credit, which Copilot reports instead of dollars.
+	CreditUSD *float64 `yaml:"credit_usd" json:"credit_usd"`
 }
 
 // Branch models.
@@ -92,7 +97,7 @@ type Autonomy struct {
 func Default() Config {
 	yes := true
 	return Config{
-		Daemon: Daemon{Listen: "127.0.0.1:0", MaxRuns: 4, Poll: "60s"},
+		Daemon: Daemon{Listen: "127.0.0.1:0", MaxRuns: 4, Poll: "60s", Budget: ptr(20.0), CreditUSD: ptr(0.04)},
 		Defaults: Profile{
 			BaseBranch:  "main",
 			BranchModel: Trunk,
@@ -100,6 +105,8 @@ func Default() Config {
 		},
 	}
 }
+
+func ptr(f float64) *float64 { return &f }
 
 // Load reads path over the defaults. A missing file gives Default().
 func Load(path string) (Config, error) {
@@ -136,6 +143,12 @@ func Parse(b []byte) (Config, error) {
 	if file.Daemon.Poll != "" {
 		c.Daemon.Poll = file.Daemon.Poll
 	}
+	if file.Daemon.Budget != nil {
+		c.Daemon.Budget = file.Daemon.Budget
+	}
+	if file.Daemon.CreditUSD != nil {
+		c.Daemon.CreditUSD = file.Daemon.CreditUSD
+	}
 	c.Defaults = merge(c.Defaults, file.Defaults)
 	c.Repos = file.Repos
 	return c, c.Validate()
@@ -155,6 +168,9 @@ func (c Config) Validate() error {
 		if d, err := time.ParseDuration(c.Daemon.Poll); err != nil || d < 10*time.Second {
 			errs = append(errs, fmt.Errorf("daemon.poll: %q; a duration of at least 10s, or off", c.Daemon.Poll))
 		}
+	}
+	if *c.Daemon.Budget < 0 || *c.Daemon.CreditUSD < 0 {
+		errs = append(errs, fmt.Errorf("daemon.budget and daemon.credit_usd cannot be negative"))
 	}
 	if c.Daemon.MaxRuns < 1 {
 		errs = append(errs, fmt.Errorf("daemon.max_runs: %d; at least 1", c.Daemon.MaxRuns))

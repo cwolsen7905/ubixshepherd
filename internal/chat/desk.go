@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -24,6 +25,9 @@ const (
 	KindDecision = "decision"
 	KindInfo     = "info"
 	KindError    = "error"
+	// KindCost carries a turn's cost in dollars as its text; the chat records it and
+	// does not show it.
+	KindCost = "cost"
 )
 
 // Line is one entry in the thread.
@@ -121,10 +125,11 @@ func Parse(r io.Reader, emit func(Line)) bool {
 	got := false
 	for sc.Scan() {
 		var m struct {
-			Type    string `json:"type"`
-			Subtype string `json:"subtype"`
-			IsError bool   `json:"is_error"`
-			Result  string `json:"result"`
+			Type    string  `json:"type"`
+			Subtype string  `json:"subtype"`
+			IsError bool    `json:"is_error"`
+			Result  string  `json:"result"`
+			Cost    float64 `json:"total_cost_usd"`
 			Message struct {
 				Content []struct {
 					Type  string          `json:"type"`
@@ -155,6 +160,9 @@ func Parse(r io.Reader, emit func(Line)) bool {
 				}
 			}
 		case "result":
+			if m.Cost > 0 {
+				emit(Line{KindCost, strconv.FormatFloat(m.Cost, 'f', -1, 64)})
+			}
 			if m.IsError || (m.Subtype != "" && m.Subtype != "success") {
 				text := m.Result
 				if text == "" {

@@ -157,6 +157,20 @@ var migrations = []string{
 	);`,
 	// Gate failures handed back to a lane's agent before Shepherd would push it.
 	`ALTER TABLE lane_forge ADD COLUMN gate_tries INTEGER NOT NULL DEFAULT 0;`,
+	// What runs and the front desk cost: dollars where the agent reports them, Copilot's
+	// credits as it reports them, by local day.
+	`ALTER TABLE runs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0;
+	ALTER TABLE runs ADD COLUMN credits REAL NOT NULL DEFAULT 0;
+	CREATE TABLE spend (
+		id      INTEGER PRIMARY KEY,
+		day     TEXT NOT NULL,
+		source  TEXT NOT NULL,
+		ref     INTEGER NOT NULL DEFAULT 0,
+		usd     REAL NOT NULL DEFAULT 0,
+		credits REAL NOT NULL DEFAULT 0,
+		created TEXT NOT NULL
+	);
+	CREATE INDEX spend_day ON spend (day);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -409,14 +423,14 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
 }
 
-const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent`
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits`
 
 func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	var r store.Run
 	var outside, started, ended string
 	var exit sql.NullInt64
 	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
-		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent); err != nil {
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits); err != nil {
 		return r, err
 	}
 	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
@@ -465,8 +479,8 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 	}
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
-			exit_code = ?, error = ?, ended = ?, session = ? WHERE id = ?`,
-		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.ID)
+			exit_code = ?, error = ?, ended = ?, session = ?, cost_usd = ?, credits = ? WHERE id = ?`,
+		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits, r.ID)
 	return err
 }
 
@@ -738,6 +752,31 @@ func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 			gate_tries = excluded.gate_tries, updated = excluded.updated`,
 		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, now())
 	return err
+}
+
+func (s *DB) AddSpend(ctx context.Context, sp store.Spend) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO spend (day, source, ref, usd, credits, created) VALUES (?, ?, ?, ?, ?, ?)`,
+		sp.Day, sp.Source, sp.Ref, sp.USD, sp.Credits, now())
+	return err
+}
+
+// SpendOn totals a day's spend by source.
+func (s *DB) SpendOn(ctx context.Context, day string) (map[string]store.Spend, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT source, SUM(usd), SUM(credits), COUNT(*) FROM spend WHERE day = ? GROUP BY source`, day)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]store.Spend{}
+	for rows.Next() {
+		var sp store.Spend
+		if err := rows.Scan(&sp.Source, &sp.USD, &sp.Credits, &sp.Ref); err != nil {
+			return nil, err
+		}
+		sp.Day = day
+		out[sp.Source] = sp
+	}
+	return out, rows.Err()
 }
 
 func nonNil(s []string) []string {

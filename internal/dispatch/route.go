@@ -194,9 +194,10 @@ func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Req
 		req.Agent = prev[0].Agent
 	}
 	req.Prompt = requestPrompt(q, from.Agent, fromLane.Name, target)
+	req.Auto = true
 	run, err := r.Start(ctx, req)
-	if errors.Is(err, ErrRefused) && strings.Contains(err.Error(), "max_runs") {
-		return q // try again when a run ends
+	if errors.Is(err, ErrRefused) && (strings.Contains(err.Error(), "max_runs") || strings.Contains(err.Error(), "daily budget")) {
+		return q // try again when a run ends, or the budget allows
 	}
 	if err != nil {
 		q.State, q.Note = store.RequestFailed, err.Error()
@@ -312,9 +313,9 @@ func (r *Runner) returnReply(ctx context.Context, q store.Request) {
 		return
 	}
 	prompt := fmt.Sprintf("[Reply to your %s (request %d), from %s in lane %s]\n%s\n\nContinue your work with that.", q.Kind, q.ID, q.Agent, q.Lane, q.Reply)
-	next, err := r.Start(ctx, StartRequest{Continue: q.FromRun, Prompt: prompt})
+	next, err := r.Start(ctx, StartRequest{Continue: q.FromRun, Prompt: prompt, Auto: true})
 	if err != nil {
-		if !strings.Contains(err.Error(), "max_runs") {
+		if !strings.Contains(err.Error(), "max_runs") && !strings.Contains(err.Error(), "daily budget") {
 			q.State, q.Note = store.RequestFailed, "could not return the reply: "+err.Error()
 			r.save(ctx, q)
 		}

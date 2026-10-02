@@ -41,6 +41,8 @@ type Adapter struct {
 	WorkerReady func() bool
 	// Note is added to the brief: what this CLI's permissions need the agent to know.
 	Note string
+	// Read turns a line of the agent's output into the run log's line and any cost.
+	Read func(line string) Output
 }
 
 // Opts are what a run's command line is built from.
@@ -82,7 +84,7 @@ var adapters = map[string]Adapter{
 		Args: func(o Opts) []string {
 			// The prompt comes right after -p: --allowedTools and --mcp-config take lists
 			// and would swallow a prompt placed after them.
-			a := []string{"-p", o.Prompt, "--output-format", "text", "--permission-mode", "acceptEdits"}
+			a := []string{"-p", o.Prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"}
 			if o.Resume {
 				a = append(a, "--resume", o.Session)
 			} else if o.Session != "" {
@@ -112,6 +114,7 @@ var adapters = map[string]Adapter{
 		NewSession: func(context.Context, string, string) (string, error) { return newUUID() },
 		SessionIn:  func(string) string { return "" },
 		Attach:     func(session, _ string) []string { return []string{"--resume", session} },
+		Read:       claudeOutput,
 	},
 	"copilot": {
 		Name: "copilot", Bin: "copilot",
@@ -146,6 +149,7 @@ var adapters = map[string]Adapter{
 		// Copilot approves each part of a chained command, and nobody can approve
 		// `exit` or `true` in a headless run.
 		Note: "Run each git command on its own (git add, then git commit), not chained with &&, || or ;. Chained commands need an approval nobody can give in this run.",
+		Read: copilotOutput,
 	},
 	"cursor": {
 		Name: "cursor", Bin: "cursor-agent",
@@ -168,6 +172,7 @@ var adapters = map[string]Adapter{
 			return a
 		},
 		WorkerReady: CursorWorkerReady,
+		Read:        plainOutput,
 		NewSession: func(ctx context.Context, bin, worktree string) (string, error) {
 			cmd := exec.CommandContext(ctx, bin, "create-chat")
 			cmd.Dir = worktree

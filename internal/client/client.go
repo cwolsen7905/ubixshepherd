@@ -177,6 +177,16 @@ func (c *Client) SetSetting(ctx context.Context, key, value string) error {
 	return c.do(ctx, http.MethodPut, api.PathSettings+"/"+key, api.Setting{Value: value}, &out)
 }
 
+func (c *Client) SpendToday(ctx context.Context) (api.SpendToday, error) {
+	var out api.SpendToday
+	return out, c.do(ctx, http.MethodGet, api.PathSpend, nil, &out)
+}
+
+func (c *Client) AddSpend(ctx context.Context, sp store.Spend) error {
+	var out store.Spend
+	return c.do(ctx, http.MethodPost, api.PathSpend, sp, &out)
+}
+
 func (c *Client) StopRun(ctx context.Context, id int64) error {
 	var out struct{}
 	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)
