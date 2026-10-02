@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -189,6 +190,13 @@ func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Req
 	case req.Agent == "":
 		prev, _ := r.Store.Runs(ctx, target.ID, "", 1)
 		if len(prev) == 0 {
+			// No agent of Shepherd's has worked here; a conversation the person had by
+			// hand on this branch may know the answer.
+			if q.Kind == KindQuestion {
+				if c, ok := r.conversationFor(ctx, target); ok {
+					return r.askConversation(ctx, q, c, from.Agent, fromLane.Name, target)
+				}
+			}
 			return r.needsRouting(ctx, q, "lane "+target.Name+" has no agent yet; say which one")
 		}
 		req.Agent = prev[0].Agent
@@ -278,6 +286,9 @@ func requestPrompt(q store.Request, fromAgent, fromLane string, target store.Lan
 
 // collectReply takes the target run's report, or the end of its output, once it ends.
 func (r *Runner) collectReply(ctx context.Context, q store.Request) store.Request {
+	if q.TargetRun == 0 {
+		return q // a conversation is answering; it sets the reply itself
+	}
 	run, err := r.Store.Run(ctx, q.TargetRun)
 	if err != nil || run.State == store.RunRunning {
 		return q
@@ -325,6 +336,59 @@ func (r *Runner) returnReply(ctx context.Context, q store.Request) {
 	r.save(ctx, q)
 	r.Log.Info("reply returned", "request", q.ID, "run", next.ID)
 	r.feed(ctx, store.FeedRequestReplied, q.ID, "request %d: %s replied; the asker carries on as run %d: %s", q.ID, q.Agent, next.ID, clip(q.Reply, 160))
+}
+
+// conversationFor is the adopted conversation that worked on a lane's branch most
+// recently, if one is not open in a terminal.
+func (r *Runner) conversationFor(ctx context.Context, lane store.Lane) (store.Conversation, bool) {
+	cs, err := r.Store.Conversations(ctx, lane.RepoID)
+	if err != nil {
+		return store.Conversation{}, false
+	}
+	for _, c := range cs { // most recent first
+		for _, b := range c.Branches {
+			if b == lane.Branch && !convo.InUse(c.File) {
+				return c, true
+			}
+		}
+	}
+	return store.Conversation{}, false
+}
+
+// askConversation answers a question from an adopted conversation, read-only, in the
+// background; the reply then goes back to the asker like any other.
+func (r *Runner) askConversation(ctx context.Context, q store.Request, c store.Conversation, fromAgent, fromLane string, target store.Lane) store.Request {
+	q.State, q.Lane, q.Agent, q.Note = store.RequestRouted, target.Name, "conversation "+c.ID[:8], ""
+	q = r.save(ctx, q)
+	r.feed(ctx, store.FeedRequestRouted, q.ID, "request %d routed to conversation %s (%s), which worked on lane %s", q.ID, c.ID[:8], clip(c.Title, 60), target.Name)
+	prompt := fmt.Sprintf("[A question through uBixShepherd from %s, working in lane %s]\n%s\n\nAnswer from what you know of branch %s. Do not change anything.", fromAgent, fromLane, q.Message, target.Branch)
+	ask := r.AskConversation
+	if ask == nil {
+		ask = defaultAsk
+	}
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		ctx := context.Background()
+		a, err := ask(ctx, c, prompt)
+		r.Spend(ctx, store.Spend{Source: "session", USD: a.USD})
+		reply := a.Text
+		if err != nil {
+			reply = "The conversation could not answer: " + err.Error()
+		}
+		q.State, q.Reply = store.RequestReplyReady, reply
+		r.save(ctx, q)
+		r.Route(ctx)
+	}()
+	return q
+}
+
+func defaultAsk(ctx context.Context, c store.Conversation, question string) (convo.Answer, error) {
+	bin, err := exec.LookPath("claude")
+	if err != nil {
+		return convo.Answer{}, errors.New("claude is not on the daemon's PATH")
+	}
+	return convo.Ask(ctx, bin, c, question)
 }
 
 // logTail is the last part of a run's log, without Shepherd's own lines.

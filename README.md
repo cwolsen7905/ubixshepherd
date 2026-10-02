@@ -212,6 +212,10 @@ read but not to edit or run anything, and prints its answer; the desk can do the
 (`session_list`, `session_ask`) from `shepherd chat`. A session whose file changed in
 the last five minutes may be open in a terminal, and is not asked.
 
+When an agent asks a lane a question (`ask_shepherd`) and no agent of Shepherd's has
+worked in that lane, the question goes to the adopted conversation that worked on the
+lane's branch most recently, read-only, and its answer goes back to the agent.
+
 ### Agent runs
 
 Shepherd can start an agent headless in a lane's worktree:
