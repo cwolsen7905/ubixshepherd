@@ -206,3 +206,26 @@ func TestRescope(t *testing.T) {
 		t.Errorf("removing the last glob: %v", err)
 	}
 }
+
+func TestHookChainedInATrackedHooksDir(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	// The repo's own tracked hook already calls Shepherd's check (as a project might).
+	hooks := filepath.Join(f.repo.Path, ".githooks")
+	os.MkdirAll(hooks, 0o755)
+	os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nshepherd hook pre-push \"$@\" || exit 1\n"), 0o755)
+	gitT(t, f.repo.Path, "add", ".githooks")
+	gitT(t, f.repo.Path, "commit", "-q", "-m", "hooks")
+	gitT(t, f.repo.Path, "push", "-q", "origin", "HEAD:main")
+	gitT(t, f.repo.Path, "config", "core.hooksPath", ".githooks")
+	f.fold.Exe = "/usr/local/bin/shepherd"
+	o, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "chained", Scope: []string{"x/**"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range o.Notes {
+		if strings.Contains(n, "not enforced") {
+			t.Errorf("a chained hook was reported as not enforcing: %s", n)
+		}
+	}
+}

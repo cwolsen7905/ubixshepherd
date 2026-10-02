@@ -159,8 +159,10 @@ const HookLine = `shepherd hook pre-push "$@" || exit 1`
 type HookState struct {
 	Path string `json:"path"`
 	// Ours: Shepherd's hook is installed. Foreign: another pre-push hook is there.
+	// Chained: that other hook already runs Shepherd's check.
 	Ours    bool `json:"ours"`
 	Foreign bool `json:"foreign"`
+	Chained bool `json:"chained,omitempty"`
 	// Tracked: the hooks directory is outside .git (core.hooksPath), usually a tracked
 	// directory in the work tree, so a hook written there is a change to commit.
 	Tracked bool `json:"tracked"`
@@ -192,6 +194,7 @@ func Hook(ctx context.Context, repo string) (HookState, error) {
 		st.Ours = true
 	default:
 		st.Foreign = true
+		st.Chained = bytes.Contains(b, []byte("shepherd hook pre-push"))
 	}
 	return st, nil
 }
@@ -231,22 +234,24 @@ func UninstallHook(ctx context.Context, repo string) (HookState, error) {
 
 // ensureHook installs the hook when that is safe without asking: no pre-push hook yet,
 // in a hooks directory git keeps out of the work tree. Otherwise it says what to do.
-func (f *Fold) ensureHook(ctx context.Context, repo string) string {
+// It looks from the lane's worktree: with a relative core.hooksPath (a tracked
+// .githooks), each worktree runs its own checked-out copy of the hook.
+func (f *Fold) ensureHook(ctx context.Context, repo, worktree string) string {
 	if f.Exe == "" {
 		return ""
 	}
-	st, err := Hook(ctx, repo)
+	st, err := Hook(ctx, worktree)
 	switch {
 	case err != nil:
 		return "could not check the pre-push hook: " + err.Error()
-	case st.Ours:
+	case st.Ours, st.Chained:
 		return ""
 	case st.Foreign:
 		return fmt.Sprintf("scope is not enforced on push: %s is another hook. Add to it: %s", st.Path, HookLine)
 	case st.Tracked:
 		return fmt.Sprintf("scope is not enforced on push: this repo's hooks live outside .git (%s), so Shepherd does not write there unasked. Run shepherd hook install, and commit the hook if that directory is tracked", filepath.Dir(st.Path))
 	}
-	if _, err := InstallHook(ctx, repo, f.Exe); err != nil {
+	if _, err := InstallHook(ctx, worktree, f.Exe); err != nil {
 		return "could not install the pre-push hook: " + err.Error()
 	}
 	return "installed the pre-push hook at " + st.Path
