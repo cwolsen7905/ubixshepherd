@@ -203,6 +203,24 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "session_list",
+			Description: "Conversations the person had with agents outside Shepherd (adopted Claude Code sessions): id, repo, title, dates, branches. Ask one with session_ask.",
+			InputSchema: obj(map[string]any{}),
+			args:        func(map[string]any) ([]string, error) { return []string{"session", "list"}, nil },
+		},
+		{
+			Name: "session_ask",
+			Description: "Ask an adopted conversation a question; it answers with its own history and can read files but not change anything. Use it to recover what was decided or done in work the person did by hand. " +
+				"Refused if the conversation looks open in a terminal right now.",
+			InputSchema: obj(map[string]any{
+				"id":       map[string]any{"type": "string", "description": "The conversation's id, or its first 8 characters."},
+				"question": map[string]any{"type": "string"},
+			}, "id", "question"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"session", "ask", str(a, "id"), str(a, "question")}, nil
+			},
+		},
+		{
 			Name:        "tag_reserve",
 			Description: "Reserve the next release version in a repo (major, minor or patch) for a lane, atomically against the remote's tags and other reservations. In repos whose tags are reserved, a release tag must be reserved before it is pushed.",
 			InputSchema: obj(map[string]any{

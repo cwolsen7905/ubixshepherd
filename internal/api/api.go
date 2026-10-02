@@ -47,6 +47,32 @@ type FoldView struct {
 	File   string `json:"file,omitempty"`
 }
 
+// Conversation routes.
+const (
+	PathSessions       = "/v1/sessions"
+	PathSessionsImport = "/v1/sessions/import"
+)
+
+// PathSessionAsk is POST /v1/sessions/{id}/ask.
+func PathSessionAsk(id string) string { return PathSessions + "/" + id + "/ask" }
+
+// SessionImport is the body of POST /v1/sessions/import; RepoID 0 means every repo.
+type SessionImport struct {
+	RepoID int64 `json:"repo_id,omitempty"`
+}
+
+// SessionView is an adopted conversation with its repo's name and whether it looks open.
+type SessionView struct {
+	store.Conversation
+	Repo  string `json:"repo,omitempty"`
+	InUse bool   `json:"in_use"`
+}
+
+// Ask is the body of POST /v1/sessions/{id}/ask.
+type Ask struct {
+	Question string `json:"question"`
+}
+
 // Tag reservation routes.
 const (
 	PathTags        = "/v1/tags"

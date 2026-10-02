@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
@@ -43,6 +45,8 @@ type Server struct {
 	started    time.Time
 	stop       chan struct{}
 	stopOnce   sync.Once
+	sessMu     sync.Mutex
+	sessLocks  map[string]*sync.Mutex
 }
 
 // NewServer returns a Server with a fresh random token.
@@ -98,6 +102,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathFeed, s.feed)
 	mux.HandleFunc("POST "+api.PathFoldImport, s.foldImport)
 	mux.HandleFunc("POST "+api.PathFoldView, s.foldView)
+	mux.HandleFunc("POST "+api.PathSessionsImport, s.importSessions)
+	mux.HandleFunc("GET "+api.PathSessions, s.listSessions)
+	mux.HandleFunc("POST "+api.PathSessions+"/{id}/ask", s.askSession)
 	mux.HandleFunc("GET "+api.PathTags, s.listTags)
 	mux.HandleFunc("POST "+api.PathTagsReserve, s.reserveTag)
 	mux.HandleFunc("POST "+api.PathTagsRelease, s.releaseTag)
@@ -769,6 +776,144 @@ func (s *Server) refreshView(repoID int64) {
 			s.Log.Error("write coordination view", "repo_id", repoID, "err", err)
 		}
 	}()
+}
+
+func (s *Server) importSessions(w http.ResponseWriter, r *http.Request) {
+	var req api.SessionImport
+	if !decode(w, r, &req) {
+		return
+	}
+	ctx := r.Context()
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.SessionView{}
+	for _, ws := range wss {
+		repos, err := s.Store.Repos(ctx, ws.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, repo := range repos {
+			if req.RepoID != 0 && repo.ID != req.RepoID {
+				continue
+			}
+			roots := []string{repo.Path, repo.Path + "-worktrees"}
+			if wr := s.Config.Profile(repo.Name).WorktreeRoot; wr != "" {
+				if !filepath.IsAbs(wr) {
+					wr = filepath.Join(filepath.Dir(repo.Path), wr)
+				}
+				roots = append(roots, wr)
+			}
+			found, err := convo.Scan(convo.ClaudeHome(), roots)
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			for _, f := range found {
+				c := store.Conversation{ID: f.ID, Agent: f.Agent, RepoID: repo.ID, Dir: f.Dir, Title: f.Title,
+					Branches: f.Branches, File: f.File, Started: f.Started, Last: f.Last}
+				if err := s.Store.PutConversation(ctx, c); err != nil {
+					s.fail(w, err)
+					return
+				}
+				out = append(out, api.SessionView{Conversation: c, Repo: repo.Name, InUse: convo.InUse(f.File)})
+			}
+			if len(found) > 0 {
+				s.Store.AddFeed(ctx, store.FeedSession, fmt.Sprintf("adopted %d conversation(s) from %s", len(found), repo.Name), repo.ID)
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
+	repoID, _ := strconv.ParseInt(r.URL.Query().Get("repo_id"), 10, 64)
+	cs, err := s.Store.Conversations(r.Context(), repoID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.SessionView{}
+	for _, c := range cs {
+		v := api.SessionView{Conversation: c, InUse: convo.InUse(c.File)}
+		if repo, err := s.Store.Repo(r.Context(), c.RepoID); err == nil {
+			v.Repo = repo.Name
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) askSession(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req api.Ask
+	if !decode(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.Question) == "" {
+		writeError(w, http.StatusBadRequest, errors.New("ask a question"))
+		return
+	}
+	cs, err := s.Store.Conversations(r.Context(), 0)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	var c *store.Conversation
+	for i := range cs {
+		if cs[i].ID == id {
+			c = &cs[i]
+		}
+	}
+	if c == nil {
+		writeError(w, http.StatusNotFound, fmt.Errorf("no adopted conversation %s", id))
+		return
+	}
+	bin, err := exec.LookPath("claude")
+	if err != nil {
+		writeError(w, http.StatusConflict, errors.New("claude is not on the daemon's PATH"))
+		return
+	}
+	// One question at a time per conversation: two at once would interleave in the session.
+	lock := s.sessionLock(c.ID)
+	if !lock.TryLock() {
+		writeError(w, http.StatusConflict, fmt.Errorf("conversation %s is already answering a question", c.ID[:8]))
+		return
+	}
+	defer lock.Unlock()
+	a, err := convo.Ask(r.Context(), bin, *c, req.Question)
+	if a.USD > 0 {
+		s.Runner.Spend(r.Context(), store.Spend{Source: "session", USD: a.USD})
+	}
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	s.Store.AddFeed(r.Context(), store.FeedSession, fmt.Sprintf("asked conversation %s (%s): %s", c.ID[:8], clipText(c.Title, 50), clipText(req.Question, 120)), 0)
+	writeJSON(w, http.StatusOK, a)
+}
+
+func (s *Server) sessionLock(id string) *sync.Mutex {
+	s.sessMu.Lock()
+	defer s.sessMu.Unlock()
+	if s.sessLocks == nil {
+		s.sessLocks = map[string]*sync.Mutex{}
+	}
+	if s.sessLocks[id] == nil {
+		s.sessLocks[id] = &sync.Mutex{}
+	}
+	return s.sessLocks[id]
+}
+
+func clipText(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len([]rune(s)) > n {
+		return string([]rune(s)[:n-1]) + "…"
+	}
+	return s
 }
 
 func (s *Server) reserveTag(w http.ResponseWriter, r *http.Request) {
