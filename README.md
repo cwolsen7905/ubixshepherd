@@ -25,6 +25,7 @@ Needs Go (see `go.mod` for the version) and git.
 make build                  # bin/shepherd for this machine
 make check                  # gofmt, vet, tests, and the core boundary check
 make cross                  # dist/ for Linux, macOS and Windows on amd64 and arm64
+make install                # copy to ~/.local/bin/shepherd and restart a running daemon
 
 bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shepherd manages
 bin/shepherd status         # the daemon, its workspaces, and where you are
@@ -91,6 +92,8 @@ bin/shepherd daemon start | restart | uninstall
 bin/shepherd daemon             # in the foreground, for debugging; Ctrl-C stops it
 ```
 
+Register the copy `make install` puts in `~/.local/bin`, not `bin/shepherd`: `make clean`
+removes the latter, and `make install` restarts the daemon onto each new build.
 `install` copies your current PATH into the service, because launchd and systemd start
 programs with a bare one that would hide git and the agent CLIs. Set
 `SHEPHERD_NO_AUTOSTART=1` to stop commands starting a daemon (scripts, CI).

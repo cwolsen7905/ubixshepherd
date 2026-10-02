@@ -7,10 +7,23 @@ TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windo
 CORE_DIRS := cmd internal
 PRODUCT_PATTERN := ubixcore|ubixvault|ubixops|replikate|ubixos
 
-.PHONY: build test check core-boundary cross clean
+PREFIX ?= $(HOME)/.local/bin
+
+.PHONY: build install test check core-boundary cross clean
 
 build:
 	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o bin/shepherd ./cmd/shepherd
+
+# Copy the binary to a stable path (the one `shepherd daemon install` should register),
+# replacing it atomically, and restart the daemon if one is running so it runs the new
+# build.
+install: build
+	@mkdir -p $(PREFIX)
+	@cp bin/shepherd $(PREFIX)/.shepherd.new && mv -f $(PREFIX)/.shepherd.new $(PREFIX)/shepherd
+	@echo "installed $(PREFIX)/shepherd ($(VERSION))"
+	@if SHEPHERD_NO_AUTOSTART=1 $(PREFIX)/shepherd daemon status | grep -q 'running, pid'; then \
+		$(PREFIX)/shepherd daemon restart; \
+	fi
 
 test:
 	go test ./...
