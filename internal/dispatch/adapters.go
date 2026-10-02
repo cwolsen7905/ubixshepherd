@@ -45,7 +45,9 @@ type Adapter struct {
 	Read func(line string) Output
 	// SessionCost says the cost the CLI reports is the whole session's so far, not
 	// this invocation's: the runner keeps the latest figure and records what the run
-	// added beyond the earlier runs of the session.
+	// added beyond the earlier runs of the session. It applies to whatever Read
+	// returns, dollars or credits, so an adapter that starts reading a cost sets it
+	// when its CLI counts the session.
 	SessionCost bool
 }
 
@@ -119,6 +121,8 @@ var adapters = map[string]Adapter{
 		SessionIn:  func(string) string { return "" },
 		Attach:     func(session, _ string) []string { return []string{"--resume", session} },
 		Read:       claudeOutput,
+		// total_cost_usd on a resumed session is the session's total, not the run's.
+		SessionCost: true,
 	},
 	"copilot": {
 		Name: "copilot", Bin: "copilot",

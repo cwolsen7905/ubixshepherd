@@ -29,6 +29,32 @@ func TestOutputReaders(t *testing.T) {
 	}
 }
 
+// Claude Code's total_cost_usd on a resumed session is the session's: run 12, a
+// 10-second continuation reporting $8.39 after run 11's $8.28, cost $0.11.
+func TestClaudeSessionCostRecordsWhatEachRunAdded(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	runWith := func(cost string) store.Run {
+		t.Helper()
+		t.Setenv("COST", cost)
+		run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f.wait(t, run.ID)
+	}
+	first, second := runWith("8.28"), runWith("8.39")
+	if second.Parent != first.ID || second.Session != first.Session {
+		t.Fatalf("second run did not continue the session: %+v", second)
+	}
+	if first.CostUSD != 8.28 || second.CostUSD != 0.11 || second.SessionUSD != 8.39 {
+		t.Errorf("costs: first %v, second %v (session %v)", first.CostUSD, second.CostUSD, second.SessionUSD)
+	}
+	if spent, _, _ := f.runner.Spent(ctx); spent < 8.389 || spent > 8.391 {
+		t.Errorf("today's spend = %v, want 8.39", spent)
+	}
+}
+
 // Copilot's credits count the whole session: a continued run records what it added.
 func TestSessionCostRecordsWhatEachRunAdded(t *testing.T) {
 	f := newFixture(t, "quick")
