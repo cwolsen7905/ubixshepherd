@@ -81,7 +81,7 @@ func TestShipPushesAndOpensTheMR(t *testing.T) {
 	if !originHas(t, f, "work") {
 		t.Error("the lane was not pushed")
 	}
-	if len(sf.created) != 1 || !strings.HasPrefix(sf.created[0], "work -> main: agent work") || !strings.Contains(sf.created[0], "The gate, `true`, passed") {
+	if len(sf.created) != 1 || !strings.HasPrefix(sf.created[0], "work -> main: agent work") || !strings.Contains(sf.created[0], "The gate, `true`, passed") || strings.Contains(sf.created[0], "claude") {
 		t.Errorf("created = %q", sf.created)
 	}
 }
@@ -127,5 +127,22 @@ func TestShipOnlyWhenOptedInAndFinished(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if originHas(t, h, "work") || len(hf.created) != 0 {
 		t.Error("pushed while the agent waits on a decision")
+	}
+}
+
+func TestShipEnforcesCommitRules(t *testing.T) {
+	// The fake agent's commit message is "agent work"; forbid "agent".
+	f, sf := shipFixture(t, "ok", pushes+"    forbid: [\"(?i)agent work\"]\n    brief: Sign nothing.\n")
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	if a := argsOf(t, f.wait(t, run.ID)); !strings.Contains(a, "This repo's rules: Sign nothing.") {
+		t.Errorf("brief lacks the repo's rules: %s", a)
+	}
+	waitFeed(t, f, "the repo's commit rules failed in lane work; asked claude to fix it")
+	if originHas(t, f, "work") || len(sf.created) != 0 {
+		t.Error("pushed a forbidden commit message")
+	}
+	runs, _ := f.st.Runs(context.Background(), f.lane.ID, "", 5)
+	if !strings.Contains(runs[0].Prompt, `contains "agent work"`) || !strings.Contains(runs[0].Prompt, "Amend") {
+		t.Errorf("fix prompt: %s", runs[0].Prompt)
 	}
 }

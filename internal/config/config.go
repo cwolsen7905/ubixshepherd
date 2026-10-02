@@ -14,6 +14,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -66,8 +67,13 @@ type Profile struct {
 	// SharedPaths are globs that more than one lane may want; touching one takes a lease.
 	SharedPaths []string `yaml:"shared_paths,omitempty" json:"shared_paths,omitempty"`
 	// WorktreeRoot is where lane worktrees go. Empty means <workspace>/<repo>-worktrees.
-	WorktreeRoot string   `yaml:"worktree_root,omitempty" json:"worktree_root,omitempty"`
-	Autonomy     Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
+	WorktreeRoot string `yaml:"worktree_root,omitempty" json:"worktree_root,omitempty"`
+	// Brief is added to every agent's brief in the repo: its own rules.
+	Brief string `yaml:"brief,omitempty" json:"brief,omitempty"`
+	// Forbid are regular expressions commit messages must not match before Shepherd
+	// pushes ("(?i)co-authored-by"); a match goes back to the agent to amend.
+	Forbid   []string `yaml:"forbid,omitempty" json:"forbid,omitempty"`
+	Autonomy Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
 }
 
 // Autonomy records what agents may do unasked in a repo.
@@ -184,6 +190,11 @@ func (p Profile) validate(at string) []error {
 			errs = append(errs, fmt.Errorf("%s.autonomy.%s: %q is not %s or %s", at, field, v, Human, Agent))
 		}
 	}
+	for _, f := range p.Forbid {
+		if _, err := regexp.Compile(f); err != nil {
+			errs = append(errs, fmt.Errorf("%s.forbid: %q: %v", at, f, err))
+		}
+	}
 	for _, g := range p.SharedPaths {
 		if strings.TrimSpace(g) == "" {
 			errs = append(errs, fmt.Errorf("%s.shared_paths: empty glob", at))
@@ -219,6 +230,12 @@ func merge(base, over Profile) Profile {
 	}
 	if over.WorktreeRoot != "" {
 		out.WorktreeRoot = over.WorktreeRoot
+	}
+	if over.Brief != "" {
+		out.Brief = over.Brief
+	}
+	if over.Forbid != nil {
+		out.Forbid = over.Forbid
 	}
 	if over.Autonomy.Merge != "" {
 		out.Autonomy.Merge = over.Autonomy.Merge

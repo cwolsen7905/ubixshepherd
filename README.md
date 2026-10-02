@@ -118,9 +118,16 @@ repos:
   ubixshepherd:
     base_branch: dev
     gate: make check
+    brief: No Co-authored-by or AI tool trailers in commit messages.
+    forbid: ["(?i)co-authored-by"]
     autonomy:
       push: shepherd
 ```
+
+`brief` adds the repo's own rules to every agent's brief; `forbid` holds patterns
+commit messages must not match before Shepherd pushes (agent CLIs such as Copilot and
+Cursor add attribution trailers by default). A match goes back to the agent to amend its
+unpushed commits.
 
 GitHub as a lane's forge comes later; GitHub's role in v1 is the release mirror.
 

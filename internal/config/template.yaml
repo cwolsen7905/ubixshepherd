@@ -26,6 +26,11 @@
 #   shared_paths: []
 #   ## Where lane worktrees go; empty means <workspace>/<repo>-worktrees.
 #   worktree_root: ""
+#   ## Added to every agent's brief in the repo: its own rules.
+#   brief: No Co-authored-by or AI tool trailers in commit messages.
+#   ## Patterns commit messages must not match before Shepherd pushes; a match goes
+#   ## back to the agent to amend.
+#   forbid: ["(?i)co-authored-by"]
 #   ## What agents may do unasked: human or agent.
 #   autonomy:
 #     merge: human

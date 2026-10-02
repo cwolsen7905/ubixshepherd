@@ -213,7 +213,11 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		worker = r.Exe
 	}
 	if !resume {
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", ad.Note)
+		note := ad.Note
+		if b := r.Config.Profile(repo.Name).Brief; b != "" {
+			note = strings.TrimSpace(note + "\nThis repo's rules: " + b)
+		}
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", note)
 	}
 	cmd := exec.Command(bin, ad.Args(Opts{Prompt: prompt, Model: req.Model, Gate: gate, Worktree: lane.Worktree,
 		Session: session, Resume: resume, Worker: worker})...)

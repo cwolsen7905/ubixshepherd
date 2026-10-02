@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -53,9 +54,13 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 		return
 	}
 
+	if bad := forbidden(ctx, lane, prof.Forbid); bad != "" {
+		r.gateFailed(ctx, run, lane, "the repo's commit rules", bad+"\nAmend your unpushed commits (git commit --amend, or git rebase) so no commit message matches.", "", &lf)
+		return
+	}
 	ok, tail, logPath := r.gate(ctx, run, lane, prof.Gate)
 	if !ok {
-		r.gateFailed(ctx, run, lane, prof.Gate, tail, logPath, &lf)
+		r.gateFailed(ctx, run, lane, "the repo's gate, `"+prof.Gate+"`,", tail, logPath, &lf)
 		return
 	}
 	lf.GateTries = 0
@@ -87,6 +92,37 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	}
 	r.Log.Info("lane shipped", "lane", lane.Name, "mr", mr.IID)
 	r.feed(ctx, store.FeedMR, lane.ID, "pushed lane %s (gate `%s` passed) and opened !%d for you to review: %s", lane.Name, prof.Gate, mr.IID, mr.URL)
+}
+
+// forbidden checks the lane's unpushed commit messages against the repo's patterns and
+// describes the first match, or returns "".
+func forbidden(ctx context.Context, lane store.Lane, patterns []string) string {
+	if len(patterns) == 0 {
+		return ""
+	}
+	base := lane.Base
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Branch) {
+		base = "origin/" + lane.Branch
+	} else if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+base) {
+		base = "origin/" + base
+	}
+	out, err := git.Run(ctx, lane.Worktree, "log", "--format=%h%x00%B%x01", base+"..HEAD")
+	if err != nil {
+		return ""
+	}
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			continue
+		}
+		for _, c := range strings.Split(out, "\x01") {
+			sha, msg, _ := strings.Cut(strings.TrimSpace(c), "\x00")
+			if m := re.FindString(msg); m != "" {
+				return fmt.Sprintf("Commit %s's message contains %q, which this repo does not allow (pattern %s).", sha, m, p)
+			}
+		}
+	}
+	return ""
 }
 
 // unfinished says why a run's work is not ready to push, or "": it is waiting on the
@@ -160,17 +196,22 @@ func (r *Runner) gate(ctx context.Context, run store.Run, lane store.Lane, gate 
 }
 
 // gateFailed hands the gate's failure back to the agent while tries remain.
-func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane, gate, tail, logPath string, lf *store.LaneForge) {
+// what names the check: "the repo's gate, `make check`," or "the repo's commit rules".
+func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane, what, tail, logPath string, lf *store.LaneForge) {
+	where := ""
+	if logPath != "" {
+		where = " (" + logPath + ")"
+	}
 	if lf.GateTries >= MaxGateTries {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "the gate `%s` failed again in lane %s after %d fixes; not pushing, it is yours (%s)", gate, lane.Name, lf.GateTries, logPath)
+		r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed again in lane %s after %d fixes; not pushing, it is yours%s", strings.TrimSuffix(what, ","), lane.Name, lf.GateTries, where)
 		return
 	}
 	if run.Session == "" {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "the gate `%s` failed in lane %s; not pushing (%s)", gate, lane.Name, logPath)
+		r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed in lane %s; not pushing%s", strings.TrimSuffix(what, ","), lane.Name, where)
 		return
 	}
-	prompt := fmt.Sprintf("[Shepherd] Before pushing your work, Shepherd ran the repo's gate, `%s`, in your lane, and it failed:\n\n%s\n\n"+
-		"Fix the cause within your scope, run the gate yourself until it passes, and commit. Shepherd runs it again when you finish.", gate, tail)
+	prompt := fmt.Sprintf("[Shepherd] Before pushing your work, Shepherd checked %s in your lane, and it failed:\n\n%s\n\n"+
+		"Fix it within your scope, check again yourself, and commit. Shepherd checks again when you finish.", what, tail)
 	next, err := r.Start(ctx, StartRequest{Continue: run.ID, Prompt: prompt})
 	if err != nil {
 		r.feed(ctx, store.FeedPipeline, lane.ID, "the gate failed in lane %s, and handing it back failed: %s", lane.Name, clip(err.Error(), 200))
@@ -178,7 +219,7 @@ func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane,
 	}
 	lf.GateTries++
 	r.Store.PutLaneForge(ctx, *lf)
-	r.feed(ctx, store.FeedPipeline, lane.ID, "the gate `%s` failed in lane %s; asked %s to fix it (run %d, try %d of %d)", gate, lane.Name, run.Agent, next.ID, lf.GateTries, MaxGateTries)
+	r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed in lane %s; asked %s to fix it (run %d, try %d of %d)", strings.TrimSuffix(what, ","), lane.Name, run.Agent, next.ID, lf.GateTries, MaxGateTries)
 }
 
 // mrText is the merge request's title and description, from the lane's commits.
@@ -194,7 +235,7 @@ func (r *Runner) mrText(ctx context.Context, run store.Run, lane store.Lane, gat
 		title = subjects[0]
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Opened by uBixShepherd from lane `%s`, after %s's run %d. The gate, `%s`, passed in the lane before the push.\n\n", lane.Name, run.Agent, run.ID, gate)
+	fmt.Fprintf(&b, "Opened by uBixShepherd from lane `%s` (run %d). The gate, `%s`, passed in the lane before the push.\n\n", lane.Name, run.ID, gate)
 	b.WriteString("Commits:\n")
 	for _, s := range subjects {
 		if s != "" {
