@@ -39,7 +39,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 		*name = filepath.Base(root)
 	}
 
-	c, err := dial(env)
+	c, err := dial(ctx, env)
 	if err != nil {
 		return err
 	}

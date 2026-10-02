@@ -14,6 +14,7 @@ const (
 	PathStatus     = "/v1/status"
 	PathWorkspaces = "/v1/workspaces"
 	PathResolve    = "/v1/resolve"
+	PathShutdown   = "/v1/shutdown"
 )
 
 // Runtime is what a running daemon writes to its runtime file so clients can find it.

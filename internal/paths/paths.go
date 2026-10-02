@@ -35,6 +35,9 @@ type Layout struct {
 func (l Layout) Config() string { return filepath.Join(l.Home, "config.yaml") }
 func (l Layout) Store() string  { return filepath.Join(l.Home, "shepherd.db") }
 
+// Log is where a background daemon writes its log.
+func (l Layout) Log() string { return filepath.Join(l.Home, "daemon.log") }
+
 // Runtime is written by a running daemon: its address, pid and access token.
 func (l Layout) Runtime() string { return filepath.Join(l.Home, "daemon.json") }
 

@@ -41,6 +41,9 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
 - `internal/store` is an interface; `store/sqlite` uses a pure-Go driver so `CGO_ENABLED=0`
   cross-compiles. Schema changes are appended migrations, never edits.
 - Text that stores or shows agent output goes through `internal/redact`.
+- Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
+  with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
+  and `SHEPHERD_HOME` to a temp dir when running the binary by hand.
 - `core-boundary` fails if `cmd/` or `internal/` names a product. Product knowledge goes in
   a pack.
 - Keep dependencies few: the standard library first (the CLI is `flag`, not a framework).

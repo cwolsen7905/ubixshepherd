@@ -24,14 +24,29 @@ make build                  # bin/shepherd for this machine
 make check                  # gofmt, vet, tests, and the core boundary check
 make cross                  # dist/ for Linux, macOS and Windows on amd64 and arm64
 
-bin/shepherd daemon         # runs in the foreground; Ctrl-C stops it
 bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shepherd manages
 bin/shepherd status         # the daemon, its workspaces, and where you are
 bin/shepherd where          # the workspace, repo and lane for this directory, with its profile
 ```
 
+Any command starts the daemon in the background if it is not running, and says so. To
+have it start at login and restart if it crashes, register it with the OS service manager
+(launchd on macOS, systemd on Linux; Windows to come):
+
+```sh
+bin/shepherd daemon install     # writes and loads the LaunchAgent or user unit, with your PATH
+bin/shepherd daemon status      # running or not, and whether it starts at login
+bin/shepherd daemon stop        # stays stopped until the next login or `daemon start`
+bin/shepherd daemon start | restart | uninstall
+bin/shepherd daemon             # in the foreground, for debugging; Ctrl-C stops it
+```
+
+`install` copies your current PATH into the service, because launchd and systemd start
+programs with a bare one that would hide git and the agent CLIs. Set
+`SHEPHERD_NO_AUTOSTART=1` to stop commands starting a daemon (scripts, CI).
+
 Shepherd keeps its files in `~/.shepherd` on every OS (or `$SHEPHERD_HOME`): the config,
-the SQLite store, and the running daemon's address and access token. The daemon listens on
+the SQLite store, the daemon's log, and the running daemon's address and access token. The daemon listens on
 loopback only. On its first start it writes `~/.shepherd/config.yaml` with every setting
 commented out, so the defaults apply until you change one; it never touches the file
 again. A repo's profile comes from that file, over cautious defaults (a human merges, tags

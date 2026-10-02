@@ -18,7 +18,7 @@ import (
 )
 
 // ErrNoDaemon means no daemon is running for this Shepherd home.
-var ErrNoDaemon = errors.New("the shepherd daemon is not running (start it with: shepherd daemon)")
+var ErrNoDaemon = errors.New("the shepherd daemon is not running (start it with: shepherd daemon start)")
 
 // Client calls one daemon.
 type Client struct {
@@ -47,6 +47,12 @@ func FromRuntime(path string) (*Client, error) {
 func (c *Client) Status(ctx context.Context) (api.Status, error) {
 	var out api.Status
 	return out, c.do(ctx, http.MethodGet, api.PathStatus, nil, &out)
+}
+
+// Shutdown asks the daemon to stop.
+func (c *Client) Shutdown(ctx context.Context) error {
+	var out struct{}
+	return c.do(ctx, http.MethodPost, api.PathShutdown, nil, &out)
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]api.WorkspaceDetail, error) {

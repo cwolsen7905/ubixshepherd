@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -34,6 +35,8 @@ type Server struct {
 	Token      string
 	Log        *slog.Logger
 	started    time.Time
+	stop       chan struct{}
+	stopOnce   sync.Once
 }
 
 // NewServer returns a Server with a fresh random token.
@@ -42,7 +45,10 @@ func NewServer(st store.Store, cfg config.Config, cfgPath string, log *slog.Logg
 	if err != nil {
 		return nil, err
 	}
-	return &Server{Store: st, Config: cfg, ConfigPath: cfgPath, Token: tok, Log: log, started: time.Now().UTC()}, nil
+	return &Server{
+		Store: st, Config: cfg, ConfigPath: cfgPath, Token: tok, Log: log,
+		started: time.Now().UTC(), stop: make(chan struct{}),
+	}, nil
 }
 
 func newToken() (string, error) {
@@ -65,6 +71,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathWorkspaces, s.listWorkspaces)
 	mux.HandleFunc("POST "+api.PathWorkspaces, s.saveWorkspace)
 	mux.HandleFunc("GET "+api.PathResolve, s.resolve)
+	mux.HandleFunc("POST "+api.PathShutdown, s.shutdown)
 	return s.auth(mux)
 }
 
@@ -255,6 +262,14 @@ func Resolve(ctx context.Context, st store.Store, cfg config.Config, p string) (
 	return res, nil
 }
 
+// shutdown asks Run to stop. The daemon then exits cleanly, which a service manager
+// configured to restart on failure only leaves stopped.
+func (s *Server) shutdown(w http.ResponseWriter, r *http.Request) {
+	s.Log.Info("shutdown requested")
+	writeJSON(w, http.StatusAccepted, struct{}{})
+	s.stopOnce.Do(func() { close(s.stop) })
+}
+
 func (s *Server) fail(w http.ResponseWriter, err error) {
 	s.Log.Error("request failed", "err", err)
 	writeError(w, http.StatusInternalServerError, err)
@@ -270,13 +285,19 @@ func writeError(w http.ResponseWriter, code int, err error) {
 	writeJSON(w, code, api.Error{Error: redact.String(err.Error())})
 }
 
-// Run listens, writes the runtime file, serves until ctx is done, then removes the
-// runtime file. It refuses to start while another daemon answers at the runtime file's
-// address.
+// Run takes the home's lock, listens, writes the runtime file, serves until ctx is done
+// or a shutdown is requested, then removes the runtime file. The lock makes a second
+// daemon on the same home refuse to start, even when two start at the same moment.
 func (s *Server) Run(ctx context.Context, runtimePath string) error {
-	if rt, err := ReadRuntime(runtimePath); err == nil && alive(rt) {
-		return fmt.Errorf("a daemon is already running (pid %d at %s)", rt.PID, rt.Addr)
+	lock, err := acquireLock(filepath.Join(filepath.Dir(runtimePath), "daemon.lock"))
+	if err != nil {
+		if rt, rerr := ReadRuntime(runtimePath); rerr == nil {
+			return fmt.Errorf("a daemon is already running (pid %d at %s)", rt.PID, rt.Addr)
+		}
+		return fmt.Errorf("a daemon is already running (%v)", err)
 	}
+	defer lock.Close()
+
 	ln, err := net.Listen("tcp", s.Config.Daemon.Listen)
 	if err != nil {
 		return err
@@ -300,6 +321,7 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	case err := <-errc:
 		return err
 	case <-ctx.Done():
+	case <-s.stop:
 	}
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -343,7 +365,8 @@ func writeRuntime(path string, rt api.Runtime) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-func alive(rt api.Runtime) bool {
+// Alive reports whether the daemon described by rt answers.
+func Alive(rt api.Runtime) bool {
 	c := http.Client{Timeout: time.Second}
 	req, err := http.NewRequest(http.MethodGet, "http://"+rt.Addr+api.PathStatus, nil)
 	if err != nil {

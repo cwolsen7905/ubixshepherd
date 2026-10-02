@@ -217,3 +217,29 @@ func TestRunWritesAndRemovesRuntime(t *testing.T) {
 		t.Error("runtime file left behind")
 	}
 }
+
+func TestShutdownEndsRun(t *testing.T) {
+	s, ts := newServer(t)
+	rtPath := filepath.Join(t.TempDir(), "daemon.json")
+	done := make(chan error, 1)
+	go func() { done <- s.Run(context.Background(), rtPath) }()
+	for i := 0; i < 100; i++ {
+		if _, err := ReadRuntime(rtPath); err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if code := call(t, ts, s.Token, "POST", api.PathShutdown, nil, nil); code != http.StatusAccepted {
+		t.Fatalf("shutdown: %d", code)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("Run: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after shutdown")
+	}
+	// A second shutdown request must not panic on the closed channel.
+	call(t, ts, s.Token, "POST", api.PathShutdown, nil, nil)
+}
