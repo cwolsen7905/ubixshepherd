@@ -52,6 +52,8 @@ const (
 const (
 	Human = "human"
 	Agent = "agent"
+	// Shepherd: Shepherd itself, deterministically (for push: after the gate passes).
+	Shepherd = "shepherd"
 )
 
 // Profile says how a repo works. In Repos, an empty field inherits from Defaults.
@@ -73,6 +75,9 @@ type Autonomy struct {
 	Merge  string `yaml:"merge,omitempty" json:"merge,omitempty"`
 	Tag    string `yaml:"tag,omitempty" json:"tag,omitempty"`
 	Deploy string `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+	// Push: who pushes a lane's branch and opens its merge request. "shepherd" lets
+	// Shepherd do it after an agent's run, once the repo's gate passes in the lane.
+	Push string `yaml:"push,omitempty" json:"push,omitempty"`
 	// PlanFirst means an agent proposes a plan and waits before changing anything.
 	PlanFirst *bool `yaml:"plan_first,omitempty" json:"plan_first,omitempty"`
 }
@@ -85,7 +90,7 @@ func Default() Config {
 		Defaults: Profile{
 			BaseBranch:  "main",
 			BranchModel: Trunk,
-			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, PlanFirst: &yes},
+			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, Push: Human, PlanFirst: &yes},
 		},
 	}
 }
@@ -184,6 +189,12 @@ func (p Profile) validate(at string) []error {
 			errs = append(errs, fmt.Errorf("%s.shared_paths: empty glob", at))
 		}
 	}
+	if p.Autonomy.Push != Human && p.Autonomy.Push != Shepherd {
+		errs = append(errs, fmt.Errorf("%s.autonomy.push: %q is not %s or %s", at, p.Autonomy.Push, Human, Shepherd))
+	}
+	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
+		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
+	}
 	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
 	return errs
 }
@@ -217,6 +228,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Autonomy.Deploy != "" {
 		out.Autonomy.Deploy = over.Autonomy.Deploy
+	}
+	if over.Autonomy.Push != "" {
+		out.Autonomy.Push = over.Autonomy.Push
 	}
 	if over.Autonomy.PlanFirst != nil {
 		out.Autonomy.PlanFirst = over.Autonomy.PlanFirst

@@ -29,7 +29,7 @@ echo "fake agent in $(pwd), run $SHEPHERD_RUN, lane $SHEPHERD_LANE"
 echo "ARGS: $(printf '%s ' "$@" | tr '\n' ' ')"
 case "$MODE" in quick) echo "copilot --resume=cop-$SHEPHERD_RUN-session"; exit 0 ;; esac
 case "$MODE" in sleep) sleep 30 ;; esac
-mkdir -p src && echo work > src/work.txt
+mkdir -p src && echo "work $SHEPHERD_RUN" >> src/work.txt
 git add src/work.txt && git commit -q -m "agent work"
 if [ "$MODE" = stray ]; then echo x > stray.txt && git add stray.txt && git commit -q -m stray; fi
 if git push -q --no-verify origin HEAD 2>/dev/null; then echo "PUSH WORKED"; else echo "push blocked"; fi

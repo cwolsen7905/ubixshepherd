@@ -50,6 +50,8 @@ type Forge interface {
 	FailedJobs(ctx context.Context, pipeline int64) ([]Job, error)
 	// JobLog is the end of a job's log, cleaned for reading.
 	JobLog(ctx context.Context, job int64, lines int) (string, error)
+	// CreateMR opens a merge request from source into target.
+	CreateMR(ctx context.Context, source, target, title, description string) (*MR, error)
 }
 
 // Remote is a git remote URL split into host and repository path.
@@ -178,6 +180,25 @@ func (g *GitLab) MRForBranch(ctx context.Context, branch string) (*MR, error) {
 		mr.Pipeline = &Pipeline{ID: p.ID, Status: p.Status, SHA: p.SHA, URL: p.WebURL}
 	}
 	return mr, nil
+}
+
+func (g *GitLab) CreateMR(ctx context.Context, source, target, title, description string) (*MR, error) {
+	run := g.Run
+	if run == nil {
+		run = glab
+	}
+	out, err := run(ctx, "api", "--hostname", g.Host, "--method", "POST", g.project()+"/merge_requests",
+		"--raw-field", "source_branch="+source, "--raw-field", "target_branch="+target,
+		"--raw-field", "title="+title, "--raw-field", "description="+description,
+		"--raw-field", "remove_source_branch=true")
+	if err != nil {
+		return nil, err
+	}
+	var m glMR
+	if err := json.Unmarshal(out, &m); err != nil {
+		return nil, fmt.Errorf("create merge request: %w", err)
+	}
+	return &MR{IID: m.IID, State: m.State, SHA: m.SHA, URL: m.WebURL}, nil
 }
 
 func (g *GitLab) FailedJobs(ctx context.Context, pipeline int64) ([]Job, error) {

@@ -31,6 +31,9 @@
 #     merge: human
 #     tag: human
 #     deploy: human
+#     ## Who pushes a lane and opens its merge request: human, or shepherd (after an
+#     ## agent's run, once the gate passes in the lane; needs gate set; never merges).
+#     push: human
 #     ## Propose a plan and wait before changing anything.
 #     plan_first: true
 

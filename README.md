@@ -105,6 +105,23 @@ credentials. What changed lands in the thread, and some of it is acted on:
   still cannot push: you push its fix.
 - **Opened, pipeline passed, canceled, closed without merging:** a line in the thread.
 
+**Shepherd can push, for repos you opt in.** With `autonomy.push: shepherd` in a repo's
+profile (and a `gate` set), when an agent's run ends with commits inside its scope,
+Shepherd runs the gate itself in the lane. If it passes, Shepherd pushes the branch
+(the scope hook still checks it) and opens the merge request, or updates the open one;
+if it fails, the output goes back into the agent's conversation to fix, at most twice.
+It waits while the agent is waiting on you or another lane, or said it was blocked. It
+never merges. The default is `push: human`: agents commit, you push.
+
+```yaml
+repos:
+  ubixshepherd:
+    base_branch: dev
+    gate: make check
+    autonomy:
+      push: shepherd
+```
+
 GitHub as a lane's forge comes later; GitHub's role in v1 is the release mirror.
 
 ### Agent runs

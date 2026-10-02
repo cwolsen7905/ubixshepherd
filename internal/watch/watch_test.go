@@ -36,6 +36,9 @@ func (f *fakeForge) MRForBranch(context.Context, string) (*forge.MR, error) {
 	return &c, nil
 }
 func (f *fakeForge) FailedJobs(context.Context, int64) ([]forge.Job, error) { return f.jobs, nil }
+func (f *fakeForge) CreateMR(context.Context, string, string, string, string) (*forge.MR, error) {
+	return &forge.MR{IID: 1, State: "opened"}, nil
+}
 func (f *fakeForge) JobLog(_ context.Context, id int64, _ int) (string, error) {
 	return "--- FAIL: TestParse (job log)", nil
 }
