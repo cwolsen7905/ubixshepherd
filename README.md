@@ -30,10 +30,12 @@ bin/shepherd status         # the daemon, its workspaces, and where you are
 bin/shepherd where          # the workspace, repo and lane for this directory, with its profile
 ```
 
-Shepherd keeps its files in `$SHEPHERD_HOME`, or `shepherd/` under the OS user config
-directory: `config.yaml` (optional), the SQLite store, and the running daemon's address and
-access token. The daemon listens on loopback only. A repo's profile comes from
-`config.yaml`, over cautious defaults (a human merges, tags and deploys; agents plan first):
+Shepherd keeps its files in `~/.shepherd` on every OS (or `$SHEPHERD_HOME`): the config,
+the SQLite store, and the running daemon's address and access token. The daemon listens on
+loopback only. On its first start it writes `~/.shepherd/config.yaml` with every setting
+commented out, so the defaults apply until you change one; it never touches the file
+again. A repo's profile comes from that file, over cautious defaults (a human merges, tags
+and deploys; agents plan first):
 
 ```yaml
 defaults:

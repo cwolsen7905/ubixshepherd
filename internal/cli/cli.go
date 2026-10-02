@@ -113,7 +113,7 @@ func usage(w io.Writer) {
 		fmt.Fprintf(w, "  %-9s %s\n", c.name, c.summary)
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "Files live in $%s, or the OS user config directory under shepherd/.\n", paths.HomeEnv)
+	fmt.Fprintf(w, "Files live in ~/.shepherd, or $%s if set.\n", paths.HomeEnv)
 }
 
 // flags returns a FlagSet that reports errors instead of exiting, and parses

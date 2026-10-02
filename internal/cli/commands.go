@@ -34,6 +34,11 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 	if err := os.MkdirAll(l.Home, 0o700); err != nil {
 		return err
 	}
+	if wrote, err := config.WriteTemplate(l.Config()); err != nil {
+		return err
+	} else if wrote {
+		fmt.Fprintf(env.Stderr, "Wrote %s: every setting commented out, defaults apply.\n", l.Config())
+	}
 	cfg, err := config.Load(l.Config())
 	if err != nil {
 		return err
