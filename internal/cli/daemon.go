@@ -86,6 +86,7 @@ func daemonRun(ctx context.Context, env Env) error {
 	if err != nil {
 		return err
 	}
+	srv.Fold.Exe = env.Exe
 	return srv.Run(ctx, l.Runtime())
 }
 

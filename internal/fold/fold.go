@@ -16,6 +16,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -37,6 +38,8 @@ func refuse(format string, a ...any) error {
 type Fold struct {
 	Store  store.Store
 	Config config.Config
+	// Exe is the shepherd binary the pre-push hook runs; empty skips installing it.
+	Exe string
 
 	mu    sync.Mutex
 	repos map[int64]*sync.Mutex
@@ -67,45 +70,72 @@ type OpenRequest struct {
 // A lane name is a branch-like slug with at most one slash: fix-login, feat/m2-leases.
 var laneName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*(/[a-z0-9][a-z0-9._-]*)?$`)
 
+// Opened is a new lane, with the shared paths its scope takes and anything worth
+// telling the person who opened it.
+type Opened struct {
+	store.Lane
+	Shared []string `json:"shared,omitempty"`
+	Notes  []string `json:"notes,omitempty"`
+}
+
 // Open creates the lane's branch from a fresh copy of the repo's base branch, its
-// worktree, and its record, or nothing at all.
-func (f *Fold) Open(ctx context.Context, req OpenRequest) (store.Lane, error) {
+// worktree, and its record, or nothing at all. A scope that overlaps an open lane's is
+// refused, naming the lane and the paths.
+func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if !laneName.MatchString(req.Name) {
-		return store.Lane{}, refuse("lane name %q: use lowercase letters, digits, '.', '_' and '-', with at most one '/' (fix-login, feat/m2-leases)", req.Name)
+		return Opened{}, refuse("lane name %q: use lowercase letters, digits, '.', '_' and '-', with at most one '/' (fix-login, feat/m2-leases)", req.Name)
 	}
 	if req.Branch == "" {
 		req.Branch = req.Name
 	}
 	if err := checkScope(req.Scope); err != nil {
-		return store.Lane{}, err
+		return Opened{}, err
 	}
 	repo, err := f.Store.Repo(ctx, req.RepoID)
 	if err != nil {
-		return store.Lane{}, fmt.Errorf("repo %d: %w", req.RepoID, err)
+		return Opened{}, fmt.Errorf("repo %d: %w", req.RepoID, err)
 	}
 	lock := f.repoLock(repo.ID)
 	lock.Lock()
 	defer lock.Unlock()
 
 	if !git.Ok(ctx, repo.Path, "check-ref-format", "--branch", req.Branch) {
-		return store.Lane{}, refuse("%q is not a valid branch name", req.Branch)
+		return Opened{}, refuse("%q is not a valid branch name", req.Branch)
 	}
 	prof := f.Config.Profile(repo.Name)
 	wt := f.worktreePath(repo, prof, req.Name)
 	if _, err := os.Stat(wt); err == nil {
-		return store.Lane{}, refuse("%s already exists", wt)
+		return Opened{}, refuse("%s already exists", wt)
 	}
 
 	start, err := freshBase(ctx, repo.Path, prof.BaseBranch)
 	if err != nil {
-		return store.Lane{}, err
+		return Opened{}, err
 	}
 	if git.RefExists(ctx, repo.Path, "refs/heads/"+req.Branch) {
-		return store.Lane{}, refuse("branch %s already exists in %s", req.Branch, repo.Name)
+		return Opened{}, refuse("branch %s already exists in %s", req.Branch, repo.Name)
 	}
 	if git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+req.Branch) {
-		return store.Lane{}, refuse("branch %s already exists on origin", req.Branch)
+		return Opened{}, refuse("branch %s already exists on origin", req.Branch)
 	}
+
+	// Scopes are leases: no two open lanes may claim the same path. Judged against the
+	// files at the lane's starting point, plus globs for paths not created yet.
+	files, err := listFiles(ctx, repo.Path, start)
+	if err != nil {
+		return Opened{}, err
+	}
+	others, err := f.Store.Lanes(ctx, repo.ID)
+	if err != nil {
+		return Opened{}, err
+	}
+	for _, o := range others {
+		if both := scope.Overlap(req.Scope, o.Scope, files); len(both) > 0 {
+			return Opened{}, refuse("scope overlaps lane %s (scope %s) on %s. Narrow the scope, or wait for %s to close",
+				o.Name, strings.Join(o.Scope, ", "), firstN(both, 5), o.Name)
+		}
+	}
+	out := Opened{Shared: sharedTouched(prof.SharedPaths, req.Scope, files)}
 
 	// Record first, so a concurrent open of the same name loses at the store.
 	lane, err := f.Store.CreateLane(ctx, store.Lane{
@@ -113,23 +143,27 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (store.Lane, error) {
 		Worktree: wt, Scope: req.Scope, State: store.LaneOpening,
 	})
 	if errors.Is(err, store.ErrConflict) {
-		return store.Lane{}, refuse("%v", err)
+		return Opened{}, refuse("%v", err)
 	}
 	if err != nil {
-		return store.Lane{}, err
+		return Opened{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(wt), 0o755); err != nil {
 		f.Store.DeleteLane(ctx, lane.ID)
-		return store.Lane{}, err
+		return Opened{}, err
 	}
 	if _, err := git.Run(ctx, repo.Path, "worktree", "add", "--quiet", "--no-track", "-b", req.Branch, wt, start); err != nil {
 		f.Store.DeleteLane(ctx, lane.ID)
-		return store.Lane{}, err
+		return Opened{}, err
 	}
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneOpen); err != nil {
-		return store.Lane{}, err
+		return Opened{}, err
 	}
-	return f.Store.Lane(ctx, lane.ID)
+	if note := f.ensureHook(ctx, repo.Path); note != "" {
+		out.Notes = append(out.Notes, note)
+	}
+	out.Lane, err = f.Store.Lane(ctx, lane.ID)
+	return out, err
 }
 
 // worktreePath is <workspace>/<repo>-worktrees/<lane>, or under the profile's root.
@@ -341,6 +375,34 @@ func (f *Fold) GC(ctx context.Context, workspaceID int64) ([]Stale, error) {
 		}
 	}
 	return out, nil
+}
+
+// listFiles lists the files at a commit, repo-relative with "/" separators.
+func listFiles(ctx context.Context, repo, rev string) ([]string, error) {
+	out, err := git.Run(ctx, repo, "ls-tree", "-r", "--name-only", rev)
+	if err != nil || out == "" {
+		return nil, err
+	}
+	return strings.Split(out, "\n"), nil
+}
+
+// sharedTouched returns the shared-path globs a scope claims any file of (or would, for
+// a literal shared path not created yet).
+func sharedTouched(shared, sc, files []string) []string {
+	var out []string
+	for _, sp := range shared {
+		if len(scope.Overlap([]string{sp}, sc, files)) > 0 {
+			out = append(out, sp)
+		}
+	}
+	return out
+}
+
+func firstN(s []string, n int) string {
+	if len(s) > n {
+		return strings.Join(s[:n], ", ") + fmt.Sprintf(" and %d more", len(s)-n)
+	}
+	return strings.Join(s, ", ")
 }
 
 func exists(p string) bool {

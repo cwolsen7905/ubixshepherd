@@ -10,8 +10,8 @@ are yours for you, and reports back in one thread.
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
 > In so far: the daemon, its API, the store, config and repo profiles, workspaces (M1),
-> and lanes (the start of M2). Leases, tag reservations, the pre-push hook and everything
-> after them are still design.
+> and from M2 lanes, scope leases and the pre-push hook. Tag reservations, the generated
+> `AGENTS-COORD.md`, import and everything after them are still design.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
@@ -42,9 +42,22 @@ cd ~/git/myrepo-worktrees/feat-login      # work here, or start an agent here
 shepherd lane list                          # this repo's lanes; --all, or run at ~/git, for every repo
 shepherd lane close                         # from inside the worktree, or: shepherd lane close feat/login
 shepherd fold gc                            # worktrees that look finished, across the workspace
+shepherd hook status                        # is the pre-push hook installed in this repo
 ```
 
-`lane open` refuses a name, branch or worktree path already in use. `lane close` refuses a
+A lane's scope is its lease: `lane open` refuses a scope that overlaps an open lane's,
+naming the lane and the paths, judged against the repo's files plus globs for paths not
+created yet. It reports any of the repo profile's `shared_paths` the lane takes. It
+also refuses a name, branch or worktree path already in use.
+
+The **pre-push hook** enforces the scope where every agent has to pass: a push from a
+lane may only update the lane's branch, with changes inside its scope. `lane open`
+installs the hook when that is safe (no `pre-push` hook yet, hooks inside `.git`);
+otherwise it says what to do. `shepherd hook install | uninstall | status` manage it by
+hand; it never replaces another hook, and prints the line to add to one instead. Pushes
+from outside a lane are left alone, and `git push --no-verify` skips the check once.
+
+ `lane close` refuses a
 worktree with uncommitted changes, and a branch git cannot see merged into the base. A
 squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
 keeps the branch. `fold gc` only lists; it removes nothing.

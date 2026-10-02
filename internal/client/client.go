@@ -16,7 +16,6 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
-	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // ErrNoDaemon means no daemon is running for this Shepherd home.
@@ -68,8 +67,8 @@ func (c *Client) Lanes(ctx context.Context, workspaceID, repoID int64) ([]api.La
 	return out, c.do(ctx, http.MethodGet, q, nil, &out)
 }
 
-func (c *Client) OpenLane(ctx context.Context, req fold.OpenRequest) (store.Lane, error) {
-	var out store.Lane
+func (c *Client) OpenLane(ctx context.Context, req fold.OpenRequest) (fold.Opened, error) {
+	var out fold.Opened
 	return out, c.do(ctx, http.MethodPost, api.PathLanes, req, &out)
 }
 
@@ -81,6 +80,16 @@ func (c *Client) CloseLane(ctx context.Context, id int64, force bool) (fold.Clos
 func (c *Client) FoldGC(ctx context.Context, workspaceID int64) ([]fold.Stale, error) {
 	var out []fold.Stale
 	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?workspace_id=%d", api.PathFoldGC, workspaceID), nil, &out)
+}
+
+func (c *Client) PrePush(ctx context.Context, req api.PrePush) (fold.Verdict, error) {
+	var out fold.Verdict
+	return out, c.do(ctx, http.MethodPost, api.PathPrePush, req, &out)
+}
+
+func (c *Client) RepoHook(ctx context.Context, repoID int64, action string) (fold.HookState, error) {
+	var out fold.HookState
+	return out, c.do(ctx, http.MethodPost, api.PathRepoHook(repoID), api.RepoHook{Action: action}, &out)
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]api.WorkspaceDetail, error) {

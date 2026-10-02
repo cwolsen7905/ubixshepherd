@@ -168,6 +168,12 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	fmt.Fprintf(w, "  branch    %s (from %s)\n", lane.Branch, lane.Base)
 	fmt.Fprintf(w, "  worktree  %s\n", lane.Worktree)
 	fmt.Fprintf(w, "  scope     %s\n", strings.Join(lane.Scope, ", "))
+	if len(lane.Shared) > 0 {
+		fmt.Fprintf(w, "  shared    %s (held by this lane until it closes)\n", strings.Join(lane.Shared, ", "))
+	}
+	for _, n := range lane.Notes {
+		fmt.Fprintf(w, "  note      %s\n", n)
+	}
 	fmt.Fprintf(w, "cd %s\n", shellQuote(lane.Worktree))
 	return nil
 }

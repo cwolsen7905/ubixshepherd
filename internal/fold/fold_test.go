@@ -79,7 +79,7 @@ func (f *fixture) open(name string) store.Lane {
 	if err != nil {
 		f.t.Fatalf("open %s: %v", name, err)
 	}
-	return l
+	return l.Lane
 }
 
 // commit adds a file in a worktree and commits it.
