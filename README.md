@@ -119,7 +119,9 @@ Claude Code and Copilot get the tools by flag; Claude Code sees only Shepherd's 
 tools, so an operator server you registered for yourself never reaches an agent. Cursor
 reads MCP servers only from its config file, so it needs one step, once:
 `shepherd agents setup cursor` adds a `shepherd-worker` entry to `~/.cursor/mcp.json` and
-leaves the rest alone.
+leaves the rest alone. Cursor does not pass its environment on to the MCP servers it
+starts, so its worker finds its run from the lane's worktree; it reaches the daemon in
+the default home (`~/.shepherd`), not one chosen with `SHEPHERD_HOME`.
 
 **Agents talk to each other through Shepherd.** `ask_shepherd` sends a question, a
 hand-off or a review request to another lane; the asking agent ends its turn, Shepherd
