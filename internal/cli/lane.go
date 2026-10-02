@@ -326,6 +326,8 @@ func foldImport(ctx context.Context, env Env, args []string) error {
 	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
 	file := fs.String("file", "", "the coordination file (default: AGENTS-COORD.md in the repo)")
 	apply := fs.Bool("apply", false, "import, rather than show what would be imported")
+	var adopt listFlag
+	fs.Var(&adopt, "adopt", "a branch whose worktree becomes a lane though no row claims it (repeatable)")
 	if pos, err := parse(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
@@ -342,7 +344,7 @@ func foldImport(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	plan, err := c.FoldImport(ctx, api.FoldImport{RepoID: h.Repo.ID, File: *file, Apply: *apply})
+	plan, err := c.FoldImport(ctx, api.FoldImport{RepoID: h.Repo.ID, File: *file, Apply: *apply, Adopt: adopt})
 	if err != nil {
 		return err
 	}

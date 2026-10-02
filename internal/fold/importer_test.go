@@ -188,3 +188,20 @@ func TestParseCoordSkipsShepherdsOwnView(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 }
+
+func TestImportAdoptsAnUnregisteredWorktree(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	os.WriteFile(filepath.Join(f.repo.Path, "AGENTS-COORD.md"), []byte(coordDoc), 0o644)
+	dir := filepath.Join(f.ws, "app-worktrees", "gate")
+	gitT(t, f.repo.Path, "worktree", "add", "-q", "-b", "feat/m2-gate", dir, "origin/main")
+	f.commit(dir, "tests/gate/run.sh")
+	plan, err := f.fold.ImportAdopt(ctx, f.repo.ID, "", true, []string{"feat/m2-gate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lanes, _ := f.fold.Store.Lanes(ctx, f.repo.ID)
+	if len(lanes) != 1 || lanes[0].Name != "feat/m2-gate" || strings.Join(lanes[0].Scope, " ") != "tests/gate/**" {
+		t.Fatalf("lanes = %+v (plan %+v)", lanes, plan)
+	}
+}
