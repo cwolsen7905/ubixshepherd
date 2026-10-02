@@ -44,6 +44,8 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
 - `internal/fold` is lanes (and next, leases and reservations). It drives the git CLI
   through `internal/git`, never a git library, so hooks and config behave as for people.
   Its tests build real repos with a bare origin; keep them that way.
+- `shepherd mcp` (`internal/cli/mcp.go`) maps each MCP tool onto a CLI command and runs
+  it with output captured. Add a tool by adding a command first, then its mapping.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

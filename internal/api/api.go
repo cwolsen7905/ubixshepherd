@@ -7,8 +7,12 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
+
+// ClientHeader names the kind of client making a request (cli, mcp, hook), for logs.
+const ClientHeader = "X-Shepherd-Client"
 
 // Routes.
 const (
@@ -18,7 +22,11 @@ const (
 	PathShutdown   = "/v1/shutdown"
 	PathLanes      = "/v1/lanes"
 	PathFoldGC     = "/v1/fold/gc"
+	PathPrePush    = "/v1/hook/pre-push"
 )
+
+// PathRepoHook is POST /v1/repos/{id}/hook.
+func PathRepoHook(id int64) string { return fmt.Sprintf("/v1/repos/%d/hook", id) }
 
 // PathLaneClose is POST /v1/lanes/{id}/close.
 func PathLaneClose(id int64) string { return fmt.Sprintf("%s/%d/close", PathLanes, id) }
@@ -83,6 +91,18 @@ type LaneView struct {
 // CloseLane is the body of POST /v1/lanes/{id}/close.
 type CloseLane struct {
 	Force bool `json:"force"`
+}
+
+// PrePush is the body of POST /v1/hook/pre-push.
+type PrePush struct {
+	// Path is the worktree git ran the hook in.
+	Path string         `json:"path"`
+	Refs []fold.PushRef `json:"refs"`
+}
+
+// RepoHook is the body of POST /v1/repos/{id}/hook: install, uninstall or status.
+type RepoHook struct {
+	Action string `json:"action"`
 }
 
 // Error is the body of every non-2xx response.

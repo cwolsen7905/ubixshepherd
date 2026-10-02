@@ -80,7 +80,43 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathLanes, s.openLane)
 	mux.HandleFunc("POST "+api.PathLanes+"/{id}/close", s.closeLane)
 	mux.HandleFunc("GET "+api.PathFoldGC, s.foldGC)
-	return s.auth(mux)
+	mux.HandleFunc("POST "+api.PathPrePush, s.prePush)
+	mux.HandleFunc("POST /v1/repos/{id}/hook", s.repoHook)
+	return s.logRequests(s.auth(mux))
+}
+
+// statusWriter remembers the status a handler wrote.
+type statusWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// logRequests logs every request but the status probe each command makes first, so the
+// daemon's log shows what each client asked and how it went.
+func (s *Server) logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		if r.Method == http.MethodGet && r.URL.Path == api.PathStatus {
+			return
+		}
+		client := r.Header.Get(api.ClientHeader)
+		if client == "" {
+			client = "unknown"
+		}
+		level := slog.LevelInfo
+		if sw.code >= 400 {
+			level = slog.LevelWarn
+		}
+		s.Log.Log(r.Context(), level, "request", "client", client, "method", r.Method,
+			"path", r.URL.Path, "status", sw.code, "ms", time.Since(start).Milliseconds())
+	})
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {
@@ -348,6 +384,65 @@ func (s *Server) foldGC(w http.ResponseWriter, r *http.Request) {
 		stale = []fold.Stale{}
 	}
 	writeJSON(w, http.StatusOK, stale)
+}
+
+func (s *Server) prePush(w http.ResponseWriter, r *http.Request) {
+	var req api.PrePush
+	if !decode(w, r, &req) {
+		return
+	}
+	if !filepath.IsAbs(req.Path) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("path %q: must be absolute", req.Path))
+		return
+	}
+	res, err := Resolve(r.Context(), s.Store, s.Config, req.Path)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	v, err := s.Fold.CheckPush(r.Context(), res.Lane, req.Path, req.Refs)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	if v.Lane != "" {
+		s.Log.Info("pre-push checked", "lane", v.Lane, "ok", v.OK, "problems", len(v.Problems))
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) repoHook(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req api.RepoHook
+	if !decode(w, r, &req) {
+		return
+	}
+	repo, err := s.Store.Repo(r.Context(), id)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	var st fold.HookState
+	switch req.Action {
+	case "status":
+		st, err = fold.Hook(r.Context(), repo.Path)
+	case "install":
+		st, err = fold.InstallHook(r.Context(), repo.Path, s.Fold.Exe)
+	case "uninstall":
+		st, err = fold.UninstallHook(r.Context(), repo.Path)
+	default:
+		writeError(w, http.StatusBadRequest, fmt.Errorf("action %q: want install, uninstall or status", req.Action))
+		return
+	}
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, st)
 }
 
 // foldError answers a refusal with 409 and its reason, a missing lane or repo with 404,

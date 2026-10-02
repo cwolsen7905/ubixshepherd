@@ -12,7 +12,8 @@ are yours for you, and reports back in one thread.
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
 > In so far: the daemon, its API, the store, config and repo profiles, workspaces (M1),
-> and lanes (the start of M2). Leases, tag reservations, the pre-push hook and everything
+> and from M2 lanes, scope leases and the pre-push hook, plus a first slice of the MCP
+> server (M4). Tag reservations, the generated `AGENTS-COORD.md`, import, and everything
 > after them are still design.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
@@ -26,6 +27,7 @@ Needs Go (see `go.mod` for the version) and git.
 make build                  # bin/shepherd for this machine
 make check                  # gofmt, vet, tests, and the core boundary check
 make cross                  # dist/ for Linux, macOS and Windows on amd64 and arm64
+make install                # copy to ~/.local/bin/shepherd and restart a running daemon
 
 bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shepherd manages
 bin/shepherd status         # the daemon, its workspaces, and where you are
@@ -44,12 +46,39 @@ cd ~/git/myrepo-worktrees/feat-login      # work here, or start an agent here
 shepherd lane list                          # this repo's lanes; --all, or run at ~/git, for every repo
 shepherd lane close                         # from inside the worktree, or: shepherd lane close feat/login
 shepherd fold gc                            # worktrees that look finished, across the workspace
+shepherd hook status                        # is the pre-push hook installed in this repo
 ```
 
-`lane open` refuses a name, branch or worktree path already in use. `lane close` refuses a
+A lane's scope is its lease: `lane open` refuses a scope that overlaps an open lane's,
+naming the lane and the paths, judged against the repo's files plus globs for paths not
+created yet. It reports any of the repo profile's `shared_paths` the lane takes. It
+also refuses a name, branch or worktree path already in use.
+
+The **pre-push hook** enforces the scope where every agent has to pass: a push from a
+lane may only update the lane's branch, with changes inside its scope. `lane open`
+installs the hook when that is safe (no `pre-push` hook yet, hooks inside `.git`);
+otherwise it says what to do. `shepherd hook install | uninstall | status` manage it by
+hand; it never replaces another hook, and prints the line to add to one instead. Pushes
+from outside a lane are left alone, and `git push --no-verify` skips the check once.
+
+ `lane close` refuses a
 worktree with uncommitted changes, and a branch git cannot see merged into the base. A
 squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
 keeps the branch. `fold gc` only lists; it removes nothing.
+
+### From Claude Code (MCP)
+
+`shepherd mcp` serves Shepherd's operator tools over MCP on stdio: `shepherd_status`,
+`shepherd_where`, `lane_list`, `lane_open`, `lane_close` and `fold_gc`. Each runs the CLI
+command of the same name. Register it once, then start Claude Code at the workspace root
+and ask in plain words ("open a lane in myrepo for the login fix, scoped to src/auth"):
+
+```sh
+claude mcp add --scope user shepherd -- ~/.local/bin/shepherd mcp   # or wherever the binary is
+cd ~/git && claude
+```
+
+Any MCP client that can start a stdio server works the same way.
 
 ### The daemon
 
@@ -65,6 +94,8 @@ bin/shepherd daemon start | restart | uninstall
 bin/shepherd daemon             # in the foreground, for debugging; Ctrl-C stops it
 ```
 
+Register the copy `make install` puts in `~/.local/bin`, not `bin/shepherd`: `make clean`
+removes the latter, and `make install` restarts the daemon onto each new build.
 `install` copies your current PATH into the service, because launchd and systemd start
 programs with a bare one that would hide git and the agent CLIs. Set
 `SHEPHERD_NO_AUTOSTART=1` to stop commands starting a daemon (scripts, CI).

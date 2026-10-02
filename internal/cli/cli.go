@@ -33,6 +33,8 @@ type Env struct {
 	// whether commands may do that when no daemon answers.
 	Exe       string
 	Autostart bool
+	// Client names this caller in the daemon's log: cli, mcp or hook.
+	Client string
 }
 
 type command struct {
@@ -45,6 +47,9 @@ type command struct {
 // errUsage asks Main to print the command's usage and exit 2.
 var errUsage = errors.New("usage")
 
+// errSilent exits 1 after the command has already said why.
+var errSilent = errors.New("silent")
+
 func commands() []command {
 	return []command{
 		{"daemon", "Run or manage the daemon (start, stop, restart, status, install, uninstall)",
@@ -53,7 +58,11 @@ func commands() []command {
 			"shepherd init [dir] [--name NAME] [--yes | --all | --only a,b]", runInit},
 		{"lane", "Open, list and close lanes: a branch and worktree per stream of work",
 			"shepherd lane open <name> --scope '<globs>' [--branch B] [--repo R] | list [--all] [--json] | close [name] [--force]", runLane},
+		{"hook", "Install or check the pre-push hook that keeps a lane's pushes in its scope",
+			"shepherd hook install | uninstall | status [--repo R]", runHook},
 		{"fold", "Find stale worktrees across the workspace", "shepherd fold gc [--json]", runFold},
+		{"mcp", "Serve Shepherd's operator tools over MCP on stdio, for Claude Code and other agents",
+			"shepherd mcp   (register: claude mcp add --scope user shepherd -- shepherd mcp)", runMCP},
 		{"status", "Show the daemon, its workspaces, and where you are", "shepherd status [--json]", runStatus},
 		{"where", "Show the workspace, repo and lane for a directory", "shepherd where [dir] [--json]", runWhere},
 		{"version", "Print the version", "shepherd version", runVersion},
@@ -77,6 +86,7 @@ func Main(args []string) int {
 		Interactive: term.IsTerminal(int(os.Stdin.Fd())),
 		Layout:      paths.Layout{Home: home}, Cwd: cwd,
 		Autostart: os.Getenv(NoAutostartEnv) == "",
+		Client:    "cli",
 	}
 	if exe, err := os.Executable(); err == nil {
 		env.Exe = exe
@@ -103,6 +113,8 @@ func Run(ctx context.Context, env Env, args []string) int {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintln(env.Stdout, "usage:", c.usage)
 			return 0
+		case errors.Is(err, errSilent):
+			return 1
 		case errors.Is(err, errUsage):
 			fmt.Fprintln(env.Stderr, "usage:", c.usage)
 			return 2
@@ -177,6 +189,7 @@ func connect(ctx context.Context, env Env) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.Name = env.Client
 	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if _, err := c.Status(probe); err != nil {

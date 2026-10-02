@@ -243,3 +243,32 @@ func TestShutdownEndsRun(t *testing.T) {
 	// A second shutdown request must not panic on the closed channel.
 	call(t, ts, s.Token, "POST", api.PathShutdown, nil, nil)
 }
+
+func TestRequestLog(t *testing.T) {
+	s, ts := newServer(t)
+	var buf bytes.Buffer
+	s.Log = slog.New(slog.NewTextHandler(&buf, nil))
+	ts.Config.Handler = s.Handler()
+
+	call(t, ts, s.Token, "GET", api.PathStatus, nil, nil)
+	req, _ := http.NewRequest("GET", ts.URL+api.PathLanes+"?workspace_id=1", nil)
+	req.Header.Set("Authorization", "Bearer "+s.Token)
+	req.Header.Set(api.ClientHeader, "mcp")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	call(t, ts, "wrong", "GET", api.PathLanes, nil, nil)
+
+	log := buf.String()
+	if strings.Contains(log, api.PathStatus) {
+		t.Errorf("status probe logged:\n%s", log)
+	}
+	if !strings.Contains(log, "client=mcp method=GET path=/v1/lanes status=200") {
+		t.Errorf("lanes request not logged with its client:\n%s", log)
+	}
+	if !strings.Contains(log, "level=WARN") || !strings.Contains(log, "status=401") {
+		t.Errorf("rejected request not logged as a warning:\n%s", log)
+	}
+}
