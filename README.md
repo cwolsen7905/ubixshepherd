@@ -1,3 +1,5 @@
+<img src="docs/brand/logo.svg" alt="uBixShepherd" width="228">
+
 # uBixShepherd
 
 **One voice to direct a whole swarm of AI agents.**

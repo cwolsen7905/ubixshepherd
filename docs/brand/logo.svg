@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 228 40" width="228" height="40">
+  <title>uBixShepherd</title>
+  <g transform="translate(4 4)">
+    <rect width="32" height="32" fill="#0f62fe"/>
+    <path d="M10.5 27V11.5a5 5 0 0 1 10 0v3.5" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="square"/>
+    <rect x="17" y="18" width="4" height="4" fill="#ffffff"/>
+    <rect x="22.5" y="18" width="4" height="4" fill="#ffffff" opacity="0.55"/>
+    <rect x="17" y="23" width="4" height="4" fill="#ffffff" opacity="0.55"/>
+    <rect x="22.5" y="23" width="4" height="4" fill="#ffffff"/>
+  </g>
+  <text x="46" y="28" font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#161616"><tspan font-weight="300">uBix</tspan><tspan font-weight="600">Shepherd</tspan></text>
+</svg>

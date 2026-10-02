@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>uBixShepherd</title>
+  <rect width="32" height="32" fill="#0f62fe"/>
+  <!-- The crook: the one voice, and the policy that brings strays back. -->
+  <path d="M10.5 27V11.5a5 5 0 0 1 10 0v3.5" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="square"/>
+  <!-- The flock: agents, kept in their lanes. -->
+  <rect x="17" y="18" width="4" height="4" fill="#ffffff"/>
+  <rect x="22.5" y="18" width="4" height="4" fill="#ffffff" opacity="0.55"/>
+  <rect x="17" y="23" width="4" height="4" fill="#ffffff" opacity="0.55"/>
+  <rect x="22.5" y="23" width="4" height="4" fill="#ffffff"/>
+</svg>
