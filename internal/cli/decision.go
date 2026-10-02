@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -104,10 +105,6 @@ func runDecision(ctx context.Context, env Env, args []string) error {
 // shepherd worker ...: what the worker tools run. Not for people: the run comes from
 // SHEPHERD_RUN, which Shepherd sets for the agents it starts.
 func runWorker(ctx context.Context, env Env, args []string) error {
-	runID, err := strconv.ParseInt(os.Getenv("SHEPHERD_RUN"), 10, 64)
-	if err != nil || runID == 0 {
-		return errors.New("shepherd worker is for agents Shepherd started (SHEPHERD_RUN is not set)")
-	}
 	if len(args) == 0 {
 		return errUsage
 	}
@@ -128,6 +125,10 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 	}
 	env.Client = "worker"
 	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	runID, err := workerRun(ctx, env, c)
 	if err != nil {
 		return err
 	}
@@ -153,6 +154,30 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 		return errUsage
 	}
 	return nil
+}
+
+// workerRun finds the run a worker tool call belongs to: SHEPHERD_RUN, which Shepherd
+// sets for the agents it starts, or else the running agent in the lane whose worktree
+// this is (for CLIs that do not pass their environment on to MCP servers).
+func workerRun(ctx context.Context, env Env, c *client.Client) (int64, error) {
+	if id, err := strconv.ParseInt(os.Getenv("SHEPHERD_RUN"), 10, 64); err == nil && id != 0 {
+		return id, nil
+	}
+	res, err := c.Resolve(ctx, env.Cwd)
+	if err != nil {
+		return 0, err
+	}
+	if res.Lane == nil {
+		return 0, errors.New("these tools are for agents Shepherd started in a lane, and this is not one of them")
+	}
+	runs, err := c.Runs(ctx, res.Lane.ID, store.RunRunning, 1)
+	if err != nil {
+		return 0, err
+	}
+	if len(runs) == 0 {
+		return 0, fmt.Errorf("no agent is running in lane %s", res.Lane.Name)
+	}
+	return runs[0].ID, nil
 }
 
 // shepherd request list | route: requests between lanes, and routing the ones Shepherd
