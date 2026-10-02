@@ -7,14 +7,46 @@ and many AI agents (Claude, Gemini, and whatever comes next). You talk to Shephe
 hands out the work, keeps the agents from stepping on each other, holds the decisions that
 are yours for you, and reports back in one thread.
 
-> Status: **design**. Nothing is built yet. v1's scope and stack are decided
-> ([docs/v1.md](docs/v1.md)): a Go core, the Fold and dispatch, GitLab and GitHub, useful on any repo and
-> aimed at uBixCore. This repo
-> holds the idea, the design and the reasoning, written so a fresh session (human or AI) can
-> pick it up cold.
+> Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
+> core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
+> The first milestone (M1, the skeleton) is in: the daemon, its API, the store, config and
+> repo profiles, and workspaces. Lanes and everything after them are still design.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
+
+## Build and run
+
+Needs Go (see `go.mod` for the version) and git.
+
+```sh
+make build                  # bin/shepherd for this machine
+make check                  # gofmt, vet, tests, and the core boundary check
+make cross                  # dist/ for Linux, macOS and Windows on amd64 and arm64
+
+bin/shepherd daemon         # runs in the foreground; Ctrl-C stops it
+bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shepherd manages
+bin/shepherd status         # the daemon, its workspaces, and where you are
+bin/shepherd where          # the workspace, repo and lane for this directory, with its profile
+```
+
+Shepherd keeps its files in `$SHEPHERD_HOME`, or `shepherd/` under the OS user config
+directory: `config.yaml` (optional), the SQLite store, and the running daemon's address and
+access token. The daemon listens on loopback only. A repo's profile comes from
+`config.yaml`, over cautious defaults (a human merges, tags and deploys; agents plan first):
+
+```yaml
+defaults:
+  gate: make check
+repos:
+  ubixcore:                 # the repo's path relative to the workspace
+    shared_paths: [README.md, .gitlab-ci.yml]
+    autonomy: { tag: agent }
+  my-app:
+    base_branch: dev
+    branch_model: promotion
+    promotion: [dev, staging, main]
+```
 
 ## The pitch
 

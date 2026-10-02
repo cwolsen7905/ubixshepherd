@@ -1,0 +1,359 @@
+// Package daemon is Shepherd's long-running process. It owns the store and serves the
+// HTTP API; nothing else touches the state.
+package daemon
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/redact"
+	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/version"
+)
+
+// Server serves the API over a store.
+type Server struct {
+	Store      store.Store
+	Config     config.Config
+	ConfigPath string
+	Token      string
+	Log        *slog.Logger
+	started    time.Time
+}
+
+// NewServer returns a Server with a fresh random token.
+func NewServer(st store.Store, cfg config.Config, cfgPath string, log *slog.Logger) (*Server, error) {
+	tok, err := newToken()
+	if err != nil {
+		return nil, err
+	}
+	return &Server{Store: st, Config: cfg, ConfigPath: cfgPath, Token: tok, Log: log, started: time.Now().UTC()}, nil
+}
+
+func newToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// NewLogger returns a logger whose output is redacted before it is written.
+func NewLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(redact.Writer(os.Stderr), nil))
+}
+
+// Handler is the API, behind token authentication.
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+api.PathStatus, s.status)
+	mux.HandleFunc("GET "+api.PathWorkspaces, s.listWorkspaces)
+	mux.HandleFunc("POST "+api.PathWorkspaces, s.saveWorkspace)
+	mux.HandleFunc("GET "+api.PathResolve, s.resolve)
+	return s.auth(mux)
+}
+
+func (s *Server) auth(next http.Handler) http.Handler {
+	want := []byte("Bearer " + s.Token)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), want) != 1 {
+			writeError(w, http.StatusUnauthorized, errors.New("missing or wrong token"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := api.Status{
+		Version: version.Version, PID: os.Getpid(), Started: s.started,
+		Store: s.Store.Driver(), Config: s.ConfigPath, Workspaces: []api.WorkspaceSummary{},
+	}
+	for _, ws := range wss {
+		repos, err := s.Store.Repos(ctx, ws.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		sum := api.WorkspaceSummary{Workspace: ws, Repos: len(repos)}
+		for _, rp := range repos {
+			lanes, err := s.Store.Lanes(ctx, rp.ID)
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			sum.Lanes += len(lanes)
+		}
+		out.Workspaces = append(out.Workspaces, sum)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
+	wss, err := s.Store.Workspaces(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.WorkspaceDetail{}
+	for _, ws := range wss {
+		repos, err := s.Store.Repos(r.Context(), ws.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out = append(out, api.WorkspaceDetail{Workspace: ws, Repos: repos})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) saveWorkspace(w http.ResponseWriter, r *http.Request) {
+	var req api.SaveWorkspace
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := validateSave(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	ws, err := s.Store.SaveWorkspace(r.Context(), store.Workspace{Name: req.Name, Path: req.Path}, req.Repos)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	repos, err := s.Store.Repos(r.Context(), ws.ID)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.Log.Info("workspace saved", "name", ws.Name, "path", ws.Path, "repos", len(repos))
+	writeJSON(w, http.StatusOK, api.WorkspaceDetail{Workspace: ws, Repos: repos})
+}
+
+// validateSave checks a SaveWorkspace and canonicalises its paths. Every repo must sit
+// inside the workspace, and its name must be its path relative to the workspace.
+func validateSave(req *api.SaveWorkspace) error {
+	if req.Name == "" || strings.ContainsAny(req.Name, `/\`) {
+		return fmt.Errorf("workspace name %q: must be non-empty with no slashes", req.Name)
+	}
+	if !filepath.IsAbs(req.Path) {
+		return fmt.Errorf("workspace path %q: must be absolute", req.Path)
+	}
+	root, err := paths.Canonical(req.Path)
+	if err != nil {
+		return err
+	}
+	req.Path = root
+	for i := range req.Repos {
+		rp := &req.Repos[i]
+		if !filepath.IsAbs(rp.Path) {
+			return fmt.Errorf("repo path %q: must be absolute", rp.Path)
+		}
+		if rp.Path, err = paths.Canonical(rp.Path); err != nil {
+			return err
+		}
+		if rp.Path == root || !paths.Within(root, rp.Path) {
+			return fmt.Errorf("repo %q is not inside workspace %s", rp.Path, root)
+		}
+		rel, _ := filepath.Rel(root, rp.Path)
+		if rp.Name != filepath.ToSlash(rel) {
+			return fmt.Errorf("repo name %q: must be its path in the workspace, %q", rp.Name, filepath.ToSlash(rel))
+		}
+	}
+	return nil
+}
+
+func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Query().Get("path")
+	if !filepath.IsAbs(p) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("path %q: must be absolute", p))
+		return
+	}
+	res, err := Resolve(r.Context(), s.Store, s.Config, p)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+// Resolve says which workspace, repo and lane a path belongs to, the way git finds
+// .git: the deepest match wins at each level.
+func Resolve(ctx context.Context, st store.Store, cfg config.Config, p string) (api.Resolution, error) {
+	p, err := paths.Canonical(p)
+	if err != nil {
+		return api.Resolution{}, err
+	}
+	res := api.Resolution{Path: p}
+	wss, err := st.Workspaces(ctx)
+	if err != nil {
+		return res, err
+	}
+	for i := range wss {
+		ws := wss[i]
+		if paths.Within(ws.Path, p) && (res.Workspace == nil || len(ws.Path) > len(res.Workspace.Path)) {
+			res.Workspace = &ws
+		}
+	}
+	if res.Workspace == nil {
+		return res, nil
+	}
+	repos, err := st.Repos(ctx, res.Workspace.ID)
+	if err != nil {
+		return res, err
+	}
+	// A lane's worktree usually sits outside its repo, so check lanes of every repo.
+	for i := range repos {
+		rp := repos[i]
+		lanes, err := st.Lanes(ctx, rp.ID)
+		if err != nil {
+			return res, err
+		}
+		for j := range lanes {
+			l := lanes[j]
+			if l.Worktree != "" && paths.Within(l.Worktree, p) && (res.Lane == nil || len(l.Worktree) > len(res.Lane.Worktree)) {
+				res.Lane, res.Repo = &l, &rp
+			}
+		}
+	}
+	if res.Lane == nil {
+		for i := range repos {
+			rp := repos[i]
+			if paths.Within(rp.Path, p) && (res.Repo == nil || len(rp.Path) > len(res.Repo.Path)) {
+				res.Repo = &rp
+			}
+		}
+	}
+	if res.Repo != nil {
+		prof := cfg.Profile(res.Repo.Name)
+		res.Profile = &prof
+	}
+	return res, nil
+}
+
+func (s *Server) fail(w http.ResponseWriter, err error) {
+	s.Log.Error("request failed", "err", err)
+	writeError(w, http.StatusInternalServerError, err)
+}
+
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, code int, err error) {
+	writeJSON(w, code, api.Error{Error: redact.String(err.Error())})
+}
+
+// Run listens, writes the runtime file, serves until ctx is done, then removes the
+// runtime file. It refuses to start while another daemon answers at the runtime file's
+// address.
+func (s *Server) Run(ctx context.Context, runtimePath string) error {
+	if rt, err := ReadRuntime(runtimePath); err == nil && alive(rt) {
+		return fmt.Errorf("a daemon is already running (pid %d at %s)", rt.PID, rt.Addr)
+	}
+	ln, err := net.Listen("tcp", s.Config.Daemon.Listen)
+	if err != nil {
+		return err
+	}
+	rt := api.Runtime{
+		Addr: ln.Addr().String(), PID: os.Getpid(), Token: s.Token,
+		Version: version.Version, Started: s.started,
+	}
+	if err := writeRuntime(runtimePath, rt); err != nil {
+		ln.Close()
+		return err
+	}
+	defer os.Remove(runtimePath)
+
+	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	errc := make(chan error, 1)
+	go func() { errc <- srv.Serve(ln) }()
+	s.Log.Info("shepherd daemon listening", "addr", rt.Addr, "version", rt.Version)
+
+	select {
+	case err := <-errc:
+		return err
+	case <-ctx.Done():
+	}
+	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.Log.Info("shepherd daemon stopping")
+	return srv.Shutdown(shutdown)
+}
+
+// ReadRuntime reads a daemon's runtime file.
+func ReadRuntime(path string) (api.Runtime, error) {
+	var rt api.Runtime
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return rt, err
+	}
+	return rt, json.Unmarshal(b, &rt)
+}
+
+// writeRuntime writes the file readable by its owner only, since it holds the token, and
+// atomically, so a client never reads half of it.
+func writeRuntime(path string, rt api.Runtime) error {
+	b, err := json.MarshalIndent(rt, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".daemon-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+func alive(rt api.Runtime) bool {
+	c := http.Client{Timeout: time.Second}
+	req, err := http.NewRequest(http.MethodGet, "http://"+rt.Addr+api.PathStatus, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Authorization", "Bearer "+rt.Token)
+	resp, err := c.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}

@@ -17,3 +17,24 @@ public-boundary:
         exit 1
       fi
       echo "Public boundary clean."
+
+# Go jobs run on the shell runner's own Go toolchain (image: does nothing on a shell
+# executor), so they fail fast and say so when it is missing.
+.go:
+  tags: [shell]
+  before_script:
+    - command -v go >/dev/null || { echo "Go is not installed on this runner"; exit 1; }
+    - go version
+
+go-check:
+  extends: .go
+  script:
+    - make check
+
+go-cross:
+  extends: .go
+  script:
+    - make cross
+  artifacts:
+    paths: [dist/]
+    expire_in: 1 week
