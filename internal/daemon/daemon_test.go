@@ -272,3 +272,21 @@ func TestRequestLog(t *testing.T) {
 		t.Errorf("rejected request not logged as a warning:\n%s", log)
 	}
 }
+
+// A server with no Runner still reports spend from the store, and refuses what needs
+// agents instead of panicking.
+func TestNoRunner(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	if err := s.Store.AddSpend(ctx, store.Spend{Day: time.Now().Format("2006-01-02"), Source: "run", USD: 1.25}); err != nil {
+		t.Fatal(err)
+	}
+	var sp api.SpendToday
+	if code := call(t, ts, s.Token, "GET", api.PathSpend, nil, &sp); code != http.StatusOK || sp.USD != 1.25 {
+		t.Errorf("spend: %d %+v", code, sp)
+	}
+	var e struct{ Error string }
+	if code := call(t, ts, s.Token, "POST", api.PathRuns, map[string]any{}, &e); code != http.StatusServiceUnavailable || !strings.Contains(e.Error, "does not run agents") {
+		t.Errorf("start run: %d %+v", code, e)
+	}
+}

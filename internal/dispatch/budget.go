@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -85,22 +86,29 @@ func Today() string { return time.Now().Format("2006-01-02") }
 
 // Spent is today's spend in dollars, Copilot's credits priced at credit_usd.
 func (r *Runner) Spent(ctx context.Context) (float64, map[string]store.Spend, error) {
-	by, err := r.Store.SpendOn(ctx, Today())
+	return Spent(ctx, r.Store, r.Config)
+}
+
+// Spent is today's spend from the store alone, for callers with no Runner.
+func Spent(ctx context.Context, st store.Store, cfg config.Config) (float64, map[string]store.Spend, error) {
+	by, err := st.SpendOn(ctx, Today())
 	if err != nil {
 		return 0, nil, err
 	}
 	total := 0.0
 	for _, sp := range by {
-		total += sp.USD + sp.Credits*r.creditUSD()
+		total += sp.USD + sp.Credits*creditUSD(cfg)
 	}
 	return total, by, nil
 }
 
-func (r *Runner) creditUSD() float64 {
-	if r.Config.Daemon.CreditUSD == nil {
+func (r *Runner) creditUSD() float64 { return creditUSD(r.Config) }
+
+func creditUSD(cfg config.Config) float64 {
+	if cfg.Daemon.CreditUSD == nil {
 		return 0
 	}
-	return *r.Config.Daemon.CreditUSD
+	return *cfg.Daemon.CreditUSD
 }
 
 func (r *Runner) budget() float64 {
