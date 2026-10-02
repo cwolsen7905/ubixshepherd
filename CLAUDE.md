@@ -4,8 +4,15 @@ Guidance for Claude Code (or any AI session) working in this repository.
 
 ## Where things stand
 
-uBixShepherd is in **early build**: M1 (the skeleton) is in, everything after it is design. v1's
-scope and stack were decided on 2026-10-01: a **Go** core (daemon, CLI, MCP server, HTTP
+uBixShepherd is in **active build**. M1 is complete; M2 is partly implemented, with
+workspace-wide leases and real use in uBixCore still outstanding. M3 proofs and M5 dispatch
+are partly implemented; M4's MCP tools and terminal front desk are implemented; M6 has not
+started. The code now includes lanes, per-repo scope leases, tag reservations and import;
+dispatch for Claude Code, Copilot and Cursor, decisions, inter-lane requests, budgets and
+opt-in shipping; GitLab polling, merge closure and failed-pipeline handoffs; operator and
+worker MCP tools; and `shepherd chat`. GitHub mirror proofs through publication, typed work
+orders and triage, and the end-to-end cross-repo delivery criterion are not implemented.
+v1's scope and stack were decided on 2026-10-01: a **Go** core (daemon, CLI, MCP server, HTTP
 API in one binary for Windows, macOS and Linux), the Fold and dispatch together, GitLab and
 GitHub, running over a workspace of repos, terminal first with a TypeScript web UI later.
 It must work on anyone's repos and is **aimed at uBixCore**: uBixCore support lives in a
@@ -121,6 +128,7 @@ stranger:
 ## Good first step for a new session
 
 Read all of `docs/` (design.md, then v1.md last), then the uBixCore standards that
-`origins.md` cites. M1 is in; the next step is M2 (the Fold) in v1.md. The
-milestones and everything below v1.md's "Decided" table are proposals: confirm them with
-the maintainer before writing code.
+`origins.md` cites. M1 is complete. Before choosing implementation work, check the status
+column in `v1.md`: M2 still lacks workspace-wide leases and established real use; M3 and M5
+have substantial gaps; M6 has not started. The milestones and everything below v1.md's
+"Decided" table are proposals: confirm them with the maintainer before writing code.
