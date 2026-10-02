@@ -1,0 +1,88 @@
+package config
+
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestMissingFileIsDefault(t *testing.T) {
+	c, err := Load(filepath.Join(t.TempDir(), "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Daemon.Listen != "127.0.0.1:0" {
+		t.Errorf("listen = %q", c.Daemon.Listen)
+	}
+	p := c.Profile("anything")
+	if p.BaseBranch != "main" || p.BranchModel != Trunk {
+		t.Errorf("default profile = %+v", p)
+	}
+	if p.Autonomy.Merge != Human || p.Autonomy.Tag != Human || p.Autonomy.Deploy != Human {
+		t.Errorf("default autonomy is not cautious: %+v", p.Autonomy)
+	}
+	if p.Autonomy.PlanFirst == nil || !*p.Autonomy.PlanFirst {
+		t.Error("default plan_first should be true")
+	}
+}
+
+func TestRepoProfileInherits(t *testing.T) {
+	c, err := Parse([]byte(`
+defaults:
+  gate: make check
+repos:
+  framework:
+    shared_paths: [README.md, ".gitlab-ci.yml"]
+    autonomy:
+      tag: agent
+  product:
+    base_branch: dev
+    branch_model: promotion
+    promotion: [dev, staging, main]
+    autonomy:
+      plan_first: false
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fw := c.Profile("framework")
+	if fw.Gate != "make check" || fw.BaseBranch != "main" || fw.Autonomy.Tag != Agent || fw.Autonomy.Merge != Human {
+		t.Errorf("framework = %+v", fw)
+	}
+	if len(fw.SharedPaths) != 2 {
+		t.Errorf("framework shared paths = %v", fw.SharedPaths)
+	}
+	pr := c.Profile("product")
+	if pr.BaseBranch != "dev" || pr.BranchModel != Promotion || *pr.Autonomy.PlanFirst {
+		t.Errorf("product = %+v", pr)
+	}
+}
+
+func TestParseRejects(t *testing.T) {
+	cases := map[string]string{
+		"unknown key":       "defaults:\n  base_brnch: dev\n",
+		"bad model":         "defaults:\n  branch_model: gitflow\n",
+		"promotion too few": "repos:\n  x:\n    branch_model: promotion\n    promotion: [dev]\n",
+		"bad autonomy":      "repos:\n  x:\n    autonomy:\n      merge: sometimes\n",
+		"public listen":     "daemon:\n  listen: 0.0.0.0:7400\n",
+		"bad listen":        "daemon:\n  listen: nope\n",
+	}
+	for name, in := range cases {
+		if _, err := Parse([]byte(in)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func TestParseNamesTheField(t *testing.T) {
+	_, err := Parse([]byte("repos:\n  x:\n    autonomy:\n      deploy: robot\n"))
+	if err == nil || !strings.Contains(err.Error(), "repos.x.autonomy.deploy") {
+		t.Errorf("error does not name the field: %v", err)
+	}
+}
+
+func TestEmptyFileIsDefault(t *testing.T) {
+	if _, err := Parse(nil); err != nil {
+		t.Errorf("empty file: %v", err)
+	}
+}

@@ -17,3 +17,34 @@ public-boundary:
         exit 1
       fi
       echo "Public boundary clean."
+
+# Go jobs run in the official Go image (the shell runner has no Go of its own), as the
+# runner's uid so nothing root-owned lands in the checkout. The build and module caches
+# live under the runner's home, so later pipelines reuse them.
+.go:
+  tags: [shell]
+  variables:
+    GO_IMAGE: golang:1.26
+  before_script:
+    - mkdir -p "$HOME/.cache/ubixshepherd-go"
+    - |
+      go_run() {
+        docker run --rm -v "$PWD:/src" -w /src --user "$(id -u):$(id -g)" \
+          -v "$HOME/.cache/ubixshepherd-go:/cache" \
+          -e HOME=/tmp -e GOCACHE=/cache/build -e GOMODCACHE=/cache/mod -e GOFLAGS=-buildvcs=false \
+          -e VERSION="${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}" \
+          "$GO_IMAGE" sh -c "$1"
+      }
+
+go-check:
+  extends: .go
+  script:
+    - go_run 'go version && make check'
+
+go-cross:
+  extends: .go
+  script:
+    - go_run 'make cross VERSION=$VERSION'
+  artifacts:
+    paths: [dist/]
+    expire_in: 1 week

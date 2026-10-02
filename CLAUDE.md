@@ -4,7 +4,7 @@ Guidance for Claude Code (or any AI session) working in this repository.
 
 ## Where things stand
 
-uBixShepherd is at the **design stage** (named 2026-10-01). There is no code yet. v1's
+uBixShepherd is in **early build**: M1 (the skeleton) is in, everything after it is design. v1's
 scope and stack were decided on 2026-10-01: a **Go** core (daemon, CLI, MCP server, HTTP
 API in one binary for Windows, macOS and Linux), the Fold and dispatch together, GitLab and
 GitHub, running over a workspace of repos, terminal first with a TypeScript web UI later.
@@ -29,8 +29,21 @@ pack, never in the core (see `design.md` §3.12). The docs:
 - [docs/pitch.md](docs/pitch.md): elevator pitch, one-liner, tagline (the README quotes
   the elevator pitch; keep the two identical).
 
-There is nothing to build, lint or test. When code arrives, add its commands here. CI runs
-one check today, `public-boundary` (see below).
+## Code
+
+Go, one binary (`cmd/shepherd`), packages under `internal/`. `make check` is the gate
+(gofmt, vet, tests, `core-boundary`); `make build` gives `bin/shepherd`, `make cross` the six
+release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
+
+- The daemon (`internal/daemon`) owns the store; the CLI is a client of the HTTP API
+  (`internal/api`, `internal/client`) like every other client. Don't let a command open the
+  store directly.
+- `internal/store` is an interface; `store/sqlite` uses a pure-Go driver so `CGO_ENABLED=0`
+  cross-compiles. Schema changes are appended migrations, never edits.
+- Text that stores or shows agent output goes through `internal/redact`.
+- `core-boundary` fails if `cmd/` or `internal/` names a product. Product knowledge goes in
+  a pack.
+- Keep dependencies few: the standard library first (the CLI is `flag`, not a framework).
 
 ## This repo is public
 
@@ -77,6 +90,6 @@ stranger:
 ## Good first step for a new session
 
 Read all of `docs/` (design.md, then v1.md last), then the uBixCore standards that
-`origins.md` cites. The next step is M1 in v1.md (the Go skeleton that cross-compiles). The
+`origins.md` cites. M1 is in; the next step is M2 (the Fold) in v1.md. The
 milestones and everything below v1.md's "Decided" table are proposals: confirm them with
 the maintainer before writing code.

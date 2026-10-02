@@ -1,0 +1,179 @@
+package cli
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/daemon"
+	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
+)
+
+type harness struct {
+	env      Env
+	out, err *bytes.Buffer
+}
+
+// newHarness starts a daemon on an httptest server and points a CLI Env at it.
+func newHarness(t *testing.T, stdin string, interactive bool) *harness {
+	t.Helper()
+	home := t.TempDir()
+	st, err := sqlite.Open(context.Background(), filepath.Join(home, "shepherd.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	srv, err := daemon.NewServer(st, config.Default(), "cfg", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+	l := paths.Layout{Home: home}
+	rt, _ := json.Marshal(api.Runtime{Addr: strings.TrimPrefix(ts.URL, "http://"), Token: srv.Token})
+	if err := os.WriteFile(l.Runtime(), rt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := &harness{out: &bytes.Buffer{}, err: &bytes.Buffer{}}
+	h.env = Env{Stdin: strings.NewReader(stdin), Stdout: h.out, Stderr: h.err, Interactive: interactive, Layout: l, Cwd: home}
+	return h
+}
+
+func (h *harness) run(args ...string) int {
+	h.out.Reset()
+	h.err.Reset()
+	return Run(context.Background(), h.env, args)
+}
+
+func makeWorkspace(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root, _ := paths.Canonical(t.TempDir())
+	for name, remote := range map[string]string{"app": "git@example.com:t/app.git", "lib": "https://example.com/t/lib", "scratch": ""} {
+		dir := filepath.Join(root, name)
+		os.MkdirAll(dir, 0o755)
+		if out, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v %s", err, out)
+		}
+		if remote != "" {
+			exec.Command("git", "-C", dir, "remote", "add", "origin", remote).Run()
+		}
+	}
+	return root
+}
+
+func TestInitYesThenWhereAndStatus(t *testing.T) {
+	h := newHarness(t, "", false)
+	root := makeWorkspace(t)
+
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %d %s", code, h.err)
+	}
+	if !strings.Contains(h.out.String(), "2 repos managed") || strings.Contains(h.out.String(), "scratch") {
+		t.Errorf("init output:\n%s", h.out)
+	}
+
+	h.env.Cwd = filepath.Join(root, "app")
+	if code := h.run("where"); code != 0 || !strings.Contains(h.out.String(), "repo       app") {
+		t.Errorf("where: %d\n%s%s", code, h.out, h.err)
+	}
+	if code := h.run("where", "--json", root); code != 0 {
+		t.Fatalf("where --json: %d %s", code, h.err)
+	}
+	var res api.Resolution
+	if err := json.Unmarshal(h.out.Bytes(), &res); err != nil || res.Workspace == nil || res.Repo != nil {
+		t.Errorf("where --json at root: %+v %v", res, err)
+	}
+	if code := h.run("status"); code != 0 || !strings.Contains(h.out.String(), "2 repos, 0 lanes") {
+		t.Errorf("status: %d\n%s", code, h.out)
+	}
+}
+
+func TestInitInteractiveToggle(t *testing.T) {
+	// Repos sort as app, lib, scratch. Untick app, tick scratch, then accept.
+	h := newHarness(t, "1 3\n\n", true)
+	root := makeWorkspace(t)
+	if code := h.run("init", root, "--name", "mine"); code != 0 {
+		t.Fatalf("init: %d %s", code, h.err)
+	}
+	out := h.out.String()
+	tail := out[strings.LastIndex(out, "Workspace mine"):]
+	if !strings.Contains(tail, "lib") || !strings.Contains(tail, "scratch") || strings.Contains(tail, "app") {
+		t.Errorf("selection wrong:\n%s", tail)
+	}
+}
+
+func TestInitOnlyAndRerunKeepsManaged(t *testing.T) {
+	h := newHarness(t, "", false)
+	root := makeWorkspace(t)
+	if code := h.run("init", root, "--only", "scratch"); code != 0 {
+		t.Fatalf("init --only: %d %s", code, h.err)
+	}
+	if code := h.run("init", root, "--only", "nope"); code != 1 || !strings.Contains(h.err.String(), `no repo "nope"`) {
+		t.Errorf("unknown --only: %d %s", code, h.err)
+	}
+	// Running --yes later keeps scratch, which is managed although not suggested.
+	if code := h.run("init", root, "--yes"); code != 0 || !strings.Contains(h.out.String(), "3 repos managed") {
+		t.Errorf("rerun: %d\n%s%s", code, h.out, h.err)
+	}
+}
+
+func TestInitRefusesWithoutTerminal(t *testing.T) {
+	h := newHarness(t, "", false)
+	root := makeWorkspace(t)
+	if code := h.run("init", root); code != 1 || !strings.Contains(h.err.String(), "not a terminal") {
+		t.Errorf("non-interactive init: %d %s", code, h.err)
+	}
+}
+
+func TestUsageAndErrors(t *testing.T) {
+	h := newHarness(t, "", false)
+	if code := h.run(); code != 0 || !strings.Contains(h.out.String(), "Commands:") {
+		t.Errorf("no args: %d", code)
+	}
+	if code := h.run("bogus"); code != 2 {
+		t.Errorf("unknown command: %d", code)
+	}
+	if code := h.run("init", "--yes", "--all"); code != 2 {
+		t.Errorf("conflicting flags: %d", code)
+	}
+	if code := h.run("status", "--nope"); code != 2 {
+		t.Errorf("unknown flag: %d", code)
+	}
+	if code := h.run("version"); code != 0 || !strings.HasPrefix(h.out.String(), "shepherd ") {
+		t.Errorf("version: %d %q", code, h.out)
+	}
+}
+
+func TestNoDaemon(t *testing.T) {
+	env := Env{Stdout: io.Discard, Stderr: &bytes.Buffer{}, Layout: paths.Layout{Home: t.TempDir()}, Cwd: t.TempDir()}
+	if code := Run(context.Background(), env, []string{"status"}); code != 1 ||
+		!strings.Contains(env.Stderr.(*bytes.Buffer).String(), "not running") {
+		t.Errorf("status without daemon: %d", code)
+	}
+}
+
+func TestParseSelection(t *testing.T) {
+	got, err := parseSelection("3 1-2, 5", 5)
+	if err != nil || len(got) != 4 || got[0] != 2 || got[1] != 0 || got[3] != 4 {
+		t.Errorf("parseSelection = %v, %v", got, err)
+	}
+	for _, bad := range []string{"0", "6", "x", "3-1", "1-x"} {
+		if _, err := parseSelection(bad, 5); err == nil {
+			t.Errorf("parseSelection(%q) accepted", bad)
+		}
+	}
+}
