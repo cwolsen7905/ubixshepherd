@@ -16,6 +16,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
 )
@@ -38,6 +39,7 @@ func newHarness(t *testing.T, stdin string, interactive bool) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
+	srv.Runner = &dispatch.Runner{Store: st, Config: config.Default(), Dir: filepath.Join(home, "runs"), Log: srv.Log}
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	l := paths.Layout{Home: home}

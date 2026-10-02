@@ -46,6 +46,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneScope(ctx, env, args[1:])
 	case "review":
 		return laneReview(ctx, env, args[1:])
+	case "ship":
+		return laneShip(ctx, env, args[1:])
 	}
 	return errUsage
 }
@@ -292,32 +294,9 @@ func laneClose(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	var target *api.LaneView
-	if len(pos) == 0 {
-		if h.Lane == nil {
-			return errors.New("which lane? run this inside its worktree, or name it")
-		}
-		target = &api.LaneView{Lane: *h.Lane}
-	} else {
-		var repoID int64
-		if h.Repo != nil {
-			repoID = h.Repo.ID
-		}
-		lanes, err := c.Lanes(ctx, h.Workspace.ID, repoID)
-		if err != nil {
-			return err
-		}
-		for i := range lanes {
-			if lanes[i].Name == pos[0] {
-				if target != nil {
-					return fmt.Errorf("lane %s is open in %s and %s; pass --repo", pos[0], target.Repo, lanes[i].Repo)
-				}
-				target = &lanes[i]
-			}
-		}
-		if target == nil {
-			return fmt.Errorf("no open lane %s", pos[0])
-		}
+	target, err := pickLane(ctx, c, h, pos)
+	if err != nil {
+		return err
 	}
 	res, err := c.CloseLane(ctx, target.ID, *force)
 	if err != nil {
@@ -329,6 +308,79 @@ func laneClose(ctx context.Context, env Env, args []string) error {
 	}
 	for _, n := range res.Notes {
 		fmt.Fprintf(env.Stdout, "  %s\n", n)
+	}
+	return nil
+}
+
+// pickLane is the lane a command names, or the one whose worktree it runs in.
+func pickLane(ctx context.Context, c *client.Client, h here, pos []string) (*api.LaneView, error) {
+	if len(pos) == 0 {
+		if h.Lane == nil {
+			return nil, errors.New("which lane? run this inside its worktree, or name it")
+		}
+		return &api.LaneView{Lane: *h.Lane}, nil
+	}
+	var repoID int64
+	if h.Repo != nil {
+		repoID = h.Repo.ID
+	}
+	lanes, err := c.Lanes(ctx, h.Workspace.ID, repoID)
+	if err != nil {
+		return nil, err
+	}
+	var target *api.LaneView
+	for i := range lanes {
+		if lanes[i].Name == pos[0] {
+			if target != nil {
+				return nil, fmt.Errorf("lane %s is open in %s and %s; pass --repo", pos[0], target.Repo, lanes[i].Repo)
+			}
+			target = &lanes[i]
+		}
+	}
+	if target == nil {
+		return nil, fmt.Errorf("no open lane %s", pos[0])
+	}
+	return target, nil
+}
+
+// laneShip pushes a lane's committed work through Shepherd: the scope and commit rules,
+// the repo's gate run by Shepherd, the push, the merge request. Never a merge.
+func laneShip(ctx context.Context, env Env, args []string) error {
+	fs := flags("lane ship", env)
+	repo := fs.String("repo", "", "repo, by its name in the workspace")
+	asJSON := fs.Bool("json", false, "print JSON")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 1 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	target, err := pickLane(ctx, c, h, pos)
+	if err != nil {
+		return err
+	}
+	if !*asJSON {
+		fmt.Fprintf(env.Stderr, "shipping lane %s: checking its commits and running the repo's gate first...\n", target.Name)
+	}
+	res, err := c.ShipLane(ctx, target.ID)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return printJSON(env, res)
+	}
+	fmt.Fprintln(env.Stdout, res.Message)
+	if !res.Pushed {
+		return errSilent
 	}
 	return nil
 }

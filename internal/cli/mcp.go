@@ -135,6 +135,18 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name: "lane_ship",
+			Description: "Push a lane's committed, unpushed work and open or update its merge request, the way a run's work is shipped when it ends. Shepherd checks the scope and the repo's commit rules and runs the repo's gate itself first (this can take minutes), and refuses with the reason if any fails. " +
+				"Only for repos whose profile has autonomy.push: shepherd. Never merges: the merge request is the person's to review.",
+			InputSchema: obj(map[string]any{
+				"repo": propRepo,
+				"name": map[string]any{"type": "string", "description": "The lane's name."},
+			}, "repo", "name"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"lane", "ship", str(a, "name"), "--repo", str(a, "repo")}, nil
+			},
+		},
+		{
 			Name: "lane_run",
 			Description: "Start an agent (claude, copilot or cursor) headless in a lane's worktree on a task, and return at once with the run id. The lane keeps its conversation: by default this continues the lane's last session with the same agent. " +
 				"The agent may edit and commit inside the lane's scope and run the repo's gate; it can never push. One agent per lane. Check on it with run_status.",
