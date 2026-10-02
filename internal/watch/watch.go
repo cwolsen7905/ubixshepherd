@@ -213,7 +213,7 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 	prompt := fmt.Sprintf("[Shepherd] The pipeline for your merge request !%d failed (pipeline %d, %s).\n\n%s"+
 		"Find the cause and fix it within your scope, run the gate, and commit. Do not push: the person pushes the fix.",
 		mr.IID, p.ID, p.URL, logs.String())
-	run, err := w.Runner.Start(ctx, dispatch.StartRequest{Continue: last.ID, Prompt: prompt})
+	run, err := w.Runner.Start(ctx, dispatch.StartRequest{Continue: last.ID, Prompt: prompt, Auto: true})
 	if err != nil {
 		w.feed(ctx, store.FeedPipeline, lane.ID, "could not hand the failure to %s in lane %s: %s", last.Agent, lane.Name, firstLine(err.Error()))
 		return tries

@@ -91,6 +91,17 @@ Lanes and live runs are listed beside the thread. The conversation is kept betwe
 | `/auto off` | keep swarm events from reaching the desk on their own |
 | `/new` | start a new conversation with the desk |
 
+### What it costs
+
+Every run records what its agent reports: Claude Code's cost in dollars, Copilot's
+credits (priced at `daemon.credit_usd`, $0.04 by default, an estimate), nothing for
+Cursor, which reports nothing. The front desk's turns count too. `shepherd status`, the
+chat's status line and `run show` show it.
+
+`daemon.budget` (default $20 a day, 0 for no cap) holds the runs Shepherd would start on
+its own, pipeline and gate fixes and routed requests, once the day's spend reaches it;
+runs you or the desk start still go. A line in the thread warns at 80% and at 100%.
+
 ### Watching the forge
 
 Every minute (`daemon.poll`, `off` to stop), Shepherd looks up the merge request for each

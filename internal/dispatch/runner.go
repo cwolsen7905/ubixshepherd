@@ -48,6 +48,9 @@ type StartRequest struct {
 	Prompt     string `json:"prompt"`
 	NewSession bool   `json:"new_session,omitempty"`
 	Continue   int64  `json:"continue,omitempty"`
+	// Auto marks a run Shepherd starts on its own (a fix, a routed request); the daily
+	// budget holds these.
+	Auto bool `json:"-"`
 }
 
 // Runner starts agents and watches them until they exit.
@@ -157,6 +160,11 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	for _, other := range running {
 		if other.LaneID == lane.ID {
 			return store.Run{}, refuse("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
+		}
+	}
+	if req.Auto {
+		if why := r.overBudget(ctx); why != "" {
+			return store.Run{}, refuse("%s", why)
 		}
 	}
 	if max := r.Config.Daemon.MaxRuns; len(running) >= max {
@@ -275,7 +283,15 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		if id := ad.SessionIn(line); id != "" {
 			run.Session = id
 		}
-		fmt.Fprintln(logf, redact.String(line))
+		out := Output{Show: line}
+		if ad.Read != nil {
+			out = ad.Read(line)
+		}
+		run.CostUSD += out.USD
+		run.Credits += out.Credits
+		if out.Show != "" {
+			fmt.Fprintln(logf, redact.String(out.Show))
+		}
 	}
 	err := p.cmd.Wait()
 
@@ -312,7 +328,14 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			}
 		}
 	}
+	r.Spend(ctx, store.Spend{Source: run.Agent, Ref: run.ID, USD: run.CostUSD, Credits: run.Credits})
 	fmt.Fprintf(logf, "\n# shepherd: run %d %s (exit %d) with %d commit(s)", run.ID, run.State, code, run.Commits)
+	if run.CostUSD > 0 {
+		fmt.Fprintf(logf, ", $%.2f", run.CostUSD)
+	}
+	if run.Credits > 0 {
+		fmt.Fprintf(logf, ", %.2f credits", run.Credits)
+	}
 	if len(run.Outside) > 0 {
 		fmt.Fprintf(logf, "; outside the scope: %s", strings.Join(run.Outside, ", "))
 	}

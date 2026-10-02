@@ -26,6 +26,8 @@ type API interface {
 	Answer(ctx context.Context, id int64, answer string) (store.Decision, error)
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
+	SpendToday(ctx context.Context) (api.SpendToday, error)
+	AddSpend(ctx context.Context, sp store.Spend) error
 }
 
 // Settings the chat keeps in the daemon.
@@ -59,6 +61,8 @@ type Model struct {
 	lastFeed int64
 	lanes    []api.LaneView
 	runs     []api.RunView
+
+	spend api.SpendToday
 
 	logRun    int64
 	logText   strings.Builder
@@ -95,6 +99,7 @@ type (
 	panelMsg struct {
 		lanes []api.LaneView
 		runs  []api.RunView
+		spend api.SpendToday
 	}
 	sessionMsg  string
 	deskLineMsg Line
@@ -164,7 +169,8 @@ func (m *Model) pollPanel() tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
-		return panelMsg{lanes, runs}
+		sp, _ := m.api.SpendToday(m.ctx)
+		return panelMsg{lanes, runs, sp}
 	}
 }
 
@@ -228,9 +234,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case feedMsg:
 		cmds = append(cmds, m.onFeed(api.Feed(msg)))
 	case panelMsg:
-		m.lanes, m.runs = msg.lanes, msg.runs
+		m.lanes, m.runs, m.spend = msg.lanes, msg.runs, msg.spend
 	case deskLineMsg:
-		m.add(Line(msg))
+		if msg.Kind == KindCost {
+			usd, _ := strconv.ParseFloat(msg.Text, 64)
+			cmds = append(cmds, func() tea.Msg { m.api.AddSpend(m.ctx, store.Spend{Source: "desk", USD: usd}); return nil })
+		} else {
+			m.add(Line(msg))
+		}
 		cmds = append(cmds, waitDesk(m.deskCh))
 	case deskDoneMsg:
 		cmds = append(cmds, m.onDeskDone(msg))
@@ -577,6 +588,12 @@ func (m *Model) View() string {
 		status = "desk working…"
 		if n := len(m.queue); n > 0 {
 			status += fmt.Sprintf(" (%d queued)", n)
+		}
+	}
+	if m.spend.Day != "" {
+		status += fmt.Sprintf("  ·  $%.2f today", m.spend.USD)
+		if m.spend.Budget > 0 {
+			status += fmt.Sprintf(" of $%.0f", m.spend.Budget)
 		}
 	}
 	return body + "\n" + styleInfo.Render(status+"  ·  Enter send · PgUp/PgDn scroll · /help · Ctrl-C quit") + "\n" + m.input.View()

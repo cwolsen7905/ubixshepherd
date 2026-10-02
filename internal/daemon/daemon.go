@@ -94,6 +94,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
 	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
 	mux.HandleFunc("GET "+api.PathFeed, s.feed)
+	mux.HandleFunc("GET "+api.PathSpend, s.spendToday)
+	mux.HandleFunc("POST "+api.PathSpend, s.addSpend)
 	mux.HandleFunc("GET "+api.PathSettings+"/{key}", s.getSetting)
 	mux.HandleFunc("PUT "+api.PathSettings+"/{key}", s.putSetting)
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/requests", s.addRequest)
@@ -675,6 +677,39 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, q)
+}
+
+func (s *Server) spendToday(w http.ResponseWriter, r *http.Request) {
+	total, by, err := s.Runner.Spent(r.Context())
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := api.SpendToday{Day: dispatch.Today(), USD: total, BySource: by}
+	if b := s.Config.Daemon.Budget; b != nil {
+		out.Budget = *b
+	}
+	if c := s.Config.Daemon.CreditUSD; c != nil {
+		out.CreditUSD = *c
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// addSpend records what a client spent outside a run: the front desk's turns.
+func (s *Server) addSpend(w http.ResponseWriter, r *http.Request) {
+	var sp store.Spend
+	if !decode(w, r, &sp) {
+		return
+	}
+	if sp.Source == "" || sp.USD < 0 || sp.Credits < 0 {
+		writeError(w, http.StatusBadRequest, errors.New("spend needs a source and amounts that are not negative"))
+		return
+	}
+	if err := s.Runner.Spend(r.Context(), sp); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, sp)
 }
 
 func (s *Server) feed(w http.ResponseWriter, r *http.Request) {

@@ -94,6 +94,20 @@ type Run struct {
 	// it, and Parent is the run it follows.
 	Session string `json:"session,omitempty"`
 	Parent  int64  `json:"parent,omitempty"`
+	// CostUSD is what the agent reported in dollars (Claude Code); Credits what it
+	// reported in credits (Copilot). Zero when it reports nothing (Cursor).
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Credits float64 `json:"credits,omitempty"`
+}
+
+// Spend is money spent on one day by one source (an agent, or the desk). In totals from
+// SpendOn, Ref counts the entries.
+type Spend struct {
+	Day     string  `json:"day"`
+	Source  string  `json:"source"`
+	Ref     int64   `json:"ref,omitempty"`
+	USD     float64 `json:"usd"`
+	Credits float64 `json:"credits,omitempty"`
 }
 
 // Event is something an agent told Shepherd during a run.
@@ -182,6 +196,7 @@ const (
 	FeedRequestReplied = "request_replied"
 	FeedRequestFailed  = "request_failed"
 	FeedMR             = "mr"
+	FeedBudget         = "budget"
 	FeedPipeline       = "pipeline"
 )
 
@@ -256,6 +271,10 @@ type Store interface {
 	// Setting returns "" for a key never set.
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
+
+	AddSpend(ctx context.Context, sp Spend) error
+	// SpendOn totals a day's spend by source.
+	SpendOn(ctx context.Context, day string) (map[string]Spend, error)
 
 	// LaneForge returns a zero value (with LaneID set) for a lane the forge never saw.
 	LaneForge(ctx context.Context, laneID int64) (LaneForge, error)

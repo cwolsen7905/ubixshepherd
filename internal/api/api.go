@@ -26,6 +26,19 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
+// PathSpend is GET (today's spend) and POST (record a front desk turn's cost).
+const PathSpend = "/v1/spend"
+
+// SpendToday answers GET /v1/spend.
+type SpendToday struct {
+	Day string `json:"day"`
+	// USD is today's total in dollars, Copilot's credits priced at CreditUSD.
+	USD       float64                `json:"usd"`
+	Budget    float64                `json:"budget"`
+	CreditUSD float64                `json:"credit_usd"`
+	BySource  map[string]store.Spend `json:"by_source"`
+}
+
 // PathFeed is GET /v1/feed?after=N (or after=latest for the newest id only).
 const PathFeed = "/v1/feed"
 

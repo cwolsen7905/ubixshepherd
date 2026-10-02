@@ -51,6 +51,13 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 	fmt.Fprintf(w, "daemon   running, pid %d, version %s, since %s\n", st.PID, st.Version, st.Started.Local().Format("2006-01-02 15:04"))
 	fmt.Fprintf(w, "store    %s\n", st.Store)
 	fmt.Fprintf(w, "config   %s\n", st.Config)
+	if sp, err := c.SpendToday(ctx); err == nil {
+		line := fmt.Sprintf("spend    $%.2f today", sp.USD)
+		if sp.Budget > 0 {
+			line += fmt.Sprintf(" of a $%.2f daily budget", sp.Budget)
+		}
+		fmt.Fprintln(w, line+" (Claude reports dollars; Copilot credits at $"+fmt.Sprintf("%.2f", sp.CreditUSD)+"; Cursor reports nothing)")
+	}
 	if len(st.Workspaces) == 0 {
 		fmt.Fprintln(w, "\nNo workspaces yet. Register one with: shepherd init ~/git")
 	} else {

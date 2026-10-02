@@ -13,6 +13,11 @@
 #   max_runs: 4
 #   ## How often open lanes' merge requests are checked on the forge (off to stop).
 #   poll: 60s
+#   ## Dollars a day past which Shepherd holds the runs it starts on its own (pipeline
+#   ## and gate fixes, routed requests); 0 for no cap. A warning comes at 80%.
+#   budget: 20
+#   ## What one Copilot credit costs, since Copilot reports credits, not dollars.
+#   credit_usd: 0.04
 
 ## The profile every repo starts from.
 # defaults:

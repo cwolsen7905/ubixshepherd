@@ -18,11 +18,11 @@ func TestParse(t *testing.T) {
 {"type":"user","message":{"content":[{"type":"tool_result","content":"opened"}]}}
 {"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"Opened feat/x."}]}}
 not json
-{"type":"result","subtype":"success","result":"Opened feat/x.","session_id":"s"}
+{"type":"result","subtype":"success","result":"Opened feat/x.","session_id":"s","total_cost_usd":0.25}
 `
 	var got []Line
 	ok := Parse(strings.NewReader(stream), func(l Line) { got = append(got, l) })
-	if !ok || len(got) != 2 {
+	if !ok || len(got) != 3 || got[2].Kind != KindCost || got[2].Text != "0.25" {
 		t.Fatalf("lines = %+v", got)
 	}
 	if got[0].Kind != KindTool || got[0].Text != "lane_open app feat/x scope src/**" {
@@ -78,6 +78,7 @@ type fakeAPI struct {
 	answered map[int64]string
 	settings map[string]string
 	ds       []api.DecisionView
+	spent    float64
 }
 
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
@@ -105,6 +106,13 @@ func (f *fakeAPI) Decisions(context.Context, string) ([]api.DecisionView, error)
 func (f *fakeAPI) Answer(_ context.Context, id int64, a string) (store.Decision, error) {
 	f.answered[id] = a
 	return store.Decision{ID: id, AnswerRun: 9}, nil
+}
+func (f *fakeAPI) SpendToday(context.Context) (api.SpendToday, error) {
+	return api.SpendToday{Day: "today", USD: f.spent, Budget: 20}, nil
+}
+func (f *fakeAPI) AddSpend(_ context.Context, sp store.Spend) error {
+	f.spent += sp.USD
+	return nil
 }
 func (f *fakeAPI) Setting(_ context.Context, k string) (string, error) { return f.settings[k], nil }
 func (f *fakeAPI) SetSetting(_ context.Context, k, v string) error {
@@ -253,5 +261,14 @@ func TestCommands(t *testing.T) {
 	}
 	if v := m.View(); !strings.Contains(v, "LANES") || !strings.Contains(v, "desk ready") {
 		t.Errorf("view:\n%s", v)
+	}
+}
+
+func TestDeskCostIsRecordedNotShown(t *testing.T) {
+	m, _, a := newTestModel()
+	_, cmd := m.Update(deskLineMsg{KindCost, "0.4"})
+	drive(t, m, cmd)
+	if a.spent != 0.4 || has(m.Lines(), KindCost, "") {
+		t.Errorf("spent %v, lines %+v", a.spent, m.Lines())
 	}
 }

@@ -163,6 +163,16 @@ func printRun(env Env, r api.RunView) {
 	if r.ExitCode != nil {
 		fmt.Fprintf(w, "  exit      %d\n", *r.ExitCode)
 	}
+	if r.CostUSD > 0 || r.Credits > 0 {
+		cost := ""
+		if r.CostUSD > 0 {
+			cost = fmt.Sprintf("$%.2f", r.CostUSD)
+		}
+		if r.Credits > 0 {
+			cost = strings.TrimSpace(cost + fmt.Sprintf(" %.2f credits", r.Credits))
+		}
+		fmt.Fprintf(w, "  cost      %s\n", cost)
+	}
 	if r.State != store.RunRunning {
 		fmt.Fprintf(w, "  commits   %d", r.Commits)
 		if r.Commits > 0 {
