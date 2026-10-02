@@ -91,6 +91,27 @@ Lanes and live runs are listed beside the thread. The conversation is kept betwe
 | `/auto off` | keep swarm events from reaching the desk on their own |
 | `/new` | start a new conversation with the desk |
 
+### Moving a repo onto Shepherd
+
+A repo already coordinated by hand, with a lane table in a file like `AGENTS-COORD.md`
+and worktrees per session, comes over in two steps:
+
+```sh
+shepherd fold import --repo myrepo           # what would become lanes, and why the rest would not
+shepherd fold import --repo myrepo --apply   # do it
+```
+
+Each worktree whose branch matches a row's branch prefix becomes a lane with that row's
+scope (the backticked paths in it). Worktrees whose branch is already in the base are
+reported as finished, worktrees no row claims as unregistered, rows with no worktree as
+claims with nothing in flight, and overlapping scopes are listed: the old file allowed
+them, Shepherd refuses new ones.
+
+While sessions not yet on Shepherd still read the file, set `coord_file: AGENTS-COORD.md`
+in the repo's profile: Shepherd then keeps a generated table of its lanes and tag
+reservations at the top of the file, between marker comments, and never touches the
+rest. `shepherd fold view` shows it; `--write` writes it now.
+
 ### Tags
 
 Two lanes in one repo can each take "the next version". `shepherd tag reserve` hands

@@ -94,6 +94,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
 	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
 	mux.HandleFunc("GET "+api.PathFeed, s.feed)
+	mux.HandleFunc("POST "+api.PathFoldImport, s.foldImport)
+	mux.HandleFunc("POST "+api.PathFoldView, s.foldView)
 	mux.HandleFunc("GET "+api.PathTags, s.listTags)
 	mux.HandleFunc("POST "+api.PathTagsReserve, s.reserveTag)
 	mux.HandleFunc("POST "+api.PathTagsRelease, s.releaseTag)
@@ -371,6 +373,7 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree)
 	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, lane)
 }
 
@@ -391,6 +394,7 @@ func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("lane closed", "lane", res.Lane.Name, "force", req.Force, "branch_deleted", res.BranchDeleted)
 	s.Store.AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("lane %s closed", res.Lane.Name), res.Lane.ID)
+	s.refreshView(res.Lane.RepoID)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -682,6 +686,69 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, q)
 }
 
+func (s *Server) foldImport(w http.ResponseWriter, r *http.Request) {
+	var req api.FoldImport
+	if !decode(w, r, &req) {
+		return
+	}
+	plan, err := s.Fold.Import(r.Context(), req.RepoID, req.File, req.Apply)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	if req.Apply {
+		n := 0
+		for _, it := range plan.Items {
+			if it.Action == "import" {
+				n++
+			}
+		}
+		s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("imported %d lane(s) from the coordination file", n), req.RepoID)
+		s.refreshView(req.RepoID)
+	}
+	writeJSON(w, http.StatusOK, plan)
+}
+
+func (s *Server) foldView(w http.ResponseWriter, r *http.Request) {
+	var req api.FoldView
+	if !decode(w, r, &req) {
+		return
+	}
+	repo, err := s.Store.Repo(r.Context(), req.RepoID)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	view, err := s.Fold.RenderView(r.Context(), repo)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := api.FoldView{RepoID: repo.ID, View: view, File: s.Config.Profile(repo.Name).CoordFile}
+	if req.Write {
+		if out.File == "" {
+			writeError(w, http.StatusConflict, fmt.Errorf("repo %s has no coord_file in its profile", repo.Name))
+			return
+		}
+		if err := s.Fold.WriteView(r.Context(), repo.ID); err != nil {
+			s.fail(w, err)
+			return
+		}
+		out.Write = true
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// refreshView rewrites a repo's generated coordination view, when it has one, in the
+// background: a view that cannot be written is logged, never a failed request.
+func (s *Server) refreshView(repoID int64) {
+	go func() {
+		if err := s.Fold.WriteView(context.Background(), repoID); err != nil {
+			s.Log.Error("write coordination view", "repo_id", repoID, "err", err)
+		}
+	}()
+}
+
 func (s *Server) reserveTag(w http.ResponseWriter, r *http.Request) {
 	var req api.Reserve
 	if !decode(w, r, &req) {
@@ -701,6 +768,7 @@ func (s *Server) reserveTag(w http.ResponseWriter, r *http.Request) {
 		who = "lane " + l.Name
 	}
 	s.Store.AddFeed(r.Context(), store.FeedTag, fmt.Sprintf("%s reserved for %s", res.Tag, who), res.ID)
+	s.refreshView(res.RepoID)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -736,6 +804,7 @@ func (s *Server) releaseTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Store.AddFeed(r.Context(), store.FeedTag, req.Tag+" released", 0)
+	s.refreshView(req.RepoID)
 	writeJSON(w, http.StatusOK, req)
 }
 

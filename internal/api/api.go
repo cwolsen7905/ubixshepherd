@@ -26,6 +26,27 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
+// Fold import and view routes (POST).
+const (
+	PathFoldImport = "/v1/fold/import"
+	PathFoldView   = "/v1/fold/view"
+)
+
+// FoldImport is the body of POST /v1/fold/import.
+type FoldImport struct {
+	RepoID int64  `json:"repo_id"`
+	File   string `json:"file,omitempty"`
+	Apply  bool   `json:"apply"`
+}
+
+// FoldView is the body of POST /v1/fold/view, and its answer.
+type FoldView struct {
+	RepoID int64  `json:"repo_id"`
+	Write  bool   `json:"write"`
+	View   string `json:"view,omitempty"`
+	File   string `json:"file,omitempty"`
+}
+
 // Tag reservation routes.
 const (
 	PathTags        = "/v1/tags"

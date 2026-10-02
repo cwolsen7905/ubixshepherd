@@ -44,7 +44,16 @@ func runLane(ctx context.Context, env Env, args []string) error {
 }
 
 func runFold(ctx context.Context, env Env, args []string) error {
-	if len(args) == 0 || args[0] != "gc" {
+	if len(args) == 0 {
+		return errUsage
+	}
+	switch args[0] {
+	case "import":
+		return foldImport(ctx, env, args[1:])
+	case "view":
+		return foldView(ctx, env, args[1:])
+	case "gc":
+	default:
 		return errUsage
 	}
 	fs := flags("fold gc", env)
@@ -302,4 +311,102 @@ func shellQuote(s string) string {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func foldImport(ctx context.Context, env Env, args []string) error {
+	fs := flags("fold import", env)
+	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	file := fs.String("file", "", "the coordination file (default: AGENTS-COORD.md in the repo)")
+	apply := fs.Bool("apply", false, "import, rather than show what would be imported")
+	if pos, err := parse(fs, args); err != nil {
+		return err
+	} else if len(pos) > 0 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	if h.Repo == nil {
+		return errors.New("which repo? run this inside one, or pass --repo")
+	}
+	plan, err := c.FoldImport(ctx, api.FoldImport{RepoID: h.Repo.ID, File: *file, Apply: *apply})
+	if err != nil {
+		return err
+	}
+	w := env.Stdout
+	var imp, skip []fold.ImportItem
+	for _, it := range plan.Items {
+		if it.Action == "import" {
+			imp = append(imp, it)
+		} else {
+			skip = append(skip, it)
+		}
+	}
+	verb := "Would import"
+	if plan.Applied {
+		verb = "Imported"
+	}
+	fmt.Fprintf(w, "%s %d lane(s) into %s:\n", verb, len(imp), h.Repo.Name)
+	for _, it := range imp {
+		fmt.Fprintf(w, "  %-34s %s\n      scope %s\n", it.Lane, it.Agent, strings.Join(it.Scope, ", "))
+		if it.Why != "" {
+			fmt.Fprintf(w, "      note: %s\n", it.Why)
+		}
+	}
+	if len(skip) > 0 {
+		fmt.Fprintf(w, "\nSkipped %d worktree(s):\n", len(skip))
+		for _, it := range skip {
+			fmt.Fprintf(w, "  %-34s %s\n", orNone(it.Branch), it.Why)
+		}
+	}
+	if len(plan.Unclaimed) > 0 {
+		fmt.Fprintf(w, "\nRows with no worktree (claims with nothing in flight): %s\n", strings.Join(plan.Unclaimed, "; "))
+	}
+	if len(plan.Overlaps) > 0 {
+		fmt.Fprintf(w, "\nOverlapping scopes among these lanes (the honour system allowed them; Shepherd will refuse new ones):\n")
+		for _, o := range plan.Overlaps {
+			fmt.Fprintf(w, "  %s\n", o)
+		}
+	}
+	if !plan.Applied {
+		fmt.Fprintln(w, "\nNothing changed. Run again with --apply to import.")
+	}
+	return nil
+}
+
+func foldView(ctx context.Context, env Env, args []string) error {
+	fs := flags("fold view", env)
+	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	write := fs.Bool("write", false, "write it into the repo's coord_file, between its markers")
+	if pos, err := parse(fs, args); err != nil {
+		return err
+	} else if len(pos) > 0 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	if h.Repo == nil {
+		return errors.New("which repo? run this inside one, or pass --repo")
+	}
+	v, err := c.FoldView(ctx, api.FoldView{RepoID: h.Repo.ID, Write: *write})
+	if err != nil {
+		return err
+	}
+	if v.Write {
+		fmt.Fprintf(env.Stdout, "wrote the view into %s\n", v.File)
+		return nil
+	}
+	fmt.Fprintln(env.Stdout, v.View)
+	return nil
 }
