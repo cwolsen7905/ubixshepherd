@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <title>uBixShepherd: one voice to direct a whole swarm of AI agents</title>
+  <rect width="1200" height="630" fill="#161616"/>
+  <g transform="translate(96 150) scale(10)">
+    <rect width="32" height="32" fill="#0f62fe"/>
+    <path d="M10.5 27V11.5a5 5 0 0 1 10 0v3.5" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="square"/>
+    <rect x="17" y="18" width="4" height="4" fill="#ffffff"/>
+    <rect x="22.5" y="18" width="4" height="4" fill="#ffffff" opacity="0.55"/>
+    <rect x="17" y="23" width="4" height="4" fill="#ffffff" opacity="0.55"/>
+    <rect x="22.5" y="23" width="4" height="4" fill="#ffffff"/>
+  </g>
+  <g font-family="'IBM Plex Sans', 'Helvetica Neue', Arial, sans-serif" fill="#f4f4f4">
+    <text x="476" y="290" font-size="76"><tspan font-weight="300">uBix</tspan><tspan font-weight="600">Shepherd</tspan></text>
+    <text x="480" y="356" font-size="32" fill="#c6c6c6">One voice to direct a whole swarm of AI agents.</text>
+    <text x="480" y="420" font-size="24" fill="#78a9ff" font-family="'IBM Plex Mono', Menlo, monospace">lanes · leases · worktrees · one thread</text>
+  </g>
+</svg>
