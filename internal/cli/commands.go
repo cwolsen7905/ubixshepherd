@@ -124,8 +124,8 @@ func printWhere(env Env, r api.Resolution) {
 			plan = "yes"
 		}
 		fmt.Fprintf(w, "  profile    base %s, %s, gate %s\n", p.BaseBranch, model, orNone(p.Gate))
-		fmt.Fprintf(w, "             merge %s, tag %s, deploy %s, plan first %s\n",
-			p.Autonomy.Merge, p.Autonomy.Tag, p.Autonomy.Deploy, plan)
+		fmt.Fprintf(w, "             merge %s, tag %s, deploy %s, push %s, plan first %s\n",
+			p.Autonomy.Merge, p.Autonomy.Tag, p.Autonomy.Deploy, p.Autonomy.Push, plan)
 		fmt.Fprintf(w, "             shared paths %s\n", joinOr(p.SharedPaths, "none"))
 	}
 }

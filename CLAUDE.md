@@ -67,6 +67,8 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
   `internal/watch` polls it for open lanes and acts on changes (`Fold.CloseMerged` on a
   merge commit, the agent continued on a failed pipeline, capped at `MaxFixTries`). Test
   the watcher with a fake forge; check the forge reader against a real MR read-only.
+  `dispatch/ship.go` pushes and opens MRs only for `autonomy.push: shepherd` repos, after
+  Shepherd's own gate run; never merge, and never push for a repo that has not opted in.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

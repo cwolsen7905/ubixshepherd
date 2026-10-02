@@ -14,6 +14,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -52,6 +53,8 @@ const (
 const (
 	Human = "human"
 	Agent = "agent"
+	// Shepherd: Shepherd itself, deterministically (for push: after the gate passes).
+	Shepherd = "shepherd"
 )
 
 // Profile says how a repo works. In Repos, an empty field inherits from Defaults.
@@ -64,8 +67,13 @@ type Profile struct {
 	// SharedPaths are globs that more than one lane may want; touching one takes a lease.
 	SharedPaths []string `yaml:"shared_paths,omitempty" json:"shared_paths,omitempty"`
 	// WorktreeRoot is where lane worktrees go. Empty means <workspace>/<repo>-worktrees.
-	WorktreeRoot string   `yaml:"worktree_root,omitempty" json:"worktree_root,omitempty"`
-	Autonomy     Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
+	WorktreeRoot string `yaml:"worktree_root,omitempty" json:"worktree_root,omitempty"`
+	// Brief is added to every agent's brief in the repo: its own rules.
+	Brief string `yaml:"brief,omitempty" json:"brief,omitempty"`
+	// Forbid are regular expressions commit messages must not match before Shepherd
+	// pushes ("(?i)co-authored-by"); a match goes back to the agent to amend.
+	Forbid   []string `yaml:"forbid,omitempty" json:"forbid,omitempty"`
+	Autonomy Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
 }
 
 // Autonomy records what agents may do unasked in a repo.
@@ -73,6 +81,9 @@ type Autonomy struct {
 	Merge  string `yaml:"merge,omitempty" json:"merge,omitempty"`
 	Tag    string `yaml:"tag,omitempty" json:"tag,omitempty"`
 	Deploy string `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+	// Push: who pushes a lane's branch and opens its merge request. "shepherd" lets
+	// Shepherd do it after an agent's run, once the repo's gate passes in the lane.
+	Push string `yaml:"push,omitempty" json:"push,omitempty"`
 	// PlanFirst means an agent proposes a plan and waits before changing anything.
 	PlanFirst *bool `yaml:"plan_first,omitempty" json:"plan_first,omitempty"`
 }
@@ -85,7 +96,7 @@ func Default() Config {
 		Defaults: Profile{
 			BaseBranch:  "main",
 			BranchModel: Trunk,
-			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, PlanFirst: &yes},
+			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, Push: Human, PlanFirst: &yes},
 		},
 	}
 }
@@ -179,10 +190,21 @@ func (p Profile) validate(at string) []error {
 			errs = append(errs, fmt.Errorf("%s.autonomy.%s: %q is not %s or %s", at, field, v, Human, Agent))
 		}
 	}
+	for _, f := range p.Forbid {
+		if _, err := regexp.Compile(f); err != nil {
+			errs = append(errs, fmt.Errorf("%s.forbid: %q: %v", at, f, err))
+		}
+	}
 	for _, g := range p.SharedPaths {
 		if strings.TrimSpace(g) == "" {
 			errs = append(errs, fmt.Errorf("%s.shared_paths: empty glob", at))
 		}
+	}
+	if p.Autonomy.Push != Human && p.Autonomy.Push != Shepherd {
+		errs = append(errs, fmt.Errorf("%s.autonomy.push: %q is not %s or %s", at, p.Autonomy.Push, Human, Shepherd))
+	}
+	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
+		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
 	}
 	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
 	return errs
@@ -209,6 +231,12 @@ func merge(base, over Profile) Profile {
 	if over.WorktreeRoot != "" {
 		out.WorktreeRoot = over.WorktreeRoot
 	}
+	if over.Brief != "" {
+		out.Brief = over.Brief
+	}
+	if over.Forbid != nil {
+		out.Forbid = over.Forbid
+	}
 	if over.Autonomy.Merge != "" {
 		out.Autonomy.Merge = over.Autonomy.Merge
 	}
@@ -217,6 +245,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Autonomy.Deploy != "" {
 		out.Autonomy.Deploy = over.Autonomy.Deploy
+	}
+	if over.Autonomy.Push != "" {
+		out.Autonomy.Push = over.Autonomy.Push
 	}
 	if over.Autonomy.PlanFirst != nil {
 		out.Autonomy.PlanFirst = over.Autonomy.PlanFirst

@@ -155,6 +155,8 @@ var migrations = []string{
 		fix_tries       INTEGER NOT NULL DEFAULT 0,
 		updated         TEXT NOT NULL
 	);`,
+	// Gate failures handed back to a lane's agent before Shepherd would push it.
+	`ALTER TABLE lane_forge ADD COLUMN gate_tries INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -719,8 +721,8 @@ func (s *DB) SetSetting(ctx context.Context, key, value string) error {
 
 func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, error) {
 	f := store.LaneForge{LaneID: laneID}
-	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries FROM lane_forge WHERE lane_id = ?`, laneID).
-		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries)
+	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries FROM lane_forge WHERE lane_id = ?`, laneID).
+		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
@@ -729,12 +731,12 @@ func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, erro
 
 func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (lane_id) DO UPDATE SET mr = excluded.mr, mr_state = excluded.mr_state, mr_url = excluded.mr_url,
 			pipeline = excluded.pipeline, pipeline_status = excluded.pipeline_status, fix_tries = excluded.fix_tries,
-			updated = excluded.updated`,
-		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, now())
+			gate_tries = excluded.gate_tries, updated = excluded.updated`,
+		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, now())
 	return err
 }
 

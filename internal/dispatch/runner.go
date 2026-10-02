@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/scope"
@@ -58,7 +59,9 @@ type Runner struct {
 	// Exe is the shepherd binary that serves agents their worker tools; "" gives
 	// agents none.
 	Exe string
-	Log *slog.Logger
+	// ForgeFor returns a repo's forge, for opening merge requests; tests replace it.
+	ForgeFor func(remote string) (forge.Forge, error)
+	Log      *slog.Logger
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
@@ -210,7 +213,11 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		worker = r.Exe
 	}
 	if !resume {
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", ad.Note)
+		note := ad.Note
+		if b := r.Config.Profile(repo.Name).Brief; b != "" {
+			note = strings.TrimSpace(note + "\nThis repo's rules: " + b)
+		}
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", note)
 	}
 	cmd := exec.Command(bin, ad.Args(Opts{Prompt: prompt, Model: req.Model, Gate: gate, Worktree: lane.Worktree,
 		Session: session, Resume: resume, Worker: worker})...)
@@ -322,6 +329,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	r.feed(ctx, store.FeedRunEnded, run.ID, "%s", ended)
 	r.deliverAnswers(ctx, run.ID)
 	r.Route(ctx)
+	r.ship(ctx, run, lane)
 }
 
 // Answer records a person's answer to a decision and carries it back into the asking

@@ -205,6 +205,8 @@ type LaneForge struct {
 	PipelineStatus string `json:"pipeline_status,omitempty"`
 	// FixTries counts the times Shepherd asked the lane's agent to fix a failed pipeline.
 	FixTries int `json:"fix_tries,omitempty"`
+	// GateTries counts gate failures handed back to the agent before a push.
+	GateTries int `json:"gate_tries,omitempty"`
 }
 
 // Store is Shepherd's state.
