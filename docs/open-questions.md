@@ -58,6 +58,6 @@ and records the decision, so links to it stay right.
     ([design.md §3.15](design.md#315-shepherds-conversation-orchestrating-agent-systems)).
     The terminal: What the one terminal the human works from looks like: one thread
     of the front-desk conversation plus typed events from the swarm, with drill-down into
-    and attach to any agent ([design.md §3.15](design.md#316-the-terminal-one-thread-many-feeds)),
+    and attach to any agent ([design.md §3.16](design.md#316-the-terminal-one-thread-many-feeds)),
     or another shape. And when: `shepherd watch` could come early; the embedded front desk
     after held decisions exist.

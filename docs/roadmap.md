@@ -124,7 +124,7 @@ Across M3 to M5:
   the maintainer's direction): lanes keep their agent's session (continue, attach);
   launched agents get `ask_shepherd`, `ask_human` and `report`; Shepherd routes between
   sessions; events continue sessions instead of the human.
-- ★ **The terminal** ([design.md §3.15](design.md#316-the-terminal-one-thread-many-feeds), a
+- ★ **The terminal** ([design.md §3.16](design.md#316-the-terminal-one-thread-many-feeds), a
   proposal): `shepherd watch` (lanes, runs, event feed, drill into a run's output) as soon
   as runs exist; decisions answered from the feed with M5's held decisions; then the front
   desk embedded in the same window, and attach to an agent.
