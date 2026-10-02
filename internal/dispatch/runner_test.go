@@ -250,7 +250,7 @@ func TestAdapterArgs(t *testing.T) {
 	if id, _ := newUUID(); len(id) != 36 || id[14] != '4' {
 		t.Errorf("uuid = %q", id)
 	}
-	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", false); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
+	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", false, ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
 		t.Errorf("brief:\n%s", b)
 	}
 }
@@ -361,7 +361,7 @@ func TestWorkerToolsInjected(t *testing.T) {
 	if j := strings.Join(c.Args(Opts{Prompt: "P", Worker: "/bin/shepherd"}), " "); !strings.Contains(j, "--additional-mcp-config") || !strings.Contains(j, `"tools":["*"]`) || !strings.Contains(j, "--allow-tool shepherd") {
 		t.Errorf("copilot worker args: %s", j)
 	}
-	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", true); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
+	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", true, ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
 		t.Errorf("brief with tools:\n%s", b)
 	}
 }

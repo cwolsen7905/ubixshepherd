@@ -56,6 +56,9 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
   Shepherd starts: the run comes from `SHEPHERD_RUN`. A decision's answer is delivered by
   continuing the asking run's session (`dispatch.Runner.Answer`), at once or when the run
   ends. Never let an agent answer a decision: `decision_answer` takes the person's words.
+- Routing between lanes is `internal/dispatch/route.go`: deterministic rules only (a
+  named open lane, its last agent, another provider for reviews); anything needing
+  judgment becomes `needs_routing` for the front desk. `Route` runs whenever a run ends.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

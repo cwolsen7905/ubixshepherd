@@ -39,6 +39,8 @@ type Adapter struct {
 	// WorkerReady reports whether the agent can be given Shepherd's worker tools. For
 	// CLIs configured by flag it is always true; Cursor needs a one-time setup.
 	WorkerReady func() bool
+	// Note is added to the brief: what this CLI's permissions need the agent to know.
+	Note string
 }
 
 // Opts are what a run's command line is built from.
@@ -141,6 +143,9 @@ var adapters = map[string]Adapter{
 			return ""
 		},
 		Attach: func(session, _ string) []string { return []string{"--resume=" + session} },
+		// Copilot approves each part of a chained command, and nobody can approve
+		// `exit` or `true` in a headless run.
+		Note: "Run each git command on its own (git add, then git commit), not chained with &&, || or ;. Chained commands need an approval nobody can give in this run.",
 	},
 	"cursor": {
 		Name: "cursor", Bin: "cursor-agent",
@@ -223,7 +228,7 @@ func firstWord(s string) string {
 
 // Brief wraps a task with what every agent needs to know about its lane, so the same
 // task means the same thing to every provider.
-func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, tools bool) string {
+func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, tools bool, note string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are working for uBixShepherd in lane %s of repo %s.\n", lane, repo)
 	fmt.Fprintf(&b, "Work only inside this directory: %s (branch %s, cut from %s).\n", worktree, branch, base)
@@ -232,6 +237,9 @@ func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate
 		fmt.Fprintf(&b, "Before committing, run the repo's gate, `%s`, and make it pass.\n", gate)
 	}
 	b.WriteString("When the work is done, commit it with clear commit messages. Do not push: pushing is blocked, and the person reviews and pushes.\n")
+	if note != "" {
+		b.WriteString(note + "\n")
+	}
 	if tools {
 		b.WriteString(`You have Shepherd's tools. Use them instead of guessing or stopping silently:
 - ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, anything in production, a change to scope or design with no clear default). Give options and your recommendation, then end your turn: you will be continued with the answer.

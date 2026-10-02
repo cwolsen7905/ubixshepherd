@@ -93,6 +93,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}/events", s.runEvents)
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
 	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/requests", s.addRequest)
+	mux.HandleFunc("GET "+api.PathRequests, s.listRequests)
+	mux.HandleFunc("POST "+api.PathRequests+"/{id}/route", s.routeRequest)
 	mux.HandleFunc("POST "+api.PathDecisions+"/{id}/answer", s.answerDecision)
 	return s.logRequests(s.auth(mux))
 }
@@ -606,6 +609,69 @@ func (s *Server) addDecision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, d)
 }
 
+func (s *Server) addRequest(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	var q store.Request
+	if !decode(w, r, &q) {
+		return
+	}
+	q.FromRun = run.ID
+	q, err := s.Runner.RequestHelp(r.Context(), q)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
+}
+
+func (s *Server) listRequests(w http.ResponseWriter, r *http.Request) {
+	var states []string
+	if st := r.URL.Query().Get("state"); st != "" {
+		states = strings.Split(st, ",")
+	}
+	reqs, err := s.Store.Requests(r.Context(), states...)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.RequestView{}
+	for _, q := range reqs {
+		run, err := s.Store.Run(r.Context(), q.FromRun)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		v, err := s.runView(r.Context(), run)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out = append(out, api.RequestView{Request: q, FromAgent: run.Agent, FromLane: v.Lane, Repo: v.Repo})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req api.Route
+	if !decode(w, r, &req) {
+		return
+	}
+	q, err := s.Runner.RouteRequest(r.Context(), id, req.Lane, req.Agent)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, q)
+}
+
 func (s *Server) listDecisions(w http.ResponseWriter, r *http.Request) {
 	ds, err := s.Store.Decisions(r.Context(), r.URL.Query().Get("state"))
 	if err != nil {
@@ -751,6 +817,7 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 		if err := s.Runner.Recover(ctx); err != nil {
 			return err
 		}
+		go s.Runner.Route(context.Background()) // requests left waiting by a previous daemon
 		defer func() {
 			stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
