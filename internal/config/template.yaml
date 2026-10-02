@@ -31,6 +31,9 @@
 #   shared_paths: []
 #   ## Where lane worktrees go; empty means <workspace>/<repo>-worktrees.
 #   worktree_root: ""
+#   ## Runs in each new lane's worktree ($SHEPHERD_REPO is the main checkout): what a
+#   ## fresh worktree needs before its gate can run.
+#   setup: cp "$SHEPHERD_REPO/.env" .env
 #   ## A coordination file (AGENTS-COORD.md) to keep a generated view of the lanes in,
 #   ## between markers, while sessions not on Shepherd still read it.
 #   coord_file: ""

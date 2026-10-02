@@ -52,7 +52,9 @@ shepherd hook status                        # is the pre-push hook installed in 
 A lane's scope is its lease: `lane open` refuses a scope that overlaps an open lane's,
 naming the lane and the paths, judged against the repo's files plus globs for paths not
 created yet. It reports any of the repo profile's `shared_paths` the lane takes. It
-also refuses a name, branch or worktree path already in use.
+also refuses a name, branch or worktree path already in use. A repo profile's `setup`
+runs in each new worktree (with `$SHEPHERD_REPO` set to the main checkout), for what a
+fresh worktree needs before its gate can run, such as an `.env` or `vendor/`.
 
 The **pre-push hook** enforces the scope where every agent has to pass: a push from a
 lane may only update the lane's branch, with changes inside its scope. `lane open`
