@@ -17,6 +17,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // ErrNoDaemon means no daemon is running for this Shepherd home.
@@ -114,6 +115,31 @@ func (c *Client) Run(ctx context.Context, id int64) (api.RunView, error) {
 func (c *Client) RunLog(ctx context.Context, id, offset int64) (api.RunLog, error) {
 	var out api.RunLog
 	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?offset=%d", api.PathRunLog(id), offset), nil, &out)
+}
+
+func (c *Client) AddEvent(ctx context.Context, runID int64, e store.Event) (store.Event, error) {
+	var out store.Event
+	return out, c.do(ctx, http.MethodPost, api.PathRunEvents(runID), e, &out)
+}
+
+func (c *Client) RunEvents(ctx context.Context, runID int64) (api.RunEvents, error) {
+	var out api.RunEvents
+	return out, c.do(ctx, http.MethodGet, api.PathRunEvents(runID), nil, &out)
+}
+
+func (c *Client) Ask(ctx context.Context, runID int64, d store.Decision) (store.Decision, error) {
+	var out store.Decision
+	return out, c.do(ctx, http.MethodPost, api.PathRunDecisions(runID), d, &out)
+}
+
+func (c *Client) Decisions(ctx context.Context, state string) ([]api.DecisionView, error) {
+	var out []api.DecisionView
+	return out, c.do(ctx, http.MethodGet, api.PathDecisions+"?state="+url.QueryEscape(state), nil, &out)
+}
+
+func (c *Client) Answer(ctx context.Context, id int64, answer string) (store.Decision, error) {
+	var out store.Decision
+	return out, c.do(ctx, http.MethodPost, api.PathDecisionAnswer(id), api.Answer{Answer: answer}, &out)
 }
 
 func (c *Client) StopRun(ctx context.Context, id int64) error {

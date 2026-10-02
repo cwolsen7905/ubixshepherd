@@ -101,11 +101,33 @@ pre-push hook refuses pushes from a lane while an agent runs in it. You review t
 lane's commits and push. One agent runs per lane; `daemon.max_runs` (default 4) caps
 them per machine. Output is redacted and kept in `~/.shepherd/runs/`.
 
+### Agents ask, you answer
+
+Agents Shepherd starts get three tools of their own, and their brief says when to use
+each: `ask_human` for anything that is yours to decide (money, published text, deleting
+data, production, a scope or design call), `ask_shepherd` when they need another lane,
+and `report` for progress, done or blocked. An agent that asks ends its turn; your
+answer goes back into its conversation and it carries on.
+
+```sh
+shepherd decision list                 # what agents are waiting on you for, with options and a recommendation
+shepherd decision answer 3 2           # pick option 2, or answer in words: "keep the old price"
+shepherd run show 12                   # its reports and decisions, with the run's outcome
+```
+
+Claude Code and Copilot get the tools by flag; Claude Code sees only Shepherd's worker
+tools, so an operator server you registered for yourself never reaches an agent. Cursor
+reads MCP servers only from its config file, so it needs one step, once:
+`shepherd agents setup cursor` adds a `shepherd-worker` entry to `~/.cursor/mcp.json` and
+leaves the rest alone. `ask_shepherd` requests are recorded; routing them to the right
+lane comes next.
+
 ### From Claude Code (MCP)
 
 `shepherd mcp` serves Shepherd's operator tools over MCP on stdio: `shepherd_status`,
 `shepherd_where`, `lane_list`, `lane_open`, `lane_close`, `lane_run`, `run_list`,
-`run_status`, `run_stop` and `fold_gc`. Each runs the CLI
+`run_status`, `run_continue`, `run_stop`, `decision_list`, `decision_answer` and
+`fold_gc`. (`shepherd mcp --worker` is the agents' own set, described above.) Each runs the CLI
 command of the same name. Register it once, then start Claude Code at the workspace root
 and ask in plain words ("open a lane in myrepo for the login fix, scoped to src/auth"):
 

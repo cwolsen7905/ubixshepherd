@@ -1,0 +1,181 @@
+package cli
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/store"
+)
+
+// shepherd decision list | answer: the questions agents hold for the person.
+func runDecision(ctx context.Context, env Env, args []string) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	fs := flags("decision "+args[0], env)
+	all := fs.Bool("all", false, "list answered decisions too")
+	pos, err := parse(fs, args[1:])
+	if err != nil {
+		return err
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "list", "ls":
+		if len(pos) > 0 {
+			return errUsage
+		}
+		state := store.DecisionOpen
+		if *all {
+			state = ""
+		}
+		ds, err := c.Decisions(ctx, state)
+		if err != nil {
+			return err
+		}
+		if len(ds) == 0 {
+			fmt.Fprintln(env.Stdout, "No decisions waiting for you.")
+			return nil
+		}
+		w := env.Stdout
+		for _, d := range ds {
+			fmt.Fprintf(w, "decision %d  %s  from %s in lane %s (%s), run %d\n", d.ID, d.State, d.Agent, d.Lane, d.Repo, d.RunID)
+			fmt.Fprintf(w, "  %s\n", d.Question)
+			for i, o := range d.Options {
+				fmt.Fprintf(w, "    %d. %s\n", i+1, o)
+			}
+			if d.Recommendation != "" {
+				fmt.Fprintf(w, "  recommends: %s\n", d.Recommendation)
+			}
+			if d.Why != "" {
+				fmt.Fprintf(w, "  why yours:  %s\n", d.Why)
+			}
+			if d.Answer != "" {
+				fmt.Fprintf(w, "  answered:   %s\n", d.Answer)
+			}
+			fmt.Fprintln(w)
+		}
+		if state == store.DecisionOpen {
+			fmt.Fprintln(w, `Answer one with: shepherd decision answer <id> "..." (a number picks that option)`)
+		}
+		return nil
+	case "answer":
+		if len(pos) != 2 {
+			return errUsage
+		}
+		id, err := strconv.ParseInt(pos[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("decision id %q is not a number", pos[0])
+		}
+		answer := pos[1]
+		// A bare number picks that option, so "2" means the second choice offered.
+		if n, err := strconv.Atoi(strings.TrimSpace(answer)); err == nil {
+			ds, err := c.Decisions(ctx, "")
+			if err != nil {
+				return err
+			}
+			for _, d := range ds {
+				if d.ID == id && n >= 1 && n <= len(d.Options) {
+					answer = fmt.Sprintf("option %d: %s", n, d.Options[n-1])
+				}
+			}
+		}
+		d, err := c.Answer(ctx, id, answer)
+		if err != nil {
+			return err
+		}
+		if d.AnswerRun != 0 {
+			fmt.Fprintf(env.Stdout, "answered decision %d; the agent carries on as run %d (shepherd run logs -f %d)\n", d.ID, d.AnswerRun, d.AnswerRun)
+		} else {
+			fmt.Fprintf(env.Stdout, "answered decision %d; the agent is still running and gets the answer when its turn ends\n", d.ID)
+		}
+		return nil
+	}
+	return errUsage
+}
+
+// shepherd worker ...: what the worker tools run. Not for people: the run comes from
+// SHEPHERD_RUN, which Shepherd sets for the agents it starts.
+func runWorker(ctx context.Context, env Env, args []string) error {
+	runID, err := strconv.ParseInt(os.Getenv("SHEPHERD_RUN"), 10, 64)
+	if err != nil || runID == 0 {
+		return errors.New("shepherd worker is for agents Shepherd started (SHEPHERD_RUN is not set)")
+	}
+	if len(args) == 0 {
+		return errUsage
+	}
+	fs := flags("worker "+args[0], env)
+	status := fs.String("status", "", "report: progress, done or blocked")
+	var options listFlag
+	fs.Var(&options, "option", "ask-human: an option (repeatable)")
+	rec := fs.String("recommendation", "", "ask-human: what you recommend")
+	why := fs.String("why", "", "ask-human: why it is the person's call")
+	kind := fs.String("kind", "question", "ask-shepherd: question, handoff or review")
+	lane := fs.String("lane", "", "ask-shepherd: the lane it is for, if known")
+	pos, err := parse(fs, args[1:])
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errUsage
+	}
+	env.Client = "worker"
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "report":
+		if _, err := c.AddEvent(ctx, runID, store.Event{Kind: dispatch.EventReport, Status: *status, Text: pos[0]}); err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "Recorded (%s). Shepherd checks claims of done against the lane's commits and gate.\n", *status)
+	case "ask-human":
+		d, err := c.Ask(ctx, runID, store.Decision{Question: pos[0], Options: options, Recommendation: *rec, Why: *why})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "Held for the person as decision %d. End your turn now with a one-line summary of where you are; Shepherd continues this conversation with the answer.\n", d.ID)
+	case "ask-shepherd":
+		text := fmt.Sprintf("[%s", *kind)
+		if *lane != "" {
+			text += " for lane " + *lane
+		}
+		text += "] " + pos[0]
+		if _, err := c.AddEvent(ctx, runID, store.Event{Kind: dispatch.EventAskShepherd, Status: *kind, Text: text}); err != nil {
+			return err
+		}
+		fmt.Fprintln(env.Stdout, "Recorded for Shepherd to route. End your turn now with a one-line summary; Shepherd continues this conversation with the reply.")
+	default:
+		return errUsage
+	}
+	return nil
+}
+
+// shepherd agents setup cursor: give Cursor the worker tools.
+func runAgents(ctx context.Context, env Env, args []string) error {
+	if len(args) != 2 || args[0] != "setup" || args[1] != "cursor" {
+		return errUsage
+	}
+	if env.Exe == "" {
+		return errors.New("cannot find this binary's path")
+	}
+	changed, err := dispatch.SetupCursor(env.Exe)
+	if err != nil {
+		return err
+	}
+	if !changed {
+		fmt.Fprintf(env.Stdout, "%s already has Shepherd's worker server\n", dispatch.CursorConfig())
+		return nil
+	}
+	fmt.Fprintf(env.Stdout, "added shepherd-worker to %s (other servers untouched)\n", dispatch.CursorConfig())
+	fmt.Fprintln(env.Stdout, "It serves tools only to agents Shepherd starts; in your own Cursor sessions it reports that it has no run.")
+	return nil
+}

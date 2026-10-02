@@ -52,6 +52,10 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
   script; a real run of each CLI is a manual check before changing an adapter. Each
   adapter also says how its CLI names a session (chosen up front, created first, or
   printed in the output), how to resume it headless, and how to attach to it.
+- Worker tools (`shepherd mcp --worker`, `internal/cli/decision.go`) are for agents
+  Shepherd starts: the run comes from `SHEPHERD_RUN`. A decision's answer is delivered by
+  continuing the asking run's session (`dispatch.Runner.Answer`), at once or when the run
+  ends. Never let an agent answer a decision: `decision_answer` takes the person's words.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

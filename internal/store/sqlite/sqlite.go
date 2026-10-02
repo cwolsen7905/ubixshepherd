@@ -89,6 +89,30 @@ var migrations = []string{
 	// continuation follows.
 	`ALTER TABLE runs ADD COLUMN session TEXT NOT NULL DEFAULT '';
 	ALTER TABLE runs ADD COLUMN parent INTEGER NOT NULL DEFAULT 0;`,
+	// What agents tell Shepherd while they work, and the questions they hold for a person.
+	`CREATE TABLE events (
+		id      INTEGER PRIMARY KEY,
+		run_id  INTEGER NOT NULL REFERENCES runs(id),
+		kind    TEXT NOT NULL,
+		status  TEXT NOT NULL DEFAULT '',
+		text    TEXT NOT NULL,
+		created TEXT NOT NULL
+	);
+	CREATE INDEX events_run ON events (run_id);
+	CREATE TABLE decisions (
+		id             INTEGER PRIMARY KEY,
+		run_id         INTEGER NOT NULL REFERENCES runs(id),
+		question       TEXT NOT NULL,
+		options        TEXT NOT NULL DEFAULT '[]',
+		recommendation TEXT NOT NULL DEFAULT '',
+		why            TEXT NOT NULL DEFAULT '',
+		state          TEXT NOT NULL,
+		answer         TEXT NOT NULL DEFAULT '',
+		answer_run     INTEGER NOT NULL DEFAULT 0,
+		created        TEXT NOT NULL,
+		answered       TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX decisions_state ON decisions (state);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -427,6 +451,117 @@ func (s *DB) Runs(ctx context.Context, laneID int64, state string, limit int) ([
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *DB) AddEvent(ctx context.Context, e store.Event) (store.Event, error) {
+	res, err := s.db.ExecContext(ctx, `INSERT INTO events (run_id, kind, status, text, created) VALUES (?, ?, ?, ?, ?)`,
+		e.RunID, e.Kind, e.Status, e.Text, now())
+	if err != nil {
+		return e, err
+	}
+	e.ID, _ = res.LastInsertId()
+	return e, nil
+}
+
+func (s *DB) Events(ctx context.Context, runID int64) ([]store.Event, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, run_id, kind, status, text, created FROM events WHERE run_id = ? ORDER BY id`, runID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Event
+	for rows.Next() {
+		var e store.Event
+		var created string
+		if err := rows.Scan(&e.ID, &e.RunID, &e.Kind, &e.Status, &e.Text, &created); err != nil {
+			return nil, err
+		}
+		e.Created = parseTime(created)
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+const decisionCols = `id, run_id, question, options, recommendation, why, state, answer, answer_run, created, answered`
+
+func scanDecision(sc interface{ Scan(...any) error }) (store.Decision, error) {
+	var d store.Decision
+	var options, created, answered string
+	if err := sc.Scan(&d.ID, &d.RunID, &d.Question, &options, &d.Recommendation, &d.Why, &d.State, &d.Answer, &d.AnswerRun, &created, &answered); err != nil {
+		return d, err
+	}
+	if err := json.Unmarshal([]byte(options), &d.Options); err != nil {
+		return d, err
+	}
+	d.Created = parseTime(created)
+	if answered != "" {
+		t := parseTime(answered)
+		d.Answered = &t
+	}
+	return d, nil
+}
+
+func (s *DB) CreateDecision(ctx context.Context, d store.Decision) (store.Decision, error) {
+	options, err := json.Marshal(nonNil(d.Options))
+	if err != nil {
+		return d, err
+	}
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO decisions (run_id, question, options, recommendation, why, state, created)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		d.RunID, d.Question, string(options), d.Recommendation, d.Why, store.DecisionOpen, now())
+	if err != nil {
+		return d, err
+	}
+	id, _ := res.LastInsertId()
+	return s.Decision(ctx, id)
+}
+
+func (s *DB) Decision(ctx context.Context, id int64) (store.Decision, error) {
+	d, err := scanDecision(s.db.QueryRowContext(ctx, `SELECT `+decisionCols+` FROM decisions WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return d, store.ErrNotFound
+	}
+	return d, err
+}
+
+// Decisions returns decisions in a state ("" for all), oldest first.
+func (s *DB) Decisions(ctx context.Context, state string) ([]store.Decision, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+decisionCols+` FROM decisions WHERE (? = '' OR state = ?) ORDER BY id`, state, state)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Decision
+	for rows.Next() {
+		d, err := scanDecision(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// AnswerDecision records an answer to an open decision; ErrConflict if it is not open.
+func (s *DB) AnswerDecision(ctx context.Context, id int64, answer string) (store.Decision, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET state = ?, answer = ?, answered = ? WHERE id = ? AND state = ?`,
+		store.DecisionAnswered, answer, now(), id, store.DecisionOpen)
+	if err != nil {
+		return store.Decision{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, err := s.Decision(ctx, id); err != nil {
+			return store.Decision{}, err
+		}
+		return store.Decision{}, fmt.Errorf("%w: decision %d is not open", store.ErrConflict, id)
+	}
+	return s.Decision(ctx, id)
+}
+
+func (s *DB) SetDecisionRun(ctx context.Context, id, runID int64) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET answer_run = ? WHERE id = ?`, runID, id)
+	return err
 }
 
 func nonNil(s []string) []string {

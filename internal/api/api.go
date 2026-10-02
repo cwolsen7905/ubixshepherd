@@ -26,6 +26,32 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
+// PathDecisions lists decisions (GET).
+const PathDecisions = "/v1/decisions"
+
+func PathDecisionAnswer(id int64) string { return fmt.Sprintf("%s/%d/answer", PathDecisions, id) }
+func PathRunEvents(id int64) string      { return fmt.Sprintf("%s/%d/events", PathRuns, id) }
+func PathRunDecisions(id int64) string   { return fmt.Sprintf("%s/%d/decisions", PathRuns, id) }
+
+// Answer is the body of POST /v1/decisions/{id}/answer.
+type Answer struct {
+	Answer string `json:"answer"`
+}
+
+// DecisionView is a decision with where it came from.
+type DecisionView struct {
+	store.Decision
+	Agent string `json:"agent"`
+	Lane  string `json:"lane"`
+	Repo  string `json:"repo"`
+}
+
+// RunEvents answers GET /v1/runs/{id}/events.
+type RunEvents struct {
+	Events    []store.Event    `json:"events"`
+	Decisions []store.Decision `json:"decisions"`
+}
+
 func PathRun(id int64) string     { return fmt.Sprintf("%s/%d", PathRuns, id) }
 func PathRunLog(id int64) string  { return fmt.Sprintf("%s/%d/log", PathRuns, id) }
 func PathRunStop(id int64) string { return fmt.Sprintf("%s/%d/stop", PathRuns, id) }

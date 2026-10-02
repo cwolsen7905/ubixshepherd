@@ -62,6 +62,10 @@ func commands() []command {
 		{"hook", "Install or check the pre-push hook that keeps a lane's pushes in its scope",
 			"shepherd hook install | uninstall | status [--repo R]", runHook},
 		{"fold", "Find stale worktrees across the workspace", "shepherd fold gc [--json]", runFold},
+		{"decision", "The questions agents hold for you: list and answer them",
+			"shepherd decision list [--all] | answer <id> \"answer\"", runDecision},
+		{"agents", "Set up an agent CLI for Shepherd", "shepherd agents setup cursor", runAgents},
+		{"worker", "", "shepherd worker report|ask-human|ask-shepherd (for agents Shepherd starts)", runWorker},
 		{"mcp", "Serve Shepherd's operator tools over MCP on stdio, for Claude Code and other agents",
 			"shepherd mcp   (register: claude mcp add --scope user shepherd -- shepherd mcp)", runMCP},
 		{"status", "Show the daemon, its workspaces, and where you are", "shepherd status [--json]", runStatus},
@@ -136,6 +140,9 @@ func usage(w io.Writer) {
 	cs := commands()
 	sort.Slice(cs, func(i, j int) bool { return cs[i].name < cs[j].name })
 	for _, c := range cs {
+		if c.summary == "" {
+			continue // internal: used by agents, not people
+		}
 		fmt.Fprintf(w, "  %-9s %s\n", c.name, c.summary)
 	}
 	fmt.Fprintln(w)

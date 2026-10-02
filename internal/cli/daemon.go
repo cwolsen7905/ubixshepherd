@@ -95,7 +95,7 @@ func daemonRun(ctx context.Context, env Env) error {
 		return err
 	}
 	srv.Fold.Exe = env.Exe
-	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log}
+	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
 	return srv.Run(ctx, l.Runtime())
 }
 
