@@ -33,6 +33,8 @@ type Env struct {
 	// whether commands may do that when no daemon answers.
 	Exe       string
 	Autostart bool
+	// Client names this caller in the daemon's log: cli, mcp or hook.
+	Client string
 }
 
 type command struct {
@@ -84,6 +86,7 @@ func Main(args []string) int {
 		Interactive: term.IsTerminal(int(os.Stdin.Fd())),
 		Layout:      paths.Layout{Home: home}, Cwd: cwd,
 		Autostart: os.Getenv(NoAutostartEnv) == "",
+		Client:    "cli",
 	}
 	if exe, err := os.Executable(); err == nil {
 		env.Exe = exe
@@ -186,6 +189,7 @@ func connect(ctx context.Context, env Env) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.Name = env.Client
 	probe, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if _, err := c.Status(probe); err != nil {

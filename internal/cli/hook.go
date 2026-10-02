@@ -62,6 +62,7 @@ func runHook(ctx context.Context, env Env, args []string) error {
 // hookPrePush is what the installed hook runs. git starts it in the worktree being
 // pushed from, with the refs on stdin.
 func hookPrePush(ctx context.Context, env Env) error {
+	env.Client = "hook"
 	in, err := io.ReadAll(env.Stdin)
 	if err != nil {
 		return err

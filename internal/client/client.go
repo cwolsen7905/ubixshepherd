@@ -23,6 +23,8 @@ var ErrNoDaemon = errors.New("the shepherd daemon is not running (start it with:
 
 // Client calls one daemon.
 type Client struct {
+	// Name says who is calling (cli, mcp, hook), for the daemon's log.
+	Name  string
 	base  string
 	token string
 	http  *http.Client
@@ -121,6 +123,9 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	if c.Name != "" {
+		req.Header.Set(api.ClientHeader, c.Name)
+	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

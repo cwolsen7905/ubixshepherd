@@ -82,7 +82,41 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathFoldGC, s.foldGC)
 	mux.HandleFunc("POST "+api.PathPrePush, s.prePush)
 	mux.HandleFunc("POST /v1/repos/{id}/hook", s.repoHook)
-	return s.auth(mux)
+	return s.logRequests(s.auth(mux))
+}
+
+// statusWriter remembers the status a handler wrote.
+type statusWriter struct {
+	http.ResponseWriter
+	code int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// logRequests logs every request but the status probe each command makes first, so the
+// daemon's log shows what each client asked and how it went.
+func (s *Server) logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
+		next.ServeHTTP(sw, r)
+		if r.Method == http.MethodGet && r.URL.Path == api.PathStatus {
+			return
+		}
+		client := r.Header.Get(api.ClientHeader)
+		if client == "" {
+			client = "unknown"
+		}
+		level := slog.LevelInfo
+		if sw.code >= 400 {
+			level = slog.LevelWarn
+		}
+		s.Log.Log(r.Context(), level, "request", "client", client, "method", r.Method,
+			"path", r.URL.Path, "status", sw.code, "ms", time.Since(start).Milliseconds())
+	})
 }
 
 func (s *Server) auth(next http.Handler) http.Handler {

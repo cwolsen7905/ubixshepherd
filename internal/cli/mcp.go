@@ -257,6 +257,7 @@ func callTool(ctx context.Context, env Env, t mcpTool, a map[string]any) map[str
 		cenv := env
 		cenv.Stdin, cenv.Stdout, cenv.Stderr = strings.NewReader(""), &stdout, &stderr
 		cenv.Interactive = false
+		cenv.Client = "mcp"
 		if p := str(a, "path"); p != "" && filepath.IsAbs(p) {
 			cenv.Cwd = p
 		}

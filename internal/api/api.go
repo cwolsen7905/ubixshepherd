@@ -11,6 +11,9 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
+// ClientHeader names the kind of client making a request (cli, mcp, hook), for logs.
+const ClientHeader = "X-Shepherd-Client"
+
 // Routes.
 const (
 	PathStatus     = "/v1/status"
