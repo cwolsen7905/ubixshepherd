@@ -157,6 +157,26 @@ func (c *Client) RouteRequest(ctx context.Context, id int64, lane, agent string)
 	return out, c.do(ctx, http.MethodPost, api.PathRequestRoute(id), api.Route{Lane: lane, Agent: agent}, &out)
 }
 
+// Feed returns feed items after an id; after < 0 asks only for the newest id.
+func (c *Client) Feed(ctx context.Context, after int64) (api.Feed, error) {
+	var out api.Feed
+	q := fmt.Sprintf("%s?after=%d", api.PathFeed, after)
+	if after < 0 {
+		q = api.PathFeed + "?after=latest"
+	}
+	return out, c.do(ctx, http.MethodGet, q, nil, &out)
+}
+
+func (c *Client) Setting(ctx context.Context, key string) (string, error) {
+	var out api.Setting
+	return out.Value, c.do(ctx, http.MethodGet, api.PathSettings+"/"+key, nil, &out)
+}
+
+func (c *Client) SetSetting(ctx context.Context, key, value string) error {
+	var out api.Setting
+	return c.do(ctx, http.MethodPut, api.PathSettings+"/"+key, api.Setting{Value: value}, &out)
+}
+
 func (c *Client) StopRun(ctx context.Context, id int64) error {
 	var out struct{}
 	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)

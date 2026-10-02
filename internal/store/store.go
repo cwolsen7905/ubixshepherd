@@ -167,6 +167,32 @@ type Request struct {
 	Updated time.Time `json:"updated"`
 }
 
+// Feed kinds.
+const (
+	FeedLaneOpened     = "lane_opened"
+	FeedLaneClosed     = "lane_closed"
+	FeedRunStarted     = "run_started"
+	FeedRunEnded       = "run_ended"
+	FeedReport         = "report"
+	FeedDecision       = "decision"
+	FeedDecisionAnswer = "decision_answered"
+	FeedRequest        = "request"
+	FeedRequestRouted  = "request_routed"
+	FeedRequestStuck   = "request_needs_routing"
+	FeedRequestReplied = "request_replied"
+	FeedRequestFailed  = "request_failed"
+)
+
+// FeedItem is one thing that happened across the swarm, as a line for the person's
+// thread. Ref is the run, decision or request it is about.
+type FeedItem struct {
+	ID      int64     `json:"id"`
+	Kind    string    `json:"kind"`
+	Text    string    `json:"text"`
+	Ref     int64     `json:"ref,omitempty"`
+	Created time.Time `json:"created"`
+}
+
 // Store is Shepherd's state.
 type Store interface {
 	// SaveWorkspace creates the workspace at ws.Path, or renames the one already there,
@@ -206,6 +232,14 @@ type Store interface {
 	Request(ctx context.Context, id int64) (Request, error)
 	// Requests returns requests in any of the states (all when none), oldest first.
 	Requests(ctx context.Context, states ...string) ([]Request, error)
+
+	AddFeed(ctx context.Context, kind, text string, ref int64) error
+	// Feed returns items after an id, oldest first.
+	Feed(ctx context.Context, after int64, limit int) ([]FeedItem, error)
+	LastFeed(ctx context.Context) (int64, error)
+	// Setting returns "" for a key never set.
+	Setting(ctx context.Context, key string) (string, error)
+	SetSetting(ctx context.Context, key, value string) error
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

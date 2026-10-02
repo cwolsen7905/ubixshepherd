@@ -66,6 +66,31 @@ worktree with uncommitted changes, and a branch git cannot see merged into the b
 squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
 keeps the branch. `fold gc` only lists; it removes nothing.
 
+### The one conversation: `shepherd chat`
+
+```sh
+cd ~/git
+shepherd chat
+```
+
+You talk to Shepherd's **front desk**: a Claude Code session Shepherd runs at the
+workspace root, resumed turn by turn, with Shepherd's operator tools and read access to
+files but no way to edit them. It delegates: it opens lanes, starts Claude Code, Copilot
+or Cursor in them, follows up, routes requests between them, and brings you what is
+yours. The swarm's events arrive in the same thread as they happen (runs starting and
+ending, reports, decisions, requests between lanes), and when the desk is idle the ones
+that need someone (a run ended, a request no rule could route) reach it on their own.
+Lanes and live runs are listed beside the thread. The conversation is kept between
+`shepherd chat` sessions.
+
+| In the thread | |
+|---|---|
+| `/answer 4 2` | answer decision 4 yourself, by option number or in words |
+| `/decisions` | what is waiting for you |
+| `/log 22` | run 22's live output; Esc back to the thread |
+| `/auto off` | keep swarm events from reaching the desk on their own |
+| `/new` | start a new conversation with the desk |
+
 ### Agent runs
 
 Shepherd can start an agent headless in a lane's worktree:

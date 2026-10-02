@@ -131,6 +131,19 @@ var migrations = []string{
 		updated    TEXT NOT NULL
 	);
 	CREATE INDEX requests_state ON requests (state);`,
+	// The feed: what happened across the swarm, in order, for the person's thread.
+	// Settings: small values the daemon keeps, such as the front desk's session.
+	`CREATE TABLE feed (
+		id      INTEGER PRIMARY KEY,
+		kind    TEXT NOT NULL,
+		text    TEXT NOT NULL,
+		ref     INTEGER NOT NULL DEFAULT 0,
+		created TEXT NOT NULL
+	);
+	CREATE TABLE settings (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -644,6 +657,53 @@ func (s *DB) Requests(ctx context.Context, states ...string) ([]store.Request, e
 		}
 	}
 	return out, rows.Err()
+}
+
+func (s *DB) AddFeed(ctx context.Context, kind, text string, ref int64) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO feed (kind, text, ref, created) VALUES (?, ?, ?, ?)`, kind, text, ref, now())
+	return err
+}
+
+// Feed returns items after an id, oldest first.
+func (s *DB) Feed(ctx context.Context, after int64, limit int) ([]store.FeedItem, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, text, ref, created FROM feed WHERE id > ? ORDER BY id LIMIT ?`, after, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.FeedItem
+	for rows.Next() {
+		var f store.FeedItem
+		var created string
+		if err := rows.Scan(&f.ID, &f.Kind, &f.Text, &f.Ref, &created); err != nil {
+			return nil, err
+		}
+		f.Created = parseTime(created)
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// LastFeed is the newest feed id, 0 when there is none.
+func (s *DB) LastFeed(ctx context.Context) (int64, error) {
+	var id sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM feed`).Scan(&id)
+	return id.Int64, err
+}
+
+func (s *DB) Setting(ctx context.Context, key string) (string, error) {
+	var v string
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return v, err
+}
+
+func (s *DB) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
 }
 
 func nonNil(s []string) []string {

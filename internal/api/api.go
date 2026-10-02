@@ -26,6 +26,23 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
+// PathFeed is GET /v1/feed?after=N (or after=latest for the newest id only).
+const PathFeed = "/v1/feed"
+
+// PathSettings holds client settings: GET and PUT /v1/settings/{key}.
+const PathSettings = "/v1/settings"
+
+// Feed answers GET /v1/feed: items after the given id, and the id to ask after next.
+type Feed struct {
+	Items []store.FeedItem `json:"items"`
+	Last  int64            `json:"last"`
+}
+
+// Setting is a setting's value.
+type Setting struct {
+	Value string `json:"value"`
+}
+
 // PathRequests lists requests between lanes (GET).
 const PathRequests = "/v1/requests"
 

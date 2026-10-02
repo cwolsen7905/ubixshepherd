@@ -1,0 +1,217 @@
+// Package chat is shepherd chat: the one conversation. The person talks to a front desk,
+// an agent session Shepherd runs and resumes at the workspace root with Shepherd's
+// operator tools and no way to edit files; the swarm's events arrive in the same thread.
+package chat
+
+import (
+	"bufio"
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+)
+
+// Line kinds in the thread.
+const (
+	KindYou      = "you"
+	KindDesk     = "desk"
+	KindTool     = "tool"
+	KindEvent    = "event"
+	KindDecision = "decision"
+	KindInfo     = "info"
+	KindError    = "error"
+)
+
+// Line is one entry in the thread.
+type Line struct {
+	Kind string
+	Text string
+}
+
+// DeskBrief is the front desk's standing instruction, given once per conversation.
+const DeskBrief = `You are the front desk of uBixShepherd: the one conversation between the person and a swarm of AI coding agents (Claude Code, Copilot, Cursor) working in lanes across the repos of this workspace. You are a coordinator, not a coder.
+
+- Delegate the work. To change a repo: open a lane (lane_open, with a scope that fits the job), then start an agent in it (lane_run) with a clear brief. Choose the agent that fits; say which and why in a few words. Follow up on a lane with run_continue rather than starting over.
+- You cannot edit files or run commands yourself, and should not try. You may read files to plan.
+- Decisions agents hold for the person (decision_list) are theirs: bring them up with the options and the recommendation, and record an answer (decision_answer) only with the person's own words.
+- Requests between lanes that Shepherd could not route (request_list, needs_routing) are yours to route with request_route, opening a lane first if needed.
+- Messages starting with [Shepherd] are events from the swarm, not the person. Tell the person briefly what matters, act where it is yours to (routing, follow-ups on work they asked for), and do not start new work they have not asked for.
+- Be brief. The person reads a thread with many agents in it: lead with what happened and what needs them.`
+
+// Desk runs the front desk's turns.
+type Desk interface {
+	// Turn sends a message and calls emit for each line of the reply as it streams. It
+	// returns the session, to resume on the next turn.
+	Turn(ctx context.Context, session, message string, emit func(Line)) (string, error)
+}
+
+// ClaudeDesk is a front desk on Claude Code, headless, resumed turn by turn.
+type ClaudeDesk struct {
+	// Bin is the claude executable; Shepherd is the shepherd binary that serves the
+	// operator tools; Dir is the workspace root the desk works from.
+	Bin, Shepherd, Dir string
+	Model              string
+}
+
+// Args builds one turn's command line.
+func (d ClaudeDesk) Args(session, message string, newSession bool) []string {
+	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{
+		"shepherd": map[string]any{"command": d.Shepherd, "args": []string{"mcp"}},
+	}})
+	a := []string{"-p", message, "--output-format", "stream-json", "--verbose"}
+	if newSession {
+		a = append(a, "--session-id", session, "--append-system-prompt", DeskBrief)
+	} else {
+		a = append(a, "--resume", session)
+	}
+	// Shepherd's operator tools and reading; no edits, no shell.
+	a = append(a, "--strict-mcp-config", "--mcp-config", string(mcp),
+		"--allowedTools", "mcp__shepherd", "Read", "Grep", "Glob",
+		"--disallowedTools", "Edit", "Write", "Bash", "NotebookEdit")
+	if d.Model != "" {
+		a = append(a, "--model", d.Model)
+	}
+	return a
+}
+
+// Turn runs one turn of the conversation. An empty session starts a new one.
+func (d ClaudeDesk) Turn(ctx context.Context, session, message string, emit func(Line)) (string, error) {
+	newSession := session == ""
+	if newSession {
+		var err error
+		if session, err = newUUID(); err != nil {
+			return "", err
+		}
+	}
+	cmd := exec.CommandContext(ctx, d.Bin, d.Args(session, message, newSession)...)
+	cmd.Dir = d.Dir
+	cmd.Stdin = nil
+	cmd.Env = append(os.Environ(), "SHEPHERD_CLIENT=desk")
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return session, err
+	}
+	var errb strings.Builder
+	cmd.Stderr = &errb
+	if err := cmd.Start(); err != nil {
+		return session, err
+	}
+	got := Parse(out, emit)
+	if err := cmd.Wait(); err != nil {
+		if msg := strings.TrimSpace(errb.String()); msg != "" {
+			return session, fmt.Errorf("%v: %s", err, lastLine(msg))
+		}
+		if !got {
+			return session, err
+		}
+	}
+	return session, nil
+}
+
+// Parse reads Claude Code's stream-json and emits the thread's lines: the desk's text,
+// a short line per tool call, and an error when the turn fails. It reports whether any
+// reply came through.
+func Parse(r io.Reader, emit func(Line)) bool {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 16<<20)
+	got := false
+	for sc.Scan() {
+		var m struct {
+			Type    string `json:"type"`
+			Subtype string `json:"subtype"`
+			IsError bool   `json:"is_error"`
+			Result  string `json:"result"`
+			Message struct {
+				Content []struct {
+					Type  string          `json:"type"`
+					Text  string          `json:"text"`
+					Name  string          `json:"name"`
+					Input json.RawMessage `json:"input"`
+				} `json:"content"`
+			} `json:"message"`
+		}
+		if json.Unmarshal(sc.Bytes(), &m) != nil {
+			continue
+		}
+		switch m.Type {
+		case "assistant":
+			for _, c := range m.Message.Content {
+				switch c.Type {
+				case "text":
+					if t := strings.TrimSpace(c.Text); t != "" {
+						emit(Line{KindDesk, t})
+						got = true
+					}
+				case "tool_use":
+					// ToolSearch is Claude Code loading its own tool list: noise here.
+					if c.Name != "ToolSearch" {
+						emit(Line{KindTool, toolLine(c.Name, c.Input)})
+					}
+					got = true
+				}
+			}
+		case "result":
+			if m.IsError || (m.Subtype != "" && m.Subtype != "success") {
+				text := m.Result
+				if text == "" {
+					text = m.Subtype
+				}
+				emit(Line{KindError, "the desk's turn failed: " + text})
+			}
+		}
+	}
+	return got
+}
+
+// toolLine is "lane_open feat/login (scope src/auth/**)"-style shorthand for a call.
+func toolLine(name string, input json.RawMessage) string {
+	name = strings.TrimPrefix(name, "mcp__shepherd__")
+	var args map[string]any
+	json.Unmarshal(input, &args)
+	var parts []string
+	for _, k := range []string{"repo", "name", "lane", "agent", "id", "path", "pattern", "file_path"} {
+		if v, ok := args[k]; ok {
+			parts = append(parts, fmt.Sprint(v))
+		}
+	}
+	if sc, ok := args["scope"].([]any); ok {
+		var s []string
+		for _, g := range sc {
+			s = append(s, fmt.Sprint(g))
+		}
+		parts = append(parts, "scope "+strings.Join(s, ","))
+	}
+	for _, k := range []string{"task", "message", "answer"} {
+		if v, ok := args[k].(string); ok {
+			parts = append(parts, quoteShort(v, 70))
+		}
+	}
+	return strings.TrimSpace(name + " " + strings.Join(parts, " "))
+}
+
+func quoteShort(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > n {
+		s = s[:n-3] + "..."
+	}
+	return `"` + s + `"`
+}
+
+func lastLine(s string) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	return lines[len(lines)-1]
+}
+
+func newUUID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
