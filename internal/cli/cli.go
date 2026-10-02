@@ -64,7 +64,7 @@ func commands() []command {
 		{"hook", "Install or check the pre-push hook that keeps a lane's pushes in its scope",
 			"shepherd hook install | uninstall | status [--repo R]", runHook},
 		{"fold", "Import lanes from a coordination file, keep its view, and find stale worktrees",
-			"shepherd fold import [--repo R] [--file F] [--apply] | view [--repo R] [--write] | retire <worktree>... [--repo R] | gc [--json]", runFold},
+			"shepherd fold import [--repo R] [--file F] [--adopt BRANCH] [--apply] | view [--repo R] [--write] | retire <worktree>... [--repo R] | gc [--json]", runFold},
 		{"decision", "The questions agents hold for you: list and answer them",
 			"shepherd decision list [--all] | answer <id> \"answer\"", runDecision},
 		{"session", "Conversations had outside Shepherd: adopt, list, reopen and ask them",

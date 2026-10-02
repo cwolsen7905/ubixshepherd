@@ -237,6 +237,17 @@ func laneNameFor(branch string) string {
 // finished, match no row, or are already lanes are skipped and said so. Without apply it
 // only plans.
 func (f *Fold) Import(ctx context.Context, repoID int64, coordFile string, apply bool) (ImportPlan, error) {
+	return f.ImportAdopt(ctx, repoID, coordFile, apply, nil)
+}
+
+// ImportAdopt is Import, also turning the worktrees of the named branches into lanes
+// when no row claims them (sessions that never registered), with scopes inferred from
+// what each branch changed.
+func (f *Fold) ImportAdopt(ctx context.Context, repoID int64, coordFile string, apply bool, adopt []string) (ImportPlan, error) {
+	adopting := map[string]bool{}
+	for _, b := range adopt {
+		adopting[b] = true
+	}
 	var plan ImportPlan
 	repo, err := f.Store.Repo(ctx, repoID)
 	if err != nil {
@@ -332,7 +343,15 @@ func (f *Fold) Import(ctx context.Context, repoID int64, coordFile string, apply
 					break
 				}
 			}
-			if row < 0 {
+			if row < 0 && adopting[wt.Branch] {
+				it.Lane, it.Agent, it.Action = laneNameFor(wt.Branch), "(adopted, no row)", "import"
+				if it.Scope = inferScope(ctx, repo.Path, wt.Branch, target); len(it.Scope) == 0 {
+					it.Scope = []string{"**"}
+					it.Why = "adopted; the branch changes nothing yet, so the scope is the whole repo"
+				} else {
+					it.Why = "adopted; the scope is inferred from what the branch changed: check it"
+				}
+			} else if row < 0 {
 				it.Why = "no row in the table claims a prefix for this branch"
 			} else {
 				matched[row] = true

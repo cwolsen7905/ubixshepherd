@@ -45,6 +45,8 @@ type FoldImport struct {
 	RepoID int64  `json:"repo_id"`
 	File   string `json:"file,omitempty"`
 	Apply  bool   `json:"apply"`
+	// Adopt names branches whose worktrees become lanes though no row claims them.
+	Adopt []string `json:"adopt,omitempty"`
 }
 
 // FoldView is the body of POST /v1/fold/view, and its answer.

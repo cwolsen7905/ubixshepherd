@@ -722,7 +722,7 @@ func (s *Server) foldImport(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	plan, err := s.Fold.Import(r.Context(), req.RepoID, req.File, req.Apply)
+	plan, err := s.Fold.ImportAdopt(r.Context(), req.RepoID, req.File, req.Apply, req.Adopt)
 	if err != nil {
 		s.foldError(w, err)
 		return

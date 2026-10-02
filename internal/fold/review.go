@@ -45,6 +45,12 @@ type Review struct {
 // ReviewRepo judges each of a repo's worktrees (lanes or not): finished, live, or
 // unclear. It changes nothing.
 func (f *Fold) ReviewRepo(ctx context.Context, repoID int64) ([]Review, error) {
+	return f.review(ctx, repoID, "", true)
+}
+
+// review judges the repo's worktrees, or only the one at only. fetch refreshes the
+// remote first; a retire skips it, since fetching cannot make finished work unfinished.
+func (f *Fold) review(ctx context.Context, repoID int64, only string, fetch bool) ([]Review, error) {
 	repo, err := f.Store.Repo(ctx, repoID)
 	if err != nil {
 		return nil, err
@@ -53,7 +59,9 @@ func (f *Fold) ReviewRepo(ctx context.Context, repoID int64) ([]Review, error) {
 	if err != nil {
 		return nil, err
 	}
-	git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
+	if fetch {
+		git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
+	}
 	prof := f.Config.Profile(repo.Name)
 	target := prof.BaseBranch
 	if git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+target) {
@@ -77,6 +85,9 @@ func (f *Fold) ReviewRepo(ctx context.Context, repoID int64) ([]Review, error) {
 			continue
 		}
 		canon, _ := paths.Canonical(wt.Path)
+		if only != "" && canon != only {
+			continue
+		}
 		r := Review{Branch: wt.Branch, Worktree: canon}
 		if l, ok := laneAt[canon]; ok {
 			r.Lane = l.Name
@@ -195,11 +206,11 @@ func coordLog(repo store.Repo, file string) string {
 // Retire removes a finished worktree that is not an open lane. It keeps the branch, and
 // refuses anything ReviewRepo does not call finished.
 func (f *Fold) Retire(ctx context.Context, repoID int64, worktree string) (Review, error) {
-	reviews, err := f.ReviewRepo(ctx, repoID)
+	canon, _ := paths.Canonical(worktree)
+	reviews, err := f.review(ctx, repoID, canon, false)
 	if err != nil {
 		return Review{}, err
 	}
-	canon, _ := paths.Canonical(worktree)
 	for _, r := range reviews {
 		if r.Worktree != canon {
 			continue
