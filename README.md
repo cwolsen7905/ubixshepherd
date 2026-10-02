@@ -10,8 +10,9 @@ are yours for you, and reports back in one thread.
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
 > In so far: the daemon, its API, the store, config and repo profiles, workspaces (M1),
-> and from M2 lanes, scope leases and the pre-push hook. Tag reservations, the generated
-> `AGENTS-COORD.md`, import and everything after them are still design.
+> and from M2 lanes, scope leases and the pre-push hook, plus a first slice of the MCP
+> server (M4). Tag reservations, the generated `AGENTS-COORD.md`, import, and everything
+> after them are still design.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
@@ -61,6 +62,20 @@ from outside a lane are left alone, and `git push --no-verify` skips the check o
 worktree with uncommitted changes, and a branch git cannot see merged into the base. A
 squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
 keeps the branch. `fold gc` only lists; it removes nothing.
+
+### From Claude Code (MCP)
+
+`shepherd mcp` serves Shepherd's operator tools over MCP on stdio: `shepherd_status`,
+`shepherd_where`, `lane_list`, `lane_open`, `lane_close` and `fold_gc`. Each runs the CLI
+command of the same name. Register it once, then start Claude Code at the workspace root
+and ask in plain words ("open a lane in myrepo for the login fix, scoped to src/auth"):
+
+```sh
+claude mcp add --scope user shepherd -- ~/.local/bin/shepherd mcp   # or wherever the binary is
+cd ~/git && claude
+```
+
+Any MCP client that can start a stdio server works the same way.
 
 ### The daemon
 

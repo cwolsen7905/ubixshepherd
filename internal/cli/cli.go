@@ -59,6 +59,8 @@ func commands() []command {
 		{"hook", "Install or check the pre-push hook that keeps a lane's pushes in its scope",
 			"shepherd hook install | uninstall | status [--repo R]", runHook},
 		{"fold", "Find stale worktrees across the workspace", "shepherd fold gc [--json]", runFold},
+		{"mcp", "Serve Shepherd's operator tools over MCP on stdio, for Claude Code and other agents",
+			"shepherd mcp   (register: claude mcp add --scope user shepherd -- shepherd mcp)", runMCP},
 		{"status", "Show the daemon, its workspaces, and where you are", "shepherd status [--json]", runStatus},
 		{"where", "Show the workspace, repo and lane for a directory", "shepherd where [dir] [--json]", runWhere},
 		{"version", "Print the version", "shepherd version", runVersion},
