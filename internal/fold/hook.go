@@ -57,6 +57,12 @@ func (f *Fold) CheckPush(ctx context.Context, lane *store.Lane, dir string, refs
 		return Verdict{OK: true}, nil
 	}
 	v := Verdict{OK: true, Lane: lane.Name}
+	if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
+		v.OK = false
+		v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) is going in lane %s; agents Shepherd starts never push. Review the lane's commits when it ends, then push yourself",
+			running[0].ID, running[0].Agent, lane.Name))
+		return v, nil
+	}
 	for _, r := range refs {
 		switch {
 		case zero(r.LocalSHA):

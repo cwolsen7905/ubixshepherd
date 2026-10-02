@@ -32,6 +32,8 @@ type Daemon struct {
 	// Listen is a loopback host:port. Port 0 picks a free port; clients find it in the
 	// daemon's runtime file.
 	Listen string `yaml:"listen" json:"listen"`
+	// MaxRuns is how many agents may run at once on this machine.
+	MaxRuns int `yaml:"max_runs" json:"max_runs"`
 }
 
 // Branch models.
@@ -76,7 +78,7 @@ type Autonomy struct {
 func Default() Config {
 	yes := true
 	return Config{
-		Daemon: Daemon{Listen: "127.0.0.1:0"},
+		Daemon: Daemon{Listen: "127.0.0.1:0", MaxRuns: 4},
 		Defaults: Profile{
 			BaseBranch:  "main",
 			BranchModel: Trunk,
@@ -114,6 +116,9 @@ func Parse(b []byte) (Config, error) {
 	if file.Daemon.Listen != "" {
 		c.Daemon.Listen = file.Daemon.Listen
 	}
+	if file.Daemon.MaxRuns != 0 {
+		c.Daemon.MaxRuns = file.Daemon.MaxRuns
+	}
 	c.Defaults = merge(c.Defaults, file.Defaults)
 	c.Repos = file.Repos
 	return c, c.Validate()
@@ -128,6 +133,9 @@ func (c Config) Validate() error {
 	} else if ip := net.ParseIP(host); host != "localhost" && (ip == nil || !ip.IsLoopback()) {
 		// Authentication is a local token today; logins come with the hosted service.
 		errs = append(errs, fmt.Errorf("daemon.listen: %q is not a loopback address", c.Daemon.Listen))
+	}
+	if c.Daemon.MaxRuns < 1 {
+		errs = append(errs, fmt.Errorf("daemon.max_runs: %d; at least 1", c.Daemon.MaxRuns))
 	}
 	errs = append(errs, c.Defaults.validate("defaults")...)
 	for name := range c.Repos {

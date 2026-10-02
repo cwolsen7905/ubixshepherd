@@ -61,6 +61,41 @@ type Lane struct {
 	Closed  *time.Time `json:"closed,omitempty"`
 }
 
+// Run states.
+const (
+	RunRunning     = "running"
+	RunSucceeded   = "succeeded"
+	RunFailed      = "failed"
+	RunStopped     = "stopped"
+	RunInterrupted = "interrupted" // the daemon stopped while it ran
+)
+
+// Run is one agent started in one lane, and what came of it.
+type Run struct {
+	ID     int64  `json:"id"`
+	LaneID int64  `json:"lane_id"`
+	Agent  string `json:"agent"`
+	Model  string `json:"model,omitempty"`
+	Prompt string `json:"prompt"`
+	State  string `json:"state"`
+	PID    int    `json:"pid,omitempty"`
+	// Log is the path of the run's output, redacted.
+	Log      string `json:"log"`
+	StartSHA string `json:"start_sha"`
+	EndSHA   string `json:"end_sha,omitempty"`
+	// Commits made during the run, and any files they changed outside the lane's scope.
+	Commits  int        `json:"commits"`
+	Outside  []string   `json:"outside,omitempty"`
+	ExitCode *int       `json:"exit_code,omitempty"`
+	Error    string     `json:"error,omitempty"`
+	Started  time.Time  `json:"started"`
+	Ended    *time.Time `json:"ended,omitempty"`
+	// Session is the agent's own conversation id; a run that continues another shares
+	// it, and Parent is the run it follows.
+	Session string `json:"session,omitempty"`
+	Parent  int64  `json:"parent,omitempty"`
+}
+
 // Store is Shepherd's state.
 type Store interface {
 	// SaveWorkspace creates the workspace at ws.Path, or renames the one already there,
@@ -78,6 +113,12 @@ type Store interface {
 	SetLaneState(ctx context.Context, id int64, state string) error
 	// DeleteLane forgets a lane that never opened.
 	DeleteLane(ctx context.Context, id int64) error
+
+	CreateRun(ctx context.Context, r Run) (Run, error)
+	UpdateRun(ctx context.Context, r Run) error
+	Run(ctx context.Context, id int64) (Run, error)
+	// Runs returns the newest first; laneID 0 means every lane, state "" every state.
+	Runs(ctx context.Context, laneID int64, state string, limit int) ([]Run, error)
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

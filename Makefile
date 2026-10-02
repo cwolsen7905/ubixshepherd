@@ -22,7 +22,8 @@ install: build
 	@cp bin/shepherd $(PREFIX)/.shepherd.new && mv -f $(PREFIX)/.shepherd.new $(PREFIX)/shepherd
 	@echo "installed $(PREFIX)/shepherd ($(VERSION))"
 	@if SHEPHERD_NO_AUTOSTART=1 $(PREFIX)/shepherd daemon status | grep -q 'running, pid'; then \
-		$(PREFIX)/shepherd daemon restart; \
+		$(PREFIX)/shepherd daemon restart && \
+		echo "the daemon runs in the background now; watch it: tail -f $${SHEPHERD_HOME:-$$HOME/.shepherd}/daemon.log"; \
 	fi
 
 test:

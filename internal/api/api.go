@@ -23,7 +23,28 @@ const (
 	PathLanes      = "/v1/lanes"
 	PathFoldGC     = "/v1/fold/gc"
 	PathPrePush    = "/v1/hook/pre-push"
+	PathRuns       = "/v1/runs"
 )
+
+func PathRun(id int64) string     { return fmt.Sprintf("%s/%d", PathRuns, id) }
+func PathRunLog(id int64) string  { return fmt.Sprintf("%s/%d/log", PathRuns, id) }
+func PathRunStop(id int64) string { return fmt.Sprintf("%s/%d/stop", PathRuns, id) }
+
+// RunView is a run with its lane's and repo's names.
+type RunView struct {
+	store.Run
+	Lane     string `json:"lane"`
+	Repo     string `json:"repo"`
+	Worktree string `json:"worktree"`
+}
+
+// RunLog answers GET /v1/runs/{id}/log?offset=N: the next piece of the log.
+type RunLog struct {
+	Data   string `json:"data"`
+	Offset int64  `json:"offset"`
+	// Done: the run has ended and Data reaches the end of its log.
+	Done bool `json:"done"`
+}
 
 // PathRepoHook is POST /v1/repos/{id}/hook.
 func PathRepoHook(id int64) string { return fmt.Sprintf("/v1/repos/%d/hook", id) }

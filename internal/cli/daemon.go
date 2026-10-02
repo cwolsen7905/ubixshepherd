@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/service"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
@@ -65,6 +67,12 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 // daemonRun runs the daemon in the foreground until interrupted or asked to stop.
 func daemonRun(ctx context.Context, env Env) error {
 	l := env.Layout
+	if c, err := connect(ctx, env); err == nil {
+		st, _ := c.Status(ctx)
+		return fmt.Errorf("a daemon is already running (pid %d, version %s); a command or make install started it in the background.\n"+
+			"  watch it:        tail -f %s\n"+
+			"  or run it here:  shepherd daemon stop && shepherd daemon", st.PID, st.Version, l.Log())
+	}
 	if err := os.MkdirAll(l.Home, 0o700); err != nil {
 		return err
 	}
@@ -87,6 +95,7 @@ func daemonRun(ctx context.Context, env Env) error {
 		return err
 	}
 	srv.Fold.Exe = env.Exe
+	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log}
 	return srv.Run(ctx, l.Runtime())
 }
 

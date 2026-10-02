@@ -37,6 +37,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneList(ctx, env, args[1:])
 	case "close":
 		return laneClose(ctx, env, args[1:])
+	case "run":
+		return laneRun(ctx, env, args[1:])
 	}
 	return errUsage
 }

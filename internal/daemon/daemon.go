@@ -22,6 +22,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -37,6 +38,7 @@ type Server struct {
 	Token      string
 	Log        *slog.Logger
 	Fold       *fold.Fold
+	Runner     *dispatch.Runner
 	started    time.Time
 	stop       chan struct{}
 	stopOnce   sync.Once
@@ -82,6 +84,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathFoldGC, s.foldGC)
 	mux.HandleFunc("POST "+api.PathPrePush, s.prePush)
 	mux.HandleFunc("POST /v1/repos/{id}/hook", s.repoHook)
+	mux.HandleFunc("POST "+api.PathRuns, s.startRun)
+	mux.HandleFunc("GET "+api.PathRuns, s.listRuns)
+	mux.HandleFunc("GET "+api.PathRuns+"/{id}", s.getRun)
+	mux.HandleFunc("GET "+api.PathRuns+"/{id}/log", s.runLog)
+	mux.HandleFunc("POST "+api.PathRuns+"/{id}/stop", s.stopRun)
 	return s.logRequests(s.auth(mux))
 }
 
@@ -445,11 +452,119 @@ func (s *Server) repoHook(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, st)
 }
 
+func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
+	var req dispatch.StartRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	run, err := s.Runner.Start(r.Context(), req)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	view, err := s.runView(r.Context(), run)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	laneID, _ := strconv.ParseInt(q.Get("lane_id"), 10, 64)
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	runs, err := s.Store.Runs(r.Context(), laneID, q.Get("state"), limit)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := []api.RunView{}
+	for _, run := range runs {
+		v, err := s.runView(r.Context(), run)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	v, err := s.runView(r.Context(), run)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
+}
+
+func (s *Server) runLog(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	offset, _ := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	data, next, err := dispatch.ReadLog(run.Log, offset, 64<<10)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		s.fail(w, err)
+		return
+	}
+	done := run.State != store.RunRunning && len(data) < 64<<10
+	writeJSON(w, http.StatusOK, api.RunLog{Data: string(data), Offset: next, Done: done})
+}
+
+func (s *Server) stopRun(w http.ResponseWriter, r *http.Request) {
+	run, ok := s.pathRun(w, r)
+	if !ok {
+		return
+	}
+	if err := s.Runner.Stop(r.Context(), run.ID); err != nil {
+		s.foldError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, struct{}{})
+}
+
+func (s *Server) pathRun(w http.ResponseWriter, r *http.Request) (store.Run, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return store.Run{}, false
+	}
+	run, err := s.Store.Run(r.Context(), id)
+	if err != nil {
+		s.foldError(w, err)
+		return run, false
+	}
+	return run, true
+}
+
+func (s *Server) runView(ctx context.Context, run store.Run) (api.RunView, error) {
+	lane, err := s.Store.Lane(ctx, run.LaneID)
+	if err != nil {
+		return api.RunView{}, err
+	}
+	repo, err := s.Store.Repo(ctx, lane.RepoID)
+	if err != nil {
+		return api.RunView{}, err
+	}
+	return api.RunView{Run: run, Lane: lane.Name, Repo: repo.Name, Worktree: lane.Worktree}, nil
+}
+
 // foldError answers a refusal with 409 and its reason, a missing lane or repo with 404,
 // and anything else as a failure.
 func (s *Server) foldError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, fold.ErrRefused):
+	case errors.Is(err, fold.ErrRefused), errors.Is(err, dispatch.ErrRefused):
 		writeError(w, http.StatusConflict, err)
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, err)
@@ -519,6 +634,16 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	}
 	defer os.Remove(runtimePath)
 
+	if s.Runner != nil {
+		if err := s.Runner.Recover(ctx); err != nil {
+			return err
+		}
+		defer func() {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			s.Runner.Shutdown(stopCtx)
+		}()
+	}
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()

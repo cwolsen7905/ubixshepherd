@@ -15,6 +15,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 )
 
@@ -92,6 +93,32 @@ func (c *Client) PrePush(ctx context.Context, req api.PrePush) (fold.Verdict, er
 func (c *Client) RepoHook(ctx context.Context, repoID int64, action string) (fold.HookState, error) {
 	var out fold.HookState
 	return out, c.do(ctx, http.MethodPost, api.PathRepoHook(repoID), api.RepoHook{Action: action}, &out)
+}
+
+func (c *Client) StartRun(ctx context.Context, req dispatch.StartRequest) (api.RunView, error) {
+	var out api.RunView
+	return out, c.do(ctx, http.MethodPost, api.PathRuns, req, &out)
+}
+
+func (c *Client) Runs(ctx context.Context, laneID int64, state string, limit int) ([]api.RunView, error) {
+	var out []api.RunView
+	q := fmt.Sprintf("%s?lane_id=%d&state=%s&limit=%d", api.PathRuns, laneID, url.QueryEscape(state), limit)
+	return out, c.do(ctx, http.MethodGet, q, nil, &out)
+}
+
+func (c *Client) Run(ctx context.Context, id int64) (api.RunView, error) {
+	var out api.RunView
+	return out, c.do(ctx, http.MethodGet, api.PathRun(id), nil, &out)
+}
+
+func (c *Client) RunLog(ctx context.Context, id, offset int64) (api.RunLog, error) {
+	var out api.RunLog
+	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?offset=%d", api.PathRunLog(id), offset), nil, &out)
+}
+
+func (c *Client) StopRun(ctx context.Context, id int64) error {
+	var out struct{}
+	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)
 }
 
 func (c *Client) Workspaces(ctx context.Context) ([]api.WorkspaceDetail, error) {
