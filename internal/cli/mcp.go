@@ -224,6 +224,32 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "request_list",
+			Description: "Requests between lanes: agents asking each other, through Shepherd, for answers, hand-offs and reviews. needs_routing ones wait for you to say which lane (and agent).",
+			InputSchema: obj(map[string]any{}),
+			args:        func(map[string]any) ([]string, error) { return []string{"request", "list"}, nil },
+		},
+		{
+			Name:        "request_route",
+			Description: "Route a request Shepherd could not route by rule: name the target lane (open it first with lane_open if needed) and optionally the agent. Shepherd starts or continues that agent and carries the reply back to the asker.",
+			InputSchema: obj(map[string]any{
+				"id":    map[string]any{"type": "integer"},
+				"lane":  map[string]any{"type": "string"},
+				"agent": map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor"}},
+			}, "id", "lane"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				out := []string{"request", "route", fmt.Sprint(int64(id)), "--lane", str(a, "lane")}
+				if ag := str(a, "agent"); ag != "" {
+					out = append(out, "--agent", ag)
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "fold_gc",
 			Description: "List worktrees across the workspace that look finished (merged, branch gone, missing) and lanes whose worktree is gone. Changes nothing.",
 			InputSchema: obj(map[string]any{}),

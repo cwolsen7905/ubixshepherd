@@ -119,15 +119,27 @@ Claude Code and Copilot get the tools by flag; Claude Code sees only Shepherd's 
 tools, so an operator server you registered for yourself never reaches an agent. Cursor
 reads MCP servers only from its config file, so it needs one step, once:
 `shepherd agents setup cursor` adds a `shepherd-worker` entry to `~/.cursor/mcp.json` and
-leaves the rest alone. `ask_shepherd` requests are recorded; routing them to the right
-lane comes next.
+leaves the rest alone.
+
+**Agents talk to each other through Shepherd.** `ask_shepherd` sends a question, a
+hand-off or a review request to another lane; the asking agent ends its turn, Shepherd
+continues the target lane's conversation with it, and the reply (the target's `report`)
+comes back into the asker's conversation. A review goes to a different provider than
+the author, in a fresh session, and may not change files. A request Shepherd cannot
+route by rule (no lane named, or a lane with no agent yet) waits for the front desk or
+you; chains are capped at three requests.
+
+```sh
+shepherd request list                  # requests between lanes, and their replies
+shepherd request route 4 --lane docs/api --agent cursor   # route one Shepherd could not
+```
 
 ### From Claude Code (MCP)
 
 `shepherd mcp` serves Shepherd's operator tools over MCP on stdio: `shepherd_status`,
 `shepherd_where`, `lane_list`, `lane_open`, `lane_close`, `lane_run`, `run_list`,
-`run_status`, `run_continue`, `run_stop`, `decision_list`, `decision_answer` and
-`fold_gc`. (`shepherd mcp --worker` is the agents' own set, described above.) Each runs the CLI
+`run_status`, `run_continue`, `run_stop`, `decision_list`, `decision_answer`,
+`request_list`, `request_route` and `fold_gc`. (`shepherd mcp --worker` is the agents' own set, described above.) Each runs the CLI
 command of the same name. Register it once, then start Claude Code at the workspace root
 and ask in plain words ("open a lane in myrepo for the login fix, scoped to src/auth"):
 

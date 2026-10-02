@@ -62,9 +62,10 @@ type Runner struct {
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
-	mu    sync.Mutex
-	procs map[int64]*proc
-	wg    sync.WaitGroup
+	mu      sync.Mutex
+	procs   map[int64]*proc
+	wg      sync.WaitGroup
+	routeMu sync.Mutex
 }
 
 type proc struct {
@@ -209,7 +210,7 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		worker = r.Exe
 	}
 	if !resume {
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "")
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", ad.Note)
 	}
 	cmd := exec.Command(bin, ad.Args(Opts{Prompt: prompt, Model: req.Model, Gate: gate, Worktree: lane.Worktree,
 		Session: session, Resume: resume, Worker: worker})...)
@@ -310,6 +311,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	}
 	r.Log.Info("run ended", "run", run.ID, "state", run.State, "exit", code, "commits", run.Commits, "outside", len(run.Outside))
 	r.deliverAnswers(ctx, run.ID)
+	r.Route(ctx)
 }
 
 // Answer records a person's answer to a decision and carries it back into the asking
@@ -381,11 +383,8 @@ func (r *Runner) Ask(ctx context.Context, d store.Decision) (store.Decision, err
 	return d, err
 }
 
-// Event kinds and report statuses.
-const (
-	EventReport      = "report"
-	EventAskShepherd = "ask_shepherd"
-)
+// EventReport is an agent's report; its status is progress, done or blocked.
+const EventReport = "report"
 
 var reportStatus = map[string]bool{"progress": true, "done": true, "blocked": true}
 
@@ -394,7 +393,7 @@ func (r *Runner) Record(ctx context.Context, e store.Event) (store.Event, error)
 	switch {
 	case e.Kind == EventReport && !reportStatus[e.Status]:
 		return e, refuse("report status %q: want progress, done or blocked", e.Status)
-	case e.Kind != EventReport && e.Kind != EventAskShepherd:
+	case e.Kind != EventReport:
 		return e, refuse("event kind %q", e.Kind)
 	case strings.TrimSpace(e.Text) == "":
 		return e, refuse("say something")

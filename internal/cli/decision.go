@@ -144,19 +144,90 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 		}
 		fmt.Fprintf(env.Stdout, "Held for the person as decision %d. End your turn now with a one-line summary of where you are; Shepherd continues this conversation with the answer.\n", d.ID)
 	case "ask-shepherd":
-		text := fmt.Sprintf("[%s", *kind)
-		if *lane != "" {
-			text += " for lane " + *lane
-		}
-		text += "] " + pos[0]
-		if _, err := c.AddEvent(ctx, runID, store.Event{Kind: dispatch.EventAskShepherd, Status: *kind, Text: text}); err != nil {
+		q, err := c.RequestHelp(ctx, runID, store.Request{Kind: *kind, Lane: *lane, Message: pos[0]})
+		if err != nil {
 			return err
 		}
-		fmt.Fprintln(env.Stdout, "Recorded for Shepherd to route. End your turn now with a one-line summary; Shepherd continues this conversation with the reply.")
+		fmt.Fprintf(env.Stdout, "Request %d recorded; Shepherd routes it when you end your turn. End it now with a one-line summary; Shepherd continues this conversation with the reply.\n", q.ID)
 	default:
 		return errUsage
 	}
 	return nil
+}
+
+// shepherd request list | route: requests between lanes, and routing the ones Shepherd
+// cannot route by rule.
+func runRequest(ctx context.Context, env Env, args []string) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	fs := flags("request "+args[0], env)
+	all := fs.Bool("all", false, "list finished requests too")
+	lane := fs.String("lane", "", "route: the target lane")
+	agent := fs.String("agent", "", "route: the agent to ask (default: the lane's, or another provider for a review)")
+	pos, err := parse(fs, args[1:])
+	if err != nil {
+		return err
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "list", "ls":
+		states := strings.Join([]string{store.RequestNeedsRouting, store.RequestPending, store.RequestRouted, store.RequestReplyReady}, ",")
+		if *all {
+			states = ""
+		}
+		reqs, err := c.Requests(ctx, states)
+		if err != nil {
+			return err
+		}
+		if len(reqs) == 0 {
+			fmt.Fprintln(env.Stdout, "No requests between lanes.")
+			return nil
+		}
+		w := env.Stdout
+		for _, q := range reqs {
+			fmt.Fprintf(w, "request %d  %s  %s from %s in lane %s (%s)", q.ID, q.State, q.Kind, q.FromAgent, q.FromLane, q.Repo)
+			if q.Lane != "" {
+				fmt.Fprintf(w, ", for lane %s", q.Lane)
+			}
+			if q.Agent != "" {
+				fmt.Fprintf(w, " (%s)", q.Agent)
+			}
+			fmt.Fprintf(w, "\n  %s\n", oneLine(q.Message, 110))
+			if q.Note != "" {
+				fmt.Fprintf(w, "  note: %s\n", q.Note)
+			}
+			if q.Reply != "" {
+				fmt.Fprintf(w, "  reply: %s\n", oneLine(q.Reply, 110))
+			}
+		}
+		return nil
+	case "route":
+		if len(pos) != 1 || *lane == "" {
+			return errUsage
+		}
+		id, err := strconv.ParseInt(pos[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("request id %q is not a number", pos[0])
+		}
+		q, err := c.RouteRequest(ctx, id, *lane, *agent)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "request %d is %s", q.ID, q.State)
+		if q.TargetRun != 0 {
+			fmt.Fprintf(env.Stdout, ": %s is on it as run %d", q.Agent, q.TargetRun)
+		}
+		if q.Note != "" {
+			fmt.Fprintf(env.Stdout, " (%s)", q.Note)
+		}
+		fmt.Fprintln(env.Stdout)
+		return nil
+	}
+	return errUsage
 }
 
 // shepherd agents setup cursor: give Cursor the worker tools.

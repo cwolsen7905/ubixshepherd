@@ -1,0 +1,337 @@
+package dispatch
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/ubixsys/ubixshepherd/internal/store"
+)
+
+// Request kinds.
+const (
+	KindQuestion = "question"
+	KindHandoff  = "handoff"
+	KindReview   = "review"
+)
+
+// MaxDepth caps a chain of requests: an agent answering one may ask in turn, but not
+// without end.
+const MaxDepth = 3
+
+// reviewerOrder is who reviews, first installed agent that is not the author.
+var reviewerOrder = []string{"claude", "copilot", "cursor"}
+
+// RequestHelp records an agent's ask_shepherd and routes it when it can. The asking
+// agent ends its turn; the reply continues its conversation.
+func (r *Runner) RequestHelp(ctx context.Context, q store.Request) (store.Request, error) {
+	switch q.Kind {
+	case KindQuestion, KindHandoff, KindReview:
+	default:
+		return q, refuse("request kind %q: want question, handoff or review", q.Kind)
+	}
+	if strings.TrimSpace(q.Message) == "" {
+		return q, refuse("say what you need")
+	}
+	if _, err := r.Store.Run(ctx, q.FromRun); err != nil {
+		return q, err
+	}
+	depth, err := r.depthOf(ctx, q.FromRun)
+	if err != nil {
+		return q, err
+	}
+	if depth+1 > MaxDepth {
+		return q, refuse("this would be request %d in one chain (at most %d); use ask_human instead", depth+1, MaxDepth)
+	}
+	q.Depth, q.State = depth+1, store.RequestPending
+	q, err = r.Store.CreateRequest(ctx, q)
+	if err != nil {
+		return q, err
+	}
+	r.Log.Info("request recorded", "request", q.ID, "kind", q.Kind, "from_run", q.FromRun, "lane", q.Lane)
+	go r.Route(context.Background())
+	return q, nil
+}
+
+// depthOf is how deep in a chain of requests a run is: 0 for a run nobody asked for.
+// A run started for a request, or continuing one that was, carries that depth.
+func (r *Runner) depthOf(ctx context.Context, runID int64) (int, error) {
+	reqs, err := r.Store.Requests(ctx)
+	if err != nil {
+		return 0, err
+	}
+	byTarget := map[int64]int{}
+	for _, q := range reqs {
+		if q.TargetRun != 0 {
+			byTarget[q.TargetRun] = q.Depth
+		}
+	}
+	for id, hops := runID, 0; id != 0 && hops < 100; hops++ {
+		if d, ok := byTarget[id]; ok {
+			return d, nil
+		}
+		run, err := r.Store.Run(ctx, id)
+		if err != nil {
+			return 0, err
+		}
+		id = run.Parent
+	}
+	return 0, nil
+}
+
+// RouteRequest is the front desk's or the person's say on a request Shepherd could not
+// route by rule: which lane, and optionally which agent.
+func (r *Runner) RouteRequest(ctx context.Context, id int64, lane, agent string) (store.Request, error) {
+	q, err := r.Store.Request(ctx, id)
+	if err != nil {
+		return q, err
+	}
+	if q.State != store.RequestNeedsRouting && q.State != store.RequestPending {
+		return q, refuse("request %d is %s", q.ID, q.State)
+	}
+	if agent != "" {
+		if _, err := AdapterFor(agent); err != nil {
+			return q, refuse("%v", err)
+		}
+	}
+	q.Lane, q.Agent, q.State, q.Note = lane, agent, store.RequestPending, ""
+	if err := r.Store.UpdateRequest(ctx, q); err != nil {
+		return q, err
+	}
+	r.Route(ctx)
+	return r.Store.Request(ctx, id)
+}
+
+// Route moves every open request on as far as it can go now: to its target lane, from
+// the target's reply back into the asker's conversation. It runs whenever a run ends.
+func (r *Runner) Route(ctx context.Context) {
+	r.routeMu.Lock()
+	defer r.routeMu.Unlock()
+	reqs, err := r.Store.Requests(ctx, store.RequestPending, store.RequestRouted, store.RequestReplyReady)
+	if err != nil {
+		r.Log.Error("load requests", "err", err)
+		return
+	}
+	for _, q := range reqs {
+		if q.State == store.RequestPending {
+			q = r.dispatchRequest(ctx, q)
+		}
+		if q.State == store.RequestRouted {
+			q = r.collectReply(ctx, q)
+		}
+		if q.State == store.RequestReplyReady {
+			r.returnReply(ctx, q)
+		}
+	}
+}
+
+func (r *Runner) save(ctx context.Context, q store.Request) store.Request {
+	if err := r.Store.UpdateRequest(ctx, q); err != nil {
+		r.Log.Error("save request", "request", q.ID, "err", err)
+	}
+	return q
+}
+
+func (r *Runner) needsRouting(ctx context.Context, q store.Request, why string) store.Request {
+	q.State, q.Note = store.RequestNeedsRouting, why
+	r.Log.Info("request needs routing", "request", q.ID, "why", why)
+	return r.save(ctx, q)
+}
+
+// dispatchRequest starts the target agent on a pending request, once the asker has
+// ended its turn and the target lane is free.
+func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Request {
+	from, err := r.Store.Run(ctx, q.FromRun)
+	if err != nil || from.State == store.RunRunning {
+		return q
+	}
+	fromLane, err := r.Store.Lane(ctx, from.LaneID)
+	if err != nil {
+		return q
+	}
+	laneName := q.Lane
+	if laneName == "" && q.Kind == KindReview {
+		laneName = fromLane.Name
+	}
+	if laneName == "" {
+		return r.needsRouting(ctx, q, "no lane named; say which lane it is for")
+	}
+	target, why, err := r.findLane(ctx, fromLane, laneName)
+	if err != nil {
+		return q
+	}
+	if why != "" {
+		return r.needsRouting(ctx, q, why)
+	}
+	if busy, _ := r.Store.Runs(ctx, target.ID, store.RunRunning, 1); len(busy) > 0 {
+		return q // wait for the lane to be free
+	}
+
+	req := StartRequest{LaneID: target.ID, Agent: q.Agent}
+	switch {
+	case q.Kind == KindReview && req.Agent == "":
+		req.Agent = r.reviewer(from.Agent)
+		if req.Agent == "" {
+			return r.needsRouting(ctx, q, "no agent other than "+from.Agent+" is installed to review")
+		}
+		req.NewSession = true
+	case q.Kind == KindReview:
+		req.NewSession = true
+	case req.Agent == "":
+		prev, _ := r.Store.Runs(ctx, target.ID, "", 1)
+		if len(prev) == 0 {
+			return r.needsRouting(ctx, q, "lane "+target.Name+" has no agent yet; say which one")
+		}
+		req.Agent = prev[0].Agent
+	}
+	req.Prompt = requestPrompt(q, from.Agent, fromLane.Name, target)
+	run, err := r.Start(ctx, req)
+	if errors.Is(err, ErrRefused) && strings.Contains(err.Error(), "max_runs") {
+		return q // try again when a run ends
+	}
+	if err != nil {
+		q.State, q.Note = store.RequestFailed, err.Error()
+		r.Log.Error("route request", "request", q.ID, "err", err)
+		return r.save(ctx, q)
+	}
+	q.State, q.Lane, q.Agent, q.TargetRun, q.Note = store.RequestRouted, target.Name, req.Agent, run.ID, ""
+	r.Log.Info("request routed", "request", q.ID, "lane", target.Name, "agent", req.Agent, "run", run.ID)
+	return r.save(ctx, q)
+}
+
+// findLane finds an open lane by name in the asker's workspace, preferring the asker's
+// repo. why is set when the name does not settle it.
+func (r *Runner) findLane(ctx context.Context, from store.Lane, name string) (store.Lane, string, error) {
+	fromRepo, err := r.Store.Repo(ctx, from.RepoID)
+	if err != nil {
+		return store.Lane{}, "", err
+	}
+	repos, err := r.Store.Repos(ctx, fromRepo.WorkspaceID)
+	if err != nil {
+		return store.Lane{}, "", err
+	}
+	var found []store.Lane
+	for _, rp := range repos {
+		lanes, err := r.Store.Lanes(ctx, rp.ID)
+		if err != nil {
+			return store.Lane{}, "", err
+		}
+		for _, l := range lanes {
+			if l.Name == name && l.State == store.LaneOpen {
+				if rp.ID == fromRepo.ID {
+					return l, "", nil
+				}
+				found = append(found, l)
+			}
+		}
+	}
+	switch len(found) {
+	case 0:
+		return store.Lane{}, "no open lane " + name, nil
+	case 1:
+		return found[0], "", nil
+	}
+	return store.Lane{}, fmt.Sprintf("%d open lanes are named %s; say which repo", len(found), name), nil
+}
+
+// reviewer is the first installed agent that is not the author: a review by a second
+// provider catches what the first one's habits hide.
+func (r *Runner) reviewer(author string) string {
+	look := r.lookPath
+	if look == nil {
+		look = exec.LookPath
+	}
+	for _, name := range reviewerOrder {
+		if name == author {
+			continue
+		}
+		if _, err := look(adapters[name].Bin); err == nil {
+			return name
+		}
+	}
+	return ""
+}
+
+func requestPrompt(q store.Request, fromAgent, fromLane string, target store.Lane) string {
+	head := fmt.Sprintf("[%s from %s in lane %s, through Shepherd (request %d)]\n%s\n\n", strings.ToUpper(q.Kind[:1])+q.Kind[1:], fromAgent, fromLane, q.ID, q.Message)
+	switch q.Kind {
+	case KindQuestion:
+		return head + "Answer it. Change files only if the question asks you to. Then call report with status done and your answer as the summary."
+	case KindHandoff:
+		return head + "Do it within your lane's scope and commit. Then call report with status done and what you did, or blocked and why."
+	}
+	return head + fmt.Sprintf("Review this lane's work: git log --oneline %s..HEAD, and its diff (git diff %s...HEAD). Do not change any files. "+
+		"Then call report with status done and your findings as the summary: numbered, most important first, each with the file and line, or \"no findings\".", target.Base, target.Base)
+}
+
+// collectReply takes the target run's report, or the end of its output, once it ends.
+func (r *Runner) collectReply(ctx context.Context, q store.Request) store.Request {
+	run, err := r.Store.Run(ctx, q.TargetRun)
+	if err != nil || run.State == store.RunRunning {
+		return q
+	}
+	reply := ""
+	if events, err := r.Store.Events(ctx, run.ID); err == nil {
+		for _, e := range events {
+			if e.Kind == EventReport && (e.Status == "done" || e.Status == "blocked") {
+				reply = e.Text
+				if e.Status == "blocked" {
+					reply = "Blocked: " + reply
+				}
+			}
+		}
+	}
+	if reply == "" {
+		reply = logTail(run.Log, 3000)
+		if reply == "" {
+			reply = fmt.Sprintf("The %s run ended (%s) without a reply.", run.Agent, run.State)
+		}
+	}
+	q.State, q.Reply = store.RequestReplyReady, reply
+	return r.save(ctx, q)
+}
+
+// returnReply continues the asker's conversation with the reply, once its lane is free.
+func (r *Runner) returnReply(ctx context.Context, q store.Request) {
+	from, err := r.Store.Run(ctx, q.FromRun)
+	if err != nil {
+		return
+	}
+	if busy, _ := r.Store.Runs(ctx, from.LaneID, store.RunRunning, 1); len(busy) > 0 {
+		return
+	}
+	prompt := fmt.Sprintf("[Reply to your %s (request %d), from %s in lane %s]\n%s\n\nContinue your work with that.", q.Kind, q.ID, q.Agent, q.Lane, q.Reply)
+	next, err := r.Start(ctx, StartRequest{Continue: q.FromRun, Prompt: prompt})
+	if err != nil {
+		if !strings.Contains(err.Error(), "max_runs") {
+			q.State, q.Note = store.RequestFailed, "could not return the reply: "+err.Error()
+			r.save(ctx, q)
+		}
+		return
+	}
+	q.State, q.ReplyRun = store.RequestReplied, next.ID
+	r.save(ctx, q)
+	r.Log.Info("reply returned", "request", q.ID, "run", next.ID)
+}
+
+// logTail is the last part of a run's log, without Shepherd's own lines.
+func logTail(path string, max int) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	var keep []string
+	for _, line := range strings.Split(string(b), "\n") {
+		if !strings.HasPrefix(line, "# shepherd") && !strings.HasPrefix(line, "# task:") {
+			keep = append(keep, line)
+		}
+	}
+	s := strings.TrimSpace(strings.Join(keep, "\n"))
+	if len(s) > max {
+		s = "..." + s[len(s)-max:]
+	}
+	return s
+}

@@ -142,6 +142,21 @@ func (c *Client) Answer(ctx context.Context, id int64, answer string) (store.Dec
 	return out, c.do(ctx, http.MethodPost, api.PathDecisionAnswer(id), api.Answer{Answer: answer}, &out)
 }
 
+func (c *Client) RequestHelp(ctx context.Context, runID int64, q store.Request) (store.Request, error) {
+	var out store.Request
+	return out, c.do(ctx, http.MethodPost, api.PathRunRequests(runID), q, &out)
+}
+
+func (c *Client) Requests(ctx context.Context, states string) ([]api.RequestView, error) {
+	var out []api.RequestView
+	return out, c.do(ctx, http.MethodGet, api.PathRequests+"?state="+url.QueryEscape(states), nil, &out)
+}
+
+func (c *Client) RouteRequest(ctx context.Context, id int64, lane, agent string) (store.Request, error) {
+	var out store.Request
+	return out, c.do(ctx, http.MethodPost, api.PathRequestRoute(id), api.Route{Lane: lane, Agent: agent}, &out)
+}
+
 func (c *Client) StopRun(ctx context.Context, id int64) error {
 	var out struct{}
 	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)

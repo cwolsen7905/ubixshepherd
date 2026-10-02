@@ -100,7 +100,7 @@ type Run struct {
 type Event struct {
 	ID    int64  `json:"id"`
 	RunID int64  `json:"run_id"`
-	Kind  string `json:"kind"` // report, ask_shepherd
+	Kind  string `json:"kind"` // report
 	// Status is a report's: progress, done or blocked.
 	Status  string    `json:"status,omitempty"`
 	Text    string    `json:"text"`
@@ -128,6 +128,43 @@ type Decision struct {
 	AnswerRun int64      `json:"answer_run,omitempty"`
 	Created   time.Time  `json:"created"`
 	Answered  *time.Time `json:"answered,omitempty"`
+}
+
+// Request states.
+const (
+	// RequestPending: waiting for the asker to end its turn and the target lane to be free.
+	RequestPending = "pending"
+	// RequestNeedsRouting: Shepherd cannot route it by rule; the front desk or the
+	// person must say which lane and agent.
+	RequestNeedsRouting = "needs_routing"
+	// RequestRouted: the target agent is working on it.
+	RequestRouted = "routed"
+	// RequestReplyReady: answered, waiting for the asker's lane to be free.
+	RequestReplyReady = "reply_ready"
+	// RequestReplied: the reply went back into the asker's conversation.
+	RequestReplied = "replied"
+	RequestFailed  = "failed"
+)
+
+// Request is one agent asking, through Shepherd, for something from another lane.
+type Request struct {
+	ID      int64  `json:"id"`
+	FromRun int64  `json:"from_run"`
+	Kind    string `json:"kind"` // question, handoff, review
+	// Lane is the target lane's name, once known.
+	Lane    string `json:"lane,omitempty"`
+	Message string `json:"message"`
+	State   string `json:"state"`
+	// Agent is the target agent, once chosen.
+	Agent     string `json:"agent,omitempty"`
+	TargetRun int64  `json:"target_run,omitempty"`
+	Reply     string `json:"reply,omitempty"`
+	ReplyRun  int64  `json:"reply_run,omitempty"`
+	// Depth counts the requests in a chain: an agent answering one may ask in turn.
+	Depth   int       `json:"depth"`
+	Note    string    `json:"note,omitempty"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
 }
 
 // Store is Shepherd's state.
@@ -163,6 +200,12 @@ type Store interface {
 	// AnswerDecision records the answer; ErrConflict if the decision is not open.
 	AnswerDecision(ctx context.Context, id int64, answer string) (Decision, error)
 	SetDecisionRun(ctx context.Context, id, runID int64) error
+
+	CreateRequest(ctx context.Context, q Request) (Request, error)
+	UpdateRequest(ctx context.Context, q Request) error
+	Request(ctx context.Context, id int64) (Request, error)
+	// Requests returns requests in any of the states (all when none), oldest first.
+	Requests(ctx context.Context, states ...string) ([]Request, error)
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

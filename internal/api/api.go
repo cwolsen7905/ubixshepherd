@@ -26,6 +26,26 @@ const (
 	PathRuns       = "/v1/runs"
 )
 
+// PathRequests lists requests between lanes (GET).
+const PathRequests = "/v1/requests"
+
+func PathRunRequests(id int64) string  { return fmt.Sprintf("%s/%d/requests", PathRuns, id) }
+func PathRequestRoute(id int64) string { return fmt.Sprintf("%s/%d/route", PathRequests, id) }
+
+// Route is the body of POST /v1/requests/{id}/route.
+type Route struct {
+	Lane  string `json:"lane"`
+	Agent string `json:"agent,omitempty"`
+}
+
+// RequestView is a request with where it came from.
+type RequestView struct {
+	store.Request
+	FromAgent string `json:"from_agent"`
+	FromLane  string `json:"from_lane"`
+	Repo      string `json:"repo"`
+}
+
 // PathDecisions lists decisions (GET).
 const PathDecisions = "/v1/decisions"
 

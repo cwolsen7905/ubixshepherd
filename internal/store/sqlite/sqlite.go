@@ -113,6 +113,24 @@ var migrations = []string{
 		answered       TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX decisions_state ON decisions (state);`,
+	// Requests between lanes: an agent's ask_shepherd, and how it was routed and answered.
+	`CREATE TABLE requests (
+		id         INTEGER PRIMARY KEY,
+		from_run   INTEGER NOT NULL REFERENCES runs(id),
+		kind       TEXT NOT NULL,
+		lane       TEXT NOT NULL DEFAULT '',
+		message    TEXT NOT NULL,
+		state      TEXT NOT NULL,
+		agent      TEXT NOT NULL DEFAULT '',
+		target_run INTEGER NOT NULL DEFAULT 0,
+		reply      TEXT NOT NULL DEFAULT '',
+		reply_run  INTEGER NOT NULL DEFAULT 0,
+		depth      INTEGER NOT NULL DEFAULT 1,
+		note       TEXT NOT NULL DEFAULT '',
+		created    TEXT NOT NULL,
+		updated    TEXT NOT NULL
+	);
+	CREATE INDEX requests_state ON requests (state);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -562,6 +580,70 @@ func (s *DB) AnswerDecision(ctx context.Context, id int64, answer string) (store
 func (s *DB) SetDecisionRun(ctx context.Context, id, runID int64) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET answer_run = ? WHERE id = ?`, runID, id)
 	return err
+}
+
+const requestCols = `id, from_run, kind, lane, message, state, agent, target_run, reply, reply_run, depth, note, created, updated`
+
+func scanRequest(sc interface{ Scan(...any) error }) (store.Request, error) {
+	var q store.Request
+	var created, updated string
+	err := sc.Scan(&q.ID, &q.FromRun, &q.Kind, &q.Lane, &q.Message, &q.State, &q.Agent, &q.TargetRun,
+		&q.Reply, &q.ReplyRun, &q.Depth, &q.Note, &created, &updated)
+	q.Created, q.Updated = parseTime(created), parseTime(updated)
+	return q, err
+}
+
+func (s *DB) CreateRequest(ctx context.Context, q store.Request) (store.Request, error) {
+	t := now()
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO requests (from_run, kind, lane, message, state, agent, depth, note, created, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		q.FromRun, q.Kind, q.Lane, q.Message, q.State, q.Agent, q.Depth, q.Note, t, t)
+	if err != nil {
+		return q, err
+	}
+	id, _ := res.LastInsertId()
+	return s.Request(ctx, id)
+}
+
+func (s *DB) UpdateRequest(ctx context.Context, q store.Request) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE requests SET lane = ?, state = ?, agent = ?, target_run = ?, reply = ?, reply_run = ?, note = ?, updated = ?
+		WHERE id = ?`,
+		q.Lane, q.State, q.Agent, q.TargetRun, q.Reply, q.ReplyRun, q.Note, now(), q.ID)
+	return err
+}
+
+func (s *DB) Request(ctx context.Context, id int64) (store.Request, error) {
+	q, err := scanRequest(s.db.QueryRowContext(ctx, `SELECT `+requestCols+` FROM requests WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return q, store.ErrNotFound
+	}
+	return q, err
+}
+
+// Requests returns requests in any of the states (all when none), oldest first.
+func (s *DB) Requests(ctx context.Context, states ...string) ([]store.Request, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+requestCols+` FROM requests ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	want := map[string]bool{}
+	for _, st := range states {
+		want[st] = true
+	}
+	var out []store.Request
+	for rows.Next() {
+		q, err := scanRequest(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(want) == 0 || want[q.State] {
+			out = append(out, q)
+		}
+	}
+	return out, rows.Err()
 }
 
 func nonNil(s []string) []string {
