@@ -53,8 +53,11 @@ and records the decision, so links to it stay right.
 16. **Which generic packs ship with v1.** The roadmap proposes Go (for the non-uBixCore
     pilot) alongside the uBixCore pack; Node/TypeScript is the next most useful to outside
     users.
-17. **The terminal.** What the one terminal the human works from looks like: one thread
+17. **The terminal and Shepherd's conversation.** Shepherd as the one conversation above
+    agent systems, with agents cross-talking through it and escalating to the human
+    ([design.md §3.15](design.md#315-shepherds-conversation-orchestrating-agent-systems)).
+    The terminal: What the one terminal the human works from looks like: one thread
     of the front-desk conversation plus typed events from the swarm, with drill-down into
-    and attach to any agent ([design.md §3.15](design.md#315-the-terminal-one-thread-many-feeds)),
+    and attach to any agent ([design.md §3.15](design.md#316-the-terminal-one-thread-many-feeds)),
     or another shape. And when: `shepherd watch` could come early; the embedded front desk
     after held decisions exist.
