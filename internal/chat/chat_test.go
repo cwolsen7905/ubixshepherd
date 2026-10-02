@@ -304,3 +304,24 @@ func TestConversationsInTheChat(t *testing.T) {
 		t.Error("unknown conversation not reported")
 	}
 }
+
+// Two repos each with a lane feat/x: only the one whose run is running shows it.
+func TestPanelMatchesRunsByLaneNotName(t *testing.T) {
+	m, _, _ := newTestModel()
+	m.lanes = []api.LaneView{
+		{Lane: store.Lane{ID: 1, Name: "feat/x"}, Repo: "app"},
+		{Lane: store.Lane{ID: 2, Name: "feat/x"}, Repo: "lib"},
+		{Lane: store.Lane{ID: 3, Name: "fix/y"}, Repo: "lib"},
+	}
+	m.runs = []api.RunView{{Run: store.Run{ID: 9, LaneID: 2, Agent: "copilot", State: store.RunRunning}, Lane: "feat/x", Repo: "lib"}}
+	p := m.renderPanel()
+	rows := map[string]bool{}
+	for _, line := range strings.Split(p, "\n") {
+		rows[strings.TrimSpace(strings.Trim(strings.TrimSpace(line), "│"))] = true
+	}
+	for _, want := range []string{"● lib:feat/x copilot", "○ app:feat/x", "○ fix/y"} {
+		if !rows[want] {
+			t.Errorf("panel lacks row %q:\n%s", want, p)
+		}
+	}
+}

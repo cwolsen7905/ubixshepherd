@@ -616,22 +616,30 @@ func (m *Model) renderThread() string {
 
 func (m *Model) renderPanel() string {
 	var b strings.Builder
-	running := map[string]string{}
+	// By lane id, not name: two repos can each have a lane called feat/x.
+	running := map[int64]string{}
+	names := map[string]int{}
 	for _, r := range m.runs {
 		if r.State == store.RunRunning {
-			running[r.Lane] = r.Agent
+			running[r.LaneID] = r.Agent
 		}
+	}
+	for _, l := range m.lanes {
+		names[l.Name]++
 	}
 	b.WriteString(styleHead.Render("LANES") + "\n")
 	if len(m.lanes) == 0 {
 		b.WriteString(styleInfo.Render("none open") + "\n")
 	}
 	for _, l := range m.lanes {
-		mark, who := "○", ""
-		if a, ok := running[l.Name]; ok {
+		mark, who, name := "○", "", l.Name
+		if a, ok := running[l.ID]; ok {
 			mark, who = "●", " "+a
 		}
-		b.WriteString(clipTo(fmt.Sprintf("%s %s%s", mark, l.Name, who), panelWidth-2) + "\n")
+		if names[l.Name] > 1 {
+			name = l.Repo + ":" + l.Name // say which one
+		}
+		b.WriteString(clipTo(fmt.Sprintf("%s %s%s", mark, name, who), panelWidth-2) + "\n")
 	}
 	b.WriteString("\n" + styleHead.Render("RUNS") + "\n")
 	for _, r := range m.runs {
