@@ -235,7 +235,7 @@ func TestAdapterArgs(t *testing.T) {
 		t.Errorf("claude: the prompt must follow -p before the tool lists: %v", args)
 	}
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"--disallowedTools Bash(git push:*)", "Bash(make check:*)", "--model opus", "--permission-mode acceptEdits", "--session-id S1"} {
+	for _, want := range []string{"--disallowedTools Bash(git push:*)", "Bash(make check:*)", "--model opus", "--permission-mode auto", "--session-id S1"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("claude args lack %q: %v", want, args)
 		}
@@ -244,7 +244,10 @@ func TestAdapterArgs(t *testing.T) {
 		t.Errorf("claude resume args: %s", j)
 	}
 	c, _ := AdapterFor("copilot")
-	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w"}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--resume") {
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w"}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "--allow-all-tools") || strings.Contains(j, "--resume") {
+		t.Errorf("copilot args: %s", j)
+	}
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w", Mode: config.PermAcceptEdits}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--allow-all-tools") {
 		t.Errorf("copilot args: %s", j)
 	}
 	if j := strings.Join(c.Args(Opts{Prompt: "P", Worktree: "/w", Session: "S2", Resume: true}), " "); !strings.Contains(j, "--resume=S2") {
@@ -260,8 +263,65 @@ func TestAdapterArgs(t *testing.T) {
 	if id, _ := newUUID(); len(id) != 36 || id[14] != '4' {
 		t.Errorf("uuid = %q", id)
 	}
-	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", false, ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
+	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", Powers{}, false, ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "Do not merge") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
 		t.Errorf("brief:\n%s", b)
+	}
+}
+
+func TestAgentPowersArgsAndBrief(t *testing.T) {
+	a, _ := AdapterFor("claude")
+	j := strings.Join(a.Args(Opts{Prompt: "P", Mode: config.PermAcceptEdits, Push: true, Merge: true}), " ")
+	for _, want := range []string{"--permission-mode acceptEdits", "Bash(git push:*)", "Bash(glab mr merge:*)"} {
+		if !strings.Contains(j, want) {
+			t.Errorf("claude args lack %q: %s", want, j)
+		}
+	}
+	if strings.Contains(j, "--disallowedTools") {
+		t.Errorf("claude denies push to an agent allowed to: %s", j)
+	}
+	if j := strings.Join(a.Args(Opts{Prompt: "P"}), " "); strings.Contains(j, "glab") {
+		t.Errorf("claude may merge without the repo allowing it: %s", j)
+	}
+	c, _ := AdapterFor("copilot")
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Push: true}), " "); strings.Contains(j, "--deny-tool") {
+		t.Errorf("copilot denies push to an agent allowed to: %s", j)
+	}
+
+	shep := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "make check", Powers{Push: config.Shepherd}, false, "")
+	if !strings.Contains(shep, "Shepherd runs the gate itself") || !strings.Contains(shep, "Do not push") {
+		t.Errorf("shepherd-push brief:\n%s", shep)
+	}
+	own := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "", Powers{Push: config.Agent, Merge: true, GitLab: true, Forbid: []string{"(?i)co-authored-by"}}, false, "")
+	for _, want := range []string{"git push -u origin feat/x -o merge_request.create -o merge_request.target=dev", "co-authored-by",
+		"glab mr merge <iid> --when-pipeline-succeeds --sha", "Never approve"} {
+		if !strings.Contains(own, want) {
+			t.Errorf("agent-push brief lacks %q:\n%s", want, own)
+		}
+	}
+	if strings.Contains(own, "Do not push") || strings.Contains(own, "Do not merge") {
+		t.Errorf("agent-push brief forbids what the repo allows:\n%s", own)
+	}
+	if p := powers(config.Profile{Autonomy: config.Autonomy{Push: config.Agent, Merge: config.Agent}}, "git@github.com:o/r.git"); p.Merge || p.GitLab {
+		t.Errorf("merge armed off GitLab: %+v", p)
+	}
+	if p := powers(config.Profile{Autonomy: config.Autonomy{Merge: config.Agent}}, "git@gitlab.example.com:o/r.git"); !p.Merge || !p.GitLab {
+		t.Errorf("merge on GitLab: %+v", p)
+	}
+}
+
+func TestAgentPushLiftsTheBlock(t *testing.T) {
+	f := newFixture(t, "ok")
+	p := f.runner.Config.Defaults
+	p.Autonomy.Push = config.Agent
+	f.runner.Config.Defaults = p
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "do the work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.wait(t, run.ID)
+	log, _ := os.ReadFile(done.Log)
+	if !strings.Contains(string(log), "PUSH WORKED") || strings.Contains(string(log), "--disallowedTools") {
+		t.Errorf("agent push was blocked:\n%s", log)
 	}
 }
 
@@ -371,7 +431,7 @@ func TestWorkerToolsInjected(t *testing.T) {
 	if j := strings.Join(c.Args(Opts{Prompt: "P", Worker: "/bin/shepherd"}), " "); !strings.Contains(j, "--additional-mcp-config") || !strings.Contains(j, `"tools":["*"]`) || !strings.Contains(j, "--allow-tool shepherd") {
 		t.Errorf("copilot worker args: %s", j)
 	}
-	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", true, ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
+	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
 		t.Errorf("brief with tools:\n%s", b)
 	}
 }

@@ -68,6 +68,22 @@ const (
 	Shepherd = "shepherd"
 )
 
+// Claude Code permission modes for the agents Shepherd starts.
+const (
+	// PermAuto runs as the person's own sessions do: their Claude Code auto mode and
+	// settings decide what needs no prompt.
+	PermAuto = "auto"
+	// PermAcceptEdits and PermDefault allow edits (or not) and Shepherd's own short list
+	// of commands; anything else is refused, since nobody can approve it headless.
+	PermAcceptEdits = "acceptEdits"
+	PermDefault     = "default"
+	// PermBypass skips permission checks altogether.
+	PermBypass = "bypassPermissions"
+)
+
+// PermissionModes are the values agent.permission_mode takes.
+var PermissionModes = []string{PermAuto, PermAcceptEdits, PermDefault, PermBypass}
+
 // Profile says how a repo works. In Repos, an empty field inherits from Defaults.
 type Profile struct {
 	BaseBranch  string   `yaml:"base_branch,omitempty" json:"base_branch,omitempty"`
@@ -96,6 +112,8 @@ type Profile struct {
 	// pushes ("(?i)co-authored-by"); a match goes back to the agent to amend.
 	Forbid   []string `yaml:"forbid,omitempty" json:"forbid,omitempty"`
 	Autonomy Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
+	// Agent says how the agents Shepherd starts in the repo run.
+	Agent AgentOpts `yaml:"agent,omitempty" json:"agent"`
 	// Follows are the repos this one depends on: a release of one opens a lane here and
 	// hands it to an agent (a framework's tag, the host's version bump).
 	Follows []Follow `yaml:"follows,omitempty" json:"follows,omitempty"`
@@ -145,13 +163,24 @@ func (f Follow) Effective() Follow {
 	return f
 }
 
+// AgentOpts says how the agents Shepherd starts run.
+type AgentOpts struct {
+	// PermissionMode is the Claude Code permission mode of a run: auto (the default),
+	// acceptEdits, default or bypassPermissions. Copilot takes auto and bypassPermissions
+	// as allowing every tool; Cursor always runs with --force.
+	PermissionMode string `yaml:"permission_mode,omitempty" json:"permission_mode,omitempty"`
+}
+
 // Autonomy records what agents may do unasked in a repo.
 type Autonomy struct {
+	// Merge: "agent" lets an agent arm merge-when-pipeline-succeeds on its own lane's
+	// merge request; the forge's approvals, pipelines and threads still gate it.
 	Merge  string `yaml:"merge,omitempty" json:"merge,omitempty"`
 	Tag    string `yaml:"tag,omitempty" json:"tag,omitempty"`
 	Deploy string `yaml:"deploy,omitempty" json:"deploy,omitempty"`
 	// Push: who pushes a lane's branch and opens its merge request. "shepherd" lets
-	// Shepherd do it after an agent's run, once the repo's gate passes in the lane.
+	// Shepherd do it after an agent's run, once the repo's gate passes in the lane;
+	// "agent" lets the agent push its own lane's branch during its run.
 	Push string `yaml:"push,omitempty" json:"push,omitempty"`
 	// PlanFirst means an agent proposes a plan and waits before changing anything.
 	PlanFirst *bool `yaml:"plan_first,omitempty" json:"plan_first,omitempty"`
@@ -168,6 +197,7 @@ func Default() Config {
 			Tags:        TagsFree,
 			BranchModel: Trunk,
 			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, Push: Human, PlanFirst: &yes},
+			Agent:       AgentOpts{PermissionMode: PermAuto},
 		},
 	}
 }
@@ -285,8 +315,11 @@ func (p Profile) validate(at string) []error {
 	if p.Tags != TagsFree && p.Tags != TagsReserved {
 		errs = append(errs, fmt.Errorf("%s.tags: %q is not %s or %s", at, p.Tags, TagsFree, TagsReserved))
 	}
-	if p.Autonomy.Push != Human && p.Autonomy.Push != Shepherd {
-		errs = append(errs, fmt.Errorf("%s.autonomy.push: %q is not %s or %s", at, p.Autonomy.Push, Human, Shepherd))
+	if !slices.Contains([]string{Human, Shepherd, Agent}, p.Autonomy.Push) {
+		errs = append(errs, fmt.Errorf("%s.autonomy.push: %q is not %s, %s or %s", at, p.Autonomy.Push, Human, Shepherd, Agent))
+	}
+	if !slices.Contains(PermissionModes, p.Agent.PermissionMode) {
+		errs = append(errs, fmt.Errorf("%s.agent.permission_mode: %q is not %s", at, p.Agent.PermissionMode, strings.Join(PermissionModes, ", ")))
 	}
 	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
@@ -369,6 +402,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Autonomy.PlanFirst != nil {
 		out.Autonomy.PlanFirst = over.Autonomy.PlanFirst
+	}
+	if over.Agent.PermissionMode != "" {
+		out.Agent.PermissionMode = over.Agent.PermissionMode
 	}
 	if over.Follows != nil {
 		out.Follows = over.Follows

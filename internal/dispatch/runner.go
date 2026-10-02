@@ -216,7 +216,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		return run, r.fail(ctx, run, err)
 	}
 
-	gate := r.Config.Profile(repo.Name).Gate
+	prof := r.Config.Profile(repo.Name)
+	gate := prof.Gate
+	may := powers(prof, repo.Remote)
 	// A new session gets the full brief; a continuing one already has it.
 	prompt := req.Prompt
 	worker := ""
@@ -225,20 +227,24 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 	if !resume {
 		note := ad.Note
-		if b := r.Config.Profile(repo.Name).Brief; b != "" {
+		if b := prof.Brief; b != "" {
 			note = strings.TrimSpace(note + "\nThis repo's rules: " + b)
 		}
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", note)
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, may, worker != "", note)
 	}
+	agentPushes := may.Push == config.Agent
 	cmd := exec.Command(bin, ad.Args(Opts{Prompt: prompt, Model: req.Model, Gate: gate, Worktree: lane.Worktree,
-		Session: session, Resume: resume, Worker: worker})...)
+		Session: session, Resume: resume, Worker: worker,
+		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge})...)
 	cmd.Dir = lane.Worktree
 	cmd.Stdin = nil // reads from the null device: headless
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
 		fmt.Sprintf("SHEPHERD_RUN=%d", run.ID), "SHEPHERD_LANE="+lane.Name,
 	)
-	cmd.Env = append(cmd.Env, pushBlock(ctx, lane.Worktree)...)
+	if !agentPushes {
+		cmd.Env = append(cmd.Env, pushBlock(ctx, lane.Worktree)...)
+	}
 	cmd.SysProcAttr = groupAttr()
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -272,6 +278,16 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 	r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: %s %s in lane %s: %s", run.ID, ad.Name, verb, lane.Name, clip(req.Prompt, 120))
 	return run, nil
+}
+
+// powers reads what a repo's profile lets its agents do. Arming a merge is a GitLab
+// command, so it is given only on GitLab.
+func powers(prof config.Profile, remote string) Powers {
+	gitlab := false
+	if f, err := forge.For(remote); err == nil {
+		gitlab = f.Name() == "gitlab"
+	}
+	return Powers{Push: prof.Autonomy.Push, Merge: prof.Autonomy.Merge == config.Agent && gitlab, GitLab: gitlab, Forbid: prof.Forbid}
 }
 
 // watch copies the agent's output to the log line by line, redacted, then records the
