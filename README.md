@@ -11,10 +11,13 @@ are yours for you, and reports back in one thread.
 
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
-> In so far: the daemon, its API, the store, config and repo profiles, workspaces (M1),
-> and from M2 lanes, scope leases and the pre-push hook, plus first slices of the MCP
-> server (M4) and of dispatch (M5): starting Claude Code, GitHub Copilot or Cursor in a
-> lane. Tag reservations, forge proofs, work orders and routing are still design.
+> M1 is complete; M2 is partly implemented; M3 proofs and M5 dispatch are partly
+> implemented; M4's MCP tools and terminal front desk are implemented; M6 has not started.
+> Current code includes per-repo scope leases and tag reservations, forge polling and
+> merge-based lane closure, operator and worker MCP tools, `shepherd chat`, and dispatch
+> for Claude Code, GitHub Copilot and Cursor. Remaining gaps include workspace-wide
+> leases, GitHub mirror and publication proofs, typed work orders and triage, and
+> end-to-end cross-repo delivery without relaying.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
