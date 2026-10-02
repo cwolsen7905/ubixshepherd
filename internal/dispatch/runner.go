@@ -290,8 +290,13 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		if ad.Read != nil {
 			out = ad.Read(line)
 		}
-		run.CostUSD += out.USD
-		run.Credits += out.Credits
+		switch {
+		case !ad.SessionCost:
+			run.CostUSD += out.USD
+			run.Credits += out.Credits
+		case out.USD > 0 || out.Credits > 0:
+			run.CostUSD, run.Credits = out.USD, out.Credits // the session's latest total
+		}
 		if out.Show != "" {
 			fmt.Fprintln(logf, redact.String(out.Show))
 		}
@@ -330,6 +335,9 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 				}
 			}
 		}
+	}
+	if ad.SessionCost {
+		r.sessionCost(ctx, &run)
 	}
 	r.Spend(ctx, store.Spend{Source: run.Agent, Ref: run.ID, USD: run.CostUSD, Credits: run.Credits})
 	fmt.Fprintf(logf, "\n# shepherd: run %d %s (exit %d) with %d commit(s)", run.ID, run.State, code, run.Commits)

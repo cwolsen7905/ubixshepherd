@@ -163,9 +163,15 @@ type Run struct {
 	Session string `json:"session,omitempty"`
 	Parent  int64  `json:"parent,omitempty"`
 	// CostUSD is what the agent reported in dollars (Claude Code); Credits what it
-	// reported in credits (Copilot). Zero when it reports nothing (Cursor).
+	// reported in credits (Copilot). Zero when it reports nothing (Cursor). Always this
+	// run's own cost.
 	CostUSD float64 `json:"cost_usd,omitempty"`
 	Credits float64 `json:"credits,omitempty"`
+	// SessionUSD and SessionCredits are the session's total as the agent reported it at
+	// the end of this run, for a CLI that reports the session's cost rather than the
+	// run's (Copilot): the next run of the session costs what it adds beyond them.
+	SessionUSD     float64 `json:"session_usd,omitempty"`
+	SessionCredits float64 `json:"session_credits,omitempty"`
 }
 
 // Spend is money spent on one day by one source (an agent, or the desk). In totals from

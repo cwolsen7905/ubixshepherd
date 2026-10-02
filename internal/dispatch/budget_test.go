@@ -29,6 +29,58 @@ func TestOutputReaders(t *testing.T) {
 	}
 }
 
+// Copilot's credits count the whole session: a continued run records what it added.
+func TestSessionCostRecordsWhatEachRunAdded(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	runWith := func(credits string, req StartRequest) store.Run {
+		t.Helper()
+		t.Setenv("CREDITS", credits)
+		req.LaneID, req.Agent, req.Prompt = f.lane.ID, "copilot", "x"
+		run, err := f.runner.Start(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f.wait(t, run.ID)
+	}
+	first := runWith("4.12", StartRequest{})
+	second := runWith("6.17", StartRequest{})
+	quiet := runWith("", StartRequest{})     // reports nothing
+	third := runWith("6.50", StartRequest{}) // still the same session
+	fresh := runWith("0.40", StartRequest{NewSession: true})
+	if second.Parent != first.ID || third.Parent != quiet.ID {
+		t.Fatalf("runs did not continue the session: %+v %+v", second, third)
+	}
+	for _, c := range []struct {
+		run           store.Run
+		credits, sess float64
+	}{{first, 4.12, 4.12}, {second, 2.05, 6.17}, {quiet, 0, 6.17}, {third, 0.33, 6.50}, {fresh, 0.40, 0.40}} {
+		if c.run.Credits != c.credits || c.run.SessionCredits != c.sess {
+			t.Errorf("run %d: credits %v (session %v), want %v (session %v)", c.run.ID, c.run.Credits, c.run.SessionCredits, c.credits, c.sess)
+		}
+	}
+	_, by, _ := f.runner.Spent(ctx)
+	if got := by["copilot"].Credits; got < 6.899 || got > 6.901 {
+		t.Errorf("today's copilot credits = %v, want 6.90 (6.50 for the session, 0.40 fresh)", got)
+	}
+
+	// A run recorded before session totals were kept stored the total as its cost.
+	legacy, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "copilot", Prompt: "x", State: store.RunSucceeded, Session: "old", Log: "x"})
+	legacy.Credits = 4.12
+	f.st.UpdateRun(ctx, legacy)
+	next := store.Run{Parent: legacy.ID, Credits: 6.17}
+	f.runner.sessionCost(ctx, &next)
+	if next.Credits != 2.05 || next.SessionCredits != 6.17 {
+		t.Errorf("after a legacy run: %+v", next)
+	}
+	// A total below the last means the CLI counts afresh: all of it is this run's.
+	reset := store.Run{Parent: second.ID, Credits: 1.5}
+	f.runner.sessionCost(ctx, &reset)
+	if reset.Credits != 1.5 {
+		t.Errorf("after a reset: %+v", reset)
+	}
+}
+
 func TestBudgetHoldsAutomaticRuns(t *testing.T) {
 	f := newFixture(t, "quick")
 	ctx := context.Background()

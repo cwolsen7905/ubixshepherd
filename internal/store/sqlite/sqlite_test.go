@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -94,7 +95,10 @@ func TestLaneOriginMigrates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := len(migrations) - 1
+	old := 0 // the schema just before lanes had an origin
+	for !strings.Contains(migrations[old], "origin_via") {
+		old++
+	}
 	for i := 0; i < old; i++ {
 		if _, err := raw.ExecContext(ctx, migrations[i]); err != nil {
 			t.Fatalf("migration %d: %v", i+1, err)

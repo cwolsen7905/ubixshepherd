@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -83,6 +84,37 @@ func plainOutput(line string) Output { return Output{Show: line} }
 
 // Today is the local day spend is counted against.
 func Today() string { return time.Now().Format("2006-01-02") }
+
+// sessionCost turns the session total a run's agent reported (in CostUSD and Credits)
+// into what this run added: the total less the session's total when the run it
+// continues ended. The total is kept on the run for the next one. A run that reported
+// nothing carries the session's total forward; a total below the last one means the
+// CLI started counting again, so it is all this run's.
+func (r *Runner) sessionCost(ctx context.Context, run *store.Run) {
+	var usd, credits float64
+	if run.Parent != 0 {
+		if p, err := r.Store.Run(ctx, run.Parent); err == nil {
+			usd, credits = p.SessionUSD, p.SessionCredits
+			if usd == 0 && credits == 0 {
+				// Recorded before session totals were kept: its cost was the total.
+				usd, credits = p.CostUSD, p.Credits
+			}
+		}
+	}
+	if run.CostUSD == 0 && run.Credits == 0 {
+		run.SessionUSD, run.SessionCredits = usd, credits
+		return
+	}
+	run.SessionUSD, run.SessionCredits = run.CostUSD, run.Credits
+	run.CostUSD, run.Credits = beyond(run.SessionUSD, usd), beyond(run.SessionCredits, credits)
+}
+
+func beyond(total, before float64) float64 {
+	if total < before {
+		return total
+	}
+	return math.Round((total-before)*1e6) / 1e6 // 6.17 - 4.12 is 2.05, not 2.0500000000000003
+}
 
 // Spent is today's spend in dollars, Copilot's credits priced at credit_usd.
 func (r *Runner) Spent(ctx context.Context) (float64, map[string]store.Spend, error) {

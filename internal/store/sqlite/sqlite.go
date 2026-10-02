@@ -205,6 +205,10 @@ var migrations = []string{
 	ALTER TABLE lanes ADD COLUMN origin_pid INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE lanes ADD COLUMN origin_dir TEXT NOT NULL DEFAULT '';
 	ALTER TABLE lanes ADD COLUMN origin_detail TEXT NOT NULL DEFAULT '';`,
+	// The session total an agent reported, for CLIs whose cost counts the whole session,
+	// so a continued run records only what it added.
+	`ALTER TABLE runs ADD COLUMN session_usd REAL NOT NULL DEFAULT 0;
+	ALTER TABLE runs ADD COLUMN session_credits REAL NOT NULL DEFAULT 0;`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -471,14 +475,14 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
 }
 
-const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits`
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits`
 
 func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	var r store.Run
 	var outside, started, ended string
 	var exit sql.NullInt64
 	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
-		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits); err != nil {
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits); err != nil {
 		return r, err
 	}
 	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
@@ -527,8 +531,10 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 	}
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
-			exit_code = ?, error = ?, ended = ?, session = ?, cost_usd = ?, credits = ? WHERE id = ?`,
-		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits, r.ID)
+			exit_code = ?, error = ?, ended = ?, session = ?, cost_usd = ?, credits = ?,
+			session_usd = ?, session_credits = ? WHERE id = ?`,
+		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits,
+		r.SessionUSD, r.SessionCredits, r.ID)
 	return err
 }
 
