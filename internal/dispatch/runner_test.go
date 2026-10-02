@@ -95,6 +95,16 @@ func newFixture(t *testing.T, mode string) *fixture {
 		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		lookPath: func(string) (string, error) { return agent, nil },
 	}
+	// Runs, and what they set off, can outlive a test's last check: let them finish
+	// before the repo is removed (cleanups run last-registered first).
+	t.Cleanup(func() {
+		for _, run := range mustRuns(st) {
+			if run.State == store.RunRunning {
+				r.Stop(context.Background(), run.ID)
+			}
+		}
+		r.Wait()
+	})
 	return &fixture{runner: r, st: st, lane: opened.Lane, origin: origin}
 }
 
@@ -456,4 +466,9 @@ func TestSetupCursorKeepsOtherServers(t *testing.T) {
 	if _, err := SetupCursor("/bin/shepherd"); err == nil {
 		t.Error("setup overwrote an unreadable config")
 	}
+}
+
+func mustRuns(st store.Store) []store.Run {
+	runs, _ := st.Runs(context.Background(), 0, store.RunRunning, 100)
+	return runs
 }

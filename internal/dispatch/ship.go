@@ -212,13 +212,17 @@ func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane,
 	}
 	prompt := fmt.Sprintf("[Shepherd] Before pushing your work, Shepherd checked %s in your lane, and it failed:\n\n%s\n\n"+
 		"Fix it within your scope, check again yourself, and commit. Shepherd checks again when you finish.", what, tail)
+	// Count the try before starting it: a fast fix run can end, and be checked again,
+	// before a count saved afterwards would land.
+	lf.GateTries++
+	r.Store.PutLaneForge(ctx, *lf)
 	next, err := r.Start(ctx, StartRequest{Continue: run.ID, Prompt: prompt, Auto: true})
 	if err != nil {
+		lf.GateTries--
+		r.Store.PutLaneForge(ctx, *lf)
 		r.feed(ctx, store.FeedPipeline, lane.ID, "the gate failed in lane %s, and handing it back failed: %s", lane.Name, clip(err.Error(), 200))
 		return
 	}
-	lf.GateTries++
-	r.Store.PutLaneForge(ctx, *lf)
 	r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed in lane %s; asked %s to fix it (run %d, try %d of %d)", strings.TrimSuffix(what, ","), lane.Name, run.Agent, next.ID, lf.GateTries, MaxGateTries)
 }
 

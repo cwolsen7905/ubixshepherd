@@ -572,3 +572,7 @@ func ReadLog(path string, offset int64, max int) ([]byte, int64, error) {
 
 // SetLookPath replaces how a runner finds agent executables (for tests in other packages).
 func SetLookPath(r *Runner, f func(string) (string, error)) { r.lookPath = f }
+
+// Wait blocks until every run the runner is watching has ended and its outcome, and any
+// follow-up it set off, has been recorded.
+func (r *Runner) Wait() { r.wg.Wait() }
