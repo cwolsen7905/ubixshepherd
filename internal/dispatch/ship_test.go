@@ -94,11 +94,19 @@ func TestShipHandsAFailedGateBack(t *testing.T) {
 	if originHas(t, f, "work") || len(sf.created) != 0 {
 		t.Error("pushed although the gate failed")
 	}
+	// The first fix continues the original run; a fast machine may have started the
+	// second already, so find it by its parent rather than by being newest.
+	var fix store.Run
 	runs, _ := f.st.Runs(context.Background(), f.lane.ID, "", 5)
-	if !strings.Contains(runs[0].Prompt, "gate says no") || runs[0].Parent != run.ID {
-		t.Errorf("fix run = %+v", runs[0])
+	for _, r := range runs {
+		if r.Parent == run.ID {
+			fix = r
+		}
 	}
-	f.wait(t, runs[0].ID)
+	if fix.ID == 0 || !strings.Contains(fix.Prompt, "gate says no") {
+		t.Errorf("fix run = %+v", fix)
+	}
+	f.wait(t, fix.ID)
 	// The fix run commits again and the gate fails again: the second and last try.
 	waitFeed(t, f, "try 2 of 2")
 }
@@ -142,7 +150,13 @@ func TestShipEnforcesCommitRules(t *testing.T) {
 		t.Error("pushed a forbidden commit message")
 	}
 	runs, _ := f.st.Runs(context.Background(), f.lane.ID, "", 5)
-	if !strings.Contains(runs[0].Prompt, `contains "agent work"`) || !strings.Contains(runs[0].Prompt, "Amend") {
-		t.Errorf("fix prompt: %s", runs[0].Prompt)
+	found := false
+	for _, r := range runs {
+		if r.Parent == run.ID && strings.Contains(r.Prompt, `contains "agent work"`) && strings.Contains(r.Prompt, "Amend") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no fix run asking to amend among %d runs", len(runs))
 	}
 }
