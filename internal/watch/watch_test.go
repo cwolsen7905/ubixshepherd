@@ -192,11 +192,21 @@ func TestFailedPipelineGoesBackToTheAgent(t *testing.T) {
 	}
 }
 
+func headOf(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func TestMergeClosesTheLaneOnProof(t *testing.T) {
 	f := newFixture(t)
-	f.f.mr = &forge.MR{IID: 7, State: "opened"}
+	head := headOf(t, f.lane.Worktree)
+	f.f.mr = &forge.MR{IID: 7, State: "opened", SHA: head}
 	f.w.Check(f.ctx)
-	f.f.mr = &forge.MR{IID: 7, State: "merged", MergeSHA: "abcdef1234567"}
+	f.f.mr = &forge.MR{IID: 7, State: "merged", SHA: head, MergeSHA: "abcdef1234567"}
 	f.w.Check(f.ctx)
 	lane, _ := f.st.Lane(f.ctx, f.lane.ID)
 	if lane.State != store.LaneClosed {
@@ -212,8 +222,11 @@ func TestMergeClosesTheLaneOnProof(t *testing.T) {
 
 func TestMergeLeavesUncommittedWorkAlone(t *testing.T) {
 	f := newFixture(t)
+	head := headOf(t, f.lane.Worktree)
+	f.f.mr = &forge.MR{IID: 8, State: "opened", SHA: head}
+	f.w.Check(f.ctx)
 	os.WriteFile(filepath.Join(f.lane.Worktree, "wip.txt"), []byte("mine"), 0o644)
-	f.f.mr = &forge.MR{IID: 8, State: "merged", MergeSHA: "abc"}
+	f.f.mr = &forge.MR{IID: 8, State: "merged", SHA: head, MergeSHA: "abc"}
 	f.w.Check(f.ctx)
 	if lane, _ := f.st.Lane(f.ctx, f.lane.ID); lane.State != store.LaneOpen {
 		t.Error("closed a lane with uncommitted work")
@@ -223,9 +236,51 @@ func TestMergeLeavesUncommittedWorkAlone(t *testing.T) {
 	}
 	// Without a merge commit there is no proof yet.
 	g := newFixture(t)
+	g.f.mr = &forge.MR{IID: 9, State: "opened"}
+	g.w.Check(g.ctx)
 	g.f.mr = &forge.MR{IID: 9, State: "merged"}
 	g.w.Check(g.ctx)
 	if lane, _ := g.st.Lane(g.ctx, g.lane.ID); lane.State != store.LaneOpen {
 		t.Error("closed without a merge commit")
+	}
+}
+
+// The incident of 2026-10-02: imported lanes whose requests had merged weeks before were
+// closed on the first poll, removing other sessions' worktrees.
+func TestAlreadyMergedOnFirstSightIsReportedNotClosed(t *testing.T) {
+	f := newFixture(t)
+	head := headOf(t, f.lane.Worktree)
+	f.f.mr = &forge.MR{IID: 107, State: "merged", SHA: head, MergeSHA: "abc123"}
+	f.w.Check(f.ctx)
+	f.w.Check(f.ctx)
+	if lane, _ := f.st.Lane(f.ctx, f.lane.ID); lane.State != store.LaneOpen {
+		t.Fatal("closed a lane whose request was merged before Shepherd watched it")
+	}
+	if _, err := os.Stat(f.lane.Worktree); err != nil {
+		t.Fatal("the worktree is gone")
+	}
+	if !strings.Contains(f.feed(t), "was already merged when Shepherd first looked") {
+		t.Errorf("feed = %s", f.feed(t))
+	}
+}
+
+func TestMergeLeavesWorkBeyondTheRequestAlone(t *testing.T) {
+	f := newFixture(t)
+	head := headOf(t, f.lane.Worktree)
+	f.f.mr = &forge.MR{IID: 10, State: "opened", SHA: head}
+	f.w.Check(f.ctx)
+	// A commit after the request's head: work the merge does not cover.
+	cmd := exec.Command("sh", "-c", "echo more > more.txt && git add more.txt && git commit -q -m more")
+	cmd.Dir = f.lane.Worktree
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	f.f.mr = &forge.MR{IID: 10, State: "merged", SHA: head, MergeSHA: "abc"}
+	f.w.Check(f.ctx)
+	if lane, _ := f.st.Lane(f.ctx, f.lane.ID); lane.State != store.LaneOpen {
+		t.Fatal("closed a lane with commits beyond its merged request")
+	}
+	if !strings.Contains(f.feed(t), "commits beyond its merged request") {
+		t.Errorf("feed = %s", f.feed(t))
 	}
 }

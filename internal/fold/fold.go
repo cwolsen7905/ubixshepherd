@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -44,6 +45,9 @@ type Fold struct {
 	Config config.Config
 	// Exe is the shepherd binary the pre-push hook runs; empty skips installing it.
 	Exe string
+	// ForgeFor, when set, lets import ask the forge whether a branch's merge request has
+	// merged (git alone cannot tell after a squash merge or a history rewrite).
+	ForgeFor func(remote string) (forge.Forge, error)
 
 	mu    sync.Mutex
 	repos map[int64]*sync.Mutex
@@ -395,7 +399,10 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 // CloseMerged closes a lane whose merge the forge has proven (proof is the merge or
 // squash commit), so a squash merge needs no --force. It still refuses a worktree with
 // uncommitted changes, and a lane with an agent running: those are someone's work.
-func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof string) (CloseResult, error) {
+//
+// head is the merged request's head commit: the lane's branch must hold nothing beyond
+// it, or there is work the merge does not cover and the lane stays open.
+func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string) (CloseResult, error) {
 	lane, err := f.Store.Lane(ctx, laneID)
 	if err != nil {
 		return CloseResult{}, err
@@ -415,6 +422,17 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof string) (Clo
 	defer lock.Unlock()
 
 	res := CloseResult{}
+	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
+		if head == "" {
+			return res, refuse("the forge gave no head commit for the merged request, so Shepherd cannot tell whether branch %s holds more", lane.Branch)
+		}
+		if !git.Ok(ctx, repo.Path, "cat-file", "-e", head+"^{commit}") {
+			git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
+		}
+		if !git.Ok(ctx, repo.Path, "merge-base", "--is-ancestor", "refs/heads/"+lane.Branch, head) {
+			return res, refuse("branch %s has commits beyond its merged request (head %s): work the merge does not cover", lane.Branch, shortSHA(head))
+		}
+	}
 	if _, err := os.Stat(lane.Worktree); err == nil {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {

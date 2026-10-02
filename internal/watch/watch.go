@@ -136,7 +136,15 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 		}
 	}
 
-	if mr.State == "merged" && prev.MRState != "merged" {
+	// Act only on a merge seen happening. A request already merged the first time
+	// Shepherd looks (an imported lane, a branch reused after its merge) proves nothing
+	// about the work in the lane now, so it is reported, never acted on.
+	firstSight := prev.MR == 0 || mr.IID != prev.MR
+	switch {
+	case mr.State == "merged" && firstSight:
+		next.MergeSHA = mr.MergeSHA
+		w.feed(ctx, store.FeedMR, lane.ID, "!%d for lane %s was already merged when Shepherd first looked; the lane stays open (close it with shepherd lane close when its work is done)", mr.IID, lane.Name)
+	case mr.State == "merged" && prev.MRState != "merged":
 		next.MergeSHA = mr.MergeSHA
 		w.merged(ctx, lane, mr)
 	}
@@ -159,7 +167,7 @@ func (w *Watcher) merged(ctx context.Context, lane store.Lane, mr *forge.MR) {
 	for _, p := range w.Fold.VerifyTags(ctx, lane, mr.MergeSHA) {
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d merged, but %s", mr.IID, p)
 	}
-	res, err := w.Fold.CloseMerged(ctx, lane.ID, mr.MergeSHA)
+	res, err := w.Fold.CloseMerged(ctx, lane.ID, mr.MergeSHA, mr.SHA)
 	if err != nil {
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d merged at %s, but lane %s cannot close: %s", mr.IID, short(mr.MergeSHA), lane.Name, firstLine(err.Error()))
 		return

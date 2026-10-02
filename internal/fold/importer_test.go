@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/forge"
 )
 
 const coordDoc = "# Coordination\n\nIntro.\n\n## 1. Agents\n\n" +
@@ -140,6 +141,42 @@ func TestWriteViewOnlyWithACoordFile(t *testing.T) {
 	for _, want := range []string{viewBegin, "| feat/view | `feat/view` | by hand | `src/**`", "`v0.1.0` (no lane, reserved)", "- 2026-01-01 someone did something"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("view lacks %q:\n%s", want, s)
+		}
+	}
+}
+
+type mergedForge struct{ branch, head string }
+
+func (m mergedForge) Name() string { return "fake" }
+func (m mergedForge) MRForBranch(_ context.Context, b string) (*forge.MR, error) {
+	if b == m.branch {
+		return &forge.MR{IID: 107, State: "merged", SHA: m.head}, nil
+	}
+	return nil, nil
+}
+func (mergedForge) FailedJobs(context.Context, int64) ([]forge.Job, error) { return nil, nil }
+func (mergedForge) JobLog(context.Context, int64, int) (string, error)     { return "", nil }
+func (mergedForge) CreateMR(context.Context, string, string, string, string) (*forge.MR, error) {
+	return nil, nil
+}
+
+// Git cannot see a squash-merged branch as merged; the forge can.
+func TestImportSkipsBranchesTheForgeSaysAreMerged(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	os.WriteFile(filepath.Join(f.repo.Path, "AGENTS-COORD.md"), []byte(coordDoc), 0o644)
+	dir := filepath.Join(f.ws, "app-worktrees", "billing")
+	gitT(t, f.repo.Path, "worktree", "add", "-q", "-b", "feat/billing-old", dir, "origin/main")
+	f.commit(dir, "billing.txt")
+	head := gitT(t, dir, "rev-parse", "HEAD")
+	f.fold.ForgeFor = func(string) (forge.Forge, error) { return mergedForge{"feat/billing-old", head}, nil }
+	plan, err := f.fold.Import(ctx, f.repo.ID, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, it := range plan.Items {
+		if it.Branch == "feat/billing-old" && (it.Action != "skip" || !strings.Contains(it.Why, "!107 is merged")) {
+			t.Errorf("merged branch = %+v", it)
 		}
 	}
 }

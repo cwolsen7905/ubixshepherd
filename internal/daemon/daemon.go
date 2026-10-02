@@ -24,6 +24,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -52,7 +53,7 @@ func NewServer(st store.Store, cfg config.Config, cfgPath string, log *slog.Logg
 	}
 	return &Server{
 		Store: st, Config: cfg, ConfigPath: cfgPath, Token: tok, Log: log,
-		Fold:    &fold.Fold{Store: st, Config: cfg},
+		Fold:    &fold.Fold{Store: st, Config: cfg, ForgeFor: forge.For},
 		started: time.Now().UTC(), stop: make(chan struct{}),
 	}, nil
 }
