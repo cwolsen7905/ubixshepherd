@@ -44,6 +44,7 @@ cd ~/git/myrepo
 shepherd lane open feat/login --scope 'src/auth/**' --scope docs/auth.md
 cd ~/git/myrepo-worktrees/feat-login      # work here, or start an agent here
 shepherd lane list                          # this repo's lanes; --all, or run at ~/git, for every repo
+shepherd lane scope --add 'src/session/**'  # widen (refused if another lane holds it) or --remove
 shepherd lane close                         # from inside the worktree, or: shepherd lane close feat/login
 shepherd fold gc                            # worktrees that look finished, across the workspace
 shepherd hook status                        # is the pre-push hook installed in this repo

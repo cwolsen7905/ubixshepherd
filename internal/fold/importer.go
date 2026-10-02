@@ -205,6 +205,25 @@ func (f *Fold) Import(ctx context.Context, repoID int64, coordFile string, apply
 	if len(rows) == 0 {
 		return plan, refuse("%s has no lane table Shepherd can read (a table with agent, scope and branch prefix columns)", coordFile)
 	}
+	// A dropped token that names a file in the repo is a path after all (Makefile,
+	// Dockerfile_Test: no extension to tell by).
+	if files, err := listFiles(ctx, repo.Path, "HEAD"); err == nil {
+		have := map[string]bool{}
+		for _, f := range files {
+			have[f] = true
+		}
+		for i := range rows {
+			var still []string
+			for _, d := range rows[i].Dropped {
+				if have[d] {
+					rows[i].Scope = append(rows[i].Scope, d)
+				} else {
+					still = append(still, d)
+				}
+			}
+			rows[i].Dropped = still
+		}
+	}
 	wts, err := git.Worktrees(ctx, repo.Path)
 	if err != nil {
 		return plan, err

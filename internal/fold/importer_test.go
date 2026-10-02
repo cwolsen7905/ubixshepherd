@@ -13,7 +13,7 @@ import (
 const coordDoc = "# Coordination\n\nIntro.\n\n## 1. Agents\n\n" +
 	"| Agent | Scope | Branch prefix |\n| ----- | ----- | ------------- |\n" +
 	"| billing (Claude) | Billing seam: `src/billing/**`, `docs/{billing,payments}.md`, `App\\\\Billing\\\\*` namespace | `feat/billing-*` |\n" +
-	"| ci (Claude) | `.gitlab-ci.yml`, `bin/ci/**` | `chore/ci-*` |\n" +
+	"| ci (Claude) | `.gitlab-ci.yml`, `bin/ci/**`, `Makefile` | `chore/ci-*` |\n" +
 	"| idle (Claude) | `idle/**` | `feat/idle-*` |\n\n" +
 	"Add a row first.\n\n## 6. Log\n\n- 2026-01-01 someone did something\n"
 
@@ -46,6 +46,11 @@ func TestImportPlanAndApply(t *testing.T) {
 			f.commit(dir, name+".txt")
 		}
 	}
+	os.WriteFile(filepath.Join(f.repo.Path, "Makefile"), []byte("x:\n"), 0o644)
+	gitT(t, f.repo.Path, "add", "Makefile")
+	gitT(t, f.repo.Path, "commit", "-q", "-m", "makefile")
+	gitT(t, f.repo.Path, "push", "-q", "origin", "HEAD:main")
+	gitT(t, f.repo.Path, "fetch", "-q", "origin")
 	add("billing", "feat/billing-seam", true) // matches a row, has work: import
 	add("ci-old", "chore/ci-cache", false)    // matches, but nothing beyond main: finished
 	add("stray", "fix/stray", true)           // no row claims it
@@ -66,6 +71,10 @@ func TestImportPlanAndApply(t *testing.T) {
 	}
 	if it := why["fix/stray"]; it.Action != "skip" || !strings.Contains(it.Why, "no row") {
 		t.Errorf("unclaimed worktree = %+v", it)
+	}
+	rows := ParseCoord(coordDoc)
+	if len(rows[1].Dropped) != 1 || rows[1].Dropped[0] != "Makefile" {
+		t.Errorf("Makefile should look like a non-path to the parser alone: %+v", rows[1])
 	}
 	if len(plan.Unclaimed) != 2 { // ci (its only worktree is finished) and idle
 		t.Errorf("unclaimed rows = %v", plan.Unclaimed)

@@ -232,6 +232,15 @@ type LaneView struct {
 	Repo string `json:"repo"`
 }
 
+// PathLaneScope is POST /v1/lanes/{id}/scope.
+func PathLaneScope(id int64) string { return fmt.Sprintf("%s/%d/scope", PathLanes, id) }
+
+// Rescope is the body of POST /v1/lanes/{id}/scope.
+type Rescope struct {
+	Add    []string `json:"add,omitempty"`
+	Remove []string `json:"remove,omitempty"`
+}
+
 // CloseLane is the body of POST /v1/lanes/{id}/close.
 type CloseLane struct {
 	Force bool `json:"force"`

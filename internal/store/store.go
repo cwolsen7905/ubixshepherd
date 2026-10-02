@@ -263,6 +263,7 @@ type Store interface {
 	// that is not closed.
 	CreateLane(ctx context.Context, l Lane) (Lane, error)
 	SetLaneState(ctx context.Context, id int64, state string) error
+	SetLaneScope(ctx context.Context, id int64, scope []string) error
 	// DeleteLane forgets a lane that never opened.
 	DeleteLane(ctx context.Context, id int64) error
 

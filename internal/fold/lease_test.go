@@ -186,3 +186,23 @@ func TestLaneSetup(t *testing.T) {
 		t.Errorf("failed setup: %+v %v", o, err)
 	}
 }
+
+func TestRescope(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	a := f.open("a") // src/**
+	b, _ := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "b", Scope: []string{"docs/**"}})
+	l, err := f.fold.Rescope(ctx, a.ID, []string{"Makefile", "bin/**"}, nil)
+	if err != nil || strings.Join(l.Scope, " ") != "src/** Makefile bin/**" {
+		t.Fatalf("add: %+v %v", l.Scope, err)
+	}
+	if _, err := f.fold.Rescope(ctx, a.ID, []string{"docs/a.md"}, nil); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "lane b") {
+		t.Errorf("overlapping add: %v", err)
+	}
+	if l, _ := f.fold.Rescope(ctx, a.ID, nil, []string{"bin/**"}); strings.Join(l.Scope, " ") != "src/** Makefile" {
+		t.Errorf("remove: %v", l.Scope)
+	}
+	if _, err := f.fold.Rescope(ctx, b.ID, nil, []string{"docs/**"}); !errors.Is(err, ErrRefused) {
+		t.Errorf("removing the last glob: %v", err)
+	}
+}

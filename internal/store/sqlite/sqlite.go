@@ -414,6 +414,15 @@ func (s *DB) SetLaneState(ctx context.Context, id int64, state string) error {
 	return nil
 }
 
+func (s *DB) SetLaneScope(ctx context.Context, id int64, scope []string) error {
+	b, err := json.Marshal(nonNil(scope))
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE lanes SET scope = ? WHERE id = ?`, string(b), id)
+	return err
+}
+
 func (s *DB) DeleteLane(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM lanes WHERE id = ?`, id)
 	return err

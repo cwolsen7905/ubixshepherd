@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathLanes, s.listLanes)
 	mux.HandleFunc("POST "+api.PathLanes, s.openLane)
 	mux.HandleFunc("POST "+api.PathLanes+"/{id}/close", s.closeLane)
+	mux.HandleFunc("POST "+api.PathLanes+"/{id}/scope", s.rescopeLane)
 	mux.HandleFunc("GET "+api.PathFoldGC, s.foldGC)
 	mux.HandleFunc("POST "+api.PathPrePush, s.prePush)
 	mux.HandleFunc("POST /v1/repos/{id}/hook", s.repoHook)
@@ -396,6 +397,26 @@ func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {
 	s.Store.AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("lane %s closed", res.Lane.Name), res.Lane.ID)
 	s.refreshView(res.Lane.RepoID)
 	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) rescopeLane(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var req api.Rescope
+	if !decode(w, r, &req) {
+		return
+	}
+	lane, err := s.Fold.Rescope(r.Context(), id, req.Add, req.Remove)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.refreshView(lane.RepoID)
+	writeJSON(w, http.StatusOK, lane)
 }
 
 func (s *Server) foldGC(w http.ResponseWriter, r *http.Request) {

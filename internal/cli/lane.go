@@ -39,6 +39,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneClose(ctx, env, args[1:])
 	case "run":
 		return laneRun(ctx, env, args[1:])
+	case "scope":
+		return laneScope(ctx, env, args[1:])
 	}
 	return errUsage
 }
@@ -408,5 +410,47 @@ func foldView(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	fmt.Fprintln(env.Stdout, v.View)
+	return nil
+}
+
+// laneScope widens or narrows a lane's scope: shepherd lane scope [lane] --add G --remove G.
+func laneScope(ctx context.Context, env Env, args []string) error {
+	fs := flags("lane scope", env)
+	var add, remove listFlag
+	fs.Var(&add, "add", "glob to add (repeatable); refused if another lane holds it")
+	fs.Var(&remove, "remove", "glob to remove (repeatable)")
+	repo := fs.String("repo", "", "repo, by its name in the workspace")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 1 || (len(add) == 0 && len(remove) == 0) {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	var id int64
+	if len(pos) == 1 {
+		l, err := findLane(ctx, c, h, pos[0])
+		if err != nil {
+			return err
+		}
+		id = l.ID
+	} else if h.Lane != nil {
+		id = h.Lane.ID
+	} else {
+		return errors.New("which lane? run this inside its worktree, or name it")
+	}
+	lane, err := c.RescopeLane(ctx, id, add, remove)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(env.Stdout, "lane %s scope: %s\n", lane.Name, strings.Join(lane.Scope, ", "))
 	return nil
 }

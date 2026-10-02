@@ -76,6 +76,11 @@ func (c *Client) OpenLane(ctx context.Context, req fold.OpenRequest) (fold.Opene
 	return out, c.do(ctx, http.MethodPost, api.PathLanes, req, &out)
 }
 
+func (c *Client) RescopeLane(ctx context.Context, id int64, add, remove []string) (store.Lane, error) {
+	var out store.Lane
+	return out, c.do(ctx, http.MethodPost, api.PathLaneScope(id), api.Rescope{Add: add, Remove: remove}, &out)
+}
+
 func (c *Client) CloseLane(ctx context.Context, id int64, force bool) (fold.CloseResult, error) {
 	var out fold.CloseResult
 	return out, c.do(ctx, http.MethodPost, api.PathLaneClose(id), api.CloseLane{Force: force}, &out)
