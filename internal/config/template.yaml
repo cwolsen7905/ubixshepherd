@@ -9,6 +9,8 @@
 ## daemon.json next to this file.
 # daemon:
 #   listen: 127.0.0.1:0
+#   ## How many agents (shepherd lane run) may run at once on this machine.
+#   max_runs: 4
 
 ## The profile every repo starts from.
 # defaults:

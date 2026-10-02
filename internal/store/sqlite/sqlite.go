@@ -65,6 +65,26 @@ var migrations = []string{
 	ALTER TABLE lanes_v2 RENAME TO lanes;
 	CREATE UNIQUE INDEX lanes_live_name ON lanes (repo_id, name) WHERE state != 'closed';
 	CREATE UNIQUE INDEX lanes_live_worktree ON lanes (worktree) WHERE state != 'closed';`,
+	// Agent runs: one agent started in one lane, and what came of it.
+	`CREATE TABLE runs (
+		id        INTEGER PRIMARY KEY,
+		lane_id   INTEGER NOT NULL REFERENCES lanes(id),
+		agent     TEXT NOT NULL,
+		model     TEXT NOT NULL DEFAULT '',
+		prompt    TEXT NOT NULL,
+		state     TEXT NOT NULL,
+		pid       INTEGER NOT NULL DEFAULT 0,
+		log       TEXT NOT NULL,
+		start_sha TEXT NOT NULL DEFAULT '',
+		end_sha   TEXT NOT NULL DEFAULT '',
+		commits   INTEGER NOT NULL DEFAULT 0,
+		outside   TEXT NOT NULL DEFAULT '[]',
+		exit_code INTEGER,
+		error     TEXT NOT NULL DEFAULT '',
+		started   TEXT NOT NULL,
+		ended     TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX runs_lane ON runs (lane_id);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -315,6 +335,94 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	}
 	r.Created = parseTime(created)
 	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
+}
+
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended`
+
+func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
+	var r store.Run
+	var outside, started, ended string
+	var exit sql.NullInt64
+	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended); err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
+		return r, err
+	}
+	if exit.Valid {
+		code := int(exit.Int64)
+		r.ExitCode = &code
+	}
+	r.Started = parseTime(started)
+	if ended != "" {
+		t := parseTime(ended)
+		r.Ended = &t
+	}
+	return r, nil
+}
+
+func (s *DB) CreateRun(ctx context.Context, r store.Run) (store.Run, error) {
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO runs (lane_id, agent, model, prompt, state, log, start_sha, started)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.LaneID, r.Agent, r.Model, r.Prompt, r.State, r.Log, r.StartSHA, now())
+	if err != nil {
+		return r, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return r, err
+	}
+	return s.Run(ctx, id)
+}
+
+// UpdateRun writes a run's mutable fields: state, pid, end, commits, outcome.
+func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
+	outside, err := json.Marshal(nonNil(r.Outside))
+	if err != nil {
+		return err
+	}
+	var exit any
+	if r.ExitCode != nil {
+		exit = *r.ExitCode
+	}
+	ended := ""
+	if r.Ended != nil {
+		ended = r.Ended.UTC().Format(time.RFC3339Nano)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
+			exit_code = ?, error = ?, ended = ? WHERE id = ?`,
+		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.ID)
+	return err
+}
+
+func (s *DB) Run(ctx context.Context, id int64) (store.Run, error) {
+	r, err := scanRun(s.db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs WHERE id = ?`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return r, store.ErrNotFound
+	}
+	return r, err
+}
+
+// Runs returns the newest runs first; laneID 0 means every lane, state "" every state.
+func (s *DB) Runs(ctx context.Context, laneID int64, state string, limit int) ([]store.Run, error) {
+	q := `SELECT ` + runCols + ` FROM runs WHERE (? = 0 OR lane_id = ?) AND (? = '' OR state = ?) ORDER BY id DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, laneID, laneID, state, state, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []store.Run
+	for rows.Next() {
+		r, err := scanRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 func nonNil(s []string) []string {

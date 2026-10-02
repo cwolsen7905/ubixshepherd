@@ -46,6 +46,10 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
   Its tests build real repos with a bare origin; keep them that way.
 - `shepherd mcp` (`internal/cli/mcp.go`) maps each MCP tool onto a CLI command and runs
   it with output captured. Add a tool by adding a command first, then its mapping.
+- `internal/dispatch` starts agents (`lane run`). An adapter per CLI builds its headless
+  command line; the runner briefs the agent, blocks pushing for the whole run, redacts
+  its output into `~/.shepherd/runs/`, and records the outcome. Its tests use a fake agent
+  script; a real run of each CLI is a manual check before changing an adapter.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

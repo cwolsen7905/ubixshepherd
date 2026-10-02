@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/service"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
@@ -87,6 +89,7 @@ func daemonRun(ctx context.Context, env Env) error {
 		return err
 	}
 	srv.Fold.Exe = env.Exe
+	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log}
 	return srv.Run(ctx, l.Runtime())
 }
 

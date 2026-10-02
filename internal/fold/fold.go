@@ -237,6 +237,9 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	if lane.State == store.LaneClosed {
 		return CloseResult{}, refuse("lane %s is already closed", lane.Name)
 	}
+	if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
+		return CloseResult{}, refuse("agent run %d is going in lane %s; stop it first (shepherd run stop %d)", running[0].ID, lane.Name, running[0].ID)
+	}
 	repo, err := f.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
 		return CloseResult{}, err
