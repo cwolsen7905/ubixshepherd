@@ -32,7 +32,15 @@ var backticked = regexp.MustCompile("`([^`]+)`")
 // ParseCoord reads the lane table of a coordination file (AGENTS-COORD.md): the first
 // Markdown table whose header names an agent, a scope and a branch prefix. Scope cells
 // are prose; the paths in them are the backticked tokens that look like paths.
+//
+// Shepherd's own generated view (between its markers) is skipped: it is a table of
+// lanes too, and reading it back would import Shepherd's lanes into themselves.
 func ParseCoord(md string) []CoordRow {
+	if i := strings.Index(md, viewBegin); i >= 0 {
+		if j := strings.Index(md[i:], viewEnd); j >= 0 {
+			md = md[:i] + md[i+j+len(viewEnd):]
+		}
+	}
 	var rows []CoordRow
 	cols := map[string]int{}
 	inTable := false
