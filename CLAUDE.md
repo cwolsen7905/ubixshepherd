@@ -59,6 +59,10 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
 - Routing between lanes is `internal/dispatch/route.go`: deterministic rules only (a
   named open lane, its last agent, another provider for reviews); anything needing
   judgment becomes `needs_routing` for the front desk. `Route` runs whenever a run ends.
+- `shepherd chat` is `internal/chat`: a Bubble Tea model over the daemon's feed, and a
+  front desk (`ClaudeDesk`) run headless and resumed per turn. The desk gets operator
+  tools and reads only (`--disallowedTools Edit Write Bash`); its standing instruction is
+  `DeskBrief`. Test the model with fakes (`chat_test.go`); the desk needs a real check.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.

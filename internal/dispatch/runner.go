@@ -248,6 +248,11 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	r.wg.Add(1)
 	go r.watch(run, ad, lane, p, out, logf)
 	r.Log.Info("run started", "run", run.ID, "agent", ad.Name, "lane", lane.Name, "pid", run.PID)
+	verb := "started"
+	if resume {
+		verb = "continues"
+	}
+	r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: %s %s in lane %s: %s", run.ID, ad.Name, verb, lane.Name, clip(req.Prompt, 120))
 	return run, nil
 }
 
@@ -310,6 +315,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		r.Log.Error("record run outcome", "run", run.ID, "err", err)
 	}
 	r.Log.Info("run ended", "run", run.ID, "state", run.State, "exit", code, "commits", run.Commits, "outside", len(run.Outside))
+	ended := fmt.Sprintf("run %d: %s in lane %s %s, %d commit(s)", run.ID, run.Agent, lane.Name, run.State, run.Commits)
+	if len(run.Outside) > 0 {
+		ended += ", outside its scope: " + strings.Join(run.Outside, ", ")
+	}
+	r.feed(ctx, store.FeedRunEnded, run.ID, "%s", ended)
 	r.deliverAnswers(ctx, run.ID)
 	r.Route(ctx)
 }
@@ -365,6 +375,7 @@ func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision,
 	}
 	d.AnswerRun = next.ID
 	r.Log.Info("answer delivered", "decision", d.ID, "run", next.ID)
+	r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered; the agent carries on as run %d", d.ID, next.ID)
 	return d, nil
 }
 
@@ -379,6 +390,14 @@ func (r *Runner) Ask(ctx context.Context, d store.Decision) (store.Decision, err
 	d, err := r.Store.CreateDecision(ctx, d)
 	if err == nil {
 		r.Log.Info("decision held for the person", "decision", d.ID, "run", d.RunID)
+		text := fmt.Sprintf("decision %d from %s: %s", d.ID, r.who(ctx, d.RunID), d.Question)
+		for i, o := range d.Options {
+			text += fmt.Sprintf("  [%d] %s", i+1, o)
+		}
+		if d.Recommendation != "" {
+			text += "  (recommends: " + clip(d.Recommendation, 120) + ")"
+		}
+		r.feed(ctx, store.FeedDecision, d.ID, "%s", text)
 	}
 	return d, err
 }
@@ -405,6 +424,7 @@ func (r *Runner) Record(ctx context.Context, e store.Event) (store.Event, error)
 	e, err := r.Store.AddEvent(ctx, e)
 	if err == nil {
 		r.Log.Info("agent "+e.Kind, "run", e.RunID, "status", e.Status)
+		r.feed(ctx, store.FeedReport, e.RunID, "%s reports %s: %s", r.who(ctx, e.RunID), e.Status, clip(e.Text, 200))
 	}
 	return e, err
 }
@@ -453,6 +473,36 @@ func (r *Runner) Shutdown(ctx context.Context) {
 		r.mu.Unlock()
 	}
 	r.Recover(context.Background())
+}
+
+// feed adds a line to the person's thread. A feed that cannot be written is logged, never
+// a reason to fail the work it describes.
+func (r *Runner) feed(ctx context.Context, kind string, ref int64, format string, a ...any) {
+	if err := r.Store.AddFeed(ctx, kind, redact.String(fmt.Sprintf(format, a...)), ref); err != nil {
+		r.Log.Error("write feed", "kind", kind, "err", err)
+	}
+}
+
+// who names a run's agent and lane: "claude in lane feat/login".
+func (r *Runner) who(ctx context.Context, runID int64) string {
+	run, err := r.Store.Run(ctx, runID)
+	if err != nil {
+		return fmt.Sprintf("run %d", runID)
+	}
+	lane, err := r.Store.Lane(ctx, run.LaneID)
+	if err != nil {
+		return run.Agent
+	}
+	return run.Agent + " in lane " + lane.Name
+}
+
+// clip shortens text to one line of at most n bytes.
+func clip(s string, n int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > n {
+		return s[:n-3] + "..."
+	}
+	return s
 }
 
 func (r *Runner) fail(ctx context.Context, run store.Run, err error) error {

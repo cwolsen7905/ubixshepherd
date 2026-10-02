@@ -93,6 +93,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET "+api.PathRuns+"/{id}/events", s.runEvents)
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/decisions", s.addDecision)
 	mux.HandleFunc("GET "+api.PathDecisions, s.listDecisions)
+	mux.HandleFunc("GET "+api.PathFeed, s.feed)
+	mux.HandleFunc("GET "+api.PathSettings+"/{key}", s.getSetting)
+	mux.HandleFunc("PUT "+api.PathSettings+"/{key}", s.putSetting)
 	mux.HandleFunc("POST "+api.PathRuns+"/{id}/requests", s.addRequest)
 	mux.HandleFunc("GET "+api.PathRequests, s.listRequests)
 	mux.HandleFunc("POST "+api.PathRequests+"/{id}/route", s.routeRequest)
@@ -362,6 +365,7 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree)
+	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	writeJSON(w, http.StatusOK, lane)
 }
 
@@ -381,6 +385,7 @@ func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("lane closed", "lane", res.Lane.Name, "force", req.Force, "branch_deleted", res.BranchDeleted)
+	s.Store.AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("lane %s closed", res.Lane.Name), res.Lane.ID)
 	writeJSON(w, http.StatusOK, res)
 }
 
@@ -670,6 +675,65 @@ func (s *Server) routeRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, q)
+}
+
+func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	after, _ := strconv.ParseInt(q.Get("after"), 10, 64)
+	if q.Get("after") == "latest" {
+		last, err := s.Store.LastFeed(r.Context())
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, api.Feed{Items: []store.FeedItem{}, Last: last})
+		return
+	}
+	items, err := s.Store.Feed(r.Context(), after, 200)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out := api.Feed{Items: []store.FeedItem{}, Last: after}
+	if items != nil {
+		out.Items = items
+		out.Last = items[len(items)-1].ID
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// Settings the daemon keeps for clients, by name; anything else is refused.
+var settingKeys = map[string]bool{"desk.session": true, "desk.agent": true}
+
+func (s *Server) getSetting(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	if !settingKeys[key] {
+		writeError(w, http.StatusNotFound, fmt.Errorf("no setting %q", key))
+		return
+	}
+	v, err := s.Store.Setting(r.Context(), key)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, api.Setting{Value: v})
+}
+
+func (s *Server) putSetting(w http.ResponseWriter, r *http.Request) {
+	key := r.PathValue("key")
+	if !settingKeys[key] {
+		writeError(w, http.StatusNotFound, fmt.Errorf("no setting %q", key))
+		return
+	}
+	var v api.Setting
+	if !decode(w, r, &v) {
+		return
+	}
+	if err := s.Store.SetSetting(r.Context(), key, v.Value); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, v)
 }
 
 func (s *Server) listDecisions(w http.ResponseWriter, r *http.Request) {

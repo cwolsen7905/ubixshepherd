@@ -52,6 +52,11 @@ func (r *Runner) RequestHelp(ctx context.Context, q store.Request) (store.Reques
 		return q, err
 	}
 	r.Log.Info("request recorded", "request", q.ID, "kind", q.Kind, "from_run", q.FromRun, "lane", q.Lane)
+	target := "Shepherd"
+	if q.Lane != "" {
+		target = "lane " + q.Lane
+	}
+	r.feed(ctx, store.FeedRequest, q.ID, "request %d: %s asks %s (%s): %s", q.ID, r.who(ctx, q.FromRun), target, q.Kind, clip(q.Message, 160))
 	go r.Route(context.Background())
 	return q, nil
 }
@@ -138,6 +143,7 @@ func (r *Runner) save(ctx context.Context, q store.Request) store.Request {
 func (r *Runner) needsRouting(ctx context.Context, q store.Request, why string) store.Request {
 	q.State, q.Note = store.RequestNeedsRouting, why
 	r.Log.Info("request needs routing", "request", q.ID, "why", why)
+	r.feed(ctx, store.FeedRequestStuck, q.ID, "request %d needs routing: %s", q.ID, why)
 	return r.save(ctx, q)
 }
 
@@ -195,10 +201,12 @@ func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Req
 	if err != nil {
 		q.State, q.Note = store.RequestFailed, err.Error()
 		r.Log.Error("route request", "request", q.ID, "err", err)
+		r.feed(ctx, store.FeedRequestFailed, q.ID, "request %d failed: %s", q.ID, clip(err.Error(), 160))
 		return r.save(ctx, q)
 	}
 	q.State, q.Lane, q.Agent, q.TargetRun, q.Note = store.RequestRouted, target.Name, req.Agent, run.ID, ""
 	r.Log.Info("request routed", "request", q.ID, "lane", target.Name, "agent", req.Agent, "run", run.ID)
+	r.feed(ctx, store.FeedRequestRouted, q.ID, "request %d routed to %s in lane %s (run %d)", q.ID, req.Agent, target.Name, run.ID)
 	return r.save(ctx, q)
 }
 
@@ -315,6 +323,7 @@ func (r *Runner) returnReply(ctx context.Context, q store.Request) {
 	q.State, q.ReplyRun = store.RequestReplied, next.ID
 	r.save(ctx, q)
 	r.Log.Info("reply returned", "request", q.ID, "run", next.ID)
+	r.feed(ctx, store.FeedRequestReplied, q.ID, "request %d: %s replied; the asker carries on as run %d: %s", q.ID, q.Agent, next.ID, clip(q.Reply, 160))
 }
 
 // logTail is the last part of a run's log, without Shepherd's own lines.
