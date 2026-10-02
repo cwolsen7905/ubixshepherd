@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/scope"
@@ -242,6 +243,10 @@ func (f *Fold) Import(ctx context.Context, repoID int64, coordFile string, apply
 	if git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+base) {
 		target = "origin/" + base
 	}
+	var fg forge.Forge
+	if f.ForgeFor != nil {
+		fg, _ = f.ForgeFor(repo.Remote)
+	}
 	matched := map[int]bool{}
 	var imported []store.Lane
 	for _, wt := range wts[1:] {
@@ -258,6 +263,11 @@ func (f *Fold) Import(ctx context.Context, repoID int64, coordFile string, apply
 			it.Why = "missing on disk"
 		case git.Ok(ctx, repo.Path, "merge-base", "--is-ancestor", "refs/heads/"+wt.Branch, target):
 			it.Why = "its branch is already in " + target + " (merged, or no new commits): a candidate for fold gc"
+		case fg != nil:
+			if mr, err := fg.MRForBranch(ctx, wt.Branch); err == nil && mr != nil && mr.State == "merged" && mr.SHA != "" &&
+				git.Ok(ctx, repo.Path, "merge-base", "--is-ancestor", "refs/heads/"+wt.Branch, mr.SHA) {
+				it.Why = fmt.Sprintf("its merge request !%d is merged and the branch holds nothing beyond it: a candidate for fold gc", mr.IID)
+			}
 		}
 		if it.Why == "" {
 			row := -1
