@@ -109,6 +109,7 @@ func newFixture(t *testing.T) *fixture {
 	ff := &fakeForge{}
 	wa := &Watcher{Store: st, Fold: fo, Runner: r, Log: log, Interval: time.Hour,
 		ForgeFor: func(string) (forge.Forge, error) { return ff, nil }}
+	t.Cleanup(r.Wait) // let runs and what they set off finish before the repo is removed
 	return &fixture{w: wa, f: ff, st: st, lane: opened.Lane, run: r, ctx: ctx, agent: bin}
 }
 

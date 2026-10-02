@@ -220,8 +220,17 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 	prompt := fmt.Sprintf("[Shepherd] The pipeline for your merge request !%d failed (pipeline %d, %s).\n\n%s"+
 		"Find the cause and fix it within your scope, run the gate, and commit. Do not push: the person pushes the fix.",
 		mr.IID, p.ID, p.URL, logs.String())
+	// Count the try before starting it, so a fix that ends fast is checked against it.
+	if lf, err := w.Store.LaneForge(ctx, lane.ID); err == nil {
+		lf.FixTries = tries + 1
+		w.Store.PutLaneForge(ctx, lf)
+	}
 	run, err := w.Runner.Start(ctx, dispatch.StartRequest{Continue: last.ID, Prompt: prompt, Auto: true})
 	if err != nil {
+		if lf, err := w.Store.LaneForge(ctx, lane.ID); err == nil {
+			lf.FixTries = tries
+			w.Store.PutLaneForge(ctx, lf)
+		}
 		w.feed(ctx, store.FeedPipeline, lane.ID, "could not hand the failure to %s in lane %s: %s", last.Agent, lane.Name, firstLine(err.Error()))
 		return tries
 	}
