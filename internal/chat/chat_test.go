@@ -85,9 +85,15 @@ type fakeAPI struct {
 	asked      []string
 	redialErrs []error
 	redials    int
+	feedCalls  int
+	laneCalls  int
+	runCalls   int
+	spendCalls int
+	sessCalls  int
 }
 
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
+	f.feedCalls++
 	if after < 0 {
 		return api.Feed{Last: 0}, nil
 	}
@@ -101,8 +107,12 @@ func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
 	}
 	return out, nil
 }
-func (f *fakeAPI) Lanes(context.Context, int64, int64) ([]api.LaneView, error) { return nil, nil }
+func (f *fakeAPI) Lanes(context.Context, int64, int64) ([]api.LaneView, error) {
+	f.laneCalls++
+	return nil, nil
+}
 func (f *fakeAPI) Runs(context.Context, int64, string, int) ([]api.RunView, error) {
+	f.runCalls++
 	return nil, nil
 }
 func (f *fakeAPI) RunLog(context.Context, int64, int64) (api.RunLog, error) {
@@ -114,6 +124,7 @@ func (f *fakeAPI) Answer(_ context.Context, id int64, a string) (store.Decision,
 	return store.Decision{ID: id, AnswerRun: 9}, nil
 }
 func (f *fakeAPI) SpendToday(context.Context) (api.SpendToday, error) {
+	f.spendCalls++
 	return api.SpendToday{Day: "today", USD: f.spent, Budget: 20}, nil
 }
 func (f *fakeAPI) AddSpend(_ context.Context, sp store.Spend) error {
@@ -121,6 +132,7 @@ func (f *fakeAPI) AddSpend(_ context.Context, sp store.Spend) error {
 	return nil
 }
 func (f *fakeAPI) Sessions(context.Context, int64) ([]api.SessionView, error) {
+	f.sessCalls++
 	return []api.SessionView{{Conversation: store.Conversation{ID: "71ffa009-aaaa", Title: "Stripe integration", Dir: "/w/app"}, Repo: "app"}}, nil
 }
 func (f *fakeAPI) AskSession(_ context.Context, id, q string) (convo.Answer, error) {
@@ -297,7 +309,7 @@ func TestDeskCostIsRecordedNotShown(t *testing.T) {
 
 func TestConversationsInTheChat(t *testing.T) {
 	m, d, a := newTestModel()
-	drive(t, m, m.pollPanel())
+	drive(t, m, m.pollPanel(true))
 	if v := m.View(); !strings.Contains(v, "CONVERSATIONS") || !strings.Contains(v, "71ffa009") {
 		t.Errorf("panel lacks conversations:\n%s", v)
 	}
@@ -419,7 +431,7 @@ func TestReconnectRetriesAndRestoresChat(t *testing.T) {
 		t.Fatalf("first reconnect: state %v, attempts %d", m.Reconnecting(), a.redials)
 	}
 
-	_, cmd = m.Update(tickMsg{})
+	_, cmd = m.Update(tickMsg{generation: m.tickGeneration})
 	drive(t, m, cmd)
 	if m.Reconnecting() || a.redials != 2 {
 		t.Fatalf("reconnect did not recover: state %v, attempts %d", m.Reconnecting(), a.redials)

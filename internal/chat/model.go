@@ -54,6 +54,15 @@ var autoKinds = map[string]bool{
 
 const panelWidth = 34
 
+const (
+	activeFeedInterval  = time.Second
+	maxIdleFeedInterval = 10 * time.Second
+	activePanelInterval = 5 * time.Second
+	idlePanelInterval   = 30 * time.Second
+	sessionsInterval    = time.Minute
+	activeWindow        = 30 * time.Second
+)
+
 // panel item kinds for click selection.
 const (
 	selLane     = "lane"
@@ -83,10 +92,16 @@ type Model struct {
 	deskCh  chan tea.Msg
 	pending []string // events waiting for the desk to be free
 
-	lastFeed  int64
-	lanes     []api.LaneView
-	runs      []api.RunView
-	decisions []api.DecisionView
+	lastFeed         int64
+	lanes            []api.LaneView
+	runs             []api.RunView
+	decisions        []api.DecisionView
+	lastActivity     time.Time
+	lastPanelPoll    time.Time
+	lastSessionsPoll time.Time
+	clock            func() time.Time
+	tickGeneration   uint64
+	focused          bool
 
 	spend    api.SpendToday
 	sessions []api.SessionView
@@ -117,7 +132,11 @@ func New(ctx context.Context, a API, d Desk, ws store.Workspace) *Model {
 	in.SetHeight(2)
 	in.CharLimit = 8000
 	in.Focus()
-	return &Model{ctx: ctx, api: a, desk: d, workspace: ws, auto: true, input: in, lastFeed: -1, mouseOn: true}
+	now := time.Now()
+	return &Model{
+		ctx: ctx, api: a, desk: d, workspace: ws, auto: true, input: in,
+		lastFeed: -1, mouseOn: true, lastActivity: now, clock: time.Now, focused: true,
+	}
 }
 
 // Lines returns the thread so far (for tests).
@@ -138,39 +157,50 @@ func (m *Model) Selection() (kind string, id int64) { return m.selKind, m.selID 
 // ThreadYOffset is the conversation pane's scroll offset (for tests).
 func (m *Model) ThreadYOffset() int { return m.thread.YOffset }
 
-type (
-	tickMsg  struct{}
-	feedMsg  api.Feed
-	panelMsg struct {
-		lanes     []api.LaneView
-		runs      []api.RunView
-		decisions []api.DecisionView
-		spend     api.SpendToday
-		sessions  []api.SessionView
-	}
-	sessionMsg  string
-	deskLineMsg Line
-	deskDoneMsg struct {
-		session string
-		err     error
-	}
-	logMsg   api.RunLog
-	lineMsg  Line
-	errorMsg struct{ err error }
-	// reconnectMsg is the outcome of one Redial attempt.
-	reconnectMsg struct {
-		ok  bool
-		err error
-	}
-)
+type tickMsg struct {
+	at         time.Time
+	generation uint64
+}
+
+type feedMsg api.Feed
+
+type panelMsg struct {
+	lanes           []api.LaneView
+	runs            []api.RunView
+	decisions       []api.DecisionView
+	spend           api.SpendToday
+	sessions        []api.SessionView
+	panelUpdated    bool
+	sessionsUpdated bool
+}
+
+type sessionMsg string
+
+type deskLineMsg Line
+
+type deskDoneMsg struct {
+	session string
+	err     error
+}
+
+type logMsg api.RunLog
+
+type lineMsg Line
+
+type errorMsg struct{ err error }
+
+// reconnectMsg is the outcome of one Redial attempt.
+type reconnectMsg struct {
+	ok  bool
+	err error
+}
 
 func (m *Model) Init() tea.Cmd {
 	m.add(Line{KindInfo, fmt.Sprintf("Shepherd, workspace %s (%s). The desk delegates to agents in lanes; their events appear here. /help for commands.", m.workspace.Name, m.workspace.Path)})
-	return tea.Batch(textarea.Blink, m.loadSession(), m.openDecisions(), m.pollFeed(), m.pollPanel(), tick())
-}
-
-func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tickMsg{} })
+	now := m.clock()
+	m.lastPanelPoll = now
+	m.lastSessionsPoll = now
+	return tea.Batch(textarea.Blink, m.loadSession(), m.openDecisions(), m.pollFeed(), m.pollPanel(true), m.scheduleTick(m.feedInterval(now)))
 }
 
 func (m *Model) loadSession() tea.Cmd {
@@ -217,7 +247,15 @@ func (m *Model) pollFeed() tea.Cmd {
 	}
 }
 
-func (m *Model) pollPanel() tea.Cmd {
+func (m *Model) pollPanel(includeSessions bool) tea.Cmd {
+	return m.pollPanelAt(includeSessions, m.clock())
+}
+
+func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
+	m.lastPanelPoll = now
+	if includeSessions {
+		m.lastSessionsPoll = now
+	}
 	return func() tea.Msg {
 		lanes, err := m.api.Lanes(m.ctx, m.workspace.ID, 0)
 		if err != nil {
@@ -235,12 +273,87 @@ func (m *Model) pollPanel() tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		var ss []api.SessionView
+		if includeSessions {
+			ss, err = m.api.Sessions(m.ctx, 0)
+			if err != nil {
+				return errorMsg{err}
+			}
+		}
+		return panelMsg{
+			lanes: lanes, runs: runs, decisions: ds, spend: sp, sessions: ss,
+			panelUpdated: true, sessionsUpdated: includeSessions,
+		}
+	}
+}
+
+func (m *Model) pollSessionsAt(now time.Time) tea.Cmd {
+	m.lastSessionsPoll = now
+	return func() tea.Msg {
 		ss, err := m.api.Sessions(m.ctx, 0)
 		if err != nil {
 			return errorMsg{err}
 		}
-		return panelMsg{lanes, runs, ds, sp, ss}
+		return panelMsg{sessions: ss, sessionsUpdated: true}
 	}
+}
+
+func (m *Model) scheduleTick(interval time.Duration) tea.Cmd {
+	m.tickGeneration++
+	generation := m.tickGeneration
+	return tea.Tick(interval, func(at time.Time) tea.Msg {
+		return tickMsg{at: at, generation: generation}
+	})
+}
+
+func (m *Model) feedInterval(now time.Time) time.Duration {
+	if m.active(now) {
+		return activeFeedInterval
+	}
+	if !m.focused {
+		return maxIdleFeedInterval
+	}
+	idle := now.Sub(m.lastActivity) - activeWindow
+	if idle < 0 {
+		idle = 0
+	}
+	steps := int(idle/(10*time.Second)) + 1
+	interval := time.Duration(steps*2) * time.Second
+	if interval > maxIdleFeedInterval {
+		return maxIdleFeedInterval
+	}
+	return interval
+}
+
+func (m *Model) active(now time.Time) bool {
+	if !m.focused {
+		return false
+	}
+	if m.busy || (m.logRun != 0 && !m.logDone) || now.Sub(m.lastActivity) < activeWindow {
+		return true
+	}
+	for _, r := range m.runs {
+		if r.State == store.RunRunning {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) panelInterval(now time.Time) time.Duration {
+	if m.active(now) {
+		return activePanelInterval
+	}
+	return idlePanelInterval
+}
+
+func (m *Model) sessionsDue(now time.Time) bool {
+	return m.lastSessionsPoll.IsZero() || now.Sub(m.lastSessionsPoll) >= sessionsInterval
+}
+
+func (m *Model) noteActivity(now time.Time) tea.Cmd {
+	m.lastActivity = now
+	return m.scheduleTick(m.feedInterval(now))
 }
 
 func (m *Model) pollLog() tea.Cmd {
@@ -282,25 +395,27 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
 	case tea.MouseMsg:
+		cmds = append(cmds, m.noteActivity(m.clock()))
 		cmds = append(cmds, m.onMouse(msg)...)
 	case tea.KeyMsg:
+		cmds = append(cmds, m.noteActivity(m.clock()))
 		switch msg.Type {
 		case tea.KeyCtrlC:
-			return m, tea.Quit
+			return m, tea.Batch(append(cmds, tea.Quit)...)
 		case tea.KeyCtrlT:
 			m.mouseOn = !m.mouseOn
 			if m.mouseOn {
-				return m, tea.EnableMouseCellMotion
+				return m, tea.Batch(append(cmds, tea.EnableMouseCellMotion)...)
 			}
-			return m, tea.DisableMouse
+			return m, tea.Batch(append(cmds, tea.DisableMouse)...)
 		case tea.KeyEsc:
 			if m.logRun != 0 {
 				m.logRun = 0
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
 			if m.selKind != "" {
 				m.selKind, m.selID = "", 0
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
 		case tea.KeyPgUp, tea.KeyPgDown:
 			var cmd tea.Cmd
@@ -309,17 +424,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.thread, cmd = m.thread.Update(msg)
 			}
-			return m, cmd
+			return m, tea.Batch(append(cmds, cmd)...)
 		case tea.KeyEnter:
 			if m.logRun != 0 {
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
 			if text == "" {
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
-			return m, m.handle(text)
+			return m, tea.Batch(append(cmds, m.handle(text))...)
 		}
 		if m.logRun == 0 {
 			var cmd tea.Cmd
@@ -327,21 +442,47 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case tickMsg:
+		if msg.generation != m.tickGeneration {
+			break
+		}
 		if m.reconnecting {
-			cmds = append(cmds, m.reconnect(), tick())
+			cmds = append(cmds, m.reconnect(), m.scheduleTick(activeFeedInterval))
 		} else {
-			cmds = append(cmds, m.pollFeed(), m.pollPanel(), tick())
+			cmds = append(cmds, m.pollFeed())
+			if msg.at.Sub(m.lastPanelPoll) >= m.panelInterval(msg.at) {
+				cmds = append(cmds, m.pollPanelAt(m.sessionsDue(msg.at), msg.at))
+			} else if m.sessionsDue(msg.at) {
+				cmds = append(cmds, m.pollSessionsAt(msg.at))
+			}
 			if m.logRun != 0 && !m.logDone {
 				cmds = append(cmds, m.pollLog())
 			}
+			cmds = append(cmds, m.scheduleTick(m.feedInterval(msg.at)))
 		}
+	case tea.BlurMsg:
+		m.focused = false
+		cmds = append(cmds, m.scheduleTick(m.feedInterval(m.clock())))
+	case tea.FocusMsg:
+		m.focused = true
+		now := m.clock()
+		m.lastActivity = now
+		cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(activeFeedInterval))
 	case sessionMsg:
 		m.session = string(msg)
 	case feedMsg:
-		cmds = append(cmds, m.onFeed(api.Feed(msg)))
+		feed := api.Feed(msg)
+		if len(feed.Items) > 0 {
+			cmds = append(cmds, m.noteActivity(m.clock()))
+		}
+		cmds = append(cmds, m.onFeed(feed))
 	case panelMsg:
-		m.lanes, m.runs, m.decisions = msg.lanes, msg.runs, msg.decisions
-		m.spend, m.sessions = msg.spend, msg.sessions
+		if msg.panelUpdated {
+			m.lanes, m.runs, m.decisions = msg.lanes, msg.runs, msg.decisions
+			m.spend = msg.spend
+		}
+		if msg.sessionsUpdated {
+			m.sessions = msg.sessions
+		}
 	case deskLineMsg:
 		if msg.Kind == KindCost {
 			usd, _ := strconv.ParseFloat(msg.Text, 64)
@@ -363,7 +504,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if isConnErr(msg.err) {
 			if !m.reconnecting {
 				m.reconnecting = true
-				cmds = append(cmds, m.reconnect())
+				cmds = append(cmds, m.reconnect(), m.scheduleTick(activeFeedInterval))
 			}
 			break
 		}
@@ -371,7 +512,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reconnectMsg:
 		if msg.ok {
 			m.reconnecting = false
-			cmds = append(cmds, m.pollFeed(), m.pollPanel())
+			now := m.clock()
+			cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(m.feedInterval(now)))
 			if m.logRun != 0 && !m.logDone {
 				cmds = append(cmds, m.pollLog())
 			}
