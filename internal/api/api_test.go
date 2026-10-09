@@ -46,10 +46,9 @@ func TestEventKindIsClosed(t *testing.T) {
 		t.Error("unlisted kinds must be info")
 	}
 	for kind, want := range map[string]string{
-		store.FeedPipeline: EventPipeline, store.FeedRunEnded: EventRunEnded, store.FeedGate: EventGate,
+		"pipeline": EventPipeline, "run_ended": EventRunEnded, "gate": EventGate,
 		store.FeedCommit: EventCommit, store.FeedRunPassed: EventRunPassed, store.FeedRunFailed: EventRunFailed,
 		store.FeedRunInterrupted: EventRunInterrupted, store.FeedRunQuota: EventRunQuota,
-		"pipeline": EventPipeline, "run_ended": EventRunEnded, "gate": EventGate,
 	} {
 		if got := EventKind(kind); got != want {
 			t.Errorf("EventKind(%q) = %q, want %q", kind, got, want)
