@@ -302,3 +302,31 @@ func TestShipShipsTheLaneNotJustTheRun(t *testing.T) {
 		t.Error("the lane's earlier commits were not shipped")
 	}
 }
+
+func TestShipPostsGateKinds(t *testing.T) {
+	f, _ := shipFixture(t, "ok", pushes)
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	f.wait(t, run.ID)
+	for _, s := range []string{"running the gate `true`", "gate `true` passed in lane work", "(gate `true` passed) and opened"} {
+		want := store.FeedGate
+		if strings.Contains(s, "opened") {
+			want = store.FeedMR
+		}
+		if k := feedKind(t, f, s); k != want {
+			t.Errorf("%q kind = %q, want %q", s, k, want)
+		}
+	}
+
+	g, _ := shipFixture(t, "ok", strings.Replace(pushes, `gate: "true"`, `gate: "exit 1"`, 1))
+	run, _ = g.runner.Start(context.Background(), StartRequest{LaneID: g.lane.ID, Agent: "claude", Prompt: "work"})
+	g.wait(t, run.ID)
+	if k := feedKind(t, g, "asked claude to fix it"); k != store.FeedGate {
+		t.Errorf("failed gate kind = %q", k)
+	}
+	items, _ := g.st.Feed(context.Background(), 0, 500)
+	for _, it := range items {
+		if it.Kind == store.FeedPipeline {
+			t.Errorf("the gate posted a pipeline item: %s", it.Text)
+		}
+	}
+}

@@ -486,9 +486,12 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if len(run.Outside) > 0 {
 		ended += ", outside its scope: " + strings.Join(run.Outside, ", ")
 	}
-	r.feed(ctx, store.FeedRunEnded, run.ID, "%s", ended)
+	if run.Commits > 0 {
+		r.feed(ctx, store.FeedCommit, run.ID, "run %d: %d commit(s) in lane %s, latest: %s", run.ID, run.Commits, lane.Name, clip(latestSubject(ctx, lane.Worktree), 100))
+	}
+	r.feed(ctx, outcomeKind(run.State), run.ID, "%s", ended)
 	if !quotaUntil.IsZero() {
-		r.feed(ctx, store.FeedRunEnded, run.ID, "run %d: %s is out of quota (%s); Shepherd holds %s runs until %s",
+		r.feed(ctx, store.FeedRunQuota, run.ID, "run %d: %s is out of quota (%s); Shepherd holds %s runs until %s",
 			run.ID, run.Agent, clip(limit.Text, 160), run.Agent, quotaUntil.Format("Jan 2 15:04"))
 	}
 	if closing {
@@ -725,3 +728,25 @@ func SetLookPath(r *Runner, f func(string) (string, error)) { r.lookPath = f }
 // Wait blocks until every run the runner is watching has ended and its outcome, and any
 // follow-up it set off, has been recorded.
 func (r *Runner) Wait() { r.wg.Wait() }
+
+// outcomeKind is the feed kind of a run that ended in state.
+func outcomeKind(state string) string {
+	switch state {
+	case store.RunSucceeded:
+		return store.FeedRunPassed
+	case store.RunFailed:
+		return store.FeedRunFailed
+	case store.RunStopped, store.RunInterrupted:
+		return store.FeedRunInterrupted
+	}
+	return store.FeedRunEnded
+}
+
+// latestSubject is the subject line of the lane's newest commit, or "".
+func latestSubject(ctx context.Context, dir string) string {
+	s, err := git.Run(ctx, dir, "log", "-1", "--format=%s")
+	if err != nil {
+		return ""
+	}
+	return s
+}

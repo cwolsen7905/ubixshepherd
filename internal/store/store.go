@@ -260,7 +260,13 @@ const (
 	FeedLaneOpened     = "lane_opened"
 	FeedLaneClosed     = "lane_closed"
 	FeedRunStarted     = "run_started"
-	FeedRunEnded       = "run_ended"
+	FeedRunEnded       = "run_ended" // older rows, and a run Shepherd could not classify
+	FeedRunPassed      = "run_passed"
+	FeedRunFailed      = "run_failed"
+	FeedRunInterrupted = "run_interrupted" // stopped by the person, or cut short by the daemon stopping
+	FeedRunQuota       = "run_quota"       // the agent is out of quota and held
+	FeedCommit         = "commit"
+	FeedGate           = "gate" // Shepherd's own check before a push, and the push that follows
 	FeedReport         = "report"
 	FeedDecision       = "decision"
 	FeedDecisionAnswer = "decision_answered"
@@ -273,7 +279,7 @@ const (
 	FeedBudget         = "budget"
 	FeedTag            = "tag"
 	FeedSession        = "session"
-	FeedPipeline       = "pipeline"
+	FeedPipeline       = "pipeline" // the forge's pipeline only
 	FeedRelease        = "release"
 )
 

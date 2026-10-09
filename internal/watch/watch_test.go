@@ -172,7 +172,7 @@ func TestFailedPipelineGoesBackToTheAgent(t *testing.T) {
 	if fix.Parent != first.ID || !strings.Contains(fix.Prompt, "--- FAIL: TestParse (job log)") || !strings.Contains(fix.Prompt, "!7 failed") {
 		t.Errorf("fix run = %+v", fix)
 	}
-	if !strings.Contains(f.feed(t), "asked claude to fix it") {
+	if !strings.Contains(f.feed(t), "pipeline: pipeline ") || !strings.Contains(f.feed(t), "asked claude to fix it") {
 		t.Errorf("feed = %s", f.feed(t))
 	}
 	// The same failed pipeline seen again changes nothing.
