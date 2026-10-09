@@ -30,147 +30,76 @@ export interface ToolCall {
  * line after the header is text. "" gives [].
  */
 export function parseLog(text: string): Block[] {
-  if (!text) return [];
-  
-  const lines = text.split('\n');
-  const blocks: Block[] = [];
-  let i = 0;
-  
-  // Parse header lines (lines starting with "# ") at the top
-  const headerLines: string[] = [];
-  while (i < lines.length && lines[i].startsWith('# ')) {
-    headerLines.push(lines[i]);
-    i++;
+  const lines = text.split('\n')
+  if (lines.at(-1) === '') lines.pop()
+  const blocks: Block[] = []
+  let i = 0
+
+  const header: string[] = []
+  for (; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+    if (line.startsWith('# ')) header.push(line)
+    else if (line !== '' || header.length > 0) break
   }
-  
-  // Add header block if there were any
-  if (headerLines.length > 0) {
-    blocks.push({ kind: 'header', lines: headerLines });
-  }
-  
-  // Process the rest of the log, starting from where we left off (after headers)
+  if (header.length > 0) blocks.push({ kind: 'header', lines: header })
+
   while (i < lines.length) {
-    const line = lines[i];
-    
-    if (line.startsWith('→ ')) {
-      // Tool call block - collect all consecutive tool calls
-      const calls: ToolCall[] = [];
-      
-      while (i < lines.length && (lines[i].startsWith('→ ') || lines[i] === '')) {
-        const toolLine = lines[i];
-        
-        if (toolLine.startsWith('→ ')) {
-          i++;
-          
-          const spaceIndex = toolLine.indexOf(' ', 2);
-          if (spaceIndex === -1) {
-            // No input
-            calls.push({
-              tool: toolLine.substring(2),
-              input: '',
-              summary: ''
-            });
-          } else {
-            const toolName = toolLine.substring(2, spaceIndex);
-            const input = toolLine.substring(spaceIndex + 1);
-            
-            calls.push({
-              tool: toolName,
-              input: input,
-              summary: extractSummary(input)
-            });
-          }
-        } else {
-          // Empty line - skip it but continue in this loop
-          i++;
-        }
-      }
-      
-      blocks.push({ kind: 'tools', calls });
-    } else {
-      // Text block - collect all consecutive non-tool, non-empty lines
-      const linesInBlock: string[] = [];
-      
-      while (i < lines.length && !lines[i].startsWith('→ ')) {
-        linesInBlock.push(lines[i]);
-        i++;
-      }
-      
-      // Only create a text block if we have content  
-      if (linesInBlock.length > 0) {
-        // Remove leading and trailing empty lines in text block  
-        let start = 0;
-        let end = linesInBlock.length - 1;
-        
-        // Find first non-empty line
-        while (start <= end && linesInBlock[start].trim() === '') {
-          start++;
-        }
-        
-        // Find last non-empty line
-        while (end >= start && linesInBlock[end].trim() === '') {
-          end--;
-        }
-        
-        // Extract only the non-empty portion
-        const trimmedLines = linesInBlock.slice(start, end + 1);
-        
-        if (trimmedLines.length > 0) {
-          blocks.push({ kind: 'text', lines: trimmedLines });
-        }
-      }
+    const calls: ToolCall[] = []
+    for (; i < lines.length; i++) {
+      const line = lines[i] ?? ''
+      if (line.startsWith(TOOL)) calls.push(toolCall(line))
+      else if (line !== '' || calls.length === 0) break
     }
+    if (calls.length > 0) blocks.push({ kind: 'tools', calls })
+
+    const text: string[] = []
+    for (; i < lines.length && !(lines[i] ?? '').startsWith(TOOL); i++) text.push(lines[i] ?? '')
+    while (text[0] === '') text.shift()
+    while (text.at(-1) === '') text.pop()
+    if (text.length > 0) blocks.push({ kind: 'text', lines: text })
   }
-  
-  return blocks;
+  return blocks
 }
 
-function extractSummary(input: string): string {
-  const trimmedInput = input.trim();
-  
-  // If input is empty, return empty summary
-  if (trimmedInput === '') {
-    return '';
-  }
+const TOOL = '→ '
 
-  let parsedInput: any;
-  
-  // Try to parse as JSON first
+function toolCall(line: string): ToolCall {
+  const rest = line.slice(TOOL.length)
+  const sp = rest.indexOf(' ')
+  const tool = sp < 0 ? rest : rest.slice(0, sp)
+  const input = sp < 0 ? '' : rest.slice(sp + 1)
+  return { tool, input, summary: summarize(input) }
+}
+
+const SUMMARY_FIELDS = ['command', 'file_path', 'path', 'pattern', 'url', 'description']
+
+function summarize(input: string): string {
+  return clip(oneLine(field(input) ?? input.trim()), 120)
+}
+
+/** The first summary field of the input, from JSON, or from clipped JSON by pattern. */
+function field(input: string): string | undefined {
   try {
-    parsedInput = JSON.parse(trimmedInput);
+    const v: unknown = JSON.parse(input)
+    if (v && typeof v === 'object') {
+      const o = v as Record<string, unknown>
+      for (const f of SUMMARY_FIELDS) if (typeof o[f] === 'string') return o[f]
+    }
+    return undefined
   } catch {
-    // If parsing fails, try with a regex approach to find the key-value pairs
-    const fields = ['command', 'file_path', 'path', 'pattern', 'url', 'description'];
-    for (const field of fields) {
-      // Match pattern like "field": "value"
-      const regex = new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`, 'i');
-      const match = trimmedInput.match(regex);
-      
-      if (match && match[1]) {
-        const value = match[1].replace(/\n/g, ' ');
-        // Truncate to exactly 120 chars + "…"
-        return value.length <= 120 ? value : value.substring(0, 117) + '…';
-      }
+    // Clipped mid-JSON: find the field as "name":"value" in the raw text.
+    for (const f of SUMMARY_FIELDS) {
+      const m = new RegExp(`"${f}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)`).exec(input)
+      if (m?.[1] !== undefined) return m[1]
     }
-    
-    // If no fields found, fall back to raw input
-    const value = trimmedInput.replace(/\n/g, ' ');
-    return value.length <= 120 ? value : value.substring(0, 117) + '…';
+    return undefined
   }
-  
-  if (parsedInput && typeof parsedInput === 'object') {
-    const fields = ['command', 'file_path', 'path', 'pattern', 'url', 'description'];
-    for (const field of fields) {
-      if (typeof parsedInput[field] === 'string') {
-        const value = parsedInput[field].replace(/\n/g, ' ');
-        // Truncate to exactly 120 chars + "…"
-        return value.length <= 120 ? value : value.substring(0, 117) + '…';
-      }
-    }
-  }
-  
-  // If all else fails, use the raw input
-  const value = trimmedInput.replace(/\n/g, ' ');
-  // Properly truncate to exactly 117 chars with "…" for exact 120 character count
-  return value.length <= 120 ? value : value.substring(0, 117) + '…';
+}
+
+function oneLine(s: string): string {
+  return s.replace(/\\n|\n/g, ' ')
+}
+
+function clip(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s
 }
