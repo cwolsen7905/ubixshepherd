@@ -247,7 +247,7 @@ func TestShutdownEndsRun(t *testing.T) {
 func TestRequestLog(t *testing.T) {
 	s, ts := newServer(t)
 	var buf bytes.Buffer
-	s.Log = slog.New(slog.NewTextHandler(&buf, nil))
+	s.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	ts.Config.Handler = s.Handler()
 
 	call(t, ts, s.Token, "GET", api.PathStatus, nil, nil)
@@ -270,6 +270,60 @@ func TestRequestLog(t *testing.T) {
 	}
 	if !strings.Contains(log, "level=WARN") || !strings.Contains(log, "status=401") {
 		t.Errorf("rejected request not logged as a warning:\n%s", log)
+	}
+}
+
+// At the default level a successful read leaves no trace, a change is info, and a
+// failure is a warning or an error.
+func TestRequestLevels(t *testing.T) {
+	for _, c := range []struct {
+		method string
+		code   int
+		took   time.Duration
+		want   slog.Level
+	}{
+		{"GET", 200, time.Millisecond, slog.LevelDebug},
+		{"GET", 304, time.Millisecond, slog.LevelDebug},
+		{"POST", 200, time.Millisecond, slog.LevelInfo},
+		{"PUT", 202, time.Millisecond, slog.LevelInfo},
+		{"DELETE", 200, time.Millisecond, slog.LevelInfo},
+		{"GET", 401, time.Millisecond, slog.LevelWarn},
+		{"POST", 409, time.Millisecond, slog.LevelWarn},
+		{"GET", 500, time.Millisecond, slog.LevelError},
+		{"POST", 503, time.Millisecond, slog.LevelError},
+		{"GET", 200, 3 * time.Second, slog.LevelWarn},
+		{"POST", 200, 3 * time.Second, slog.LevelWarn},
+		{"GET", 200, 2 * time.Second, slog.LevelDebug},
+	} {
+		if got := requestLevel(c.method, c.code, c.took); got != c.want {
+			t.Errorf("%s %d in %v: %v, want %v", c.method, c.code, c.took, got, c.want)
+		}
+	}
+
+	s, ts := newServer(t)
+	var buf bytes.Buffer
+	s.Log = slog.New(slog.NewTextHandler(&buf, nil))
+	ts.Config.Handler = s.Handler()
+	call(t, ts, s.Token, "GET", api.PathWorkspaces, nil, nil)
+	call(t, ts, s.Token, "GET", api.PathFeed+"?after=0", nil, nil)
+	if buf.Len() != 0 {
+		t.Errorf("successful reads logged at the default level:\n%s", buf.String())
+	}
+	call(t, ts, s.Token, "POST", api.PathLanes, nil, nil) // refused: no lane to open
+	if !strings.Contains(buf.String(), "level=WARN") {
+		t.Errorf("failed change not logged:\n%s", buf.String())
+	}
+}
+
+func TestLogLevelEnv(t *testing.T) {
+	for in, want := range map[string]slog.Level{
+		"": slog.LevelInfo, "debug": slog.LevelDebug, "DEBUG": slog.LevelDebug, "warn": slog.LevelWarn,
+		"error": slog.LevelError, "loud": slog.LevelInfo,
+	} {
+		t.Setenv(LogLevelEnv, in)
+		if got := logLevel(); got != want {
+			t.Errorf("%s=%q: %v, want %v", LogLevelEnv, in, got, want)
+		}
 	}
 }
 

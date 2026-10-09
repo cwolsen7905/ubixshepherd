@@ -28,14 +28,27 @@ import (
 // ErrUnsupported means this OS has no service manager support yet.
 var ErrUnsupported = errors.New("starting at login is not supported on this OS yet; use: shepherd daemon start")
 
+func (s Spec) console() string {
+	if s.Console != "" {
+		return s.Console
+	}
+	return s.Log
+}
+
 // Spec is what the service runs.
 type Spec struct {
 	// Exe is the shepherd binary, absolute.
 	Exe string
 	// Home is SHEPHERD_HOME when it was set, so the service uses the same home.
 	Home string
-	// Log receives the daemon's output.
+	// Log is the daemon's own log file. The daemon opens and rotates it itself, so the
+	// manager must not also write to it: launchd and systemd hold their file open and
+	// cannot be told to reopen it after a rename.
 	Log string
+	// Console receives what the manager captures from the daemon's stdout and stderr:
+	// a panic, or an error before the log is open. It is not rotated and stays small.
+	// Empty means Log, as before the daemon kept its own.
+	Console string
 	// Path is the PATH the daemon gets. Service managers start programs with a bare
 	// PATH, which would hide git and the agent CLIs.
 	Path string
@@ -160,9 +173,9 @@ func Plist(s Spec) []byte {
 	<key>ExitTimeOut</key>
 	<integer>30</integer>
 	<key>StandardOutPath</key>
-	<string>` + esc(s.Log) + `</string>
+	<string>` + esc(s.console()) + `</string>
 	<key>StandardErrorPath</key>
-	<string>` + esc(s.Log) + `</string>
+	<string>` + esc(s.console()) + `</string>
 </dict>
 </plist>
 `)
@@ -210,7 +223,7 @@ func Unit(s Spec) []byte {
 		b.WriteString("Environment=" + q("SHEPHERD_HOME="+s.Home) + "\n")
 	}
 	b.WriteString("Restart=on-failure\nRestartSec=10\n")
-	b.WriteString("StandardOutput=append:" + s.Log + "\nStandardError=append:" + s.Log + "\n")
+	b.WriteString("StandardOutput=append:" + s.console() + "\nStandardError=append:" + s.console() + "\n")
 	b.WriteString("\n[Install]\nWantedBy=default.target\n")
 	return []byte(b.String())
 }

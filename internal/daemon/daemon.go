@@ -75,9 +75,24 @@ func newToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// NewLogger returns a logger whose output is redacted before it is written.
+// LogLevelEnv names the environment variable that sets the daemon's log level: debug,
+// info (the default), warn or error. It stands in for a daemon.log_level setting, which
+// needs a field in internal/config.
+const LogLevelEnv = "SHEPHERD_LOG_LEVEL"
+
+// logLevel reads LogLevelEnv; unset or unrecognised gives info.
+func logLevel() slog.Level {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(os.Getenv(LogLevelEnv))); err != nil {
+		return slog.LevelInfo
+	}
+	return l
+}
+
+// NewLogger returns a logger whose output is redacted before it is written, at the level
+// LogLevelEnv sets.
 func NewLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(redact.Writer(os.Stderr), nil))
+	return newLogger(os.Stderr)
 }
 
 // Handler is the API, behind token authentication.
@@ -150,8 +165,28 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// slowRequest is how long a request may take before it is logged as a warning.
+const slowRequest = 2 * time.Second
+
+// requestLevel is how loudly a finished request is logged: a server error is an error,
+// a client error or a slow request a warning, a successful change (POST, PUT, DELETE)
+// info, and a successful read debug, since a client polling the feed makes several a
+// second.
+func requestLevel(method string, code int, took time.Duration) slog.Level {
+	switch {
+	case code >= 500:
+		return slog.LevelError
+	case code >= 400 || took > slowRequest:
+		return slog.LevelWarn
+	case method == http.MethodGet || method == http.MethodHead:
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
+}
+
 // logRequests logs every request but the status probe each command makes first, so the
-// daemon's log shows what each client asked and how it went.
+// daemon's log shows what each client asked and how it went. See requestLevel for what
+// reaches the log at the default level.
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -164,12 +199,9 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		if client == "" {
 			client = "unknown"
 		}
-		level := slog.LevelInfo
-		if sw.code >= 400 {
-			level = slog.LevelWarn
-		}
-		s.Log.Log(r.Context(), level, "request", "client", client, "method", r.Method,
-			"path", r.URL.Path, "status", sw.code, "ms", time.Since(start).Milliseconds())
+		took := time.Since(start)
+		s.Log.Log(r.Context(), requestLevel(r.Method, sw.code, took), "request", "client", client,
+			"method", r.Method, "path", r.URL.Path, "status", sw.code, "ms", took.Milliseconds())
 	})
 }
 
