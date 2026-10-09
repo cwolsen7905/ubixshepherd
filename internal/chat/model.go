@@ -408,6 +408,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			}
 			return tea.Batch(cmds...)
 		}
+		if msg.Type == tea.KeyCtrlO {
+			return tea.Batch(append(cmds, m.openPager("transcript"))...)
+		}
 		if msg.Type == tea.KeyEnter {
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
@@ -551,6 +554,7 @@ func (m *Model) refreshPager() {
 	}
 	m.pager.resize(m.width, m.height)
 	if m.logRun == 0 {
+		m.pager.setLines(strings.Split(m.renderTranscript(), "\n"))
 		return
 	}
 	state := "following"
@@ -580,7 +584,8 @@ func (m *Model) handle(text string) tea.Cmd {
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/quit   leave (Ctrl-C too)\n" +
-			"The conversation is printed into your terminal: scroll, search, select and copy there as usual."})
+			"The conversation is printed into your terminal: scroll, search, select and copy there as usual.\n" +
+			"Ctrl-O   the whole transcript: / search, n/N next/previous, g/G top/bottom, PgUp/PgDn, q or Esc back"})
 	case "/quit", "/exit":
 		return m.quit()
 	case "/new":
@@ -843,6 +848,24 @@ func (m *Model) brief() tea.Cmd {
 func (m *Model) add(l Line) {
 	m.lines = append(m.lines, l)
 	m.unprinted = append(m.unprinted, l)
+	if m.pager != nil && m.logRun == 0 {
+		m.refreshPager()
+	}
+}
+
+// renderTranscript is the whole thread as printed, for the transcript view.
+func (m *Model) renderTranscript() string {
+	var b strings.Builder
+	for i, l := range m.lines {
+		if i > 0 {
+			b.WriteString("\n")
+			if l.Kind != KindTool {
+				b.WriteString("\n")
+			}
+		}
+		b.WriteString(renderLine(l, m.width))
+	}
+	return b.String()
 }
 
 // flush prints the entries waiting for scrollback. Nothing is printed before the
@@ -879,7 +902,7 @@ func (m *Model) View() string {
 	rows = append(rows, m.streaming()...)
 	rows = append(rows, m.statusLine(), m.agentsLine())
 	rows = append(rows, strings.Split(m.input.View(), "\n")...)
-	rows = append(rows, styleInfo.Render("Enter send · /help · Ctrl-C quit"))
+	rows = append(rows, styleInfo.Render("Enter send · Ctrl-O transcript · /help · Ctrl-C quit"))
 	for i, r := range rows {
 		rows[i] = fit(r, m.width)
 	}

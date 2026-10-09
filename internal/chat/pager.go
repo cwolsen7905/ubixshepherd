@@ -175,7 +175,7 @@ func (p *pager) update(msg tea.Msg) bool {
 			page = 1
 		}
 		switch msg.String() {
-		case "q", "esc":
+		case "q", "esc", "ctrl+o":
 			return true
 		case "/":
 			p.searching, p.query, p.note = true, "", ""

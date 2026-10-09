@@ -201,7 +201,7 @@ func (m *Model) onHistory(h historyMsg) {
 	m.session = h.session
 	m.lastFeed = h.last
 	if len(h.entries) > 0 {
-		m.add(Line{KindInfo, fmt.Sprintf("Earlier: the last %d entries, from %s.", len(h.entries), when(h.entries[0].At))})
+		m.add(Line{KindInfo, fmt.Sprintf("Earlier: the last %d entries, from %s. Ctrl-O for the whole transcript.", len(h.entries), when(h.entries[0].At))})
 		for _, e := range h.entries {
 			m.add(e.Line)
 		}
