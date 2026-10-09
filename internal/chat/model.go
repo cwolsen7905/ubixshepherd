@@ -25,6 +25,7 @@ type API interface {
 	Runs(ctx context.Context, laneID int64, state string, limit int) ([]api.RunView, error)
 	RunLog(ctx context.Context, id, offset int64) (api.RunLog, error)
 	Decisions(ctx context.Context, state string) ([]api.DecisionView, error)
+	Requests(ctx context.Context, states string) ([]api.RequestView, error)
 	Answer(ctx context.Context, id int64, answer string) (store.Decision, error)
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
@@ -43,9 +44,14 @@ type Redialer interface {
 const settingSession = "desk.session"
 
 // autoKinds are feed items that continue the desk on their own when it is idle: they
-// usually need someone to act.
+// usually need someone to act. A finished run is run_ended from an older daemon, and
+// one of the outcome kinds from a newer one.
 var autoKinds = map[string]bool{
 	store.FeedRunEnded:      true,
+	kindRunPassed:           true,
+	kindRunFailed:           true,
+	kindRunInterrupted:      true,
+	kindRunQuota:            true,
 	store.FeedRequestStuck:  true,
 	store.FeedRequestFailed: true,
 }
@@ -57,6 +63,9 @@ const (
 	idlePanelInterval   = 30 * time.Second
 	sessionsInterval    = time.Minute
 	activeWindow        = 30 * time.Second
+	// recentRuns is how many of the latest runs the dock reads, enough to cover
+	// every open lane's last run.
+	recentRuns = 50
 )
 
 // Model is the chat's state.
@@ -95,8 +104,9 @@ type Model struct {
 
 	lastFeed         int64
 	lanes            []api.LaneView
-	runs             []api.RunView // running ones
+	runs             []api.RunView // the latest, of every state
 	decisions        []api.DecisionView
+	requests         []api.RequestView // those needing routing
 	lastActivity     time.Time
 	lastPanelPoll    time.Time
 	lastSessionsPoll time.Time
@@ -108,6 +118,12 @@ type Model struct {
 	spend    api.SpendToday
 	sessions []api.SessionView
 
+	// What the person has seen, for the dock's "done unseen": anything that finished
+	// before seenUntil (when the chat started, or they last cleared it), and anything
+	// they opened since.
+	seenUntil time.Time
+	seen      map[string]bool
+
 	// pager is the full-screen reader, when open: a run's log (logRun set) or the
 	// transcript.
 	pager     *pager
@@ -115,6 +131,13 @@ type Model struct {
 	logText   strings.Builder
 	logOffset int64
 	logDone   bool
+
+	title string // the window title last set
+
+	// focusDecision is the decision in the dock that has the keys, 0 when the input has
+	// them; confirm is the option it waits on Enter to answer with.
+	focusDecision int64
+	confirm       int
 
 	width, height int
 	input         textarea.Model
@@ -140,6 +163,7 @@ func New(ctx context.Context, a API, d Desk, ws store.Workspace) *Model {
 	return &Model{
 		ctx: ctx, api: a, desk: d, deskName: name, workspace: ws, HistoryItems: DefaultHistory, auto: true, input: in,
 		println: tea.Println, lastFeed: -1, lastActivity: now, clock: time.Now, tick: tea.Tick, focused: true,
+		seenUntil: now,
 	}
 }
 
@@ -163,6 +187,7 @@ type panelMsg struct {
 	lanes           []api.LaneView
 	runs            []api.RunView
 	decisions       []api.DecisionView
+	requests        []api.RequestView
 	spend           api.SpendToday
 	sessions        []api.SessionView
 	panelUpdated    bool
@@ -205,7 +230,7 @@ func (m *Model) openDecisions() tea.Cmd {
 		if len(ds) == 0 {
 			return nil
 		}
-		return lineMsg{KindDecision, fmt.Sprintf("%d decision(s) waiting for you: %s. /decisions to see them.", len(ds), decisionIDs(ds))}
+		return lineMsg{Kind: KindDecision, Text: fmt.Sprintf("%d decision(s) waiting for you: %s. /decisions to see them.", len(ds), decisionIDs(ds))}
 	}
 }
 
@@ -248,11 +273,15 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
-		runs, err := m.api.Runs(m.ctx, 0, store.RunRunning, 20)
+		runs, err := m.api.Runs(m.ctx, 0, "", recentRuns)
 		if err != nil {
 			return errorMsg{err}
 		}
 		ds, err := m.api.Decisions(m.ctx, store.DecisionOpen)
+		if err != nil {
+			return errorMsg{err}
+		}
+		reqs, err := m.api.Requests(m.ctx, store.RequestNeedsRouting)
 		if err != nil {
 			return errorMsg{err}
 		}
@@ -268,7 +297,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 			}
 		}
 		return panelMsg{
-			lanes: lanes, runs: runs, decisions: ds, spend: sp, sessions: ss,
+			lanes: lanes, runs: runs, decisions: ds, requests: reqs, spend: sp, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions,
 		}
 	}
@@ -381,6 +410,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if p := m.flush(); p != nil {
 		cmd = tea.Batch(cmd, p)
 	}
+	if t := windowTitle(m.dockItems()); t != m.title && !m.quitting {
+		m.title = t
+		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
+	}
 	return m, cmd
 }
 
@@ -410,6 +443,16 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 		if msg.Type == tea.KeyCtrlO {
 			return tea.Batch(append(cmds, m.openPager("transcript"))...)
+		}
+		if msg.Type == tea.KeyCtrlG {
+			m.clearDone()
+			return tea.Batch(cmds...)
+		}
+		if m.focusDecision != 0 {
+			return tea.Batch(append(cmds, m.decisionKey(msg))...)
+		}
+		if msg.Type == tea.KeyTab && m.moveFocus(1) || msg.Type == tea.KeyShiftTab && m.moveFocus(-1) {
+			return tea.Batch(cmds...)
 		}
 		if msg.Type == tea.KeyEnter {
 			text := strings.TrimSpace(m.input.Value())
@@ -458,7 +501,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.onFeed(feed))
 	case panelMsg:
 		if msg.panelUpdated {
-			m.lanes, m.runs, m.decisions = msg.lanes, msg.runs, msg.decisions
+			m.lanes, m.runs, m.decisions, m.requests = msg.lanes, msg.runs, msg.decisions, msg.requests
+			if _, ok := m.focusedDecision(); !ok && m.focusDecision != 0 {
+				// Answered elsewhere: the keys go back to the input.
+				m.focusInput()
+			}
 			m.spend = msg.spend
 		}
 		if msg.sessionsUpdated {
@@ -501,7 +548,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			}
 			break
 		}
-		m.add(Line{KindError, msg.err.Error()})
+		m.add(Line{Kind: KindError, Text: msg.err.Error()})
 	case reconnectMsg:
 		if msg.ok {
 			m.reconnecting = false
@@ -519,16 +566,21 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// quit prints what is left, clears the live region and ends the program.
+// quit prints what is left, clears the live region and the window title, and ends the
+// program. (The title the terminal had before is restored by SaveTitle's caller.)
 func (m *Model) quit() tea.Cmd {
 	m.quitting = true
 	m.pager = nil
-	return tea.Sequence(m.flush(), tea.Quit)
+	return tea.Sequence(m.flush(), tea.SetWindowTitle(""), tea.Quit)
 }
+
+// Title is the window title the chat last set (for tests).
+func (m *Model) Title() string { return m.title }
 
 // openLog shows a run's log in the pager.
 func (m *Model) openLog(id int64) tea.Cmd {
 	m.logRun, m.logOffset, m.logDone = id, 0, false
+	m.markSeen(fmt.Sprintf("run:%d", id))
 	m.logText.Reset()
 	return tea.Batch(m.openPager(fmt.Sprintf("run %d", id)), m.pollLog())
 }
@@ -573,30 +625,32 @@ func (m *Model) refreshPager() {
 // handle is what the person typed: a command, or a message for the desk.
 func (m *Model) handle(text string) tea.Cmd {
 	if !strings.HasPrefix(text, "/") {
-		m.add(Line{KindYou, text})
+		m.add(Line{Kind: KindYou, Text: text})
 		return m.send(text)
 	}
 	f := strings.Fields(text)
 	switch f[0] {
 	case "/help":
-		m.add(Line{KindInfo, "/answer <decision> <option number or words>   answer a decision yourself\n" +
+		m.add(Line{Kind: KindInfo, Text: "/answer <decision> <option number or words>   answer a decision yourself\n" +
+			"Tab / Shift-Tab   move to the decisions in the dock and between them; a number answers with that option (Enter confirms when asked), Enter alone answers in your own words, Esc goes back\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/quit   leave (Ctrl-C too)\n" +
+			"The dock above the input: what needs you, what is broken, to review, working, and done since you last looked. Ctrl-G clears done; opening a run's log does too.\n" +
 			"The conversation is printed into your terminal: scroll, search, select and copy there as usual.\n" +
 			"Ctrl-O   the whole transcript: / search, n/N next/previous, g/G top/bottom, PgUp/PgDn, q or Esc back"})
 	case "/quit", "/exit":
 		return m.quit()
 	case "/new":
 		m.session = ""
-		m.add(Line{KindInfo, "The next message starts a new conversation with the desk."})
+		m.add(Line{Kind: KindInfo, Text: "The next message starts a new conversation with the desk."})
 		return func() tea.Msg { m.api.SetSetting(m.ctx, settingSession, ""); return nil }
 	case "/auto":
 		if len(f) == 2 && (f[1] == "on" || f[1] == "off") {
 			m.auto = f[1] == "on"
 		}
-		m.add(Line{KindInfo, fmt.Sprintf("Swarm events reach the desk on their own: %v.", m.auto)})
+		m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Swarm events reach the desk on their own: %v.", m.auto)})
 	case "/decisions":
 		return func() tea.Msg {
 			ds, err := m.api.Decisions(m.ctx, store.DecisionOpen)
@@ -604,27 +658,27 @@ func (m *Model) handle(text string) tea.Cmd {
 				return errorMsg{err}
 			}
 			if len(ds) == 0 {
-				return lineMsg{KindInfo, "No decisions waiting for you."}
+				return lineMsg{Kind: KindInfo, Text: "No decisions waiting for you."}
 			}
 			var b strings.Builder
 			for _, d := range ds {
 				b.WriteString(decisionText(d))
 				b.WriteString("\n")
 			}
-			return lineMsg{KindDecision, strings.TrimSpace(b.String())}
+			return lineMsg{Kind: KindDecision, Text: strings.TrimSpace(b.String())}
 		}
 	case "/answer":
 		if len(f) < 3 {
-			m.add(Line{KindError, "usage: /answer <decision> <option number or words>"})
+			m.add(Line{Kind: KindError, Text: "usage: /answer <decision> <option number or words>"})
 			return nil
 		}
 		id, err := strconv.ParseInt(f[1], 10, 64)
 		if err != nil {
-			m.add(Line{KindError, "decision id must be a number"})
+			m.add(Line{Kind: KindError, Text: "decision id must be a number"})
 			return nil
 		}
 		answer := strings.Join(f[2:], " ")
-		m.add(Line{KindYou, fmt.Sprintf("answer to decision %d: %s", id, answer)})
+		m.add(Line{Kind: KindYou, Text: fmt.Sprintf("answer to decision %d: %s", id, answer)})
 		return m.answer(id, answer)
 	case "/sessions":
 		return func() tea.Msg {
@@ -633,7 +687,7 @@ func (m *Model) handle(text string) tea.Cmd {
 				return errorMsg{err}
 			}
 			if len(ss) == 0 {
-				return lineMsg{KindInfo, "No conversations adopted. From a shell: shepherd session import"}
+				return lineMsg{Kind: KindInfo, Text: "No conversations adopted. From a shell: shepherd session import"}
 			}
 			var b strings.Builder
 			for _, s := range ss {
@@ -644,70 +698,70 @@ func (m *Model) handle(text string) tea.Cmd {
 				fmt.Fprintf(&b, "%s  %-10s %s  ·  %s%s\n", s.ID[:8], s.Repo, clipTo(s.Title, 70), s.Last.Local().Format("Jan 2"), open)
 			}
 			b.WriteString("/attach <id> to reopen one here; /ask <id> <question> to ask it")
-			return lineMsg{KindInfo, b.String()}
+			return lineMsg{Kind: KindInfo, Text: b.String()}
 		}
 	case "/attach":
 		if len(f) != 2 {
-			m.add(Line{KindError, "usage: /attach <conversation id>"})
+			m.add(Line{Kind: KindError, Text: "usage: /attach <conversation id>"})
 			return nil
 		}
 		s, err := m.conversation(f[1])
 		if err != nil {
-			m.add(Line{KindError, err.Error()})
+			m.add(Line{Kind: KindError, Text: err.Error()})
 			return nil
 		}
 		bin, err := exec.LookPath("claude")
 		if err != nil {
-			m.add(Line{KindError, "claude is not on PATH"})
+			m.add(Line{Kind: KindError, Text: "claude is not on PATH"})
 			return nil
 		}
 		if s.InUse {
-			m.add(Line{KindInfo, "That conversation changed in the last few minutes; if it is open in another terminal, use that one."})
+			m.add(Line{Kind: KindInfo, Text: "That conversation changed in the last few minutes; if it is open in another terminal, use that one."})
 		}
-		m.add(Line{KindInfo, fmt.Sprintf("Opening conversation %s (%s) in Claude Code; exit it to come back here.", s.ID[:8], clipTo(s.Title, 60))})
+		m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Opening conversation %s (%s) in Claude Code; exit it to come back here.", s.ID[:8], clipTo(s.Title, 60))})
 		cmd := exec.Command(bin, "--resume", s.ID)
 		cmd.Dir = s.Dir
 		id := s.ID[:8]
 		// Print the line above before Claude Code takes the terminal.
 		return tea.Sequence(m.flush(), tea.ExecProcess(cmd, func(err error) tea.Msg {
 			if err != nil {
-				return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s (%v).", id, err)}
+				return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Back from conversation %s (%v).", id, err)}
 			}
-			return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s.", id)}
+			return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Back from conversation %s.", id)}
 		}))
 	case "/ask":
 		if len(f) < 3 {
-			m.add(Line{KindError, "usage: /ask <conversation id> <question>"})
+			m.add(Line{Kind: KindError, Text: "usage: /ask <conversation id> <question>"})
 			return nil
 		}
 		s, err := m.conversation(f[1])
 		if err != nil {
-			m.add(Line{KindError, err.Error()})
+			m.add(Line{Kind: KindError, Text: err.Error()})
 			return nil
 		}
 		q := strings.Join(f[2:], " ")
-		m.add(Line{KindYou, fmt.Sprintf("to conversation %s: %s", s.ID[:8], q)})
+		m.add(Line{Kind: KindYou, Text: fmt.Sprintf("to conversation %s: %s", s.ID[:8], q)})
 		id, title := s.ID, s.Title
 		return func() tea.Msg {
 			a, err := m.api.AskSession(m.ctx, id, q)
 			if err != nil {
 				return errorMsg{err}
 			}
-			return lineMsg{KindDesk, fmt.Sprintf("conversation %s (%s):\n%s", id[:8], clipTo(title, 50), a.Text)}
+			return lineMsg{Kind: KindDesk, Text: fmt.Sprintf("conversation %s (%s):\n%s", id[:8], clipTo(title, 50), a.Text)}
 		}
 	case "/log":
 		if len(f) != 2 {
-			m.add(Line{KindError, "usage: /log <run>"})
+			m.add(Line{Kind: KindError, Text: "usage: /log <run>"})
 			return nil
 		}
 		id, err := strconv.ParseInt(f[1], 10, 64)
 		if err != nil {
-			m.add(Line{KindError, "run id must be a number"})
+			m.add(Line{Kind: KindError, Text: "run id must be a number"})
 			return nil
 		}
 		return m.openLog(id)
 	default:
-		m.add(Line{KindError, "unknown command " + f[0] + "; /help"})
+		m.add(Line{Kind: KindError, Text: "unknown command " + f[0] + "; /help"})
 	}
 	return nil
 }
@@ -729,9 +783,9 @@ func (m *Model) answer(id int64, answer string) tea.Cmd {
 			return errorMsg{err}
 		}
 		if d.AnswerRun != 0 {
-			return lineMsg{KindInfo, fmt.Sprintf("Answered decision %d; the agent carries on as run %d.", d.ID, d.AnswerRun)}
+			return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Answered decision %d; the agent carries on as run %d.", d.ID, d.AnswerRun)}
 		}
-		return lineMsg{KindInfo, fmt.Sprintf("Answered decision %d; the agent gets it when its turn ends.", d.ID)}
+		return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Answered decision %d; the agent gets it when its turn ends.", d.ID)}
 	}
 }
 
@@ -793,12 +847,12 @@ func (m *Model) onDeskDone(msg deskDoneMsg) tea.Cmd {
 	m.busy = false
 	if m.partial != "" {
 		// The stream ended without the whole reply: keep what came.
-		m.add(Line{KindDesk, strings.TrimSpace(m.partial)})
+		m.add(Line{Kind: KindDesk, Text: strings.TrimSpace(m.partial)})
 		m.partial = ""
 	}
 	var cmds []tea.Cmd
 	if msg.err != nil {
-		m.add(Line{KindError, "the desk: " + msg.err.Error()})
+		m.add(Line{Kind: KindError, Text: "the desk: " + msg.err.Error()})
 	}
 	if msg.session != "" && msg.session != m.session {
 		m.session = msg.session
@@ -824,8 +878,9 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 	if first {
 		return nil
 	}
-	for _, it := range f.Items {
-		m.add(feedLine(it, true))
+	for i, it := range f.Items {
+		m.add(feedLine(it, feedEvent(f, i), true))
+		m.noteOutcome(it, feedEvent(f, i))
 		if autoKinds[it.Kind] {
 			m.pending = append(m.pending, it.Text)
 		}
@@ -888,9 +943,9 @@ func (m *Model) flush() tea.Cmd {
 	return m.println(strings.Join(parts, "\n"))
 }
 
-// View is the live region: the reply streaming in, the desk's status, the agents at
-// work, the input and a line of keys. Each line is cut to the terminal's width so the
-// region never wraps.
+// View is the live region: the reply streaming in, the desk's status, the dock, the
+// input and a line of keys. Each line is cut to the terminal's width so the region never
+// wraps.
 func (m *Model) View() string {
 	if m.quitting || !m.ready {
 		return ""
@@ -898,26 +953,49 @@ func (m *Model) View() string {
 	if m.pager != nil {
 		return m.pager.view()
 	}
+	items := m.dockItems()
 	var rows []string
-	rows = append(rows, m.streaming()...)
-	rows = append(rows, m.statusLine(), m.agentsLine())
-	rows = append(rows, strings.Split(m.input.View(), "\n")...)
-	rows = append(rows, styleInfo.Render("Enter send · Ctrl-O transcript · /help · Ctrl-C quit"))
+	dock := m.dockRows(items)
+	d, deciding := m.focusedDecision()
+	if deciding && len(dock) > 1 && 1+len(dock)+decisionHeight(d) > m.height {
+		// The decision's options come first: the dock keeps its counts.
+		dock = dock[:1]
+	}
+	rows = append(rows, m.streaming(len(dock))...)
+	rows = append(rows, m.statusLine())
+	rows = append(rows, dock...)
+	if deciding {
+		rows = append(rows, m.decisionRows(d, max(3, m.height-len(rows)))...)
+	} else {
+		rows = append(rows, strings.Split(m.input.View(), "\n")...)
+		if m.height >= 8 {
+			rows = append(rows, styleInfo.Render(m.keysHint(items)))
+		}
+	}
 	for i, r := range rows {
 		rows[i] = fit(r, m.width)
 	}
 	return strings.Join(rows, "\n")
 }
 
+// keysHint is the line of keys under the input, with the dock's keys when they apply.
+func (m *Model) keysHint(items []dockItem) string {
+	keys := keysWithDecisions([]string{"Enter send"}, items)
+	if n := counts(items); n[groupDone] > 0 {
+		keys = append(keys, "Ctrl-G clear done")
+	}
+	return strings.Join(append(keys, "Ctrl-O transcript", "/help", "Ctrl-C quit"), " · ")
+}
+
 // streaming is the tail of the reply as it streams, short enough to leave room for the
 // rest of the live region.
-func (m *Model) streaming() []string {
+func (m *Model) streaming(dockRows int) []string {
 	text := strings.TrimSpace(m.partial)
 	if text == "" {
 		return nil
 	}
-	lines := strings.Split(renderLine(Line{KindDesk, text}, m.width), "\n")
-	room := m.height - 7
+	lines := strings.Split(renderLine(Line{Kind: KindDesk, Text: text}, m.width), "\n")
+	room := m.height - 6 - dockRows
 	if room < 1 {
 		room = 1
 	}
@@ -950,23 +1028,4 @@ func (m *Model) statusLine() string {
 		s += styleInfo.Render(" · " + m.deskName)
 	}
 	return s + styleInfo.Render(fmtUSD(m.spend.USD, m.spend.Budget, m.spend.Day))
-}
-
-// agentsLine is a one-line strip of the agents running and the decisions waiting.
-func (m *Model) agentsLine() string {
-	var parts []string
-	for _, r := range m.runs {
-		if r.State != store.RunRunning {
-			continue
-		}
-		parts = append(parts, styleAgent(r.Agent).Render("● "+r.Agent)+" "+styleLane(r.Lane).Render(r.Lane)+styleInfo.Render(fmt.Sprintf(" #%d", r.ID)))
-	}
-	s := strings.Join(parts, "  ")
-	if s == "" {
-		s = styleInfo.Render(fmt.Sprintf("no agents running · %d lane(s) open", len(m.lanes)))
-	}
-	if n := len(m.decisions); n > 0 {
-		s += styleDecision.Render(fmt.Sprintf("  ? %d decision(s) waiting: /decisions", n))
-	}
-	return s
 }

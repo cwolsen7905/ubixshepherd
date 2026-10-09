@@ -12,6 +12,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -78,7 +79,7 @@ func (d ClaudeDesk) History(session string, n int) ([]Entry, error) {
 		switch r.Type {
 		case "user":
 			if t := said(r.Message.Content); t != "" && !strings.HasPrefix(t, "[Shepherd]") {
-				keep(at, Line{KindYou, t})
+				keep(at, Line{Kind: KindYou, Text: t})
 			}
 		case "assistant":
 			var parts []struct {
@@ -93,9 +94,9 @@ func (d ClaudeDesk) History(session string, n int) ([]Entry, error) {
 			for _, p := range parts {
 				switch {
 				case p.Type == "text" && strings.TrimSpace(p.Text) != "":
-					keep(at, Line{KindDesk, strings.TrimSpace(p.Text)})
+					keep(at, Line{Kind: KindDesk, Text: strings.TrimSpace(p.Text)})
 				case p.Type == "tool_use" && p.Name != "ToolSearch":
-					keep(at, Line{KindTool, toolLine(p.Name, p.Input)})
+					keep(at, Line{Kind: KindTool, Text: toolLine(p.Name, p.Input)})
 				}
 			}
 		}
@@ -128,16 +129,16 @@ func said(raw json.RawMessage) string {
 	return strings.Join(b, "\n")
 }
 
-// feedLine is a feed item as a line of the thread.
-func feedLine(it store.FeedItem, live bool) Line {
-	if it.Kind != store.FeedDecision {
-		return Line{KindEvent, it.Text}
+// feedLine is a feed item, of the given event, as a line of the thread.
+func feedLine(it store.FeedItem, event string, live bool) Line {
+	if event != api.EventDecisionAsked {
+		return Line{Kind: KindEvent, Text: it.Text, Event: event}
 	}
 	text := it.Text
 	if live {
 		text += fmt.Sprintf("\n   /answer %d <option or words>", it.Ref)
 	}
-	return Line{KindDecision, text}
+	return Line{Kind: KindDecision, Text: text, Event: event}
 }
 
 type historyMsg struct {
@@ -173,9 +174,9 @@ func (m *Model) loadHistory() tea.Cmd {
 			if err != nil {
 				return errorMsg{err}
 			}
-			for _, it := range page.Items {
+			for i, it := range page.Items {
 				if it.ID <= h.last {
-					h.entries = append(h.entries, Entry{it.Created, feedLine(it, false)})
+					h.entries = append(h.entries, Entry{it.Created, feedLine(it, feedEvent(page, i), false)})
 				}
 			}
 			if len(page.Items) == 0 || page.Last <= after {
@@ -201,13 +202,13 @@ func (m *Model) onHistory(h historyMsg) {
 	m.session = h.session
 	m.lastFeed = h.last
 	if len(h.entries) > 0 {
-		m.add(Line{KindInfo, fmt.Sprintf("Earlier: the last %d entries, from %s. Ctrl-O for the whole transcript.", len(h.entries), when(h.entries[0].At))})
+		m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Earlier: the last %d entries, from %s. Ctrl-O for the whole transcript.", len(h.entries), when(h.entries[0].At))})
 		for _, e := range h.entries {
 			m.add(e.Line)
 		}
 	}
 	if h.deskErr != nil {
-		m.add(Line{KindError, "could not read the desk's earlier conversation: " + h.deskErr.Error()})
+		m.add(Line{Kind: KindError, Text: "could not read the desk's earlier conversation: " + h.deskErr.Error()})
 	}
 	m.welcome()
 }
@@ -218,7 +219,7 @@ func (m *Model) welcome() {
 		return
 	}
 	m.welcomed = true
-	m.add(Line{KindInfo, fmt.Sprintf("Shepherd, workspace %s (%s). The desk delegates to agents in lanes; their events appear here. /help for commands.", m.workspace.Name, m.workspace.Path)})
+	m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Shepherd, workspace %s (%s). The desk delegates to agents in lanes; their events appear here. /help for commands.", m.workspace.Name, m.workspace.Path)})
 }
 
 func when(t time.Time) string {

@@ -72,7 +72,7 @@ func (f *fakeDesk) Turn(_ context.Context, session, message string, emit func(Li
 	f.mu.Lock()
 	f.got = append(f.got, message)
 	f.mu.Unlock()
-	emit(Line{KindDesk, "ok: " + strings.SplitN(message, "\n", 2)[0]})
+	emit(Line{Kind: KindDesk, Text: "ok: " + strings.SplitN(message, "\n", 2)[0]})
 	if session == "" {
 		session = "new-session"
 	}
@@ -84,6 +84,9 @@ type fakeAPI struct {
 	answered   map[int64]string
 	settings   map[string]string
 	ds         []api.DecisionView
+	lanes      []api.LaneView
+	runs       []api.RunView
+	reqs       []api.RequestView
 	spent      float64
 	asked      []string
 	redialErrs []error
@@ -116,12 +119,13 @@ func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
 }
 func (f *fakeAPI) Lanes(context.Context, int64, int64) ([]api.LaneView, error) {
 	f.laneCalls++
-	return nil, nil
+	return f.lanes, nil
 }
 func (f *fakeAPI) Runs(context.Context, int64, string, int) ([]api.RunView, error) {
 	f.runCalls++
-	return nil, nil
+	return f.runs, nil
 }
+func (f *fakeAPI) Requests(context.Context, string) ([]api.RequestView, error) { return f.reqs, nil }
 func (f *fakeAPI) RunLog(context.Context, int64, int64) (api.RunLog, error) {
 	return api.RunLog{Data: "line\n", Offset: 5, Done: true}, nil
 }
@@ -319,7 +323,7 @@ func TestCommands(t *testing.T) {
 
 func TestDeskCostIsRecordedNotShown(t *testing.T) {
 	m, _, a := newTestModel()
-	_, cmd := m.Update(deskLineMsg{KindCost, "0.4"})
+	_, cmd := m.Update(deskLineMsg{Kind: KindCost, Text: "0.4"})
 	drive(t, m, cmd)
 	if a.spent != 0.4 || has(m.Lines(), KindCost, "") {
 		t.Errorf("spent %v, lines %+v", a.spent, m.Lines())
@@ -360,7 +364,7 @@ func TestEntriesArePrintedToScrollback(t *testing.T) {
 	}
 	// Each entry is printed once.
 	n := len(*printed)
-	m.Update(lineMsg{KindInfo, "later"})
+	m.Update(lineMsg{Kind: KindInfo, Text: "later"})
 	if len(*printed) != n+1 || strings.Contains((*printed)[n], "login fix") {
 		t.Errorf("reprinted: %q", (*printed)[n:])
 	}
@@ -370,7 +374,7 @@ func TestPrintedEntriesWrapToTheTerminal(t *testing.T) {
 	m, _, _ := newTestModel()
 	printed := capturePrints(m)
 	m.Update(tea.WindowSizeMsg{Width: 30, Height: 20})
-	m.Update(lineMsg{KindEvent, "run 3: copilot in lane api succeeded, 1 commit(s), and a long tail of words"})
+	m.Update(lineMsg{Kind: KindEvent, Text: "run 3: copilot in lane api succeeded, 1 commit(s), and a long tail of words"})
 	for _, l := range strings.Split(strings.Join(*printed, "\n"), "\n") {
 		if w := ansi.StringWidth(l); w > 30 {
 			t.Errorf("line %q is %d wide", l, w)
@@ -387,7 +391,7 @@ func TestEntriesWaitWhileThePagerIsOpen(t *testing.T) {
 		t.Fatalf("/log did not open the pager:\n%s", m.View())
 	}
 	n := len(*printed)
-	m.Update(lineMsg{KindEvent, "run 8 started"})
+	m.Update(lineMsg{Kind: KindEvent, Text: "run 8 started"})
 	if len(*printed) != n {
 		t.Fatal("printed while the pager was open")
 	}
@@ -402,12 +406,12 @@ func TestStreamingReplyIsLiveUntilWhole(t *testing.T) {
 	m, _, _ := newTestModel()
 	printed := capturePrints(m)
 	m.busy = true
-	m.Update(deskLineMsg{KindPartial, "Opening a lane "})
-	m.Update(deskLineMsg{KindPartial, "for the fix"})
+	m.Update(deskLineMsg{Kind: KindPartial, Text: "Opening a lane "})
+	m.Update(deskLineMsg{Kind: KindPartial, Text: "for the fix"})
 	if !strings.Contains(m.View(), "Opening a lane for the fix") || len(*printed) != 0 {
 		t.Fatalf("partial: printed %q, view:\n%s", *printed, m.View())
 	}
-	m.Update(deskLineMsg{KindDesk, "Opening a lane for the fix."})
+	m.Update(deskLineMsg{Kind: KindDesk, Text: "Opening a lane for the fix."})
 	if strings.Contains(m.View(), "Opening a lane") || len(*printed) != 1 || !strings.Contains((*printed)[0], "for the fix.") {
 		t.Fatalf("whole: printed %q, view:\n%s", *printed, m.View())
 	}
@@ -415,9 +419,13 @@ func TestStreamingReplyIsLiveUntilWhole(t *testing.T) {
 
 func TestLiveRegionFitsNarrowTerminals(t *testing.T) {
 	m, _, _ := newTestModel()
+	m.lanes = []api.LaneView{
+		{Lane: store.Lane{ID: 1, Name: "feat/a-rather-long-lane-name", State: store.LaneOpen}, Repo: "app"},
+		{Lane: store.Lane{ID: 2, Name: "fix/y", State: store.LaneOpen}, Repo: "app"},
+	}
 	m.runs = []api.RunView{
-		{Run: store.Run{ID: 9, Agent: "copilot", State: store.RunRunning}, Lane: "feat/a-rather-long-lane-name"},
-		{Run: store.Run{ID: 10, Agent: "claude", State: store.RunRunning}, Lane: "fix/y"},
+		{Run: store.Run{ID: 9, LaneID: 1, Agent: "copilot", State: store.RunRunning, Started: m.clock()}, Lane: "feat/a-rather-long-lane-name"},
+		{Run: store.Run{ID: 10, LaneID: 2, Agent: "claude", State: store.RunRunning, Started: m.clock()}, Lane: "fix/y"},
 	}
 	m.decisions = []api.DecisionView{{Decision: store.Decision{ID: 12}}}
 	m.spend = api.SpendToday{Day: "today", USD: 1.5, Budget: 20}
@@ -437,8 +445,8 @@ func TestLiveRegionFitsNarrowTerminals(t *testing.T) {
 	}
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
 	v := m.View()
-	for _, want := range []string{"desk working", "claude", "● copilot feat/a-rather-long-lane-name #9", "1 decision(s) waiting", "Enter send"} {
-		if !strings.Contains(v, want) {
+	for _, want := range []string{"desk working", "claude", "● feat/a-rather-long-lane-name  copilot  run 9", "1 needs you · 2 working", "Enter send"} {
+		if !strings.Contains(ansi.Strip(v), want) {
 			t.Errorf("live region lacks %q:\n%s", want, v)
 		}
 	}
@@ -455,7 +463,7 @@ func TestParsePartials(t *testing.T) {
 `
 	var got []Line
 	Parse(strings.NewReader(stream), func(l Line) { got = append(got, l) })
-	want := []Line{{KindPartial, "Hel"}, {KindPartial, "lo"}, {KindDesk, "Hello"}}
+	want := []Line{{Kind: KindPartial, Text: "Hel"}, {Kind: KindPartial, Text: "lo"}, {Kind: KindDesk, Text: "Hello"}}
 	if len(got) != len(want) {
 		t.Fatalf("lines = %+v", got)
 	}

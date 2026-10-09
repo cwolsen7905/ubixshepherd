@@ -37,6 +37,9 @@ const (
 type Line struct {
 	Kind string
 	Text string
+	// Event is the swarm event a line from the feed reports, one of the api.Event*
+	// values; it picks the line's glyph and colour.
+	Event string
 }
 
 // DeskBrief is the front desk's standing instruction, given once per conversation.
@@ -166,34 +169,34 @@ func Parse(r io.Reader, emit func(Line)) bool {
 		switch m.Type {
 		case "stream_event":
 			if m.Event.Type == "content_block_delta" && m.Event.Delta.Type == "text_delta" && m.Event.Delta.Text != "" {
-				emit(Line{KindPartial, m.Event.Delta.Text})
+				emit(Line{Kind: KindPartial, Text: m.Event.Delta.Text})
 			}
 		case "assistant":
 			for _, c := range m.Message.Content {
 				switch c.Type {
 				case "text":
 					if t := strings.TrimSpace(c.Text); t != "" {
-						emit(Line{KindDesk, t})
+						emit(Line{Kind: KindDesk, Text: t})
 						got = true
 					}
 				case "tool_use":
 					// ToolSearch is Claude Code loading its own tool list: noise here.
 					if c.Name != "ToolSearch" {
-						emit(Line{KindTool, toolLine(c.Name, c.Input)})
+						emit(Line{Kind: KindTool, Text: toolLine(c.Name, c.Input)})
 					}
 					got = true
 				}
 			}
 		case "result":
 			if m.Cost > 0 {
-				emit(Line{KindCost, strconv.FormatFloat(m.Cost, 'f', -1, 64)})
+				emit(Line{Kind: KindCost, Text: strconv.FormatFloat(m.Cost, 'f', -1, 64)})
 			}
 			if m.IsError || (m.Subtype != "" && m.Subtype != "success") {
 				text := m.Result
 				if text == "" {
 					text = m.Subtype
 				}
-				emit(Line{KindError, "the desk's turn failed: " + text})
+				emit(Line{Kind: KindError, Text: "the desk's turn failed: " + text})
 			}
 		}
 	}

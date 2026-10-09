@@ -4,7 +4,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -12,14 +11,6 @@ import (
 // headings, lists with hanging indents, quotes, rules, fenced code kept as written,
 // tables laid out in columns that fit the width, and inline bold, code and links.
 // Anything else stays as the desk wrote it.
-
-var (
-	styleMdHead  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
-	styleMdBold  = lipgloss.NewStyle().Bold(true)
-	styleMdCode  = lipgloss.NewStyle().Foreground(lipgloss.Color("180"))
-	styleMdBlock = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-	styleMdFaint = lipgloss.NewStyle().Faint(true)
-)
 
 var (
 	reHeading = regexp.MustCompile(`^(#{1,6})\s+(.*?)\s*#*\s*$`)

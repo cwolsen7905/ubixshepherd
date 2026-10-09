@@ -42,6 +42,9 @@ func runChat(ctx context.Context, env Env, args []string) error {
 	desk := chat.ClaudeDesk{Bin: bin, Shepherd: env.Exe, Dir: h.Workspace.Path, Model: *model}
 	m := chat.New(ctx, c, desk, h.Workspace)
 	m.HistoryItems = *history
+	chat.DetectBackground()
+	restore := chat.SaveTitle(env.Stdout)
+	defer restore()
 	// Inline, not in the alternate screen: the conversation is printed into the terminal's
 	// own scrollback, and the mouse stays the terminal's.
 	if _, err := tea.NewProgram(m, tea.WithReportFocus(), tea.WithContext(ctx)).Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {
