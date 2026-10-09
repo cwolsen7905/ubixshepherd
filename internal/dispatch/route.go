@@ -17,7 +17,22 @@ const (
 	KindQuestion = "question"
 	KindHandoff  = "handoff"
 	KindReview   = "review"
+	// KindPerson is for the person, not a lane: it becomes a decision for them.
+	KindPerson = "person"
 )
+
+// RequestClosed: closed without a reply, by the person or because it went to them as a
+// decision. Its note says which.
+const RequestClosed = "closed"
+
+// forPerson says a request is addressed to the person: its kind, or its lane naming them.
+func forPerson(q store.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(q.Lane)) {
+	case "person", "human", "the person":
+		return true
+	}
+	return q.Kind == KindPerson
+}
 
 // MaxDepth caps a chain of requests: an agent answering one may ask in turn, but not
 // without end.
@@ -30,15 +45,18 @@ var reviewerOrder = []string{"claude", "copilot", "cursor"}
 // agent ends its turn; the reply continues its conversation.
 func (r *Runner) RequestHelp(ctx context.Context, q store.Request) (store.Request, error) {
 	switch q.Kind {
-	case KindQuestion, KindHandoff, KindReview:
+	case KindQuestion, KindHandoff, KindReview, KindPerson:
 	default:
-		return q, refuse("request kind %q: want question, handoff or review", q.Kind)
+		return q, refuse("request kind %q: want question, handoff, review or person", q.Kind)
 	}
 	if strings.TrimSpace(q.Message) == "" {
 		return q, refuse("say what you need")
 	}
 	if _, err := r.Store.Run(ctx, q.FromRun); err != nil {
 		return q, err
+	}
+	if forPerson(q) {
+		return r.toPerson(ctx, q)
 	}
 	depth, err := r.depthOf(ctx, q.FromRun)
 	if err != nil {
@@ -59,6 +77,52 @@ func (r *Runner) RequestHelp(ctx context.Context, q store.Request) (store.Reques
 	}
 	r.feed(ctx, store.FeedRequest, q.ID, "request %d: %s asks %s (%s): %s", q.ID, r.who(ctx, q.FromRun), target, q.Kind, clip(q.Message, 160))
 	go r.Route(context.Background())
+	return q, nil
+}
+
+// toPerson turns a request for the person into a decision for them, the way ask_human
+// would have, and records the request closed with a pointer to it. The answer comes
+// back into the asker's session as any decision's does.
+func (r *Runner) toPerson(ctx context.Context, q store.Request) (store.Request, error) {
+	d, err := r.Ask(ctx, store.Decision{RunID: q.FromRun, Question: q.Message,
+		Why: "asked through ask_shepherd (" + q.Kind + "), addressed to the person"})
+	if err != nil {
+		return q, err
+	}
+	q.Lane, q.State, q.Note = "", RequestClosed, fmt.Sprintf("for the person: held as decision %d", d.ID)
+	q, err = r.Store.CreateRequest(ctx, q)
+	if err != nil {
+		return q, err
+	}
+	r.Log.Info("request for the person", "request", q.ID, "decision", d.ID)
+	return q, nil
+}
+
+// CloseRequest closes a request that is not finished, without a reply: one gone stale,
+// or no longer needed. A target run already going is left to finish; its reply is not
+// carried back. A question no longer holds its asker's lane from shipping.
+func (r *Runner) CloseRequest(ctx context.Context, id int64, why string) (store.Request, error) {
+	q, err := r.Store.Request(ctx, id)
+	if err != nil {
+		return q, err
+	}
+	r.routeMu.Lock()
+	defer r.routeMu.Unlock()
+	switch q.State {
+	case store.RequestReplied, store.RequestFailed, RequestClosed:
+		return q, refuse("request %d is %s already", q.ID, q.State)
+	}
+	why = strings.TrimSpace(why)
+	if why == "" {
+		why = "no reason given"
+	}
+	q.State, q.Note = RequestClosed, "closed: "+why
+	if err := r.Store.UpdateRequest(ctx, q); err != nil {
+		return q, err
+	}
+	r.Log.Info("request closed", "request", q.ID, "why", why)
+	r.feed(ctx, store.FeedRequest, q.ID, "request %d closed: %s", q.ID, clip(why, 160))
+	r.settled(ctx, q)
 	return q, nil
 }
 
@@ -283,20 +347,37 @@ func (r *Runner) findLane(ctx context.Context, from store.Lane, name string) (st
 	if err != nil {
 		return store.Lane{}, "", err
 	}
-	var found []store.Lane
+	// bare holds the asker's repo's open lanes named name after a prefix: "m2-gate"
+	// for "feat/m2-gate".
+	var found, bare []store.Lane
 	for _, rp := range repos {
 		lanes, err := r.Store.Lanes(ctx, rp.ID)
 		if err != nil {
 			return store.Lane{}, "", err
 		}
 		for _, l := range lanes {
-			if l.Name == name && l.State == store.LaneOpen {
+			if l.State != store.LaneOpen {
+				continue
+			}
+			if l.Name == name {
 				if rp.ID == fromRepo.ID {
 					return l, "", nil
 				}
 				found = append(found, l)
+			} else if rp.ID == fromRepo.ID && strings.HasSuffix(l.Name, "/"+name) {
+				bare = append(bare, l)
 			}
 		}
+	}
+	switch {
+	case len(found) == 0 && len(bare) == 1:
+		return bare[0], "", nil
+	case len(found) == 0 && len(bare) > 1:
+		var names []string
+		for _, l := range bare {
+			names = append(names, l.Name)
+		}
+		return store.Lane{}, fmt.Sprintf("%s could be any of %s; name it in full", name, strings.Join(names, ", ")), nil
 	}
 	switch len(found) {
 	case 0:
