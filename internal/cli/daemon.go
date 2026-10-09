@@ -56,6 +56,10 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 	case "stop":
 		return daemonStop(ctx, env)
 	case "restart":
+		// Refuse before stopping, so a bad config.yaml leaves the running daemon alone.
+		if err := checkConfig(env.Layout); err != nil {
+			return err
+		}
 		if err := daemonStop(ctx, env); err != nil {
 			return err
 		}
@@ -129,8 +133,17 @@ func daemonRun(ctx context.Context, env Env) error {
 // command made on its own, which says so and suggests installing.
 func startDaemon(ctx context.Context, env Env, auto bool) (*client.Client, error) {
 	l := env.Layout
+	if err := checkConfig(l); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(l.Home, 0o700); err != nil {
 		return nil, err
+	}
+	// What the daemon prints before it dies goes to the console file; note where this
+	// start's output begins, so a failure can quote it.
+	var from int64
+	if fi, err := os.Stat(consoleLog(l)); err == nil {
+		from = fi.Size()
 	}
 	mgr, _ := serviceFor()
 	how := ""
@@ -148,7 +161,10 @@ func startDaemon(ctx context.Context, env Env, auto bool) (*client.Client, error
 	}
 	c, err := waitForDaemon(ctx, env, 10*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("started the daemon (%s) but it did not answer: %w; see %s", how, err, l.Log())
+		if out := consoleSince(l, from); out != "" {
+			return nil, fmt.Errorf("started the daemon (%s) but it did not answer; it said:\n%s\nsee %s", how, out, consoleLog(l))
+		}
+		return nil, fmt.Errorf("started the daemon (%s) but it did not answer: %w; see %s and %s", how, err, consoleLog(l), l.Log())
 	}
 	st, _ := c.Status(ctx)
 	fmt.Fprintf(env.Stderr, "started shepherd daemon (pid %d, log %s)\n", st.PID, l.Log())
@@ -163,6 +179,29 @@ func startDaemon(ctx context.Context, env Env, auto bool) (*client.Client, error
 // log. The daemon's own log (Layout.Log) is written, and rotated, by the daemon alone,
 // because a file a manager or parent holds open cannot be renamed out from under it.
 func consoleLog(l paths.Layout) string { return filepath.Join(l.Home, "daemon.out") }
+
+// checkConfig reads config.yaml as the daemon will, so a start that would fail on it
+// says why at once instead of waiting for a daemon that has already exited.
+func checkConfig(l paths.Layout) error {
+	if _, err := config.Load(l.Config()); err != nil {
+		return fmt.Errorf("the daemon will not start with this config: %w", err)
+	}
+	return nil
+}
+
+// consoleSince returns the last lines written to the console file after offset from,
+// trimmed: what a daemon that failed to start printed.
+func consoleSince(l paths.Layout, from int64) string {
+	b, err := os.ReadFile(consoleLog(l))
+	if err != nil || int64(len(b)) <= from {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSpace(string(b[from:])), "\n")
+	if len(lines) > 10 {
+		lines = lines[len(lines)-10:]
+	}
+	return "  " + strings.Join(lines, "\n  ")
+}
 
 // spawn starts `shepherd daemon` detached from this terminal, its output going to the
 // console file.
@@ -310,6 +349,9 @@ func daemonInstall(ctx context.Context, env Env) error {
 	if warn := service.Warning(env.Exe); warn != "" {
 		fmt.Fprintf(env.Stderr, "warning: registering %s: %s\n", env.Exe, warn)
 	}
+	if err := checkConfig(env.Layout); err != nil {
+		return err
+	}
 	// A daemon started by hand would hold the lock and make the managed one fail.
 	if _, err := connect(ctx, env); err == nil {
 		if err := daemonStop(ctx, env); err != nil {
@@ -337,7 +379,7 @@ func daemonInstall(ctx context.Context, env Env) error {
 		fmt.Fprintln(w, "To keep it running while you are logged out: loginctl enable-linger $USER")
 	}
 	if _, err := waitForDaemon(ctx, env, 10*time.Second); err != nil {
-		return fmt.Errorf("installed, but the daemon did not answer: %w; see %s", err, spec.Log)
+		return fmt.Errorf("installed, but the daemon did not answer: %w; see %s and %s", err, spec.Console, spec.Log)
 	}
 	fmt.Fprintln(w, "daemon is running")
 	return nil
