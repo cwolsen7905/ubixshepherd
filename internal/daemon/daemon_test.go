@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -342,5 +343,83 @@ func TestNoRunner(t *testing.T) {
 	var e struct{ Error string }
 	if code := call(t, ts, s.Token, "POST", api.PathRuns, map[string]any{}, &e); code != http.StatusServiceUnavailable || !strings.Contains(e.Error, "does not run agents") {
 		t.Errorf("start run: %d %+v", code, e)
+	}
+}
+
+// seedLane saves a workspace with one repo and opens a lane in the store directly.
+func seedLane(t *testing.T, s *Server, name string) (store.Workspace, store.Lane) {
+	t.Helper()
+	ctx := context.Background()
+	root, _ := paths.Canonical(t.TempDir())
+	ws, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "git", Path: root},
+		[]store.Repo{{Name: "app", Path: filepath.Join(root, "app")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, err := s.Store.Repos(ctx, ws.ID)
+	if err != nil || len(repos) != 1 {
+		t.Fatalf("repos: %v %v", repos, err)
+	}
+	l, err := s.Store.CreateLane(ctx, store.Lane{RepoID: repos[0].ID, Name: name, Branch: name, Base: "main",
+		Worktree: filepath.Join(root, name), State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ws, l
+}
+
+func TestLaneViewForge(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	ws, none := seedLane(t, s, "no-mr")
+	repoID := none.RepoID
+	mk := func(name string, lf store.LaneForge) store.Lane {
+		l, err := s.Store.CreateLane(ctx, store.Lane{RepoID: repoID, Name: name, Branch: name, Base: "main",
+			Worktree: filepath.Join(t.TempDir(), name), State: store.LaneOpen})
+		if err != nil {
+			t.Fatal(err)
+		}
+		lf.LaneID = l.ID
+		if err := s.Store.PutLaneForge(ctx, lf); err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	mk("failing", store.LaneForge{MR: 34, MRState: "opened", MRURL: "https://x/34", Pipeline: 9, PipelineStatus: "failed"})
+	mk("odd", store.LaneForge{MR: 35, MRState: "locked", Pipeline: 10, PipelineStatus: "manual"})
+	mk("merged-nopipe", store.LaneForge{MR: 36, MRState: "merged"})
+
+	var lanes []api.LaneView
+	if code := call(t, ts, s.Token, "GET", fmt.Sprintf("%s?workspace_id=%d", api.PathLanes, ws.ID), nil, &lanes); code != 200 {
+		t.Fatalf("lanes: %d", code)
+	}
+	by := map[string]api.LaneView{}
+	for _, l := range lanes {
+		by[l.Name] = l
+	}
+	if v := by["no-mr"]; v.MR != 0 || v.MRState != "" || v.MRURL != "" || v.Pipeline != 0 || v.PipelineStatus != "" {
+		t.Errorf("lane without MR has forge fields: %+v", v)
+	}
+	if v := by["failing"]; v.MR != 34 || v.MRState != api.MRStateOpen || v.MRURL != "https://x/34" || v.Pipeline != 9 || v.PipelineStatus != api.PipelineFailed {
+		t.Errorf("failing = %+v", v)
+	}
+	if v := by["odd"]; v.MRState != api.MRStateUnknown || v.PipelineStatus != api.PipelineUnknown {
+		t.Errorf("unknown states = %+v", v)
+	}
+	if v := by["merged-nopipe"]; v.MRState != api.MRStateMerged || v.PipelineStatus != "" {
+		t.Errorf("merged = %+v", v)
+	}
+
+	// The wire shape: a lane without an MR carries no forge keys at all.
+	var raw []map[string]any
+	call(t, ts, s.Token, "GET", fmt.Sprintf("%s?workspace_id=%d", api.PathLanes, ws.ID), nil, &raw)
+	for _, m := range raw {
+		if m["name"] == "no-mr" {
+			for _, k := range []string{"mr", "mr_state", "mr_url", "pipeline", "pipeline_status"} {
+				if _, ok := m[k]; ok {
+					t.Errorf("no-mr lane has key %q", k)
+				}
+			}
+		}
 	}
 }

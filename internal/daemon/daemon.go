@@ -416,7 +416,13 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, l := range lanes {
-			out = append(out, api.LaneView{Lane: l, Repo: rp.Name})
+			v := api.LaneView{Lane: l, Repo: rp.Name}
+			// The store holds the last the forge said, so an unreachable forge keeps it.
+			if lf, err := s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 {
+				v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
+				v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
+			}
+			out = append(out, v)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

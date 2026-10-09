@@ -262,10 +262,22 @@ type Resolution struct {
 	Profile *config.Profile `json:"profile,omitempty"`
 }
 
-// LaneView is a lane with its repo's name, as lists show it.
+// LaneView is a lane with its repo's name, as lists show it, and what the forge last
+// said about its branch.
+//
+// The forge fields are Shepherd's last known state, refreshed by the watcher; a forge
+// that cannot be reached leaves them as they were. They are absent (not guessed) for a
+// lane with no merge request, and pipeline fields are absent without a pipeline.
+// MRState is one of the MRState* values, PipelineStatus one of the Pipeline* values.
+// A badge such as "!34 · pipeline failed" reads mr and pipeline_status.
 type LaneView struct {
 	store.Lane
-	Repo string `json:"repo"`
+	Repo           string `json:"repo"`
+	MR             int    `json:"mr,omitempty"`
+	MRState        string `json:"mr_state,omitempty"`
+	MRURL          string `json:"mr_url,omitempty"`
+	Pipeline       int64  `json:"pipeline,omitempty"`
+	PipelineStatus string `json:"pipeline_status,omitempty"`
 }
 
 // PathLaneShip is POST /v1/lanes/{id}/ship: push the lane's committed work and open or
