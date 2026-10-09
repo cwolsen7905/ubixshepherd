@@ -393,54 +393,122 @@ continue (§3.16).
 
 ### 3.16 The terminal: one thread, many feeds
 
-**Status: proposal (2026-10-02), to plan and evolve.** The human wants one terminal to work
-from, like an agent CLI, that also carries what every other agent is doing. Two easy shapes
-both fail the brief: piping every agent's raw output into one conversation turns the human
-back into the person watching five sessions, and tabs to switch between are a terminal
-multiplexer with the human still the coordinator.
+**Status: proposal (2026-10-08), revising the 2026-10-02 proposal, to plan and evolve.**
+The human wants one terminal to work from, like an agent CLI, that also carries what every
+other agent is doing. Two easy shapes both fail the brief: piping every agent's raw output
+into one conversation turns the human back into the person watching five sessions, and
+tabs to switch between are a terminal multiplexer with the human still the coordinator.
 
-It builds on §3.1 (one thread for the human), §3.6 (events, not relaying) and §3.15. The
-proposal: **one thread by default, a way into any agent.**
+It builds on §3.1 (one thread for the human), §3.6 (events, not relaying), §3.7 (reserved
+decisions) and §3.15. The proposal: **one thread in the terminal's own scrollback, a dock
+that says what needs the human, and a board to drill in.**
+
+**Why inline.** Agent CLIs have tried both ways. Tools that took over the whole screen and
+scrolled it themselves lost what people use the terminal for: the terminal's own search,
+selection, copying, multiplexer copy modes, and a record that stays after the program ends.
+Several shipped that mode and then added ways back to native scrollback, or turned it off
+again. Shepherd keeps the thread in scrollback and owns only a small region at the bottom.
+An earlier version with a full-screen side panel was removed for this reason.
 
 ```
-┌ shepherd ─────────────────────────────────────────────────────────┐
-│ lanes & runs        │ the thread                                  │
-│ ● feat/login claude │ you: have copilot add tests for the parser  │
-│ ● fix/crash copilot │ shepherd: opened lane test/parser, started  │
-│ ○ docs/install      │   copilot (run 12)                          │
-│                     │ ▸ run 11 claude: committed 2, gate green    │
-│ ? 1 decision        │ ▸ run 12 copilot: asks "OK to change the    │
-│                     │   public API?" [y / n / open]               │
-│                     │ ▸ !214 merged, lane feat/login closed       │
-└─────────────────────┴─────────────────────────────────────────────┘
-   Enter on a run: its live output full screen; Esc back to the thread
+  › have copilot add tests for the parser
+  ● Opened lane test/parser and started copilot (run 12).
+  ✓ run 11 claude · feat/login · 2 commits · gate passed
+  ✗ !207 fix/crash · pipeline failed (lint) · agent continued, try 1 of 3
+  ◆ !214 feat/login merged · lane closed
+  ? decision 9 · run 12 copilot · test/parser: OK to change the public API?
+  ───────────────────────── live dock, redrawn in place ─────────────────────────
+  1 needs you · 2 working · 1 to review · $4.10 of $20 today
+  ? 9  copilot  test/parser   OK to change the public API?   waiting 3m   Tab to answer
+  ✗ !207 claude fix/crash     pipeline failed, fixing
+  ● 12 copilot  test/parser   running 4m
+  › _
+  Enter send · Tab answer · Ctrl-T board · Ctrl-O transcript · /help
 ```
 
-- **Who the human talks to.** The human is the master coordinator; the **front desk** is
-  their voice: an ordinary agent session (Claude Code, Copilot, Cursor, any MCP client)
-  hosted in the terminal and wired to Shepherd's operator tools. It drafts work orders
-  and summarises. Shepherd does not run its own model for the conversation: the control
-  plane stays deterministic code ("the shepherd is not a sheep"), and the front desk can
-  be swapped without changing anything else.
-- **The thread carries events, not raw output.** A run started, committed, passed or
-  failed the gate, asked a question; an MR merged; a lane closed. Typed, one line each, so
-  the thread stays readable with ten agents going.
-- **Drill in, then attach.** Any run's live output opens full screen and closes back to
-  the thread. Attaching means talking to that agent directly (agent CLIs can resume a
-  headless session interactively); Shepherd keeps the record either way.
-- **Decisions come to the human.** A reserved decision (§3.7) appears in the thread with
-  options and a recommendation, and is answered in place.
-- **Another client of the HTTP API**, like the CLI and the web UI to come, so the same
-  thread can later live in a browser or the VS Code extension.
+Everything above the rule is ordinary terminal output. Everything below it is redrawn.
+
+**Three layers, each with one job.**
+
+| Layer | Where | Shows | Rules |
+|---|---|---|---|
+| The thread | Printed into the terminal's scrollback | The human's messages, the front desk's replies, and typed swarm events, one line each | Printed once and never rewritten. Wrapped to the width at the time, since scrollback cannot reflow. |
+| The dock | A few lines at the bottom, redrawn | Counts by attention state, the items that need the human first, the desk's status and spend, the input | A hard height budget, a fraction of the terminal's rows, collapsing to one status line on small terminals. Never wraps, never reprints the thread. |
+| The board | The alternate screen, opened and closed on demand | Every lane and run, grouped by attention, with filter, run logs, diffs, peek and attach | Leaving it returns to the scrollback exactly as it was. Events that arrive meanwhile print on return. |
+
+**The thread carries events, not raw output.** A run started, committed, passed or failed
+the gate, asked a question; a pipeline failed and the agent was continued; an MR merged; a
+lane closed; the budget crossed a threshold. Each event kind has its own glyph and colour,
+and the glyph alone carries the meaning, so the thread reads the same without colour. The
+agent's raw output stays in the run log, one key away.
+
+**The dock triages.** Attention is the scarce resource when several agents run at once:
+they produce work faster than one person can review it. The dock orders what it shows by
+what needs the human, not by when it started:
+
+| Order | State | Example |
+|---|---|---|
+| 1 | Needs you | A reserved decision waiting, with how long it has waited; a request no rule could route |
+| 2 | Broken | A failed pipeline or gate, with the fix attempts used |
+| 3 | To review | An MR open and green, waiting for a person |
+| 4 | Working | Runs in progress, with their age |
+| 5 | Done, unseen | Finished since the human last looked |
+
+A lane's MR shows as a badge coloured by its pipeline and merge state. Every state has a
+glyph as well as a colour. The counts at the top of the dock also go to the terminal's
+window title, so a tab shows that something is waiting.
+
+**Decisions come to the human, and only the human answers them.** A reserved decision
+(§3.7) prints in the thread with its options and recommendation, and appears first in the
+dock. One key brings the oldest into focus; a number answers it, or the human types their
+own words. The answer is always the person's keystroke: no agent, and not the front desk,
+answers on their behalf.
+
+**Signals outside the window.** When the terminal is not focused, a new decision, a failed
+run or pipeline, or a request that needs routing raises a terminal notification, once per
+item, after a short delay, and not at all if it was handled meanwhile. Where the terminal
+supports it, a progress indicator on the tab shows that agents are working or that one has
+failed. When the human comes back after a while, one line sums up what happened while they
+were away, built from the feed by Shepherd, not written by a model; the desk adds detail
+only when asked.
+
+**Drill in, then attach.** From the board, any run's live output opens full screen, a
+lane's diff opens in the human's pager, and attaching hands the terminal to that agent's
+own CLI, resuming its session, until the human exits back. Shepherd keeps the record either
+way. Stopping a run or closing a lane asks for confirmation; reading never does.
+
+**Who the human talks to.** The human is the master coordinator; the **front desk** is
+their voice: an ordinary agent session hosted in the terminal and wired to Shepherd's
+operator tools, with read-only access to the workspace. It drafts work orders and
+summarises. Shepherd does not run its own model for the conversation or for the dock: the
+control plane and everything it displays stay deterministic code ("the shepherd is not a
+sheep"), and the front desk can be swapped without changing anything else.
+
+**Accessible and portable.** A plain mode prints the thread and a prompt with no live
+region and no animation. Colours adapt to light and dark backgrounds and respect
+`NO_COLOR`. Terminal features that are not universal (notifications, tab progress,
+hyperlinks, clipboard) are used only where the terminal is recognised, with a plain
+fallback.
+
+**Another client of the HTTP API**, like the CLI and the web UI to come, so the same
+thread, dock and board can later live in a browser or an editor extension. A standalone
+dashboard client can also run in a multiplexer split beside the chat for people who want
+the board always visible.
 
 How it could grow, each step useful alone:
 
-1. **`shepherd watch`**: the lanes-and-runs panel, the event feed and drill-down,
-   read-only, in a split beside the front desk.
-2. **Decisions** answered from the feed.
-3. **One window**: the front desk embedded as the main pane, with the swarm's events
-   available to it as well as to the human.
-4. **Attach** to a running or finished agent's session.
+| Step | What | Status |
+|---|---|---|
+| 1 | The thread in scrollback, the front desk, the run log and transcript pagers, decisions answered by command | Built |
+| 2 | Typed event lines, an attention-sorted dock with MR badges, the window title, decisions answered by key, adaptive colours | Proposed |
+| 3 | Notifications, tab progress and the "while you were away" line | Proposed |
+| 4 | The board: lanes and runs grouped by attention, filter, logs, diffs, peek, stop | Proposed |
+| 5 | Attach to any run's agent session from the board, for every supported agent CLI | Proposed |
+
+Some of these use terminal features that the current terminal UI library exposes only in
+its next major version (synchronized output, tab progress, clipboard, distinct Shift+Enter).
+Moving to it is a step of its own, after checking that printing above an inline view and
+resizing behave as the thread needs.
 
 ## 4. Where the efficiency comes from
 
