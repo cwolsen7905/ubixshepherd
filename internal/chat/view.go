@@ -12,54 +12,22 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// Calm palette for agents and lanes: distinct enough to scan, quiet enough to read.
-var nameColors = []lipgloss.Color{
-	lipgloss.Color("39"),  // blue
-	lipgloss.Color("78"),  // green
-	lipgloss.Color("180"), // sand
-	lipgloss.Color("110"), // steel
-	lipgloss.Color("176"), // rose
-	lipgloss.Color("144"), // moss
-	lipgloss.Color("117"), // sky
-	lipgloss.Color("216"), // peach
-}
-
-var (
-	styleYou      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
-	styleDeskMark = lipgloss.NewStyle().Foreground(lipgloss.Color("111"))
-	styleTool     = lipgloss.NewStyle().Faint(true)
-	styleEvent    = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("244"))
-	styleDecision = lipgloss.NewStyle().Foreground(lipgloss.Color("178"))
-	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	styleInfo     = lipgloss.NewStyle().Faint(true).Italic(true)
-	styleHead     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
-	styleSel      = lipgloss.NewStyle().Reverse(true)
-)
-
-func colorFor(name string) lipgloss.Color {
+func nameIndex(name string, n int) int {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if name == "" {
-		return nameColors[0]
+		return 0
 	}
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(name))
-	return nameColors[int(h.Sum32())%len(nameColors)]
+	return int(h.Sum32() % uint32(n))
 }
 
 func styleAgent(name string) lipgloss.Style {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "claude":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("111"))
-	case "copilot":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
-	case "cursor":
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("180"))
-	}
-	return lipgloss.NewStyle().Foreground(colorFor(name))
+	return lipgloss.NewStyle().Foreground(pal.agentColor(name))
 }
 
 func styleLane(name string) lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(colorFor("lane:" + name))
+	return lipgloss.NewStyle().Foreground(pal.nameColor("lane:" + name))
 }
 
 // renderLine is one thread entry as it is printed to the terminal's scrollback (and shown
