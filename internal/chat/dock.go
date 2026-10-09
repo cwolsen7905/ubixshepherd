@@ -34,7 +34,7 @@ var groupNames = [groupCount]string{"needs you", "broken", "to review", "working
 // groupMarks are the dock's glyphs, one per group, read without colour.
 var groupMarks = [groupCount]eventMark{
 	{"?", toneWarn},
-	{"✗", func(p palette) lipgloss.Style { return p.bad }},
+	{"✗", toneBroken},
 	{"◆", toneAccent},
 	{"●", toneAccent},
 	{"✓", func(p palette) lipgloss.Style { return p.ok }},
@@ -264,7 +264,7 @@ func (m *Model) countsRow(items []dockItem) string {
 		case groupNeedsYou:
 			st = pal.warn
 		case groupBroken:
-			st = pal.bad
+			st = pal.broken
 		}
 		parts = append(parts, st.Render(fmt.Sprintf("%d %s", c, groupNames[g])))
 	}

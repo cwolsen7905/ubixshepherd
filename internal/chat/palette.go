@@ -18,9 +18,10 @@ type palette struct {
 	you, deskMark, tool, event, decision, err, info, head, sel lipgloss.Style
 	mdHead, mdBold, mdCode, mdBlock, mdFaint                   lipgloss.Style
 
-	// States, for event glyphs, the dock and badges: passed, failed, waiting on the
-	// person, activity, and bookkeeping.
-	ok, bad, warn, accent, muted lipgloss.Style
+	// States, for event glyphs, the dock and badges: passed, failed (the loudest),
+	// broken (the dock's group, and runs cut short), waiting on the person, activity,
+	// and bookkeeping.
+	ok, bad, broken, warn, accent, muted lipgloss.Style
 
 	names  []lipgloss.TerminalColor // agents and lanes without a colour of their own
 	agents map[string]lipgloss.TerminalColor
@@ -60,6 +61,7 @@ func newPalette(color bool) palette {
 
 		ok:     fg("28", "78"),
 		bad:    fg("160", "203").Bold(true),
+		broken: fg("160", "203"),
 		warn:   fg("136", "178").Bold(true),
 		accent: fg("25", "111"),
 		muted:  fg("243", "244"),

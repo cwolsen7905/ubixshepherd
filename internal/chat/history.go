@@ -176,7 +176,7 @@ func (m *Model) loadHistory() tea.Cmd {
 			}
 			for i, it := range page.Items {
 				if it.ID <= h.last {
-					h.entries = append(h.entries, Entry{it.Created, feedLine(it, page.Event(i), false)})
+					h.entries = append(h.entries, Entry{it.Created, feedLine(it, feedEvent(page, i), false)})
 				}
 			}
 			if len(page.Items) == 0 || page.Last <= after {

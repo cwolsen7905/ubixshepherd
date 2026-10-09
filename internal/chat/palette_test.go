@@ -32,7 +32,7 @@ func paletteStyles(p palette) map[string]lipgloss.Style {
 		"you": p.you, "deskMark": p.deskMark, "tool": p.tool, "event": p.event, "decision": p.decision,
 		"err": p.err, "info": p.info, "head": p.head, "sel": p.sel,
 		"mdHead": p.mdHead, "mdBold": p.mdBold, "mdCode": p.mdCode, "mdBlock": p.mdBlock, "mdFaint": p.mdFaint,
-		"ok": p.ok, "bad": p.bad, "warn": p.warn, "accent": p.accent, "muted": p.muted,
+		"ok": p.ok, "bad": p.bad, "broken": p.broken, "warn": p.warn, "accent": p.accent, "muted": p.muted,
 	}
 }
 

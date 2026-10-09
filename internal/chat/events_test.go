@@ -14,6 +14,7 @@ var allEvents = []string{
 	api.EventLaneOpened, api.EventLaneClosed, api.EventRunStarted, api.EventRunEnded, api.EventReport,
 	api.EventDecisionAsked, api.EventDecisionAnswer, api.EventRequest, api.EventRequestAttention,
 	api.EventMR, api.EventPipeline, api.EventBudget, api.EventTag, api.EventRelease, api.EventConfig, api.EventInfo,
+	kindRunPassed, kindRunFailed, kindRunInterrupted, kindRunQuota, kindCommit, kindGate,
 }
 
 // Every event has its own glyph, one cell wide, so a line of events reads without colour.
@@ -95,5 +96,46 @@ func TestFinishedRunsWakeTheDesk(t *testing.T) {
 				t.Errorf("%s: desk got %q, want woken %v", c.kind, d.got, c.wake)
 			}
 		})
+	}
+}
+
+// The newer kinds get their marks whether the daemon names their events or leaves the
+// mapping to a client whose api does not know them yet.
+func TestNewerKindsCarryTheirGlyph(t *testing.T) {
+	defer usePalette(pal)
+	usePalette(newPalette(false))
+	items := []store.FeedItem{
+		{ID: 1, Kind: kindRunPassed, Text: "run 3 succeeded"},
+		{ID: 2, Kind: kindRunFailed, Text: "run 4 failed"},
+		{ID: 3, Kind: kindRunInterrupted, Text: "run 5 stopped"},
+		{ID: 4, Kind: kindRunQuota, Text: "run 5: out of quota"},
+		{ID: 5, Kind: kindCommit, Text: "run 3: 2 commit(s)"},
+		{ID: 6, Kind: kindGate, Text: "gate failed: lint"},
+		{ID: 7, Kind: "something_newer", Text: "a kind nobody knows"},
+	}
+	want := []string{"✓ run 3 succeeded", "✗ run 4 failed", "↯ run 5 stopped", "∅ run 5: out of quota", "* run 3: 2 commit(s)", "◇ gate failed: lint", "· a kind nobody knows"}
+	for _, events := range [][]string{
+		{kindRunPassed, kindRunFailed, kindRunInterrupted, kindRunQuota, kindCommit, kindGate, api.EventInfo},
+		nil, // the client maps the kinds itself
+	} {
+		m, _, _ := newTestModel()
+		printed := capturePrints(m)
+		m.lastFeed = 0
+		m.Update(feedMsg(api.Feed{Last: 7, Items: items, Events: events}))
+		out := ansi.Strip(strings.Join(*printed, "\n"))
+		for _, w := range want {
+			if !strings.Contains(out, w) {
+				t.Errorf("events %v: thread lacks %q:\n%s", events != nil, w, out)
+			}
+		}
+	}
+	// Without colour, a failed run is still the loudest: bold, where cut-short runs are not.
+	p := newPalette(false)
+	if !eventMarks[kindRunFailed].tone(p).GetBold() || eventMarks[kindRunInterrupted].tone(p).GetBold() || eventMarks[kindRunQuota].tone(p).GetBold() {
+		t.Error("failed is not the loudest run outcome")
+	}
+	p = newPalette(true)
+	if eventMarks[kindRunInterrupted].tone(p).GetForeground() != groupMarks[groupBroken].tone(p).GetForeground() {
+		t.Error("an interrupted run is not in the dock's broken tone")
 	}
 }

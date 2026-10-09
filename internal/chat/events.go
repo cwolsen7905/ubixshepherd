@@ -18,16 +18,27 @@ var (
 	toneMuted  = func(p palette) lipgloss.Style { return p.muted }
 	toneAccent = func(p palette) lipgloss.Style { return p.accent }
 	toneWarn   = func(p palette) lipgloss.Style { return p.warn }
+	toneOK     = func(p palette) lipgloss.Style { return p.ok }
+	toneBad    = func(p palette) lipgloss.Style { return p.bad }
+	toneBroken = func(p palette) lipgloss.Style { return p.broken }
 )
 
-// eventMarks covers every api.Event* value. A pipeline event is a gate or forge
-// pipeline passing, failing or handed back: the item does not say which, so its mark
-// is neutral and the text tells.
+// eventMarks covers every event kind. A run's outcome has its own mark: passed is
+// quietly positive, failed the loudest, interrupted and out of quota broken. run_ended
+// is a run whose outcome the item does not say (an older daemon, or a recovered run).
+// The gate and the forge's pipeline pass, fail or hand back under one kind each, so
+// their marks are neutral and the text tells.
 var eventMarks = map[string]eventMark{
 	api.EventLaneOpened:       {"+", toneMuted},
 	api.EventLaneClosed:       {"−", toneMuted},
 	api.EventRunStarted:       {"▸", toneAccent},
 	api.EventRunEnded:         {"■", toneAccent},
+	kindRunPassed:             {"✓", toneOK},
+	kindRunFailed:             {"✗", toneBad},
+	kindRunInterrupted:        {"↯", toneBroken},
+	kindRunQuota:              {"∅", toneBroken},
+	kindCommit:                {"*", toneMuted},
+	kindGate:                  {"◇", toneAccent},
 	api.EventReport:           {"»", toneMuted},
 	api.EventDecisionAsked:    {"?", toneWarn},
 	api.EventDecisionAnswer:   {"↳", toneMuted},
@@ -40,6 +51,20 @@ var eventMarks = map[string]eventMark{
 	api.EventRelease:          {"▲", toneMuted},
 	api.EventConfig:           {"~", toneMuted},
 	api.EventInfo:             {"·", toneMuted},
+}
+
+// feedEvent is the event of item i: the daemon's, or, when this build's api does not
+// know a newer kind and calls it info, the kind itself if the chat has a mark for it.
+func feedEvent(f api.Feed, i int) string {
+	ev := f.Event(i)
+	if ev == api.EventInfo {
+		if k := f.Items[i].Kind; k != api.EventInfo {
+			if _, ok := eventMarks[k]; ok {
+				return k
+			}
+		}
+	}
+	return ev
 }
 
 // markFor is an event's mark; an event this chat does not know reads as info.
