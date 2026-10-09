@@ -125,9 +125,10 @@ Across M3 to M5:
   launched agents get `ask_shepherd`, `ask_human` and `report`; Shepherd routes between
   sessions; events continue sessions instead of the human.
 - ★ **The terminal** ([design.md §3.16](design.md#316-the-terminal-one-thread-many-feeds), a
-  proposal): `shepherd watch` (lanes, runs, event feed, drill into a run's output) as soon
-  as runs exist; decisions answered from the feed with M5's held decisions; then the front
-  desk embedded in the same window, and attach to an agent.
+  revised 2026-10-08): the thread in the terminal's scrollback with the front desk (built);
+  then typed event lines and a dock sorted by what needs the person, decisions answered by
+  key, notifications outside the window, a board to drill into lanes and runs, and attach
+  to an agent.
 - ★ **VS Code works as the front desk** from M4 through MCP (VS Code agent mode, Claude
   Code extension); nothing extra to build.
 
