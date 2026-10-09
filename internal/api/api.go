@@ -129,9 +129,23 @@ const PathFeed = "/v1/feed"
 const PathSettings = "/v1/settings"
 
 // Feed answers GET /v1/feed: items after the given id, and the id to ask after next.
+//
+// Events is parallel to Items (same length, same order): Events[i] is the event of
+// Items[i], one of the Event* values, mapped by EventKind from the item's kind. Draw
+// glyphs and colours from the event; Items[i].Kind is the store's raw kind and may grow.
+// Use Event(i) rather than indexing Events, so an older daemon's answer still works.
 type Feed struct {
-	Items []store.FeedItem `json:"items"`
-	Last  int64            `json:"last"`
+	Items  []store.FeedItem `json:"items"`
+	Events []string         `json:"events"`
+	Last   int64            `json:"last"`
+}
+
+// Event returns the event of item i, mapping its kind when the daemon sent no events.
+func (f Feed) Event(i int) string {
+	if i < len(f.Events) && f.Events[i] != "" {
+		return f.Events[i]
+	}
+	return EventKind(f.Items[i].Kind)
 }
 
 // Setting is a setting's value.
@@ -262,10 +276,22 @@ type Resolution struct {
 	Profile *config.Profile `json:"profile,omitempty"`
 }
 
-// LaneView is a lane with its repo's name, as lists show it.
+// LaneView is a lane with its repo's name, as lists show it, and what the forge last
+// said about its branch.
+//
+// The forge fields are Shepherd's last known state, refreshed by the watcher; a forge
+// that cannot be reached leaves them as they were. They are absent (not guessed) for a
+// lane with no merge request, and pipeline fields are absent without a pipeline.
+// MRState is one of the MRState* values, PipelineStatus one of the Pipeline* values.
+// A badge such as "!34 · pipeline failed" reads mr and pipeline_status.
 type LaneView struct {
 	store.Lane
-	Repo string `json:"repo"`
+	Repo           string `json:"repo"`
+	MR             int    `json:"mr,omitempty"`
+	MRState        string `json:"mr_state,omitempty"`
+	MRURL          string `json:"mr_url,omitempty"`
+	Pipeline       int64  `json:"pipeline,omitempty"`
+	PipelineStatus string `json:"pipeline_status,omitempty"`
 }
 
 // PathLaneShip is POST /v1/lanes/{id}/ship: push the lane's committed work and open or

@@ -416,7 +416,13 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, l := range lanes {
-			out = append(out, api.LaneView{Lane: l, Repo: rp.Name})
+			v := api.LaneView{Lane: l, Repo: rp.Name}
+			// The store holds the last the forge said, so an unreachable forge keeps it.
+			if lf, err := s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 {
+				v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
+				v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
+			}
+			out = append(out, v)
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -1146,7 +1152,7 @@ func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, api.Feed{Items: []store.FeedItem{}, Last: last})
+		writeJSON(w, http.StatusOK, api.Feed{Items: []store.FeedItem{}, Events: []string{}, Last: last})
 		return
 	}
 	items, err := s.Store.Feed(r.Context(), after, 200)
@@ -1154,10 +1160,13 @@ func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	out := api.Feed{Items: []store.FeedItem{}, Last: after}
+	out := api.Feed{Items: []store.FeedItem{}, Events: []string{}, Last: after}
 	if items != nil {
 		out.Items = items
 		out.Last = items[len(items)-1].ID
+		for _, it := range items {
+			out.Events = append(out.Events, api.EventKind(it.Kind))
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

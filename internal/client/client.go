@@ -220,7 +220,15 @@ func (c *Client) Feed(ctx context.Context, after int64) (api.Feed, error) {
 	if after < 0 {
 		q = api.PathFeed + "?after=latest"
 	}
-	return out, c.do(ctx, http.MethodGet, q, nil, &out)
+	err := c.do(ctx, http.MethodGet, q, nil, &out)
+	if len(out.Events) != len(out.Items) {
+		// An older daemon sent no events: map the kinds here, so callers can rely on them.
+		out.Events = make([]string, len(out.Items))
+		for i, it := range out.Items {
+			out.Events[i] = api.EventKind(it.Kind)
+		}
+	}
+	return out, err
 }
 
 func (c *Client) Setting(ctx context.Context, key string) (string, error) {
