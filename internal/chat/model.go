@@ -127,7 +127,13 @@ type Model struct {
 	logOffset int64
 	logDone   bool
 
-	title         string // the window title last set
+	title string // the window title last set
+
+	// focusDecision is the decision in the dock that has the keys, 0 when the input has
+	// them; confirm is the option it waits on Enter to answer with.
+	focusDecision int64
+	confirm       int
+
 	width, height int
 	input         textarea.Model
 	ready         bool
@@ -437,6 +443,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.clearDone()
 			return tea.Batch(cmds...)
 		}
+		if m.focusDecision != 0 {
+			return tea.Batch(append(cmds, m.decisionKey(msg))...)
+		}
+		if msg.Type == tea.KeyTab && m.moveFocus(1) || msg.Type == tea.KeyShiftTab && m.moveFocus(-1) {
+			return tea.Batch(cmds...)
+		}
 		if msg.Type == tea.KeyEnter {
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
@@ -485,6 +497,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case panelMsg:
 		if msg.panelUpdated {
 			m.lanes, m.runs, m.decisions, m.requests = msg.lanes, msg.runs, msg.decisions, msg.requests
+			if _, ok := m.focusedDecision(); !ok && m.focusDecision != 0 {
+				// Answered elsewhere: the keys go back to the input.
+				m.focusInput()
+			}
 			m.spend = msg.spend
 		}
 		if msg.sessionsUpdated {
@@ -611,6 +627,7 @@ func (m *Model) handle(text string) tea.Cmd {
 	switch f[0] {
 	case "/help":
 		m.add(Line{Kind: KindInfo, Text: "/answer <decision> <option number or words>   answer a decision yourself\n" +
+			"Tab / Shift-Tab   move to the decisions in the dock and between them; a number answers with that option (Enter confirms when asked), Enter alone answers in your own words, Esc goes back\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
@@ -933,12 +950,21 @@ func (m *Model) View() string {
 	items := m.dockItems()
 	var rows []string
 	dock := m.dockRows(items)
+	d, deciding := m.focusedDecision()
+	if deciding && len(dock) > 1 && 1+len(dock)+decisionHeight(d) > m.height {
+		// The decision's options come first: the dock keeps its counts.
+		dock = dock[:1]
+	}
 	rows = append(rows, m.streaming(len(dock))...)
 	rows = append(rows, m.statusLine())
 	rows = append(rows, dock...)
-	rows = append(rows, strings.Split(m.input.View(), "\n")...)
-	if m.height >= 8 {
-		rows = append(rows, styleInfo.Render(m.keysHint(items)))
+	if deciding {
+		rows = append(rows, m.decisionRows(d, max(3, m.height-len(rows)))...)
+	} else {
+		rows = append(rows, strings.Split(m.input.View(), "\n")...)
+		if m.height >= 8 {
+			rows = append(rows, styleInfo.Render(m.keysHint(items)))
+		}
 	}
 	for i, r := range rows {
 		rows[i] = fit(r, m.width)
@@ -948,7 +974,7 @@ func (m *Model) View() string {
 
 // keysHint is the line of keys under the input, with the dock's keys when they apply.
 func (m *Model) keysHint(items []dockItem) string {
-	keys := []string{"Enter send"}
+	keys := keysWithDecisions([]string{"Enter send"}, items)
 	if n := counts(items); n[groupDone] > 0 {
 		keys = append(keys, "Ctrl-G clear done")
 	}

@@ -290,7 +290,11 @@ func (m *Model) itemRow(it dockItem) string {
 	if it.detail != "" {
 		parts = append(parts, pal.muted.Render(it.detail))
 	}
-	return "  " + mk.tone(pal).Render(glyph) + " " + strings.Join(parts, "  ")
+	lead := "  "
+	if it.decision != 0 && it.decision == m.focusDecision {
+		lead = styleSel.Render("›") + " "
+	}
+	return lead + mk.tone(pal).Render(glyph) + " " + strings.Join(parts, "  ")
 }
 
 func endedAt(r api.RunView) time.Time {
