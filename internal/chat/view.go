@@ -7,6 +7,7 @@ import (
 	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -23,33 +24,16 @@ var nameColors = []lipgloss.Color{
 	lipgloss.Color("216"), // peach
 }
 
-func wrapHard(line string, width int) []string {
-	if line == "" {
-		return []string{""}
-	}
-	rs := []rune(line)
-	var rows []string
-	for len(rs) > width {
-		rows = append(rows, string(rs[:width]))
-		rs = rs[width:]
-	}
-	return append(rows, string(rs))
-}
-
 var (
-	styleYou       = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
-	styleDesk      = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	styleTool      = lipgloss.NewStyle().Faint(true)
-	styleEvent     = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("244"))
-	styleShepherd  = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("242")).Italic(true)
-	styleDecision  = lipgloss.NewStyle().Foreground(lipgloss.Color("178"))
-	styleError     = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	styleInfo      = lipgloss.NewStyle().Faint(true).Italic(true)
-	stylePanel     = lipgloss.NewStyle().PaddingLeft(2)
-	styleHead      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
-	styleSel       = lipgloss.NewStyle().Reverse(true)
-	styleLabelYou  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
-	styleLabelDesk = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("111"))
+	styleYou      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255"))
+	styleDeskMark = lipgloss.NewStyle().Foreground(lipgloss.Color("111"))
+	styleTool     = lipgloss.NewStyle().Faint(true)
+	styleEvent    = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("244"))
+	styleDecision = lipgloss.NewStyle().Foreground(lipgloss.Color("178"))
+	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
+	styleInfo     = lipgloss.NewStyle().Faint(true).Italic(true)
+	styleHead     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("245"))
+	styleSel      = lipgloss.NewStyle().Reverse(true)
 )
 
 func colorFor(name string) lipgloss.Color {
@@ -78,90 +62,76 @@ func styleLane(name string) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(colorFor("lane:" + name))
 }
 
-// wrapBody wraps text to width while keeping markdown tables and fenced code readable.
-func wrapBody(text string, width int) string {
-	if width < 20 {
-		width = 20
+// renderLine is one thread entry as it is printed to the terminal's scrollback (and shown
+// in the transcript), wrapped to width.
+func renderLine(l Line, width int) string {
+	w := width - 2
+	if w < 10 {
+		w = 10
+	}
+	switch l.Kind {
+	case KindYou:
+		return hang(styleYou.Render("›")+" ", "  ", styleLines(styleYou, wrapText(l.Text, w)))
+	case KindDesk:
+		return hang(styleDeskMark.Render("●")+" ", "  ", wrapText(l.Text, w))
+	case KindTool:
+		return hang(styleTool.Render("  → "), "    ", styleLines(styleTool, wrapText(l.Text, w-2)))
+	case KindEvent:
+		return hang(styleEvent.Render("·")+" ", "  ", styleLines(styleEvent, tintAgents(wrapText(l.Text, w))))
+	case KindDecision:
+		return hang(styleDecision.Render("?")+" ", "  ", styleLines(styleDecision, wrapText(l.Text, w)))
+	case KindError:
+		return hang(styleError.Render("!")+" ", "  ", styleLines(styleError, wrapText(l.Text, w)))
+	}
+	return hang("  ", "  ", styleLines(styleInfo, wrapText(l.Text, w)))
+}
+
+// hang prefixes the first line of body with first and the others with rest.
+func hang(first, rest, body string) string {
+	lines := strings.Split(body, "\n")
+	for i := range lines {
+		p := rest
+		if i == 0 {
+			p = first
+		}
+		lines[i] = p + lines[i]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// styleLines styles each line on its own: a style over several lines would pad them all
+// to the widest, and trailing spaces get in the way of copying from the terminal.
+func styleLines(st lipgloss.Style, s string) string {
+	lines := strings.Split(s, "\n")
+	for i, l := range lines {
+		if l != "" {
+			lines[i] = st.Render(l)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// wrapText wraps each line to width at word boundaries, breaking words that do not fit.
+func wrapText(text string, width int) string {
+	if width < 1 {
+		width = 1
 	}
 	lines := strings.Split(text, "\n")
-	var out []string
-	inFence := false
-	for _, line := range lines {
-		trim := strings.TrimSpace(line)
-		if strings.HasPrefix(trim, "```") {
-			inFence = !inFence
-			out = append(out, clipRunes(line, width))
-			continue
-		}
-		if inFence || isTableRow(line) {
-			out = append(out, wrapHard(line, width)...)
-			continue
-		}
-		out = append(out, wrapWords(line, width)...)
+	for i, l := range lines {
+		lines[i] = ansi.Wrap(strings.TrimRight(l, " \t"), width, "")
 	}
-	return strings.Join(out, "\n")
+	return strings.Join(lines, "\n")
 }
 
-func isTableRow(line string) bool {
-	trim := strings.TrimSpace(line)
-	return strings.HasPrefix(trim, "|") && strings.Contains(trim[1:], "|")
+// fit cuts a line to width, for the live region, which must never wrap.
+func fit(s string, width int) string {
+	if width <= 0 || ansi.StringWidth(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width, "…")
 }
 
-func wrapWords(line string, width int) []string {
-	if line == "" {
-		return []string{""}
-	}
-	words := strings.Fields(line)
-	if len(words) == 0 {
-		return []string{line}
-	}
-	// Preserve leading indent on the first wrapped line.
-	indent := ""
-	for _, r := range line {
-		if r == ' ' || r == '\t' {
-			indent += string(r)
-			continue
-		}
-		break
-	}
-	if len([]rune(indent)) >= width/2 {
-		indent = ""
-	}
-	pad := indent
-	var rows []string
-	var cur strings.Builder
-	cur.WriteString(pad)
-	for i, w := range words {
-		need := w
-		if cur.Len() > len(pad) {
-			need = " " + w
-		}
-		curWidth := len([]rune(cur.String()))
-		padWidth := len([]rune(pad))
-		if curWidth+len([]rune(need)) > width && curWidth > padWidth {
-			rows = append(rows, cur.String())
-			cur.Reset()
-			cur.WriteString(pad)
-			need = w
-		}
-		// A single word longer than the width: hard-break it.
-		for len([]rune(need)) > width {
-			rs := []rune(need)
-			rows = append(rows, string(rs[:width]))
-			need = string(rs[width:])
-		}
-		cur.WriteString(need)
-		if i == len(words)-1 {
-			rows = append(rows, cur.String())
-		}
-	}
-	if len(rows) == 0 {
-		return []string{line}
-	}
-	return rows
-}
-
-func clipRunes(s string, n int) string {
+func clipTo(s string, n int) string {
 	rs := []rune(s)
 	if len(rs) <= n {
 		return s
@@ -170,10 +140,6 @@ func clipRunes(s string, n int) string {
 		return "…"
 	}
 	return string(rs[:n-1]) + "…"
-}
-
-func clipTo(s string, n int) string {
-	return clipRunes(s, n)
 }
 
 // tintAgents colors known agent names inside a plain line (panel / event text).

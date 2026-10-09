@@ -28,6 +28,9 @@ const (
 	// KindCost carries a turn's cost in dollars as its text; the chat records it and
 	// does not show it.
 	KindCost = "cost"
+	// KindPartial carries a piece of the desk's reply as it streams; the whole reply
+	// follows as a KindDesk line.
+	KindPartial = "partial"
 )
 
 // Line is one entry in the thread.
@@ -66,7 +69,7 @@ func (d ClaudeDesk) Args(session, message string, newSession bool) []string {
 	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{
 		"shepherd": map[string]any{"command": d.Shepherd, "args": []string{"mcp"}},
 	}})
-	a := []string{"-p", message, "--output-format", "stream-json", "--verbose"}
+	a := []string{"-p", message, "--output-format", "stream-json", "--verbose", "--include-partial-messages"}
 	if newSession {
 		a = append(a, "--session-id", session, "--append-system-prompt", DeskBrief)
 	} else {
@@ -80,6 +83,14 @@ func (d ClaudeDesk) Args(session, message string, newSession bool) []string {
 		a = append(a, "--model", d.Model)
 	}
 	return a
+}
+
+// Name says what the desk runs on, for the status line.
+func (d ClaudeDesk) Name() string {
+	if d.Model != "" {
+		return "claude · " + d.Model
+	}
+	return "claude"
 }
 
 // Turn runs one turn of the conversation. An empty session starts a new one.
@@ -116,9 +127,9 @@ func (d ClaudeDesk) Turn(ctx context.Context, session, message string, emit func
 	return session, nil
 }
 
-// Parse reads Claude Code's stream-json and emits the thread's lines: the desk's text,
-// a short line per tool call, and an error when the turn fails. It reports whether any
-// reply came through.
+// Parse reads Claude Code's stream-json and emits the thread's lines: the desk's text as
+// it streams and then whole, a short line per tool call, and an error when the turn
+// fails. It reports whether any reply came through.
 func Parse(r io.Reader, emit func(Line)) bool {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 16<<20)
@@ -130,6 +141,13 @@ func Parse(r io.Reader, emit func(Line)) bool {
 			IsError bool    `json:"is_error"`
 			Result  string  `json:"result"`
 			Cost    float64 `json:"total_cost_usd"`
+			Event   struct {
+				Type  string `json:"type"`
+				Delta struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"delta"`
+			} `json:"event"`
 			Message struct {
 				Content []struct {
 					Type  string          `json:"type"`
@@ -143,6 +161,10 @@ func Parse(r io.Reader, emit func(Line)) bool {
 			continue
 		}
 		switch m.Type {
+		case "stream_event":
+			if m.Event.Type == "content_block_delta" && m.Event.Delta.Type == "text_delta" && m.Event.Delta.Text != "" {
+				emit(Line{KindPartial, m.Event.Delta.Text})
+			}
 		case "assistant":
 			for _, c := range m.Message.Content {
 				switch c.Type {
