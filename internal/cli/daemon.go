@@ -7,6 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/client"
@@ -55,6 +58,8 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 		}
 		_, err := startDaemon(ctx, env, false)
 		return err
+	case "reload":
+		return daemonReload(ctx, env)
 	case "status":
 		return daemonStatus(ctx, env)
 	case "install":
@@ -175,6 +180,9 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 	}
 }
 
+// stopWait is how long stop waits for the daemon to exit.
+const stopWait = 30 * time.Second
+
 func daemonStop(ctx context.Context, env Env) error {
 	c, err := connect(ctx, env)
 	if err != nil {
@@ -185,7 +193,10 @@ func daemonStop(ctx context.Context, env Env) error {
 	if err := c.Shutdown(ctx); err != nil {
 		return err
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	// A stopping daemon gives its agents up to 15 seconds to end (after 5 for requests in
+	// flight) before it lets go of the runtime file, so restart must wait that long or
+	// it starts a second daemon into the first one's lock.
+	deadline := time.Now().Add(stopWait)
 	for {
 		if _, err := os.Stat(env.Layout.Runtime()); errors.Is(err, os.ErrNotExist) {
 			fmt.Fprintf(env.Stdout, "stopped (pid %d)\n", st.PID)
@@ -196,6 +207,53 @@ func daemonStop(ctx context.Context, env Env) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// daemonReload has the running daemon read config.yaml again (SIGHUP), then says what
+// the daemon made of it: what changed, or why it kept the config it had.
+func daemonReload(ctx context.Context, env Env) error {
+	if runtime.GOOS == "windows" {
+		return errors.New("daemon reload is not supported on Windows yet; use shepherd daemon restart")
+	}
+	c, err := connect(ctx, env)
+	if err != nil {
+		return fmt.Errorf("the daemon is not running; it reads %s when it starts", env.Layout.Config())
+	}
+	st, err := c.Status(ctx)
+	if err != nil {
+		return err
+	}
+	feed, err := c.Feed(ctx, -1)
+	if err != nil {
+		return err
+	}
+	p, err := os.FindProcess(st.PID)
+	if err != nil {
+		return err
+	}
+	if err := p.Signal(syscall.SIGHUP); err != nil {
+		return fmt.Errorf("signal the daemon (pid %d): %w", st.PID, err)
+	}
+	after := feed.Last
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		feed, err := c.Feed(ctx, after)
+		if err != nil {
+			return err
+		}
+		for _, it := range feed.Items {
+			if it.Kind != daemon.FeedConfig {
+				continue
+			}
+			if !strings.HasPrefix(it.Text, daemon.ReloadedPrefix) {
+				return errors.New(it.Text)
+			}
+			fmt.Fprintln(env.Stdout, it.Text)
+			return nil
+		}
+		after = feed.Last
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("asked pid %d to reload, but it has not said whether it did; see %s", st.PID, env.Layout.Log())
 }
 
 func daemonStatus(ctx context.Context, env Env) error {

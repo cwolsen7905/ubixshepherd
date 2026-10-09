@@ -3,6 +3,13 @@
 //
 // The daemon exits 0 when asked to stop, and both managers are told to restart it only
 // on failure, so a deliberate stop stays stopped until the next login or start.
+//
+// The agents the daemon starts lead their own process groups, so a manager stopping the
+// daemon does not reach them through it: the daemon ends them itself when it gets
+// SIGTERM, which can take 20 seconds, and launchd is told to wait 30 before it kills.
+// systemd also ends them, as members of the unit's cgroup, when the unit stops or
+// fails. Under launchd an agent outlives a daemon that crashed, until the next daemon
+// stops it and marks its run interrupted. Neither manager brings a running agent back.
 package service
 
 import (
@@ -150,6 +157,8 @@ func Plist(s Spec) []byte {
 	</dict>
 	<key>ThrottleInterval</key>
 	<integer>10</integer>
+	<key>ExitTimeOut</key>
+	<integer>30</integer>
 	<key>StandardOutPath</key>
 	<string>` + esc(s.Log) + `</string>
 	<key>StandardErrorPath</key>
