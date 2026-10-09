@@ -10,18 +10,10 @@ describe('Legend', () => {
     expect(dds).toHaveLength(22)
   })
   
-  it('contains "run passed" and "request needs you"', () => {
+  it('says what each glyph means in its own words', () => {
     render(<Legend />)
-    
-    // Use queryAllByText to get all elements with the text, then check if they're in dd elements
-    const runPassed = screen.queryByText('run passed')
-    const requestNeedsYou = screen.queryByText('request needs you')
-    
-    expect(runPassed).toBeInTheDocument()
-    expect(requestNeedsYou).toBeInTheDocument()
-    
-    // Verify these are actually in dd elements (not in visually hidden spans)
-    expect(runPassed?.closest('dd')).toBeInTheDocument()
-    expect(requestNeedsYou?.closest('dd')).toBeInTheDocument()
+    const meanings = screen.getAllByRole('definition').map((dd) => dd.textContent)
+    expect(meanings).toContain('run passed')
+    expect(meanings).toContain('request needs you')
   })
 })
