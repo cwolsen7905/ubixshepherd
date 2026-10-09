@@ -118,7 +118,7 @@ func beyond(total, before float64) float64 {
 
 // Spent is today's spend in dollars, Copilot's credits priced at credit_usd.
 func (r *Runner) Spent(ctx context.Context) (float64, map[string]store.Spend, error) {
-	return Spent(ctx, r.Store, r.Config)
+	return Spent(ctx, r.Store, r.conf())
 }
 
 // Spent is today's spend from the store alone, for callers with no Runner.
@@ -134,8 +134,6 @@ func Spent(ctx context.Context, st store.Store, cfg config.Config) (float64, map
 	return total, by, nil
 }
 
-func (r *Runner) creditUSD() float64 { return creditUSD(r.Config) }
-
 func creditUSD(cfg config.Config) float64 {
 	if cfg.Daemon.CreditUSD == nil {
 		return 0
@@ -143,20 +141,20 @@ func creditUSD(cfg config.Config) float64 {
 	return *cfg.Daemon.CreditUSD
 }
 
-func (r *Runner) budget() float64 {
-	if r.Config.Daemon.Budget == nil {
+func budget(cfg config.Config) float64 {
+	if cfg.Daemon.Budget == nil {
 		return 0
 	}
-	return *r.Config.Daemon.Budget
+	return *cfg.Daemon.Budget
 }
 
 // overBudget says why an automatic run must wait, or "".
-func (r *Runner) overBudget(ctx context.Context) string {
-	b := r.budget()
+func (r *Runner) overBudget(ctx context.Context, cfg config.Config) string {
+	b := budget(cfg)
 	if b <= 0 {
 		return ""
 	}
-	spent, _, err := r.Spent(ctx)
+	spent, _, err := Spent(ctx, r.Store, cfg)
 	if err != nil || spent < b {
 		return ""
 	}
@@ -172,11 +170,12 @@ func (r *Runner) Spend(ctx context.Context, sp store.Spend) error {
 	if err := r.Store.AddSpend(ctx, sp); err != nil {
 		return err
 	}
-	b := r.budget()
+	cfg := r.conf()
+	b := budget(cfg)
 	if b <= 0 {
 		return nil
 	}
-	spent, _, err := r.Spent(ctx)
+	spent, _, err := Spent(ctx, r.Store, cfg)
 	if err != nil {
 		return err
 	}

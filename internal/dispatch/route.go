@@ -17,7 +17,22 @@ const (
 	KindQuestion = "question"
 	KindHandoff  = "handoff"
 	KindReview   = "review"
+	// KindPerson is for the person, not a lane: it becomes a decision for them.
+	KindPerson = "person"
 )
+
+// RequestClosed: closed without a reply, by the person or because it went to them as a
+// decision. Its note says which.
+const RequestClosed = "closed"
+
+// forPerson says a request is addressed to the person: its kind, or its lane naming them.
+func forPerson(q store.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(q.Lane)) {
+	case "person", "human", "the person":
+		return true
+	}
+	return q.Kind == KindPerson
+}
 
 // MaxDepth caps a chain of requests: an agent answering one may ask in turn, but not
 // without end.
@@ -30,15 +45,18 @@ var reviewerOrder = []string{"claude", "copilot", "cursor"}
 // agent ends its turn; the reply continues its conversation.
 func (r *Runner) RequestHelp(ctx context.Context, q store.Request) (store.Request, error) {
 	switch q.Kind {
-	case KindQuestion, KindHandoff, KindReview:
+	case KindQuestion, KindHandoff, KindReview, KindPerson:
 	default:
-		return q, refuse("request kind %q: want question, handoff or review", q.Kind)
+		return q, refuse("request kind %q: want question, handoff, review or person", q.Kind)
 	}
 	if strings.TrimSpace(q.Message) == "" {
 		return q, refuse("say what you need")
 	}
 	if _, err := r.Store.Run(ctx, q.FromRun); err != nil {
 		return q, err
+	}
+	if forPerson(q) {
+		return r.toPerson(ctx, q)
 	}
 	depth, err := r.depthOf(ctx, q.FromRun)
 	if err != nil {
@@ -59,6 +77,52 @@ func (r *Runner) RequestHelp(ctx context.Context, q store.Request) (store.Reques
 	}
 	r.feed(ctx, store.FeedRequest, q.ID, "request %d: %s asks %s (%s): %s", q.ID, r.who(ctx, q.FromRun), target, q.Kind, clip(q.Message, 160))
 	go r.Route(context.Background())
+	return q, nil
+}
+
+// toPerson turns a request for the person into a decision for them, the way ask_human
+// would have, and records the request closed with a pointer to it. The answer comes
+// back into the asker's session as any decision's does.
+func (r *Runner) toPerson(ctx context.Context, q store.Request) (store.Request, error) {
+	d, err := r.Ask(ctx, store.Decision{RunID: q.FromRun, Question: q.Message,
+		Why: "asked through ask_shepherd (" + q.Kind + "), addressed to the person"})
+	if err != nil {
+		return q, err
+	}
+	q.Lane, q.State, q.Note = "", RequestClosed, fmt.Sprintf("for the person: held as decision %d", d.ID)
+	q, err = r.Store.CreateRequest(ctx, q)
+	if err != nil {
+		return q, err
+	}
+	r.Log.Info("request for the person", "request", q.ID, "decision", d.ID)
+	return q, nil
+}
+
+// CloseRequest closes a request that is not finished, without a reply: one gone stale,
+// or no longer needed. A target run already going is left to finish; its reply is not
+// carried back. A question no longer holds its asker's lane from shipping.
+func (r *Runner) CloseRequest(ctx context.Context, id int64, why string) (store.Request, error) {
+	q, err := r.Store.Request(ctx, id)
+	if err != nil {
+		return q, err
+	}
+	r.routeMu.Lock()
+	defer r.routeMu.Unlock()
+	switch q.State {
+	case store.RequestReplied, store.RequestFailed, RequestClosed:
+		return q, refuse("request %d is %s already", q.ID, q.State)
+	}
+	why = strings.TrimSpace(why)
+	if why == "" {
+		why = "no reason given"
+	}
+	q.State, q.Note = RequestClosed, "closed: "+why
+	if err := r.Store.UpdateRequest(ctx, q); err != nil {
+		return q, err
+	}
+	r.Log.Info("request closed", "request", q.ID, "why", why)
+	r.feed(ctx, store.FeedRequest, q.ID, "request %d closed: %s", q.ID, clip(why, 160))
+	r.settled(ctx, q)
 	return q, nil
 }
 
@@ -107,7 +171,11 @@ func (r *Runner) RouteRequest(ctx context.Context, id int64, lane, agent string)
 	if err := r.Store.UpdateRequest(ctx, q); err != nil {
 		return q, err
 	}
+	// Routing is the person's say, through the desk or by hand: its run goes like one
+	// they started, past the daily budget's hold on Shepherd's own runs.
+	r.said.Store(q.ID, true)
 	r.Route(ctx)
+	// A request still pending here says why in its note (queued behind a run, held).
 	return r.Store.Request(ctx, id)
 }
 
@@ -148,16 +216,36 @@ func (r *Runner) needsRouting(ctx context.Context, q store.Request, why string) 
 	return r.save(ctx, q)
 }
 
+// holdRequest leaves a request where it is and says why in its note, so a request is
+// never stuck without a reason. The feed hears of a new reason, unless quiet (the asker
+// has not ended its turn yet, which is every request's first moment).
+func (r *Runner) holdRequest(ctx context.Context, q store.Request, quiet bool, format string, a ...any) store.Request {
+	why := fmt.Sprintf(format, a...)
+	if q.Note == why {
+		return q
+	}
+	q.Note = why
+	r.Log.Info("request waits", "request", q.ID, "why", why)
+	if !quiet {
+		r.feed(ctx, store.FeedRequest, q.ID, "request %d waits: %s", q.ID, why)
+	}
+	return r.save(ctx, q)
+}
+
 // dispatchRequest starts the target agent on a pending request, once the asker has
-// ended its turn and the target lane is free.
+// ended its turn and the target lane is free. Until then the request says what it waits
+// for; every run's end tries again.
 func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Request {
 	from, err := r.Store.Run(ctx, q.FromRun)
-	if err != nil || from.State == store.RunRunning {
-		return q
+	if err != nil {
+		return r.holdRequest(ctx, q, false, "its asking run %d cannot be read: %v", q.FromRun, err)
+	}
+	if from.State == store.RunRunning {
+		return r.holdRequest(ctx, q, true, "run %d, which asked, has not ended its turn", from.ID)
 	}
 	fromLane, err := r.Store.Lane(ctx, from.LaneID)
 	if err != nil {
-		return q
+		return r.holdRequest(ctx, q, false, "the asking run's lane cannot be read: %v", err)
 	}
 	laneName := q.Lane
 	if laneName == "" && q.Kind == KindReview {
@@ -168,13 +256,13 @@ func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Req
 	}
 	target, why, err := r.findLane(ctx, fromLane, laneName)
 	if err != nil {
-		return q
+		return r.holdRequest(ctx, q, false, "looking up lane %s failed: %v", laneName, err)
 	}
 	if why != "" {
 		return r.needsRouting(ctx, q, why)
 	}
 	if busy, _ := r.Store.Runs(ctx, target.ID, store.RunRunning, 1); len(busy) > 0 {
-		return q // wait for the lane to be free
+		return r.holdRequest(ctx, q, false, "queued: run %d (%s) is going in lane %s; it starts when that run ends", busy[0].ID, busy[0].Agent, target.Name)
 	}
 
 	req := StartRequest{LaneID: target.ID, Agent: q.Agent}
@@ -202,21 +290,50 @@ func (r *Runner) dispatchRequest(ctx context.Context, q store.Request) store.Req
 		req.Agent = prev[0].Agent
 	}
 	req.Prompt = requestPrompt(q, from.Agent, fromLane.Name, target)
-	req.Auto = true
+	_, said := r.said.Load(q.ID)
+	req.Auto = !said
 	run, err := r.Start(ctx, req)
-	if errors.Is(err, ErrRefused) && (strings.Contains(err.Error(), "max_runs") || strings.Contains(err.Error(), "daily budget")) {
-		return q // try again when a run ends, or the budget allows
+	if errors.Is(err, ErrHeld) {
+		return r.holdRequest(ctx, q, false, "held: %s", err) // tried again when a run ends
 	}
 	if err != nil {
 		q.State, q.Note = store.RequestFailed, err.Error()
 		r.Log.Error("route request", "request", q.ID, "err", err)
 		r.feed(ctx, store.FeedRequestFailed, q.ID, "request %d failed: %s", q.ID, clip(err.Error(), 160))
-		return r.save(ctx, q)
+		q = r.save(ctx, q)
+		r.settled(ctx, q)
+		return q
 	}
 	q.State, q.Lane, q.Agent, q.TargetRun, q.Note = store.RequestRouted, target.Name, req.Agent, run.ID, ""
 	r.Log.Info("request routed", "request", q.ID, "lane", target.Name, "agent", req.Agent, "run", run.ID)
 	r.feed(ctx, store.FeedRequestRouted, q.ID, "request %d routed to %s in lane %s (run %d)", q.ID, req.Agent, target.Name, run.ID)
 	return r.save(ctx, q)
+}
+
+// settled is called when a request ends without a reply going back to its asker
+// (failed, closed). A question held its asker's lane from shipping; with no answer
+// coming, the lane ships now if its last run was the asker.
+func (r *Runner) settled(ctx context.Context, q store.Request) {
+	r.said.Delete(q.ID)
+	if q.Kind != KindQuestion {
+		return
+	}
+	run, err := r.Store.Run(ctx, q.FromRun)
+	if err != nil || run.State == store.RunRunning {
+		return
+	}
+	if last, err := r.Store.Runs(ctx, run.LaneID, "", 1); err != nil || len(last) == 0 || last[0].ID != run.ID {
+		return // a later run in the lane ships it when it ends
+	}
+	lane, err := r.Store.Lane(ctx, run.LaneID)
+	if err != nil {
+		return
+	}
+	r.wg.Add(1)
+	go func() {
+		defer r.wg.Done()
+		r.ship(context.Background(), run, lane)
+	}()
 }
 
 // findLane finds an open lane by name in the asker's workspace, preferring the asker's
@@ -230,20 +347,37 @@ func (r *Runner) findLane(ctx context.Context, from store.Lane, name string) (st
 	if err != nil {
 		return store.Lane{}, "", err
 	}
-	var found []store.Lane
+	// bare holds the asker's repo's open lanes named name after a prefix: "m2-gate"
+	// for "feat/m2-gate".
+	var found, bare []store.Lane
 	for _, rp := range repos {
 		lanes, err := r.Store.Lanes(ctx, rp.ID)
 		if err != nil {
 			return store.Lane{}, "", err
 		}
 		for _, l := range lanes {
-			if l.Name == name && l.State == store.LaneOpen {
+			if l.State != store.LaneOpen {
+				continue
+			}
+			if l.Name == name {
 				if rp.ID == fromRepo.ID {
 					return l, "", nil
 				}
 				found = append(found, l)
+			} else if rp.ID == fromRepo.ID && strings.HasSuffix(l.Name, "/"+name) {
+				bare = append(bare, l)
 			}
 		}
+	}
+	switch {
+	case len(found) == 0 && len(bare) == 1:
+		return bare[0], "", nil
+	case len(found) == 0 && len(bare) > 1:
+		var names []string
+		for _, l := range bare {
+			names = append(names, l.Name)
+		}
+		return store.Lane{}, fmt.Sprintf("%s could be any of %s; name it in full", name, strings.Join(names, ", ")), nil
 	}
 	switch len(found) {
 	case 0:
@@ -321,17 +455,24 @@ func (r *Runner) returnReply(ctx context.Context, q store.Request) {
 		return
 	}
 	if busy, _ := r.Store.Runs(ctx, from.LaneID, store.RunRunning, 1); len(busy) > 0 {
+		r.holdRequest(ctx, q, false, "the reply is queued: run %d is going in the asker's lane; it goes back when that run ends", busy[0].ID)
 		return
 	}
 	prompt := fmt.Sprintf("[Reply to your %s (request %d), from %s in lane %s]\n%s\n\nContinue your work with that.", q.Kind, q.ID, q.Agent, q.Lane, q.Reply)
-	next, err := r.Start(ctx, StartRequest{Continue: q.FromRun, Prompt: prompt, Auto: true})
-	if err != nil {
-		if !strings.Contains(err.Error(), "max_runs") && !strings.Contains(err.Error(), "daily budget") {
-			q.State, q.Note = store.RequestFailed, "could not return the reply: "+err.Error()
-			r.save(ctx, q)
-		}
+	_, said := r.said.Load(q.ID)
+	next, err := r.Start(ctx, StartRequest{Continue: q.FromRun, Prompt: prompt, Auto: !said})
+	if errors.Is(err, ErrHeld) {
+		r.holdRequest(ctx, q, false, "the reply is held: %s", err)
 		return
 	}
+	if err != nil {
+		q.State, q.Note = store.RequestFailed, "could not return the reply: "+err.Error()
+		r.feed(ctx, store.FeedRequestFailed, q.ID, "request %d failed: %s", q.ID, clip(q.Note, 160))
+		r.settled(ctx, r.save(ctx, q))
+		return
+	}
+	q.Note = ""
+	r.said.Delete(q.ID)
 	q.State, q.ReplyRun = store.RequestReplied, next.ID
 	r.save(ctx, q)
 	r.Log.Info("reply returned", "request", q.ID, "run", next.ID)
@@ -367,7 +508,7 @@ func (r *Runner) askConversation(ctx context.Context, q store.Request, c store.C
 		ask = defaultAsk
 	}
 	r.wg.Add(1)
-	go func() {
+	go func(q store.Request) { // its own copy: the caller returns q while this runs
 		defer r.wg.Done()
 		ctx := context.Background()
 		a, err := ask(ctx, c, prompt)
@@ -379,7 +520,7 @@ func (r *Runner) askConversation(ctx context.Context, q store.Request, c store.C
 		q.State, q.Reply = store.RequestReplyReady, reply
 		r.save(ctx, q)
 		r.Route(ctx)
-	}()
+	}(q)
 	return q
 }
 

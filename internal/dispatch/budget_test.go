@@ -145,8 +145,8 @@ func TestBudgetHoldsAutomaticRuns(t *testing.T) {
 	f.wait(t, run.ID)
 
 	zero, _ := config.Parse([]byte("daemon:\n  budget: 0\n"))
-	f.runner.Config = zero
-	if why := f.runner.overBudget(ctx); why != "" {
+	f.runner.SetConfig(zero) // the run's ship may still be reading the configuration
+	if why := f.runner.overBudget(ctx, f.runner.conf()); why != "" {
 		t.Errorf("budget 0 should mean no cap: %s", why)
 	}
 }

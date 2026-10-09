@@ -66,6 +66,9 @@ func TestParseRejects(t *testing.T) {
 		"bad autonomy":      "repos:\n  x:\n    autonomy:\n      merge: sometimes\n",
 		"public listen":     "daemon:\n  listen: 0.0.0.0:7400\n",
 		"bad listen":        "daemon:\n  listen: nope\n",
+		"bad push":          "repos:\n  x:\n    autonomy:\n      push: robot\n",
+		"shepherd no gate":  "repos:\n  x:\n    autonomy:\n      push: shepherd\n",
+		"bad permission":    "defaults:\n  agent:\n    permission_mode: yolo\n",
 	}
 	for name, in := range cases {
 		if _, err := Parse([]byte(in)); err == nil {
@@ -78,6 +81,34 @@ func TestParseNamesTheField(t *testing.T) {
 	_, err := Parse([]byte("repos:\n  x:\n    autonomy:\n      deploy: robot\n"))
 	if err == nil || !strings.Contains(err.Error(), "repos.x.autonomy.deploy") {
 		t.Errorf("error does not name the field: %v", err)
+	}
+}
+
+func TestAgentPowers(t *testing.T) {
+	if p := Default().Profile("x"); p.Agent.PermissionMode != PermAuto || p.Autonomy.Push != Human {
+		t.Errorf("default agent powers = %+v %+v", p.Agent, p.Autonomy)
+	}
+	// An agent pushing needs no gate: Shepherd runs none before the agent's push.
+	c, err := Parse([]byte(`
+defaults:
+  agent:
+    permission_mode: acceptEdits
+repos:
+  app:
+    agent:
+      permission_mode: bypassPermissions
+    autonomy:
+      push: agent
+      merge: agent
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if app := c.Profile("app"); app.Agent.PermissionMode != PermBypass || app.Autonomy.Push != Agent || app.Autonomy.Merge != Agent {
+		t.Errorf("app = %+v", app)
+	}
+	if other := c.Profile("other"); other.Agent.PermissionMode != PermAcceptEdits || other.Autonomy.Push != Human {
+		t.Errorf("other = %+v", other)
 	}
 }
 

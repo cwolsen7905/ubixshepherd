@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -26,12 +27,23 @@ import (
 // ErrRefused is wrapped by errors that are the caller's to fix.
 var ErrRefused = errors.New("refused")
 
-type refusal struct{ msg string }
+// ErrHeld is wrapped by refusals that time lifts: the lane's run going, the machine's run
+// limit, the daily budget. Shepherd tries such a run again later.
+var ErrHeld = errors.New("held")
 
-func (r refusal) Error() string        { return r.msg }
-func (r refusal) Is(target error) bool { return target == ErrRefused }
+type refusal struct {
+	msg  string
+	held bool
+}
 
-func refuse(format string, a ...any) error { return refusal{fmt.Sprintf(format, a...)} }
+func (r refusal) Error() string { return r.msg }
+func (r refusal) Is(target error) bool {
+	return target == ErrRefused || (r.held && target == ErrHeld)
+}
+
+func refuse(format string, a ...any) error { return refusal{msg: fmt.Sprintf(format, a...)} }
+
+func held(format string, a ...any) error { return refusal{msg: fmt.Sprintf(format, a...), held: true} }
 
 // noPush is where git sends the lane repo's pushes while an agent runs (see pushBlock):
 // it cannot connect, so `git push` fails whatever flags the agent passes.
@@ -56,7 +68,9 @@ type StartRequest struct {
 
 // Runner starts agents and watches them until they exit.
 type Runner struct {
-	Store  store.Store
+	Store store.Store
+	// Config is the configuration until the first SetConfig; after that SetConfig's
+	// wins. A daemon that reloads its configuration calls SetConfig, never assigns this.
 	Config config.Config
 	// Dir holds the run logs.
 	Dir string
@@ -71,10 +85,81 @@ type Runner struct {
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
-	mu      sync.Mutex
-	procs   map[int64]*proc
+	mu    sync.Mutex
+	procs map[int64]*proc
+	// closing: Shutdown has begun. No run starts, and the runs it stops are recorded
+	// as interrupted, with nothing set off by their end.
+	closing bool
+	// outOf holds the agents out of quota, by name, until their limit lifts. It lives
+	// with the daemon: a restart tries each agent again.
+	outOf   map[string]outOfQuota
 	wg      sync.WaitGroup
 	routeMu sync.Mutex
+	// said holds the ids of requests the person or the front desk routed: their runs
+	// are not Shepherd's own, so the daily budget does not hold them.
+	said sync.Map
+	cfg  atomic.Pointer[config.Config]
+}
+
+// QuotaPause is how long an agent out of quota is held when its CLI does not say when
+// the limit resets.
+const QuotaPause = 30 * time.Minute
+
+// tailLines is how near the end of a failed run's output a usage limit in words must
+// be to count: the CLI's last word, not something the agent was working on.
+const tailLines = 20
+
+type outOfQuota struct {
+	Limit
+	run int64
+}
+
+// quotaHeld says why an agent cannot start for now, or "". Call it with r.mu held.
+func (r *Runner) quotaHeld(agent string) string {
+	q, ok := r.outOf[agent]
+	if !ok {
+		return ""
+	}
+	if !time.Now().Before(q.Until) {
+		delete(r.outOf, agent)
+		return ""
+	}
+	return fmt.Sprintf("%s is out of quota (run %d: %s); Shepherd holds %s runs until %s", agent, q.run, q.Text, agent, q.Until.Format("Jan 2 15:04"))
+}
+
+// outOfQuota records an agent out of quota until its limit lifts, and routes again then,
+// for the requests it held.
+func (r *Runner) outOfQuota(agent string, run int64, l Limit) time.Time {
+	if now := time.Now(); !l.Until.After(now) || l.Until.After(now.Add(8*24*time.Hour)) {
+		l.Until = now.Add(QuotaPause)
+	}
+	r.mu.Lock()
+	if r.outOf == nil {
+		r.outOf = map[string]outOfQuota{}
+	}
+	r.outOf[agent] = outOfQuota{Limit: l, run: run}
+	r.mu.Unlock()
+	time.AfterFunc(time.Until(l.Until)+time.Second, func() {
+		r.mu.Lock()
+		closing := r.closing
+		r.mu.Unlock()
+		if !closing {
+			r.Route(context.Background())
+		}
+	})
+	return l.Until
+}
+
+// SetConfig replaces the configuration, safely while runs go. Each operation (a start,
+// a ship, a gate) reads the configuration once, so a reload never splits one.
+func (r *Runner) SetConfig(c config.Config) { r.cfg.Store(&c) }
+
+// conf is the configuration for one operation: the last SetConfig's, else Config.
+func (r *Runner) conf() config.Config {
+	if c := r.cfg.Load(); c != nil {
+		return *c
+	}
+	return r.Config
 }
 
 type proc struct {
@@ -102,6 +187,7 @@ func (r *Runner) Recover(ctx context.Context) error {
 // Start starts an agent in a lane and returns at once; the run is watched in the
 // background and recorded when it exits.
 func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error) {
+	cfg := r.conf()
 	var parent store.Run
 	if req.Continue != 0 {
 		p, err := r.Store.Run(ctx, req.Continue)
@@ -153,6 +239,12 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closing {
+		return store.Run{}, held("the daemon is stopping; start the run when it is back")
+	}
+	if why := r.quotaHeld(ad.Name); why != "" {
+		return store.Run{}, held("%s", why)
+	}
 	if r.procs == nil {
 		r.procs = map[int64]*proc{}
 	}
@@ -162,16 +254,16 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 	for _, other := range running {
 		if other.LaneID == lane.ID {
-			return store.Run{}, refuse("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
+			return store.Run{}, held("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
 		}
 	}
 	if req.Auto {
-		if why := r.overBudget(ctx); why != "" {
-			return store.Run{}, refuse("%s", why)
+		if why := r.overBudget(ctx, cfg); why != "" {
+			return store.Run{}, held("%s", why)
 		}
 	}
-	if max := r.Config.Daemon.MaxRuns; len(running) >= max {
-		return store.Run{}, refuse("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
+	if max := cfg.Daemon.MaxRuns; len(running) >= max {
+		return store.Run{}, held("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
 	}
 
 	// The lane's conversation: continue its last session with this agent unless asked
@@ -216,7 +308,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		return run, r.fail(ctx, run, err)
 	}
 
-	gate := r.Config.Profile(repo.Name).Gate
+	prof := cfg.Profile(repo.Name)
+	gate := prof.Gate
+	may := powers(prof, repo.Remote)
 	// A new session gets the full brief; a continuing one already has it.
 	prompt := req.Prompt
 	worker := ""
@@ -225,20 +319,24 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 	if !resume {
 		note := ad.Note
-		if b := r.Config.Profile(repo.Name).Brief; b != "" {
+		if b := prof.Brief; b != "" {
 			note = strings.TrimSpace(note + "\nThis repo's rules: " + b)
 		}
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, worker != "", note)
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, may, worker != "", note)
 	}
+	agentPushes := may.Push == config.Agent
 	cmd := exec.Command(bin, ad.Args(Opts{Prompt: prompt, Model: req.Model, Gate: gate, Worktree: lane.Worktree,
-		Session: session, Resume: resume, Worker: worker})...)
+		Session: session, Resume: resume, Worker: worker,
+		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge})...)
 	cmd.Dir = lane.Worktree
 	cmd.Stdin = nil // reads from the null device: headless
 	cmd.Env = append(os.Environ(),
 		"GIT_TERMINAL_PROMPT=0",
 		fmt.Sprintf("SHEPHERD_RUN=%d", run.ID), "SHEPHERD_LANE="+lane.Name,
 	)
-	cmd.Env = append(cmd.Env, pushBlock(ctx, lane.Worktree)...)
+	if !agentPushes {
+		cmd.Env = append(cmd.Env, pushBlock(ctx, lane.Worktree)...)
+	}
 	cmd.SysProcAttr = groupAttr()
 	out, err := cmd.StdoutPipe()
 	if err != nil {
@@ -274,14 +372,32 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	return run, nil
 }
 
+// powers reads what a repo's profile lets its agents do. Arming a merge is a GitLab
+// command, so it is given only on GitLab.
+func powers(prof config.Profile, remote string) Powers {
+	gitlab := false
+	if f, err := forge.For(remote); err == nil {
+		gitlab = f.Name() == "gitlab"
+	}
+	return Powers{Push: prof.Autonomy.Push, Merge: prof.Autonomy.Merge == config.Agent && gitlab, GitLab: gitlab, Forbid: prof.Forbid}
+}
+
 // watch copies the agent's output to the log line by line, redacted, then records the
 // outcome when the agent exits.
 func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out io.Reader, logf *os.File) {
 	defer r.wg.Done()
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
+	var limit Limit
+	lines, limitAt := 0, 0
 	for sc.Scan() {
 		line := sc.Text()
+		lines++
+		if ad.Limit != nil {
+			if l, ok := ad.Limit(line); ok {
+				limit, limitAt = l, lines
+			}
+		}
 		// The latest id an agent reports wins, in case resuming ever moves a session.
 		if id := ad.SessionIn(line); id != "" {
 			run.Session = id
@@ -309,7 +425,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	code := p.cmd.ProcessState.ExitCode()
 	run.ExitCode = &code
 	r.mu.Lock()
-	stopped := p.stopped
+	stopped, closing := p.stopped, r.closing
 	delete(r.procs, run.ID)
 	r.mu.Unlock()
 	switch {
@@ -317,11 +433,21 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		run.State = store.RunStopped
 	case err == nil && code == 0:
 		run.State = store.RunSucceeded
+	case closing:
+		// Cut short by Shutdown: not the agent's failure.
+		run.State, run.Error = store.RunInterrupted, "the daemon stopped while this run was going"
 	default:
 		run.State = store.RunFailed
 		if err != nil {
 			run.Error = redact.String(err.Error())
 		}
+	}
+	// Out of quota: the CLI said so as the run failed, so the agent waits out its limit
+	// instead of failing every run Shepherd starts in the meantime.
+	var quotaUntil time.Time
+	if run.State == store.RunFailed && limit.Text != "" && (limit.Sure || lines-limitAt < tailLines) {
+		quotaUntil = r.outOfQuota(ad.Name, run.ID, limit)
+		run.Error = redact.String("out of quota: " + limit.Text)
 	}
 	if end, err := git.Run(ctx, lane.Worktree, "rev-parse", "HEAD"); err == nil {
 		run.EndSHA = end
@@ -361,6 +487,15 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		ended += ", outside its scope: " + strings.Join(run.Outside, ", ")
 	}
 	r.feed(ctx, store.FeedRunEnded, run.ID, "%s", ended)
+	if !quotaUntil.IsZero() {
+		r.feed(ctx, store.FeedRunEnded, run.ID, "run %d: %s is out of quota (%s); Shepherd holds %s runs until %s",
+			run.ID, run.Agent, clip(limit.Text, 160), run.Agent, quotaUntil.Format("Jan 2 15:04"))
+	}
+	if closing {
+		// The daemon is stopping: answers and requests wait for its next start, and a
+		// push (after a gate run of up to GateTimeout) is the person's or the next run's.
+		return
+	}
 	r.deliverAnswers(ctx, run.ID)
 	r.Route(ctx)
 	r.ship(ctx, run, lane)
@@ -496,9 +631,12 @@ func (r *Runner) Stop(ctx context.Context, id int64) error {
 }
 
 // Shutdown stops every running agent and waits for their outcomes to be recorded, up
-// to the context's deadline. Runs cut short this way are recorded as interrupted.
+// to the context's deadline. Runs cut short this way are recorded as interrupted. No
+// run's end sets anything off once it has begun (no answer delivered, no request
+// routed, no push), and no run starts.
 func (r *Runner) Shutdown(ctx context.Context) {
 	r.mu.Lock()
+	r.closing = true
 	for _, p := range r.procs {
 		terminate(p.cmd)
 	}

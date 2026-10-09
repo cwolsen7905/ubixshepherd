@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -190,4 +191,92 @@ func TestQuestionToALaneAnsweredByItsConversation(t *testing.T) {
 	if spent, _, _ := f.runner.Spent(ctx); spent < 0.5 {
 		t.Errorf("the conversation's cost was not counted: %v", spent)
 	}
+}
+
+func TestRequestAddressing(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	gate := openLane(t, f, "feat/m2-gate", "gate/**")
+	openLane(t, f, "feat/docs", "docs/**")
+	openLane(t, f, "fix/docs", "docs2/**")
+	prior, _ := f.runner.Start(ctx, StartRequest{LaneID: gate.ID, Agent: "copilot", Prompt: "x"})
+	f.wait(t, prior.ID)
+	asker, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, asker.ID)
+
+	// A name without its prefix finds the one lane it can mean...
+	q, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindHandoff, Lane: "m2-gate", Message: "x"})
+	if q = waitRequest(t, f, q.ID, store.RequestReplied); q.Lane != "feat/m2-gate" {
+		t.Errorf("routed to %q", q.Lane)
+	}
+	// ...and asks when it could mean two.
+	two, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindHandoff, Lane: "docs", Message: "x"})
+	if q := waitRequest(t, f, two.ID, store.RequestNeedsRouting); !strings.Contains(q.Note, "feat/docs, fix/docs") {
+		t.Errorf("note = %q", q.Note)
+	}
+
+	// For the person: a decision, not a request to route.
+	for _, in := range []store.Request{{Kind: KindPerson, Message: "Which price?"}, {Kind: KindQuestion, Lane: "human", Message: "Ship it?"}} {
+		in.FromRun = asker.ID
+		p, err := f.runner.RequestHelp(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if p.State != RequestClosed || !strings.Contains(p.Note, "decision") {
+			t.Errorf("request for the person = %+v", p)
+		}
+	}
+	ds, _ := f.st.Decisions(ctx, store.DecisionOpen)
+	if len(ds) != 2 || ds[0].Question != "Which price?" || ds[0].RunID != asker.ID {
+		t.Errorf("decisions = %+v", ds)
+	}
+
+	// A stale request is closed, once.
+	if _, err := f.runner.CloseRequest(ctx, two.ID, "the docs lane was merged"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.st.Request(ctx, two.ID); got.State != RequestClosed || got.Note != "closed: the docs lane was merged" {
+		t.Errorf("closed request = %+v", got)
+	}
+	waitFeed(t, f, fmt.Sprintf("request %d closed: the docs lane was merged", two.ID))
+	if _, err := f.runner.CloseRequest(ctx, two.ID, ""); !errors.Is(err, ErrRefused) {
+		t.Errorf("closing twice: %v", err)
+	}
+	if _, err := f.runner.RouteRequest(ctx, two.ID, "feat/docs", ""); !errors.Is(err, ErrRefused) {
+		t.Errorf("routing a closed request: %v", err)
+	}
+}
+
+func TestRoutedRequestStartsOrSaysWhy(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	api := openLane(t, f, "api", "api/**")
+	prior, _ := f.runner.Start(ctx, StartRequest{LaneID: api.ID, Agent: "copilot", Prompt: "build the api"})
+	f.wait(t, prior.ID)
+	asker, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, asker.ID)
+
+	// A run going in the target lane queues the request, and says so.
+	busy, _ := f.st.CreateRun(ctx, store.Run{LaneID: api.ID, Agent: "copilot", Prompt: "busy", State: store.RunRunning, Log: "l"})
+	q, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindHandoff, Lane: "api", Message: "add an endpoint"})
+	waitFeed(t, f, fmt.Sprintf("request %d waits: queued: run %d (copilot) is going in lane api", q.ID, busy.ID))
+	busy.State = store.RunSucceeded
+	f.st.UpdateRun(ctx, busy)
+	f.runner.Route(ctx) // what the run's end does
+	waitRequest(t, f, q.ID, store.RequestReplied)
+
+	// Over the daily budget, Shepherd's own routing holds and says why...
+	budget := 0.01
+	f.runner.Config.Daemon.Budget = &budget
+	f.runner.Spend(ctx, store.Spend{Source: "claude", USD: 1})
+	held, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindHandoff, Lane: "api", Message: "more"})
+	waitFeed(t, f, fmt.Sprintf("request %d waits: held: today's spend", held.ID))
+	if got, _ := f.st.Request(ctx, held.ID); got.State != store.RequestPending || !strings.Contains(got.Note, "daily budget") {
+		t.Errorf("held request = %+v", got)
+	}
+	// ...but the desk's or the person's routing is their say, and goes.
+	if _, err := f.runner.RouteRequest(ctx, held.ID, "api", ""); err != nil {
+		t.Fatal(err)
+	}
+	waitRequest(t, f, held.ID, store.RequestReplied)
 }

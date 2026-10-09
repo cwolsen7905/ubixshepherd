@@ -181,6 +181,24 @@ Detection is code (paths, markers, commands). A model may **add** a reason to st
 can never remove one. The held decision goes to the human thread with its options and a
 recommendation; the answer is recorded and released back to the agent.
 
+Reserved decisions are the line, so an agent's tools need not be narrower than the
+person's. By default an agent Shepherd starts has the powers the person's own sessions
+have (Claude Code's auto mode under their own settings; `agent.permission_mode` in a repo
+profile narrows it to `acceptEdits` or `default`, or widens it to `bypassPermissions`),
+plus Shepherd's coordination. What a repo lets agents do beyond that is per repo, stated
+in every brief so no agent guesses:
+
+| Setting | What the agent may do |
+|---|---|
+| `autonomy.push: human` (default) | commit only; its pushes are blocked for the run |
+| `autonomy.push: shepherd` | commit only; Shepherd runs the gate and pushes when the run ends |
+| `autonomy.push: agent` | push its own lane's branch and open the MR (GitLab push options) |
+| `autonomy.merge: agent` | arm merge-when-pipeline-succeeds on its own lane's MR (GitLab) |
+
+The boundaries still hold whichever is set: the pre-push hook checks the branch and scope,
+and the forge's approvals, pipelines and threads decide whether a merge happens. No
+setting lets an agent approve.
+
 ### 3.8 Playbooks: "missed once already" becomes "cannot be missed"
 
 A playbook is an event plus a condition that produces work orders, like a CI rule:

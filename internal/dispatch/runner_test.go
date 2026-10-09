@@ -29,6 +29,8 @@ echo "fake agent in $(pwd), run $SHEPHERD_RUN, lane $SHEPHERD_LANE"
 echo "ARGS: $(printf '%s ' "$@" | tr '\n' ' ')"
 case "$MODE" in quick) [ -n "$CREDITS" ] && echo "AI Credits $CREDITS (13s)"; [ -n "$COST" ] && echo "{\"type\":\"result\",\"subtype\":\"success\",\"total_cost_usd\":$COST}"; echo "copilot --resume=cop-$SHEPHERD_RUN-session"; exit 0 ;; esac
 case "$MODE" in sleep) sleep 30 ;; esac
+case "$MODE" in limit) echo "ActionRequiredError: You've hit your usage limit. Upgrade to continue."; exit 1 ;; esac
+case "$MODE" in mention) echo "fixing: You've hit your usage limit in the error text"; seq 1 30; exit 1 ;; esac
 mkdir -p src && echo "work $SHEPHERD_RUN" >> src/work.txt
 git add src/work.txt && git commit -q -m "agent work"
 if [ "$MODE" = stray ]; then echo x > stray.txt && git add stray.txt && git commit -q -m stray; fi
@@ -216,6 +218,141 @@ func TestMaxRuns(t *testing.T) {
 	}
 }
 
+func TestSetConfigWhileRunsGo(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	// SetConfig wins over the field, and may come while runs start and end.
+	one := config.Default()
+	one.Daemon.MaxRuns = 1
+	f.runner.SetConfig(one)
+	busy, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunRunning, Log: "l"})
+	other := openLane(t, f, "other", "docs/**")
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: other.ID, Agent: "claude", Prompt: "y"}); !errors.Is(err, ErrHeld) || !strings.Contains(err.Error(), "max_runs") {
+		t.Errorf("SetConfig's limit not applied: %v", err)
+	}
+	busy.State = store.RunSucceeded
+	f.st.UpdateRun(ctx, busy)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			c := config.Default()
+			c.Daemon.MaxRuns = 2 + i%2
+			f.runner.SetConfig(c)
+		}
+	}()
+	for i := 0; i < 3; i++ {
+		run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "z"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.wait(t, run.ID)
+	}
+	<-done
+}
+
+func TestShutdownInterruptsAndSetsNothingOff(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	pushes, _ := config.Parse([]byte("repos:\n  app:\n    gate: \"true\"\n    autonomy:\n      push: shepherd\n"))
+	f.runner.SetConfig(pushes)
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: run.ID, Kind: KindReview, Message: "review me"})
+	time.Sleep(200 * time.Millisecond) // the agent is asleep in its run
+	stop, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	f.runner.Shutdown(stop)
+
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunInterrupted || !strings.Contains(got.Error, "daemon stopped") {
+		t.Errorf("run after shutdown = %+v", got)
+	}
+	// The run's end routed nothing: the review still waits on the asker's first turn.
+	if r, _ := f.st.Request(ctx, q.ID); r.State != store.RequestPending || strings.Contains(r.Note, "stopping") {
+		t.Errorf("request after shutdown = %+v", r)
+	}
+	items, _ := f.st.Feed(ctx, 0, 100)
+	for _, it := range items {
+		if strings.Contains(it.Text, "gate") {
+			t.Errorf("shutdown set a ship off: %s", it.Text)
+		}
+	}
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "y"}); !errors.Is(err, ErrHeld) {
+		t.Errorf("start while stopping: %v", err)
+	}
+}
+
+func TestOutOfQuotaHoldsTheAgent(t *testing.T) {
+	f := newFixture(t, "limit")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "x"})
+	done := f.wait(t, run.ID)
+	if done.State != store.RunFailed || !strings.Contains(done.Error, "out of quota: ActionRequiredError: You've hit your usage limit") {
+		t.Errorf("run = %+v", done)
+	}
+	waitFeed(t, f, fmt.Sprintf("run %d: cursor is out of quota", run.ID))
+	// The next cursor run is refused with the reason, at once; another agent still goes.
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "y"}); !errors.Is(err, ErrHeld) ||
+		!strings.Contains(err.Error(), fmt.Sprintf("cursor is out of quota (run %d", run.ID)) {
+		t.Errorf("cursor after its limit: %v", err)
+	}
+	other, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "y"})
+	if err != nil {
+		t.Fatalf("claude held for cursor's limit: %v", err)
+	}
+	f.wait(t, other.ID)
+	// The hold lifts when the limit does.
+	f.runner.mu.Lock()
+	q := f.runner.outOf["cursor"]
+	q.Until = time.Now().Add(-time.Second)
+	f.runner.outOf["cursor"] = q
+	f.runner.mu.Unlock()
+	f.runner.mu.Lock()
+	why := f.runner.quotaHeld("cursor")
+	f.runner.mu.Unlock()
+	if why != "" {
+		t.Errorf("hold outlived its limit: %s", why)
+	}
+}
+
+func TestUsageLimitWordsInTheWorkDoNotCount(t *testing.T) {
+	f := newFixture(t, "mention")
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "x"})
+	if done := f.wait(t, run.ID); strings.Contains(done.Error, "quota") {
+		t.Errorf("a failed run that only mentioned a limit is out of quota: %+v", done)
+	}
+	if _, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "y"}); errors.Is(err, ErrHeld) {
+		t.Errorf("cursor held: %v", err)
+	}
+}
+
+func TestLimitParsers(t *testing.T) {
+	ev := `{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":4102444800,"rateLimitType":"five_hour"}}`
+	if l, ok := claudeLimit(ev); !ok || !l.Sure || l.Until.Unix() != 4102444800 || !strings.Contains(l.Text, "five hour") {
+		t.Errorf("claude event = %+v %v", l, ok)
+	}
+	if _, ok := claudeLimit(strings.Replace(ev, "rejected", "allowed_warning", 1)); ok {
+		t.Error("a warning is not a limit")
+	}
+	if l, ok := claudeLimit(`{"type":"result","is_error":true,"result":"Claude AI usage limit reached|4102444800"}`); !ok || l.Sure || l.Until.Unix() != 4102444800 {
+		t.Errorf("claude words = %+v %v", l, ok)
+	}
+	if l, ok := claudeLimit(`{"type":"result","is_error":true,"result":"You've hit your limit · resets 3pm"}`); !ok || !strings.HasPrefix(l.Text, "You've hit your limit") {
+		t.Errorf("claude words = %+v %v", l, ok)
+	}
+	c, _ := AdapterFor("copilot")
+	if _, ok := c.Limit("Error: You have exceeded your premium requests allowance."); !ok {
+		t.Error("copilot premium requests")
+	}
+	if _, ok := c.Limit("Total usage est: 1 Premium request"); ok {
+		t.Error("copilot's usage line is not a limit")
+	}
+}
+
 func TestRecoverMarksInterrupted(t *testing.T) {
 	f := newFixture(t, "ok")
 	ctx := context.Background()
@@ -235,7 +372,7 @@ func TestAdapterArgs(t *testing.T) {
 		t.Errorf("claude: the prompt must follow -p before the tool lists: %v", args)
 	}
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"--disallowedTools Bash(git push:*)", "Bash(make check:*)", "--model opus", "--permission-mode acceptEdits", "--session-id S1"} {
+	for _, want := range []string{"--disallowedTools Bash(git push:*)", "Bash(make check:*)", "--model opus", "--permission-mode auto", "--session-id S1"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("claude args lack %q: %v", want, args)
 		}
@@ -244,7 +381,10 @@ func TestAdapterArgs(t *testing.T) {
 		t.Errorf("claude resume args: %s", j)
 	}
 	c, _ := AdapterFor("copilot")
-	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w"}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--resume") {
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w"}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "--allow-all-tools") || strings.Contains(j, "--resume") {
+		t.Errorf("copilot args: %s", j)
+	}
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Gate: "make check", Worktree: "/w", Mode: config.PermAcceptEdits}), " "); !strings.Contains(j, "--deny-tool shell(git push)") || !strings.Contains(j, "shell(make)") || strings.Contains(j, "--allow-all-tools") {
 		t.Errorf("copilot args: %s", j)
 	}
 	if j := strings.Join(c.Args(Opts{Prompt: "P", Worktree: "/w", Session: "S2", Resume: true}), " "); !strings.Contains(j, "--resume=S2") {
@@ -260,8 +400,65 @@ func TestAdapterArgs(t *testing.T) {
 	if id, _ := newUUID(); len(id) != 36 || id[14] != '4' {
 		t.Errorf("uuid = %q", id)
 	}
-	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", false, ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
+	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", Powers{}, false, ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "Do not merge") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
 		t.Errorf("brief:\n%s", b)
+	}
+}
+
+func TestAgentPowersArgsAndBrief(t *testing.T) {
+	a, _ := AdapterFor("claude")
+	j := strings.Join(a.Args(Opts{Prompt: "P", Mode: config.PermAcceptEdits, Push: true, Merge: true}), " ")
+	for _, want := range []string{"--permission-mode acceptEdits", "Bash(git push:*)", "Bash(glab mr merge:*)"} {
+		if !strings.Contains(j, want) {
+			t.Errorf("claude args lack %q: %s", want, j)
+		}
+	}
+	if strings.Contains(j, "--disallowedTools") {
+		t.Errorf("claude denies push to an agent allowed to: %s", j)
+	}
+	if j := strings.Join(a.Args(Opts{Prompt: "P"}), " "); strings.Contains(j, "glab") {
+		t.Errorf("claude may merge without the repo allowing it: %s", j)
+	}
+	c, _ := AdapterFor("copilot")
+	if j := strings.Join(c.Args(Opts{Prompt: "P", Push: true}), " "); strings.Contains(j, "--deny-tool") {
+		t.Errorf("copilot denies push to an agent allowed to: %s", j)
+	}
+
+	shep := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "make check", Powers{Push: config.Shepherd}, false, "")
+	if !strings.Contains(shep, "Shepherd runs the gate itself") || !strings.Contains(shep, "Do not push") {
+		t.Errorf("shepherd-push brief:\n%s", shep)
+	}
+	own := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "", Powers{Push: config.Agent, Merge: true, GitLab: true, Forbid: []string{"(?i)co-authored-by"}}, false, "")
+	for _, want := range []string{"git push -u origin feat/x -o merge_request.create -o merge_request.target=dev", "co-authored-by",
+		"glab mr merge <iid> --when-pipeline-succeeds --sha", "Never approve"} {
+		if !strings.Contains(own, want) {
+			t.Errorf("agent-push brief lacks %q:\n%s", want, own)
+		}
+	}
+	if strings.Contains(own, "Do not push") || strings.Contains(own, "Do not merge") {
+		t.Errorf("agent-push brief forbids what the repo allows:\n%s", own)
+	}
+	if p := powers(config.Profile{Autonomy: config.Autonomy{Push: config.Agent, Merge: config.Agent}}, "git@github.com:o/r.git"); p.Merge || p.GitLab {
+		t.Errorf("merge armed off GitLab: %+v", p)
+	}
+	if p := powers(config.Profile{Autonomy: config.Autonomy{Merge: config.Agent}}, "git@gitlab.example.com:o/r.git"); !p.Merge || !p.GitLab {
+		t.Errorf("merge on GitLab: %+v", p)
+	}
+}
+
+func TestAgentPushLiftsTheBlock(t *testing.T) {
+	f := newFixture(t, "ok")
+	p := f.runner.Config.Defaults
+	p.Autonomy.Push = config.Agent
+	f.runner.Config.Defaults = p
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "do the work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.wait(t, run.ID)
+	log, _ := os.ReadFile(done.Log)
+	if !strings.Contains(string(log), "PUSH WORKED") || strings.Contains(string(log), "--disallowedTools") {
+		t.Errorf("agent push was blocked:\n%s", log)
 	}
 }
 
@@ -371,7 +568,7 @@ func TestWorkerToolsInjected(t *testing.T) {
 	if j := strings.Join(c.Args(Opts{Prompt: "P", Worker: "/bin/shepherd"}), " "); !strings.Contains(j, "--additional-mcp-config") || !strings.Contains(j, `"tools":["*"]`) || !strings.Contains(j, "--allow-tool shepherd") {
 		t.Errorf("copilot worker args: %s", j)
 	}
-	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", true, ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
+	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
 		t.Errorf("brief with tools:\n%s", b)
 	}
 }

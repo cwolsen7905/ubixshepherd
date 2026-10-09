@@ -47,13 +47,24 @@
 #   ## Patterns commit messages must not match before Shepherd pushes; a match goes
 #   ## back to the agent to amend.
 #   forbid: ["(?i)co-authored-by"]
+#   ## How the agents Shepherd starts run.
+#   agent:
+#     ## Claude Code permission mode: auto (your own auto mode and settings, as in your
+#     ## interactive sessions), acceptEdits or default (only Shepherd's short list of
+#     ## commands; anything else is refused headless), or bypassPermissions. Copilot
+#     ## allows every tool for auto and bypassPermissions; Cursor always runs with --force.
+#     permission_mode: auto
 #   ## What agents may do unasked: human or agent.
 #   autonomy:
+#     ## agent: an agent may arm merge-when-pipeline-succeeds on its own lane's merge
+#     ## request (GitLab); approvals, pipelines and threads still gate it. Agents never
+#     ## approve.
 #     merge: human
 #     tag: human
 #     deploy: human
-#     ## Who pushes a lane and opens its merge request: human, or shepherd (after an
-#     ## agent's run, once the gate passes in the lane; needs gate set; never merges).
+#     ## Who pushes a lane and opens its merge request: human; shepherd (after an
+#     ## agent's run, once the gate passes in the lane; needs gate set; never merges);
+#     ## or agent (the agent pushes its own lane's branch; needs no gate).
 #     push: human
 #     ## Propose a plan and wait before changing anything.
 #     plan_first: true

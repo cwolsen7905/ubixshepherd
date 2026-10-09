@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -243,4 +244,61 @@ func TestShipLaneRefuses(t *testing.T) {
 			t.Errorf("an explicit ship started %d runs; it should only refuse", len(runs))
 		}
 	})
+}
+
+// endedRun records a finished run in the lane, as if an agent had made its commits.
+func endedRun(t *testing.T, f *fixture) store.Run {
+	t.Helper()
+	run, err := f.st.CreateRun(context.Background(), store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", Session: "S", State: store.RunSucceeded, Log: "l"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func TestShipNotHeldByHandoffs(t *testing.T) {
+	f, sf := shipFixture(t, "ok", pushes)
+	ctx := context.Background()
+	commitInLane(t, f, "src/a.txt", "feat: a")
+	run := endedRun(t, f)
+	f.st.CreateRequest(ctx, store.Request{FromRun: run.ID, Kind: KindHandoff, Lane: "elsewhere", Message: "do x", State: store.RequestNeedsRouting})
+	f.runner.ship(ctx, run, f.lane)
+	if !originHas(t, f, "work") || len(sf.created) != 1 {
+		t.Error("a handoff to another lane held the push")
+	}
+}
+
+func TestShipHeldByAQuestionUntilItSettles(t *testing.T) {
+	f, sf := shipFixture(t, "ok", pushes)
+	ctx := context.Background()
+	commitInLane(t, f, "src/a.txt", "feat: a")
+	run := endedRun(t, f)
+	q, _ := f.st.CreateRequest(ctx, store.Request{FromRun: run.ID, Kind: KindQuestion, Lane: "elsewhere", Message: "which?", State: store.RequestNeedsRouting})
+	f.runner.ship(ctx, run, f.lane)
+	waitFeed(t, f, fmt.Sprintf("not pushing lane work yet: run %d waits on the answer to its question, request %d", run.ID, q.ID))
+	if originHas(t, f, "work") {
+		t.Fatal("pushed while the run waits on its question")
+	}
+	// The question fails: no answer is coming, so the lane ships.
+	q.State = store.RequestFailed
+	f.st.UpdateRequest(ctx, q)
+	f.runner.settled(ctx, q)
+	waitFeed(t, f, "opened !42")
+	if len(sf.created) != 1 {
+		t.Errorf("created = %q", sf.created)
+	}
+}
+
+func TestShipShipsTheLaneNotJustTheRun(t *testing.T) {
+	// A run that continues held-back work (a reply, a fix) may add no commits itself.
+	f, sf := shipFixture(t, "quick", pushes)
+	commitInLane(t, f, "src/a.txt", "feat: a")
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "carry on"})
+	if done := f.wait(t, run.ID); done.Commits != 0 {
+		t.Fatalf("run = %+v", done)
+	}
+	waitFeed(t, f, "opened !42")
+	if !originHas(t, f, "work") || len(sf.created) != 1 {
+		t.Error("the lane's earlier commits were not shipped")
+	}
 }

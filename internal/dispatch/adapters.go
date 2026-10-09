@@ -1,10 +1,11 @@
 // Package dispatch starts agents in lanes and records what came of each run.
 //
-// An adapter turns a task into one agent CLI's headless command line. Every adapter
-// runs with the same default autonomy: edit files and commit inside the lane's
-// worktree, run the repo's gate, never push. Where a CLI can deny `git push` itself,
+// An adapter turns a task into one agent CLI's headless command line. By default an
+// agent runs with the person's own powers (Claude Code's auto mode and their settings)
+// inside the lane's worktree, and never pushes. Where a CLI can deny `git push` itself,
 // the adapter says so; the runner also breaks pushing for every agent, so the rule
-// holds even for a CLI that cannot express it.
+// holds even for a CLI that cannot express it. A repo with autonomy.push: agent lifts
+// both, and the pre-push hook still checks the lane's branch and scope.
 package dispatch
 
 import (
@@ -18,7 +19,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/ubixsys/ubixshepherd/internal/config"
 )
 
 // Adapter describes one agent CLI.
@@ -49,6 +54,71 @@ type Adapter struct {
 	// returns, dollars or credits, so an adapter that starts reading a cost sets it
 	// when its CLI counts the session.
 	SessionCost bool
+	// Limit reads a line that says the agent's account is out of quota or past a usage
+	// limit.
+	Limit func(line string) (Limit, bool)
+}
+
+// Limit is an agent CLI saying its account is out of quota.
+type Limit struct {
+	// Text is what it said, for the person.
+	Text string
+	// Until is when the CLI says the limit resets; zero when it does not say.
+	Until time.Time
+	// Sure: the CLI said so in a structured event, not in words that a run's own work
+	// might contain.
+	Sure bool
+}
+
+// limitWords reads a usage limit from a line matching re: the words alone, so they
+// count only at the end of a failed run.
+func limitWords(re *regexp.Regexp) func(string) (Limit, bool) {
+	return func(line string) (Limit, bool) {
+		if m := re.FindString(line); m != "" {
+			return Limit{Text: clip(m, 200)}, true
+		}
+		return Limit{}, false
+	}
+}
+
+var (
+	claudeLimitWords  = regexp.MustCompile(`(?i)(claude ai )?usage limit reached(\|\d+)?|you.ve hit your (usage )?limit[^"]*|\b(5-hour|weekly|opus) limit reached[^"]*`)
+	copilotLimitWords = regexp.MustCompile(`(?i)[^.]*(premium requests? (allowance|limit|quota)|quota (exceeded|exhausted)|you.ve (reached|exceeded) your [a-z ]*(limit|quota|allowance))[^.]*`)
+	cursorLimitWords  = regexp.MustCompile(`(?i)(ActionRequiredError: )?you.ve hit your usage limit[^.]*`)
+)
+
+// claudeLimit reads Claude Code's rate limit event (stream-json), whose status is
+// rejected once the account is out, and failing that its words for it.
+func claudeLimit(line string) (Limit, bool) {
+	var m struct {
+		Type string `json:"type"`
+		Info struct {
+			Status   string `json:"status"`
+			ResetsAt int64  `json:"resetsAt"`
+			Kind     string `json:"rateLimitType"`
+		} `json:"rate_limit_info"`
+	}
+	if json.Unmarshal([]byte(line), &m) == nil && m.Type == "rate_limit_event" {
+		if m.Info.Status != "rejected" {
+			return Limit{}, false
+		}
+		l := Limit{Text: "Claude usage limit reached", Sure: true}
+		if m.Info.Kind != "" {
+			l.Text += " (" + strings.ReplaceAll(m.Info.Kind, "_", " ") + ")"
+		}
+		if m.Info.ResetsAt > 0 {
+			l.Until = time.Unix(m.Info.ResetsAt, 0)
+		}
+		return l, true
+	}
+	l, ok := limitWords(claudeLimitWords)(line)
+	// The older form carries the reset as a Unix time: "Claude AI usage limit reached|1759999999".
+	if _, at, found := strings.Cut(l.Text, "|"); ok && found {
+		if s, err := strconv.ParseInt(at, 10, 64); err == nil {
+			l.Until = time.Unix(s, 0)
+		}
+	}
+	return l, ok
 }
 
 // Opts are what a run's command line is built from.
@@ -60,6 +130,25 @@ type Opts struct {
 	Resume  bool
 	// Worker is the shepherd binary that serves the worker tools ("" for none).
 	Worker string
+	// Mode is the repo's agent.permission_mode; "" is auto.
+	Mode string
+	// Push lets the agent push its lane's branch; Merge lets it arm merge when the
+	// pipeline succeeds on its lane's merge request (glab mr merge).
+	Push, Merge bool
+}
+
+// mode is the permission mode a run uses.
+func (o Opts) mode() string {
+	if o.Mode == "" {
+		return config.PermAuto
+	}
+	return o.Mode
+}
+
+// allowsAll says the mode lets the agent use any tool, as the person's own sessions do,
+// for CLIs that have only allow lists.
+func (o Opts) allowsAll() bool {
+	return o.mode() == config.PermAuto || o.mode() == config.PermBypass
 }
 
 // workerServer is the MCP server entry for the worker tools. The server finds its run
@@ -90,7 +179,9 @@ var adapters = map[string]Adapter{
 		Args: func(o Opts) []string {
 			// The prompt comes right after -p: --allowedTools and --mcp-config take lists
 			// and would swallow a prompt placed after them.
-			a := []string{"-p", o.Prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"}
+			// auto, the default, is the person's own auto mode and settings; the allowed
+			// list below is what acceptEdits and default need to do the work at all.
+			a := []string{"-p", o.Prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", o.mode()}
 			if o.Resume {
 				a = append(a, "--resume", o.Session)
 			} else if o.Session != "" {
@@ -109,7 +200,15 @@ var adapters = map[string]Adapter{
 			if o.Worker != "" {
 				a = append(a, "mcp__shepherd")
 			}
-			a = append(a, "--disallowedTools", "Bash(git push:*)")
+			if o.Push {
+				a = append(a, "Bash(git push:*)")
+			}
+			if o.Merge {
+				a = append(a, "Bash(glab mr view:*)", "Bash(glab mr merge:*)")
+			}
+			if !o.Push {
+				a = append(a, "--disallowedTools", "Bash(git push:*)")
+			}
 			if o.Model != "" {
 				a = append(a, "--model", o.Model)
 			}
@@ -123,14 +222,28 @@ var adapters = map[string]Adapter{
 		Read:       claudeOutput,
 		// total_cost_usd on a resumed session is the session's total, not the run's.
 		SessionCost: true,
+		Limit:       claudeLimit,
 	},
 	"copilot": {
 		Name: "copilot", Bin: "copilot",
 		Args: func(o Opts) []string {
-			a := []string{"-p", o.Prompt, "--allow-tool", "write", "--allow-tool", "shell(git:*)",
-				"--deny-tool", "shell(git push)"}
-			if stem := firstWord(o.Gate); stem != "" {
-				a = append(a, "--allow-tool", "shell("+stem+")")
+			// Copilot has no auto mode: auto and bypassPermissions allow every tool, the
+			// nearest to the person's own sessions headless; the other modes keep a list.
+			// A deny wins over any allow.
+			a := []string{"-p", o.Prompt}
+			if o.allowsAll() {
+				a = append(a, "--allow-all-tools")
+			} else {
+				a = append(a, "--allow-tool", "write", "--allow-tool", "shell(git:*)")
+				if stem := firstWord(o.Gate); stem != "" {
+					a = append(a, "--allow-tool", "shell("+stem+")")
+				}
+				if o.Merge {
+					a = append(a, "--allow-tool", "shell(glab mr view)", "--allow-tool", "shell(glab mr merge)")
+				}
+			}
+			if !o.Push {
+				a = append(a, "--deny-tool", "shell(git push)")
 			}
 			if o.Worker != "" {
 				a = append(a, "--additional-mcp-config", mustJSON(workerServer(o.Worker, map[string]any{"type": "local", "tools": []string{"*"}})),
@@ -160,13 +273,15 @@ var adapters = map[string]Adapter{
 		Read: copilotOutput,
 		// Its "AI Credits" line counts the session: a continued run reports the total.
 		SessionCost: true,
+		Limit:       limitWords(copilotLimitWords),
 	},
 	"cursor": {
 		Name: "cursor", Bin: "cursor-agent",
 		Args: func(o Opts) []string {
-			// cursor-agent has no per-command deny on the command line: --force lets it
-			// run the gate and commit, and the runner's push block holds the line. Its
-			// chat is created first (NewSession), so every run resumes one.
+			// cursor-agent has no permission modes or per-command deny on the command
+			// line: --force lets it run commands in every mode, and the runner's push
+			// block holds the line where agents may not push. Its chat is created first
+			// (NewSession), so every run resumes one.
 			a := []string{"-p", o.Prompt, "--output-format", "text", "--force", "--trust", "--workspace", o.Worktree}
 			if o.Session != "" {
 				a = append(a, "--resume", o.Session)
@@ -183,6 +298,8 @@ var adapters = map[string]Adapter{
 		},
 		WorkerReady: CursorWorkerReady,
 		Read:        plainOutput,
+		// It prints "ActionRequiredError: You've hit your usage limit" and exits at once.
+		Limit: limitWords(cursorLimitWords),
 		NewSession: func(ctx context.Context, bin, worktree string) (string, error) {
 			cmd := exec.CommandContext(ctx, bin, "create-chat")
 			cmd.Dir = worktree
@@ -241,9 +358,22 @@ func firstWord(s string) string {
 	return f[0]
 }
 
+// Powers are what a repo lets its agents do beyond committing, as the brief states them.
+type Powers struct {
+	// Push is who pushes the lane's branch: config.Human, config.Shepherd or config.Agent.
+	Push string
+	// Merge: the agent may arm merge when the pipeline succeeds on its lane's merge
+	// request. Only on GitLab.
+	Merge bool
+	// GitLab: the lane's remote is on GitLab, which opens a merge request from push options.
+	GitLab bool
+	// Forbid are the patterns commit messages must not match.
+	Forbid []string
+}
+
 // Brief wraps a task with what every agent needs to know about its lane, so the same
 // task means the same thing to every provider.
-func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, tools bool, note string) string {
+func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, may Powers, tools bool, note string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are working for uBixShepherd in lane %s of repo %s.\n", lane, repo)
 	fmt.Fprintf(&b, "Work only inside this directory: %s (branch %s, cut from %s).\n", worktree, branch, base)
@@ -251,7 +381,28 @@ func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate
 	if gate != "" {
 		fmt.Fprintf(&b, "Before committing, run the repo's gate, `%s`, and make it pass.\n", gate)
 	}
-	b.WriteString("When the work is done, commit it with clear commit messages. Do not push: pushing is blocked, and the person reviews and pushes.\n")
+	switch may.Push {
+	case config.Agent:
+		b.WriteString("When the work is done, commit it with clear commit messages, then push your lane's branch, and only it: ")
+		if may.GitLab {
+			fmt.Fprintf(&b, "`git push -u origin %s -o merge_request.create -o merge_request.target=%s -o merge_request.remove_source_branch` pushes it and opens its merge request.", branch, base)
+		} else {
+			fmt.Fprintf(&b, "`git push -u origin %s`, then open its merge request on the forge.", branch)
+		}
+		b.WriteString(" The pre-push hook refuses a push of another branch or of changes outside your scope.\n")
+		if len(may.Forbid) > 0 {
+			fmt.Fprintf(&b, "Before pushing, check that no commit message matches this repo's forbidden patterns (%s), and amend any that does.\n", strings.Join(may.Forbid, ", "))
+		}
+	case config.Shepherd:
+		b.WriteString("When the work is done, commit it with clear commit messages. Do not push: pushing is blocked. When your run ends, Shepherd runs the gate itself, pushes the lane and opens its merge request.\n")
+	default:
+		b.WriteString("When the work is done, commit it with clear commit messages. Do not push: pushing is blocked, and the person reviews and pushes.\n")
+	}
+	if may.Merge {
+		fmt.Fprintf(&b, "You may merge your own lane's merge request once its pipeline passes: when it is open with your latest commit, arm it with `glab mr merge <iid> --when-pipeline-succeeds --sha <that commit> --remove-source-branch --yes` (`glab mr view %s` shows the iid). GitLab's approvals, pipelines and threads still decide whether it merges. Never approve a merge request, and never merge any other.\n", branch)
+	} else {
+		b.WriteString("Do not merge or approve merge requests: that is the person's.\n")
+	}
 	if note != "" {
 		b.WriteString(note + "\n")
 	}
