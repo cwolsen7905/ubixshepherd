@@ -16,12 +16,102 @@ export interface Badge {
  * "!N …" muted, canceled or skipped "!N canceled"/"!N skipped" muted, else "!N" muted.
  */
 export function mrBadge(lane: Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_status'>): Badge | null {
-  void lane
-  throw new Error('not implemented')
+  const { mr, mr_state, pipeline_status } = lane
+  if (mr === undefined || mr === 0) {
+    return null
+  }
+
+  const mrText = `!${mr}`
+
+  if (mr_state === 'merged') {
+    return {
+      text: `${mrText} merged`,
+      tone: 'ok',
+      label: `merge request ${mrText}, merged`
+    }
+  }
+
+  if (mr_state === 'closed') {
+    return {
+      text: `${mrText} closed`,
+      tone: 'muted',
+      label: `merge request ${mrText}, closed`
+    }
+  }
+
+  if (pipeline_status === 'passed') {
+    return {
+      text: `${mrText} ✓`,
+      tone: 'ok',
+      label: `merge request ${mrText}, pipeline passed`
+    }
+  }
+
+  if (pipeline_status === 'failed') {
+    return {
+      text: `${mrText} ✗`,
+      tone: 'bad',
+      label: `merge request ${mrText}, pipeline failed`
+    }
+  }
+
+  if (pipeline_status === 'pending' || pipeline_status === 'running') {
+    return {
+      text: `${mrText} …`,
+      tone: 'muted',
+      label: `merge request ${mrText}, pipeline pending`
+    }
+  }
+
+  if (pipeline_status === 'canceled' || pipeline_status === 'skipped') {
+    const status = pipeline_status === 'canceled' ? 'canceled' : 'skipped'
+    return {
+      text: `${mrText} ${status}`,
+      tone: 'muted',
+      label: `merge request ${mrText}, pipeline ${status}`
+    }
+  }
+
+  // Anything else, including no pipeline_status
+  return {
+    text: mrText,
+    tone: 'muted',
+    label: `merge request ${mrText}`
+  }
 }
 
 /** The badge as a link to the MR when the lane has mr_url (opens in a new tab), else a span; nothing without an mr. Class "badge tone-<tone>". */
 export function MrBadge({ lane }: { lane: Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_status' | 'mr_url'> }) {
-  void lane
-  return null
+  const badge = mrBadge(lane)
+  if (badge === null) {
+    return null
+  }
+
+  const { text, tone } = badge
+  const className = `badge tone-${tone}`
+
+  if (lane.mr_url) {
+    return (
+      <a
+        href={lane.mr_url}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+        title={badge.label}
+        aria-label={badge.label}
+      >
+        {text}
+      </a>
+    )
+  } else {
+    return (
+      <span
+        className={className}
+        title={badge.label}
+        aria-label={badge.label}
+      >
+        {text}
+      </span>
+    )
+  }
 }
