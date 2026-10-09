@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest'
 import { age, since, duration, usd, runCost, clockTime, shortSha } from './format'
 
 // Test age function
@@ -140,6 +139,8 @@ describe('runCost', () => {
   it('should format credits correctly', () => {
     expect(runCost({ credits: 3 })).toBe('3 credits')
     expect(runCost({ credits: 3.5 })).toBe('3.5 credits')
+    expect(runCost({ credits: 1 })).toBe('1 credit')
+    expect(runCost({ credits: 2.96 })).toBe('3 credits')
   })
 
   it('should combine USD and credits', () => {
@@ -165,6 +166,11 @@ describe('clockTime', () => {
   it('should show only time for same day', () => {
     const today = new Date(now).toISOString()
     expect(clockTime(today, now)).toBe('14:00')
+  })
+
+  it('should write midnight as 00, not 24', () => {
+    const midnight = new Date(Date.parse('2026-10-08T00:05:00')).toISOString()
+    expect(clockTime(midnight, now)).toBe('00:05')
   })
 
   it('should show date and time for different days', () => {

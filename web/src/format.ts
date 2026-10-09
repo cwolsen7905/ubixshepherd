@@ -73,51 +73,24 @@ export function usd(n: number): string {
 
 /** What a run cost: "$1.24", "3.5 credits", "1 credit", both "$1.24 + 3 credits"; "" when neither is set or both are zero. Credits keep at most one decimal. */
 export function runCost(run: { cost_usd?: number; credits?: number }): string {
-  const usdValue = run.cost_usd || 0
-  const creditsValue = run.credits || 0
-  
-  if (usdValue === 0 && creditsValue === 0) return ''
-  
-  let result = ''
-  
-  if (usdValue > 0) {
-    result += usd(usdValue)
+  const parts: string[] = []
+  if (run.cost_usd && run.cost_usd > 0) parts.push(usd(run.cost_usd))
+  if (run.credits && run.credits > 0) {
+    const n = Math.round(run.credits * 10) / 10
+    parts.push(`${n} ${n === 1 ? 'credit' : 'credits'}`)
   }
-  
-  if (creditsValue > 0) {
-    if (result) result += ' + '
-    const creditsStr = creditsValue % 1 === 0 ? `${creditsValue} credits` : `${creditsValue.toFixed(1)} credits`
-    result += creditsStr
-  }
-  
-  return result
+  return parts.join(' + ')
 }
 
 /** A time of day for a timeline: "14:05" when the time is on now's local day, else "Oct 3 14:05" (en-US short month, 24-hour). "" for unparsable. */
 export function clockTime(iso: string, now: number): string {
-  const date = new Date(iso)
-  if (isNaN(date.getTime())) return ''
-  
-  const nowDate = new Date(now)
-  
-  // Check if the date is on the same local day as now
-  if (
-    date.getFullYear() === nowDate.getFullYear() &&
-    date.getMonth() === nowDate.getMonth() &&
-    date.getDate() === nowDate.getDate()
-  ) {
-    // Same day - show just the time
-    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-  } else {
-    // Different day - show month, day, and time
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).replace(/,\s*/, ' ')
-  }
+  const t = new Date(iso)
+  if (isNaN(t.getTime())) return ''
+  const n = new Date(now)
+  // Built by hand: Intl's hour12: false writes midnight as "24:05" in some engines.
+  const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
+  const sameDay = t.getFullYear() === n.getFullYear() && t.getMonth() === n.getMonth() && t.getDate() === n.getDate()
+  return sameDay ? hm : `${t.toLocaleString('en-US', { month: 'short' })} ${t.getDate()} ${hm}`
 }
 
 /** The first 8 characters of a commit SHA; "" for undefined. */
