@@ -3,11 +3,14 @@ package chat
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
@@ -95,7 +98,11 @@ type fakeAPI struct {
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
 	f.feedCalls++
 	if after < 0 {
-		return api.Feed{Last: 0}, nil
+		var last int64
+		if len(f.feed) > 0 {
+			last = f.feed[len(f.feed)-1].ID
+		}
+		return api.Feed{Last: last}, nil
 	}
 	var out api.Feed
 	out.Last = after
@@ -182,8 +189,20 @@ func newTestModel() (*Model, *fakeDesk, *fakeAPI) {
 	d := &fakeDesk{}
 	a := &fakeAPI{answered: map[int64]string{}, settings: map[string]string{}}
 	m := New(context.Background(), a, d, store.Workspace{ID: 1, Name: "git", Path: "/w"})
+	// Timers never fire in tests: drive would wait them out.
+	m.tick = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return func() tea.Msg { return nil } }
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	return m, d, a
+}
+
+// capturePrints records what the chat prints to scrollback.
+func capturePrints(m *Model) *[]string {
+	var out []string
+	m.println = func(a ...any) tea.Cmd {
+		out = append(out, fmt.Sprint(a...))
+		return nil
+	}
+	return &out
 }
 
 func typeLine(t *testing.T, m *Model, s string) {
@@ -293,7 +312,7 @@ func TestCommands(t *testing.T) {
 	if !has(m.Lines(), KindError, "unknown command") {
 		t.Error("unknown command not reported")
 	}
-	if v := m.View(); !strings.Contains(v, "LANES") || !strings.Contains(v, "desk ready") {
+	if v := m.View(); !strings.Contains(v, "desk ready") {
 		t.Errorf("view:\n%s", v)
 	}
 }
@@ -310,9 +329,6 @@ func TestDeskCostIsRecordedNotShown(t *testing.T) {
 func TestConversationsInTheChat(t *testing.T) {
 	m, d, a := newTestModel()
 	drive(t, m, m.pollPanel(true))
-	if v := m.View(); !strings.Contains(v, "CONVERSATIONS") || !strings.Contains(v, "71ffa009") {
-		t.Errorf("panel lacks conversations:\n%s", v)
-	}
 	typeLine(t, m, "/sessions")
 	if !has(m.Lines(), KindInfo, "Stripe integration") {
 		t.Errorf("/sessions: %+v", m.Lines())
@@ -330,91 +346,123 @@ func TestConversationsInTheChat(t *testing.T) {
 	}
 }
 
-// Two repos each with a lane feat/x: only the one whose run is running shows it.
-func TestPanelMatchesRunsByLaneNotName(t *testing.T) {
+// Finished entries go to the terminal's scrollback, not into the live region.
+func TestEntriesArePrintedToScrollback(t *testing.T) {
 	m, _, _ := newTestModel()
-	m.lanes = []api.LaneView{
-		{Lane: store.Lane{ID: 1, Name: "feat/x"}, Repo: "app"},
-		{Lane: store.Lane{ID: 2, Name: "feat/x"}, Repo: "lib"},
-		{Lane: store.Lane{ID: 3, Name: "fix/y"}, Repo: "lib"},
+	printed := capturePrints(m)
+	typeLine(t, m, "open a lane for the login fix")
+	out := strings.Join(*printed, "\n")
+	if !strings.Contains(out, "› open a lane for the login fix") || !strings.Contains(out, "● ok: open a lane") {
+		t.Fatalf("printed:\n%s", out)
 	}
-	m.runs = []api.RunView{{Run: store.Run{ID: 9, LaneID: 2, Agent: "copilot", State: store.RunRunning}, Lane: "feat/x", Repo: "lib"}}
-	p := m.renderPanel()
-	rows := map[string]bool{}
-	for _, line := range strings.Split(p, "\n") {
-		rows[strings.TrimSpace(strings.Trim(strings.TrimSpace(line), "│"))] = true
+	if strings.Contains(m.View(), "login fix") {
+		t.Errorf("the live region repeats a printed entry:\n%s", m.View())
 	}
-	for _, want := range []string{"● lib:feat/x copilot", "○ app:feat/x", "○ fix/y"} {
-		if !rows[want] {
-			t.Errorf("panel lacks row %q:\n%s", want, p)
+	// Each entry is printed once.
+	n := len(*printed)
+	m.Update(lineMsg{KindInfo, "later"})
+	if len(*printed) != n+1 || strings.Contains((*printed)[n], "login fix") {
+		t.Errorf("reprinted: %q", (*printed)[n:])
+	}
+}
+
+func TestPrintedEntriesWrapToTheTerminal(t *testing.T) {
+	m, _, _ := newTestModel()
+	printed := capturePrints(m)
+	m.Update(tea.WindowSizeMsg{Width: 30, Height: 20})
+	m.Update(lineMsg{KindEvent, "run 3: copilot in lane api succeeded, 1 commit(s), and a long tail of words"})
+	for _, l := range strings.Split(strings.Join(*printed, "\n"), "\n") {
+		if w := ansi.StringWidth(l); w > 30 {
+			t.Errorf("line %q is %d wide", l, w)
 		}
 	}
 }
 
-func TestMouseWheelScrollsAndCtrlTTogglesCapture(t *testing.T) {
+// While the pager holds the alternate screen nothing can be printed; entries wait.
+func TestEntriesWaitWhileThePagerIsOpen(t *testing.T) {
 	m, _, _ := newTestModel()
-	m.thread.SetContent(strings.Repeat("a conversation line\n", 100))
-	m.thread.GotoTop()
-	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
-	if m.ThreadYOffset() == 0 {
-		t.Fatal("mouse wheel did not scroll the conversation")
+	printed := capturePrints(m)
+	typeLine(t, m, "/log 7")
+	if m.pager == nil || !strings.Contains(m.View(), "line") {
+		t.Fatalf("/log did not open the pager:\n%s", m.View())
 	}
-
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	if m.MouseOn() {
-		t.Fatal("Ctrl-T did not turn mouse capture off")
+	n := len(*printed)
+	m.Update(lineMsg{KindEvent, "run 8 started"})
+	if len(*printed) != n {
+		t.Fatal("printed while the pager was open")
 	}
-	if !strings.Contains(m.View(), "Ctrl-T mouse on") {
-		t.Fatal("footer does not explain how to turn mouse capture back on")
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
-	if !m.MouseOn() {
-		t.Fatal("Ctrl-T did not turn mouse capture back on")
-	}
-	if !strings.Contains(m.View(), "Option/Shift-drag") {
-		t.Fatal("footer does not explain text selection while capture is on")
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	if m.pager != nil || len(*printed) != n+1 || !strings.Contains((*printed)[n], "run 8 started") {
+		t.Fatalf("closing the pager: open %v, printed %q", m.pager != nil, (*printed)[n:])
 	}
 }
 
-func TestPanelMouseSelectsLaneAndDecisionAndOpensRun(t *testing.T) {
+// A reply streams in the live region and is printed once it is whole.
+func TestStreamingReplyIsLiveUntilWhole(t *testing.T) {
 	m, _, _ := newTestModel()
-	m.lanes = []api.LaneView{{Lane: store.Lane{ID: 3, Name: "feat/chat"}, Repo: "app"}}
-	m.runs = []api.RunView{{Run: store.Run{ID: 9, LaneID: 3, Agent: "copilot", State: store.RunRunning}}}
-	m.decisions = []api.DecisionView{{Decision: store.Decision{ID: 12, Question: "Which port?"}}}
+	printed := capturePrints(m)
+	m.busy = true
+	m.Update(deskLineMsg{KindPartial, "Opening a lane "})
+	m.Update(deskLineMsg{KindPartial, "for the fix"})
+	if !strings.Contains(m.View(), "Opening a lane for the fix") || len(*printed) != 0 {
+		t.Fatalf("partial: printed %q, view:\n%s", *printed, m.View())
+	}
+	m.Update(deskLineMsg{KindDesk, "Opening a lane for the fix."})
+	if strings.Contains(m.View(), "Opening a lane") || len(*printed) != 1 || !strings.Contains((*printed)[0], "for the fix.") {
+		t.Fatalf("whole: printed %q, view:\n%s", *printed, m.View())
+	}
+}
 
-	click := func(kind string, id int64) tea.Cmd {
-		t.Helper()
-		m.View()
-		for _, hit := range m.panelHits {
-			if hit.Kind == kind && hit.ID == id {
-				_, cmd := m.Update(tea.MouseMsg{
-					X: m.thread.Width + 2, Y: hit.Y,
-					Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
-				})
-				return cmd
+func TestLiveRegionFitsNarrowTerminals(t *testing.T) {
+	m, _, _ := newTestModel()
+	m.runs = []api.RunView{
+		{Run: store.Run{ID: 9, Agent: "copilot", State: store.RunRunning}, Lane: "feat/a-rather-long-lane-name"},
+		{Run: store.Run{ID: 10, Agent: "claude", State: store.RunRunning}, Lane: "fix/y"},
+	}
+	m.decisions = []api.DecisionView{{Decision: store.Decision{ID: 12}}}
+	m.spend = api.SpendToday{Day: "today", USD: 1.5, Budget: 20}
+	m.busy, m.lastTool, m.queue = true, "lane_open app feat/a-rather-long-lane-name scope src/**", []string{"x"}
+	m.partial = "A reply that streams in with enough words to wrap a few times at this width."
+	for _, w := range []int{12, 20, 40, 80} {
+		m.Update(tea.WindowSizeMsg{Width: w, Height: 24})
+		v := m.View()
+		for _, l := range strings.Split(v, "\n") {
+			if lw := ansi.StringWidth(l); lw > w {
+				t.Errorf("width %d: line %q is %d wide", w, l, lw)
 			}
 		}
-		t.Fatalf("panel hit not found: %s %d", kind, id)
-		return nil
+		if !strings.Contains(v, "desk") || !strings.Contains(v, "›") {
+			t.Errorf("width %d lacks the status or the input:\n%s", w, v)
+		}
 	}
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 24})
+	v := m.View()
+	for _, want := range []string{"desk working", "claude", "● copilot feat/a-rather-long-lane-name #9", "1 decision(s) waiting", "Enter send"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("live region lacks %q:\n%s", want, v)
+		}
+	}
+	if strings.Count(v, "\n") > 16 {
+		t.Errorf("live region is %d lines", strings.Count(v, "\n")+1)
+	}
+}
 
-	click(selLane, 3)
-	if kind, id := m.Selection(); kind != selLane || id != 3 {
-		t.Fatalf("lane selection = %s %d", kind, id)
+func TestParsePartials(t *testing.T) {
+	stream := `{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{"}}}
+{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Hello"}]}}
+`
+	var got []Line
+	Parse(strings.NewReader(stream), func(l Line) { got = append(got, l) })
+	want := []Line{{KindPartial, "Hel"}, {KindPartial, "lo"}, {KindDesk, "Hello"}}
+	if len(got) != len(want) {
+		t.Fatalf("lines = %+v", got)
 	}
-
-	drive(t, m, click(selRun, 9))
-	if m.logRun != 9 || !strings.Contains(m.logText.String(), "line") {
-		t.Fatalf("run click did not open its log: run %d, text %q", m.logRun, m.logText.String())
-	}
-	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-
-	click(selDecision, 12)
-	if kind, id := m.Selection(); kind != selDecision || id != 12 {
-		t.Fatalf("decision selection = %s %d", kind, id)
-	}
-	if !has(m.Lines(), KindDecision, "Which port?") {
-		t.Fatalf("decision click did not show its details: %+v", m.Lines())
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d = %+v, want %+v", i, got[i], want[i])
+		}
 	}
 }
 

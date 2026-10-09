@@ -10,9 +10,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
@@ -52,8 +50,6 @@ var autoKinds = map[string]bool{
 	store.FeedRequestFailed: true,
 }
 
-const panelWidth = 34
-
 const (
 	activeFeedInterval  = time.Second
 	maxIdleFeedInterval = 10 * time.Second
@@ -63,65 +59,68 @@ const (
 	activeWindow        = 30 * time.Second
 )
 
-// panel item kinds for click selection.
-const (
-	selLane     = "lane"
-	selRun      = "run"
-	selDecision = "decision"
-)
-
-// panelHit is one clickable row in the side panel.
-type panelHit struct {
-	Kind string
-	ID   int64
-	Y    int // row within the panel content (0 = top)
-}
-
 // Model is the chat's state.
+//
+// The chat runs inline, not in the alternate screen: each finished entry is printed above
+// the program into the terminal's own scrollback, where the wheel, search, selection and
+// copying work as in any shell, and where it stays after the chat ends. The program
+// itself draws only a small live region at the bottom: a reply as it streams, the
+// desk's status, the agents at work, and the input.
 type Model struct {
 	ctx       context.Context
 	api       API
 	desk      Desk
+	deskName  string
 	workspace store.Workspace
 
-	lines   []Line
-	session string
-	busy    bool
-	queue   []string
-	auto    bool
-	deskCh  chan tea.Msg
-	pending []string // events waiting for the desk to be free
+	// HistoryItems is how many earlier entries to print when the chat starts.
+	HistoryItems   int
+	loadingHistory bool
+	welcomed       bool
+
+	lines     []Line // the whole thread, for the transcript
+	unprinted []Line // entries not yet printed to scrollback
+	printed   bool   // whether anything has been printed yet, for spacing
+	println   func(...any) tea.Cmd
+
+	session   string
+	busy      bool
+	busySince time.Time
+	partial   string // the desk's reply so far, while it streams
+	lastTool  string // the desk's latest tool call this turn
+	queue     []string
+	auto      bool
+	deskCh    chan tea.Msg
+	pending   []string // events waiting for the desk to be free
 
 	lastFeed         int64
 	lanes            []api.LaneView
-	runs             []api.RunView
+	runs             []api.RunView // running ones
 	decisions        []api.DecisionView
 	lastActivity     time.Time
 	lastPanelPoll    time.Time
 	lastSessionsPoll time.Time
 	clock            func() time.Time
+	tick             func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 	tickGeneration   uint64
 	focused          bool
 
 	spend    api.SpendToday
 	sessions []api.SessionView
 
+	// pager is the full-screen reader, when open: a run's log (logRun set) or the
+	// transcript.
+	pager     *pager
 	logRun    int64
 	logText   strings.Builder
 	logOffset int64
 	logDone   bool
 
 	width, height int
-	thread        viewport.Model
-	logView       viewport.Model
 	input         textarea.Model
 	ready         bool
-
-	mouseOn      bool
-	reconnecting bool
-	selKind      string
-	selID        int64
-	panelHits    []panelHit
+	reconnecting  bool
+	quitting      bool
 }
 
 // New returns the chat for a workspace.
@@ -129,13 +128,18 @@ func New(ctx context.Context, a API, d Desk, ws store.Workspace) *Model {
 	in := textarea.New()
 	in.Placeholder = "Talk to Shepherd. /help for commands."
 	in.ShowLineNumbers = false
+	in.Prompt = "› "
 	in.SetHeight(2)
 	in.CharLimit = 8000
 	in.Focus()
+	name := ""
+	if n, ok := d.(interface{ Name() string }); ok {
+		name = n.Name()
+	}
 	now := time.Now()
 	return &Model{
-		ctx: ctx, api: a, desk: d, workspace: ws, auto: true, input: in,
-		lastFeed: -1, mouseOn: true, lastActivity: now, clock: time.Now, focused: true,
+		ctx: ctx, api: a, desk: d, deskName: name, workspace: ws, HistoryItems: DefaultHistory, auto: true, input: in,
+		println: tea.Println, lastFeed: -1, lastActivity: now, clock: time.Now, tick: tea.Tick, focused: true,
 	}
 }
 
@@ -145,17 +149,8 @@ func (m *Model) Lines() []Line { return m.lines }
 // Busy reports whether the desk is mid-turn (for tests).
 func (m *Model) Busy() bool { return m.busy }
 
-// MouseOn reports whether mouse capture is enabled (for tests).
-func (m *Model) MouseOn() bool { return m.mouseOn }
-
 // Reconnecting reports whether the chat is retrying the daemon (for tests).
 func (m *Model) Reconnecting() bool { return m.reconnecting }
-
-// Selection returns the side-panel selection kind and id (for tests).
-func (m *Model) Selection() (kind string, id int64) { return m.selKind, m.selID }
-
-// ThreadYOffset is the conversation pane's scroll offset (for tests).
-func (m *Model) ThreadYOffset() int { return m.thread.YOffset }
 
 type tickMsg struct {
 	at         time.Time
@@ -173,8 +168,6 @@ type panelMsg struct {
 	panelUpdated    bool
 	sessionsUpdated bool
 }
-
-type sessionMsg string
 
 type deskLineMsg Line
 
@@ -196,21 +189,11 @@ type reconnectMsg struct {
 }
 
 func (m *Model) Init() tea.Cmd {
-	m.add(Line{KindInfo, fmt.Sprintf("Shepherd, workspace %s (%s). The desk delegates to agents in lanes; their events appear here. /help for commands.", m.workspace.Name, m.workspace.Path)})
 	now := m.clock()
 	m.lastPanelPoll = now
 	m.lastSessionsPoll = now
-	return tea.Batch(textarea.Blink, m.loadSession(), m.openDecisions(), m.pollFeed(), m.pollPanel(true), m.scheduleTick(m.feedInterval(now)))
-}
-
-func (m *Model) loadSession() tea.Cmd {
-	return func() tea.Msg {
-		s, err := m.api.Setting(m.ctx, settingSession)
-		if err != nil {
-			return errorMsg{err}
-		}
-		return sessionMsg(s)
-	}
+	m.loadingHistory = true
+	return tea.Batch(textarea.Blink, m.loadHistory(), m.openDecisions(), m.pollPanel(true), m.scheduleTick(m.feedInterval(now)))
 }
 
 func (m *Model) openDecisions() tea.Cmd {
@@ -234,9 +217,13 @@ func decisionIDs(ds []api.DecisionView) string {
 	return strings.Join(ids, ", ")
 }
 
-// pollFeed asks for new feed items. The first poll only learns the newest id, so the
-// thread starts with what happens from now on.
+// pollFeed asks for new feed items. Without history, the first poll only learns the
+// newest id, so the thread goes on with what happens from now on. While history loads
+// it waits: history says where the feed ends.
 func (m *Model) pollFeed() tea.Cmd {
+	if m.loadingHistory {
+		return nil
+	}
 	after := m.lastFeed
 	return func() tea.Msg {
 		f, err := m.api.Feed(m.ctx, after)
@@ -261,7 +248,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
-		runs, err := m.api.Runs(m.ctx, 0, "", 8)
+		runs, err := m.api.Runs(m.ctx, 0, store.RunRunning, 20)
 		if err != nil {
 			return errorMsg{err}
 		}
@@ -301,7 +288,7 @@ func (m *Model) pollSessionsAt(now time.Time) tea.Cmd {
 func (m *Model) scheduleTick(interval time.Duration) tea.Cmd {
 	m.tickGeneration++
 	generation := m.tickGeneration
-	return tea.Tick(interval, func(at time.Time) tea.Msg {
+	return m.tick(interval, func(at time.Time) tea.Msg {
 		return tickMsg{at: at, generation: generation}
 	})
 }
@@ -388,59 +375,53 @@ func isConnErr(err error) bool {
 	return err != nil && errors.Is(err, client.ErrNoDaemon)
 }
 
+// Update handles a message, then prints whatever finished in the meantime.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	cmd := m.update(msg)
+	if p := m.flush(); p != nil {
+		cmd = tea.Batch(cmd, p)
+	}
+	return m, cmd
+}
+
+func (m *Model) update(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.layout()
+		m.input.SetWidth(m.width)
+		m.ready = true
+		m.refreshPager()
 	case tea.MouseMsg:
-		cmds = append(cmds, m.noteActivity(m.clock()))
-		cmds = append(cmds, m.onMouse(msg)...)
+		// The mouse is captured only while the pager is open.
+		if m.pager != nil {
+			m.pager.update(msg)
+		}
 	case tea.KeyMsg:
 		cmds = append(cmds, m.noteActivity(m.clock()))
-		switch msg.Type {
-		case tea.KeyCtrlC:
-			return m, tea.Batch(append(cmds, tea.Quit)...)
-		case tea.KeyCtrlT:
-			m.mouseOn = !m.mouseOn
-			if m.mouseOn {
-				return m, tea.Batch(append(cmds, tea.EnableMouseCellMotion)...)
+		if msg.Type == tea.KeyCtrlC {
+			return tea.Batch(append(cmds, m.quit())...)
+		}
+		if m.pager != nil {
+			if m.pager.update(msg) {
+				cmds = append(cmds, m.closePager())
 			}
-			return m, tea.Batch(append(cmds, tea.DisableMouse)...)
-		case tea.KeyEsc:
-			if m.logRun != 0 {
-				m.logRun = 0
-				return m, tea.Batch(cmds...)
-			}
-			if m.selKind != "" {
-				m.selKind, m.selID = "", 0
-				return m, tea.Batch(cmds...)
-			}
-		case tea.KeyPgUp, tea.KeyPgDown:
-			var cmd tea.Cmd
-			if m.logRun != 0 {
-				m.logView, cmd = m.logView.Update(msg)
-			} else {
-				m.thread, cmd = m.thread.Update(msg)
-			}
-			return m, tea.Batch(append(cmds, cmd)...)
-		case tea.KeyEnter:
-			if m.logRun != 0 {
-				return m, tea.Batch(cmds...)
-			}
+			return tea.Batch(cmds...)
+		}
+		if msg.Type == tea.KeyCtrlO {
+			return tea.Batch(append(cmds, m.openPager("transcript"))...)
+		}
+		if msg.Type == tea.KeyEnter {
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
 			if text == "" {
-				return m, tea.Batch(cmds...)
+				return tea.Batch(cmds...)
 			}
-			return m, tea.Batch(append(cmds, m.handle(text))...)
+			return tea.Batch(append(cmds, m.handle(text))...)
 		}
-		if m.logRun == 0 {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			cmds = append(cmds, cmd)
-		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(msg)
+		cmds = append(cmds, cmd)
 	case tickMsg:
 		if msg.generation != m.tickGeneration {
 			break
@@ -467,8 +448,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		now := m.clock()
 		m.lastActivity = now
 		cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(activeFeedInterval))
-	case sessionMsg:
-		m.session = string(msg)
+	case historyMsg:
+		m.onHistory(msg)
 	case feedMsg:
 		feed := api.Feed(msg)
 		if len(feed.Items) > 0 {
@@ -484,10 +465,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.sessions = msg.sessions
 		}
 	case deskLineMsg:
-		if msg.Kind == KindCost {
+		switch msg.Kind {
+		case KindCost:
 			usd, _ := strconv.ParseFloat(msg.Text, 64)
 			cmds = append(cmds, func() tea.Msg { m.api.AddSpend(m.ctx, store.Spend{Source: "desk", USD: usd}); return nil })
-		} else {
+		case KindPartial:
+			m.partial += msg.Text
+		default:
+			m.partial = ""
+			if msg.Kind == KindTool {
+				m.lastTool = msg.Text
+			}
 			m.add(Line(msg))
 		}
 		cmds = append(cmds, waitDesk(m.deskCh))
@@ -496,11 +484,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logMsg:
 		m.logText.WriteString(msg.Data)
 		m.logOffset, m.logDone = msg.Offset, msg.Done
-		m.logView.SetContent(m.logText.String())
-		m.logView.GotoBottom()
+		m.refreshPager()
 	case lineMsg:
 		m.add(Line(msg))
 	case errorMsg:
+		if m.loadingHistory && !isConnErr(msg.err) {
+			// History could not be read; the chat goes on from now. (When the daemon is
+			// down, history loads again once it is back.)
+			m.loadingHistory = false
+			m.welcome()
+		}
 		if isConnErr(msg.err) {
 			if !m.reconnecting {
 				m.reconnecting = true
@@ -514,70 +507,67 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reconnecting = false
 			now := m.clock()
 			cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(m.feedInterval(now)))
+			if m.loadingHistory {
+				cmds = append(cmds, m.loadHistory())
+			}
 			if m.logRun != 0 && !m.logDone {
 				cmds = append(cmds, m.pollLog())
 			}
 		}
 		// Still down: stay in reconnecting; the next tick retries.
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
-func (m *Model) onMouse(msg tea.MouseMsg) []tea.Cmd {
-	if !m.mouseOn {
-		return nil
-	}
-	switch {
-	case msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown:
-		var cmd tea.Cmd
-		if m.logRun != 0 {
-			m.logView, cmd = m.logView.Update(msg)
-		} else {
-			m.thread, cmd = m.thread.Update(msg)
-		}
-		if cmd != nil {
-			return []tea.Cmd{cmd}
-		}
-		return nil
-	case msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft:
-		return m.clickPanel(msg.X, msg.Y)
-	}
-	return nil
+// quit prints what is left, clears the live region and ends the program.
+func (m *Model) quit() tea.Cmd {
+	m.quitting = true
+	m.pager = nil
+	return tea.Sequence(m.flush(), tea.Quit)
 }
 
-// clickPanel selects a side-panel row under (x,y), or focuses a run (opens its log).
-func (m *Model) clickPanel(x, y int) []tea.Cmd {
-	if m.logRun != 0 || !m.ready {
-		return nil
+// openLog shows a run's log in the pager.
+func (m *Model) openLog(id int64) tea.Cmd {
+	m.logRun, m.logOffset, m.logDone = id, 0, false
+	m.logText.Reset()
+	return tea.Batch(m.openPager(fmt.Sprintf("run %d", id)), m.pollLog())
+}
+
+// openPager enters the alternate screen with the pager; entries that finish meanwhile
+// wait, and are printed when it closes.
+func (m *Model) openPager(title string) tea.Cmd {
+	m.pager = newPager(title, m.width, m.height)
+	m.refreshPager()
+	return tea.Batch(tea.EnterAltScreen, tea.EnableMouseCellMotion)
+}
+
+func (m *Model) closePager() tea.Cmd {
+	m.pager = nil
+	m.logRun = 0
+	return tea.Sequence(tea.ExitAltScreen, tea.DisableMouse, m.flush())
+}
+
+// refreshPager renders the pager's content again, at the current width.
+func (m *Model) refreshPager() {
+	if m.pager == nil {
+		return
 	}
-	if m.thread.Width >= m.width {
-		return nil // no panel on narrow terminals
+	m.pager.resize(m.width, m.height)
+	if m.logRun == 0 {
+		m.pager.setLines(strings.Split(m.renderTranscript(), "\n"))
+		return
 	}
-	if x < m.thread.Width+2 || y < 0 || y >= m.thread.Height {
-		return nil
+	state := "following"
+	if m.logDone {
+		state = "ended"
 	}
-	for _, h := range m.panelHits {
-		if h.Y != y {
-			continue
-		}
-		m.selKind, m.selID = h.Kind, h.ID
-		switch h.Kind {
-		case selRun:
-			m.logRun, m.logOffset, m.logDone = h.ID, 0, false
-			m.logText.Reset()
-			m.logView.SetContent("")
-			return []tea.Cmd{m.pollLog()}
-		case selDecision:
-			for _, d := range m.decisions {
-				if d.ID == h.ID {
-					m.add(Line{KindDecision, decisionText(d)})
-					break
-				}
-			}
-		}
-		return nil
+	m.pager.title = fmt.Sprintf("run %d (%s)", m.logRun, state)
+	text := strings.TrimRight(m.logText.String(), "\n")
+	var lines []string
+	if text != "" {
+		lines = strings.Split(wrapText(text, m.width), "\n")
 	}
-	return nil
+	m.pager.setLines(lines)
 }
 
 // handle is what the person typed: a command, or a message for the desk.
@@ -591,14 +581,13 @@ func (m *Model) handle(text string) tea.Cmd {
 	case "/help":
 		m.add(Line{KindInfo, "/answer <decision> <option number or words>   answer a decision yourself\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
-			"/decisions   decisions waiting for you\n/log <run>   a run's live output (Esc to come back)\n" +
+			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/quit   leave (Ctrl-C too)\n" +
-			"Ctrl-T   toggle mouse capture (off to select text in the terminal)\n" +
-			"While mouse capture is on, Option/Shift-drag still selects text in most terminals.\n" +
-			"Click a lane, run or decision in the side panel to select or focus it."})
+			"The conversation is printed into your terminal: scroll, search, select and copy there as usual.\n" +
+			"Ctrl-O   the whole transcript: / search, n/N next/previous, g/G top/bottom, PgUp/PgDn, q or Esc back"})
 	case "/quit", "/exit":
-		return tea.Quit
+		return m.quit()
 	case "/new":
 		m.session = ""
 		m.add(Line{KindInfo, "The next message starts a new conversation with the desk."})
@@ -679,12 +668,13 @@ func (m *Model) handle(text string) tea.Cmd {
 		cmd := exec.Command(bin, "--resume", s.ID)
 		cmd.Dir = s.Dir
 		id := s.ID[:8]
-		return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		// Print the line above before Claude Code takes the terminal.
+		return tea.Sequence(m.flush(), tea.ExecProcess(cmd, func(err error) tea.Msg {
 			if err != nil {
 				return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s (%v).", id, err)}
 			}
 			return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s.", id)}
-		})
+		}))
 	case "/ask":
 		if len(f) < 3 {
 			m.add(Line{KindError, "usage: /ask <conversation id> <question>"})
@@ -715,10 +705,7 @@ func (m *Model) handle(text string) tea.Cmd {
 			m.add(Line{KindError, "run id must be a number"})
 			return nil
 		}
-		m.logRun, m.logOffset, m.logDone = id, 0, false
-		m.logText.Reset()
-		m.logView.SetContent("")
-		return m.pollLog()
+		return m.openLog(id)
 	default:
 		m.add(Line{KindError, "unknown command " + f[0] + "; /help"})
 	}
@@ -784,7 +771,7 @@ func (m *Model) send(text string) tea.Cmd {
 		m.queue = append(m.queue, text)
 		return nil
 	}
-	m.busy = true
+	m.busy, m.busySince, m.partial, m.lastTool = true, m.clock(), "", ""
 	ch := make(chan tea.Msg, 64)
 	m.deskCh = ch
 	session := m.session
@@ -804,6 +791,11 @@ func waitDesk(ch chan tea.Msg) tea.Cmd {
 
 func (m *Model) onDeskDone(msg deskDoneMsg) tea.Cmd {
 	m.busy = false
+	if m.partial != "" {
+		// The stream ended without the whole reply: keep what came.
+		m.add(Line{KindDesk, strings.TrimSpace(m.partial)})
+		m.partial = ""
+	}
 	var cmds []tea.Cmd
 	if msg.err != nil {
 		m.add(Line{KindError, "the desk: " + msg.err.Error()})
@@ -833,13 +825,7 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 		return nil
 	}
 	for _, it := range f.Items {
-		kind := KindEvent
-		text := it.Text
-		if it.Kind == store.FeedDecision {
-			kind = KindDecision
-			text += fmt.Sprintf("\n   /answer %d <option or words>", it.Ref)
-		}
-		m.add(Line{kind, text})
+		m.add(feedLine(it, true))
 		if autoKinds[it.Kind] {
 			m.pending = append(m.pending, it.Text)
 		}
@@ -858,202 +844,129 @@ func (m *Model) brief() tea.Cmd {
 	return m.send(msg)
 }
 
-// add appends to the thread, keeping the view at the bottom.
+// add appends to the thread; the entry is printed to scrollback at the end of the update.
 func (m *Model) add(l Line) {
 	m.lines = append(m.lines, l)
-	if m.ready {
-		m.thread.SetContent(m.renderThread())
-		m.thread.GotoBottom()
+	m.unprinted = append(m.unprinted, l)
+	if m.pager != nil && m.logRun == 0 {
+		m.refreshPager()
 	}
 }
 
-func (m *Model) layout() {
-	inputH := 4
-	threadW := m.width - panelWidth - 1
-	if threadW < 30 {
-		threadW = m.width
-	}
-	h := m.height - inputH - 1
-	if !m.ready {
-		m.thread = viewport.New(threadW, h)
-		m.thread.MouseWheelEnabled = true
-		m.logView = viewport.New(m.width, m.height-2)
-		m.logView.MouseWheelEnabled = true
-		m.ready = true
-	} else {
-		m.thread.Width, m.thread.Height = threadW, h
-		m.logView.Width, m.logView.Height = m.width, m.height-2
-		m.thread.MouseWheelEnabled = true
-		m.logView.MouseWheelEnabled = true
-	}
-	m.input.SetWidth(m.width)
-	m.thread.SetContent(m.renderThread())
-	m.thread.GotoBottom()
-}
-
-func (m *Model) renderThread() string {
-	w := m.thread.Width - 2
-	if w < 20 {
-		w = 20
-	}
+// renderTranscript is the whole thread as printed, for the transcript view.
+func (m *Model) renderTranscript() string {
 	var b strings.Builder
 	for i, l := range m.lines {
-		body := wrapBody(l.Text, w)
-		var s string
-		switch l.Kind {
-		case KindYou:
-			s = styleLabelYou.Render("you") + "\n" + styleYou.Render(body)
-		case KindDesk:
-			s = styleLabelDesk.Render("desk") + "\n" + styleDesk.Render(body)
-		case KindTool:
-			s = styleTool.Render("  → " + body)
-		case KindEvent:
-			s = styleShepherd.Render("shepherd") + "\n" + styleEvent.Render(tintAgents(body))
-		case KindDecision:
-			s = styleDecision.Render("? " + body)
-		case KindError:
-			s = styleError.Render("! " + body)
-		default:
-			s = styleInfo.Render(body)
-		}
-		b.WriteString(s)
-		b.WriteString("\n")
-		// A burst of tool calls stays together; everything else gets a blank line.
-		if i+1 >= len(m.lines) || m.lines[i+1].Kind != KindTool {
+		if i > 0 {
 			b.WriteString("\n")
+			if l.Kind != KindTool {
+				b.WriteString("\n")
+			}
 		}
+		b.WriteString(renderLine(l, m.width))
 	}
 	return b.String()
 }
 
-func (m *Model) renderPanel() string {
-	var b strings.Builder
-	var hits []panelHit
-	y := 0
-	write := func(line string) {
-		b.WriteString(line)
-		b.WriteString("\n")
-		y++
+// flush prints the entries waiting for scrollback. Nothing is printed before the
+// terminal's width is known, or while the pager holds the alternate screen.
+func (m *Model) flush() tea.Cmd {
+	if !m.ready || m.pager != nil || len(m.unprinted) == 0 {
+		return nil
 	}
-	row := func(kind string, id int64, plain string, shown string) {
-		hits = append(hits, panelHit{Kind: kind, ID: id, Y: y})
-		if m.selKind == kind && m.selID == id {
-			write(styleSel.Render(clipTo(plain, panelWidth-4)))
-			return
+	var parts []string
+	for _, l := range m.unprinted {
+		s := renderLine(l, m.width)
+		// A burst of tool calls stays together; everything else gets a blank line.
+		if m.printed && l.Kind != KindTool {
+			s = "\n" + s
 		}
-		write(shown)
+		m.printed = true
+		parts = append(parts, s)
 	}
-
-	running := map[int64]string{}
-	names := map[string]int{}
-	for _, r := range m.runs {
-		if r.State == store.RunRunning {
-			running[r.LaneID] = r.Agent
-		}
-	}
-	for _, l := range m.lanes {
-		names[l.Name]++
-	}
-	write(styleHead.Render("LANES"))
-	if len(m.lanes) == 0 {
-		write(styleInfo.Render("none open"))
-	}
-	for _, l := range m.lanes {
-		mark, who, name := "○", "", l.Name
-		if a, ok := running[l.ID]; ok {
-			mark, who = "●", " "+a
-		}
-		if names[l.Name] > 1 {
-			name = l.Repo + ":" + l.Name
-		}
-		plain := fmt.Sprintf("%s %s%s", mark, name, who)
-		nameWidth := panelWidth - 7
-		if who != "" {
-			nameWidth -= len([]rune(who)) + 1
-		}
-		shown := mark + " " + styleLane(l.Name).Render(clipTo(name, nameWidth))
-		if who != "" {
-			shown += " " + styleAgent(strings.TrimSpace(who)).Render(strings.TrimSpace(who))
-		}
-		row(selLane, l.ID, plain, shown)
-	}
-	write("")
-	write(styleHead.Render("RUNS"))
-	for _, r := range m.runs {
-		agent := clipTo(fmt.Sprintf("%-7s", r.Agent), 7)
-		state := clipTo(short(r.State), panelWidth-17)
-		plain := clipTo(fmt.Sprintf("%-4d %-7s %s", r.ID, r.Agent, short(r.State)), panelWidth-4)
-		shown := clipTo(fmt.Sprintf("%-4d", r.ID), 4) + " " + styleAgent(r.Agent).Render(agent) + " " + state
-		row(selRun, r.ID, plain, shown)
-	}
-	if len(m.runs) > 0 {
-		write(styleInfo.Render("/log <run> · click to watch"))
-	}
-	if len(m.decisions) > 0 {
-		write("")
-		write(styleHead.Render("DECISIONS"))
-		for _, d := range m.decisions {
-			plain := fmt.Sprintf("%d %s", d.ID, clipTo(d.Question, panelWidth-8))
-			row(selDecision, d.ID, plain, styleDecision.Render(clipTo(plain, panelWidth-4)))
-		}
-	}
-	if len(m.sessions) > 0 {
-		write("")
-		write(styleHead.Render("CONVERSATIONS"))
-		for i, s := range m.sessions {
-			if i == 5 {
-				write(styleInfo.Render(fmt.Sprintf("+%d more: /sessions", len(m.sessions)-5)))
-				break
-			}
-			write(clipTo(fmt.Sprintf("%s %s", s.ID[:8], s.Title), panelWidth-4))
-		}
-		write(styleInfo.Render("/attach <id> · /ask <id> …"))
-	}
-	m.panelHits = hits
-	return stylePanel.Height(m.thread.Height).Width(panelWidth - 2).Render(strings.TrimRight(b.String(), "\n"))
+	m.unprinted = nil
+	return m.println(strings.Join(parts, "\n"))
 }
 
+// View is the live region: the reply streaming in, the desk's status, the agents at
+// work, the input and a line of keys. Each line is cut to the terminal's width so the
+// region never wraps.
 func (m *Model) View() string {
-	if !m.ready {
-		return "starting…"
+	if m.quitting || !m.ready {
+		return ""
 	}
-	if m.logRun != 0 {
-		state := "following"
-		if m.logDone {
-			state = "ended"
-		}
-		head := styleHead.Render(fmt.Sprintf("run %d (%s)", m.logRun, state))
-		if m.reconnecting {
-			head += styleInfo.Render("   reconnecting…")
-		} else {
-			head += styleInfo.Render("   Esc back · PgUp/PgDn or wheel scroll")
-		}
-		return head + "\n" + m.logView.View()
+	if m.pager != nil {
+		return m.pager.view()
 	}
-	body := m.thread.View()
-	if m.thread.Width < m.width {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, body, m.renderPanel())
+	var rows []string
+	rows = append(rows, m.streaming()...)
+	rows = append(rows, m.statusLine(), m.agentsLine())
+	rows = append(rows, strings.Split(m.input.View(), "\n")...)
+	rows = append(rows, styleInfo.Render("Enter send · Ctrl-O transcript · /help · Ctrl-C quit"))
+	for i, r := range rows {
+		rows[i] = fit(r, m.width)
 	}
-	status := "desk ready"
-	if m.reconnecting {
-		status = "reconnecting…"
-	} else if m.busy {
-		status = "desk working…"
+	return strings.Join(rows, "\n")
+}
+
+// streaming is the tail of the reply as it streams, short enough to leave room for the
+// rest of the live region.
+func (m *Model) streaming() []string {
+	text := strings.TrimSpace(m.partial)
+	if text == "" {
+		return nil
+	}
+	lines := strings.Split(renderLine(Line{KindDesk, text}, m.width), "\n")
+	room := m.height - 7
+	if room < 1 {
+		room = 1
+	}
+	if room > 12 {
+		room = 12
+	}
+	if len(lines) > room {
+		lines = append([]string{styleInfo.Render("  …")}, lines[len(lines)-room+1:]...)
+	}
+	return append(lines, "")
+}
+
+func (m *Model) statusLine() string {
+	var s string
+	switch {
+	case m.reconnecting:
+		s = styleError.Render("○ reconnecting to the daemon…")
+	case m.busy:
+		s = styleDeskMark.Render("●") + " desk working… " + styleInfo.Render(m.clock().Sub(m.busySince).Truncate(time.Second).String())
 		if n := len(m.queue); n > 0 {
-			status += fmt.Sprintf(" (%d queued)", n)
+			s += styleInfo.Render(fmt.Sprintf(" · %d queued", n))
 		}
+		if m.lastTool != "" {
+			s += styleTool.Render(" · → " + m.lastTool)
+		}
+	default:
+		s = styleInfo.Render("○ desk ready")
 	}
-	status += fmtUSD(m.spend.USD, m.spend.Budget, m.spend.Day)
-	if m.selKind != "" && !m.reconnecting {
-		status += fmt.Sprintf("  ·  %s %d", m.selKind, m.selID)
+	if m.deskName != "" && !m.reconnecting {
+		s += styleInfo.Render(" · " + m.deskName)
 	}
-	mouse := "Ctrl-T mouse off"
-	if !m.mouseOn {
-		mouse = "Ctrl-T mouse on"
+	return s + styleInfo.Render(fmtUSD(m.spend.USD, m.spend.Budget, m.spend.Day))
+}
+
+// agentsLine is a one-line strip of the agents running and the decisions waiting.
+func (m *Model) agentsLine() string {
+	var parts []string
+	for _, r := range m.runs {
+		if r.State != store.RunRunning {
+			continue
+		}
+		parts = append(parts, styleAgent(r.Agent).Render("● "+r.Agent)+" "+styleLane(r.Lane).Render(r.Lane)+styleInfo.Render(fmt.Sprintf(" #%d", r.ID)))
 	}
-	footer := status + "  ·  Enter send · wheel scroll · " + mouse + "  ·  /help · Ctrl-C quit"
-	if m.mouseOn {
-		footer += "\n" + styleInfo.Render("Option/Shift-drag selects text while mouse capture is on")
+	s := strings.Join(parts, "  ")
+	if s == "" {
+		s = styleInfo.Render(fmt.Sprintf("no agents running · %d lane(s) open", len(m.lanes)))
 	}
-	return body + "\n" + styleInfo.Render(footer) + "\n" + m.input.View()
+	if n := len(m.decisions); n > 0 {
+		s += styleDecision.Render(fmt.Sprintf("  ? %d decision(s) waiting: /decisions", n))
+	}
+	return s
 }
