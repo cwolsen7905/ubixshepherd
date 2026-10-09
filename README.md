@@ -11,13 +11,14 @@ are yours for you, and reports back in one thread.
 
 > Status: **early build**. v1's scope and stack are decided ([docs/v1.md](docs/v1.md)): a Go
 > core, the Fold and dispatch, GitLab and GitHub, useful on any repo and aimed at uBixCore.
-> M1 is complete; M2 is partly implemented; M3 proofs and M5 dispatch are partly
-> implemented; M4's MCP tools and terminal front desk are implemented; M6 has not started.
-> Current code includes per-repo scope leases and tag reservations, forge polling and
-> merge-based lane closure, operator and worker MCP tools, `shepherd chat`, and dispatch
-> for Claude Code, GitHub Copilot and Cursor. Remaining gaps include workspace-wide
-> leases, GitHub mirror and publication proofs, typed work orders and triage, and
-> end-to-end cross-repo delivery without relaying.
+> M1 is complete; M2, M3 proofs and M5 dispatch are partly implemented; M4's MCP tools and
+> terminal front desk are implemented; M6 has not started. Current code includes per-repo
+> scope leases and lane origins, tag reservations, forge polling and merge-based lane
+> closure, operator and worker MCP tools, configured agent permissions and push/merge
+> autonomy, per-run costs and quota holds, routed requests, and `shepherd chat`. The web UI
+> is in progress, but there are no `web/` sources in this checkout. Remaining gaps include
+> workspace-wide leases, GitHub mirror and publication proofs, typed cross-repo work orders
+> and triage, and end-to-end cross-repo delivery without relaying.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
@@ -41,6 +42,7 @@ bin/shepherd where          # the workspace, repo and lane for this directory, w
 
 A lane is one stream of work in a repo: its own branch, cut from a fresh fetch of the
 repo's base branch, its own worktree, and a declared scope.
+Shepherd records who opened each lane and through which surface, where known.
 
 ```sh
 cd ~/git/myrepo
@@ -83,11 +85,13 @@ You talk to Shepherd's **front desk**: a Claude Code session Shepherd runs at th
 workspace root, resumed turn by turn, with Shepherd's operator tools and read access to
 files but no way to edit them. It delegates: it opens lanes, starts Claude Code, Copilot
 or Cursor in them, follows up, routes requests between them, and brings you what is
-yours. The swarm's events arrive in the same thread as they happen (runs starting and
-ending, reports, decisions, requests between lanes), and when the desk is idle the ones
-that need someone (a run ended, a request no rule could route) reach it on their own.
-Lanes and live runs are listed beside the thread. The conversation is kept between
-`shepherd chat` sessions.
+yours. The thread prints inline to terminal scrollback, with recent history replayed when
+chat starts and a searchable full transcript on Ctrl-O. Replies render markdown. An
+attention-sorted dock shows counts, lane and run states, merge-request badges and decision
+answers in place. Colors adapt to light or dark terminals, and `NO_COLOR` is respected.
+The feed uses a closed set of event kinds for lane, run, commit, gate, decision, request,
+merge-request, pipeline and other outcomes. The conversation is kept between `shepherd chat`
+sessions.
 
 | In the thread | |
 |---|---|
@@ -149,10 +153,11 @@ before the work it is for. Agents reserve with their `tag_reserve` tool.
 
 ### What it costs
 
-Every run records what its agent reports: Claude Code's cost in dollars, Copilot's
+Every run records its attributable cost: Claude Code's cost in dollars, Copilot's
 credits (priced at `daemon.credit_usd`, $0.04 by default, an estimate), nothing for
-Cursor, which reports nothing. The front desk's turns count too. `shepherd status`, the
-chat's status line and `run show` show it.
+Cursor, which reports nothing. When a CLI reports a session total, Shepherd records the
+increase for that run. The front desk's turns count too. `shepherd status`, the chat's
+status line and `run show` show it.
 
 `daemon.budget` (default $20 a day, 0 for no cap) holds the runs Shepherd would start on
 its own, pipeline and gate fixes and routed requests, once the day's spend reaches it;
@@ -168,9 +173,14 @@ credentials. What changed lands in the thread, and some of it is acted on:
   local branch goes, no `--force` needed after a squash merge. A worktree with
   uncommitted changes, or an agent still running, keeps the lane open and says why.
 - **Pipeline failed:** the failed jobs' logs go back into the lane's agent conversation
-  with "fix it and commit", at most twice per merge request; then it is yours. The agent
-  still cannot push: you push its fix.
+  with "fix it and commit", at most twice per merge request; then it is yours. Who pushes
+  the fix follows the repo profile: `agent`, `shepherd` after its gate, or you by default.
 - **Opened, pipeline passed, canceled, closed without merging:** a line in the thread.
+
+Agents run with the repo's `agent.permission_mode` (default `auto`). Repo profiles can
+grant `autonomy.push: agent` so agents push their own lane, or `autonomy.merge: agent` so
+they can arm their GitLab merge request to merge when its pipeline succeeds. Forge rules,
+approvals and pipeline requirements still apply.
 
 **Shepherd can push, for repos you opt in.** With `autonomy.push: shepherd` in a repo's
 profile (and a `gate` set), when an agent's run ends with commits inside its scope,
@@ -178,7 +188,10 @@ Shepherd runs the gate itself in the lane. If it passes, Shepherd pushes the bra
 (the scope hook still checks it) and opens the merge request, or updates the open one;
 if it fails, the output goes back into the agent's conversation to fix, at most twice.
 It waits while the agent is waiting on you or another lane, or said it was blocked. It
-never merges. The default is `push: human`: agents commit, you push.
+never merges. For repos configured with `autonomy.push: shepherd`, you can also ask Shepherd to ship
+committed lane work with `shepherd lane ship`, which runs the repo gate before pushing and
+opening or updating the merge request.
+The default is `push: human`: agents commit, you push.
 
 ```yaml
 repos:
@@ -277,13 +290,13 @@ Agents: `claude` (Claude Code), `copilot` (GitHub Copilot CLI), `cursor` (Cursor
 closing the terminal does not stop it; `lane run` follows the output, and Ctrl-C only
 detaches.
 
-Every agent gets the same brief (its lane, branch, scope, the repo's gate) and the same
-autonomy: **edit and commit inside the worktree, run the gate, never push.** Claude Code
-and Copilot are started with `git push` denied; for every agent, git's push URL for
-`origin` is replaced with one that cannot connect for the length of the run, and the
-pre-push hook refuses pushes from a lane while an agent runs in it. You review the
-lane's commits and push. One agent runs per lane; `daemon.max_runs` (default 4) caps
-them per machine. Output is redacted and kept in `~/.shepherd/runs/`.
+Every agent gets the same brief (its lane, branch, scope, the repo's gate) and the
+permission mode and autonomy configured for that repo. By default agents cannot push;
+when `autonomy.push: agent` is set, the run permits pushing the agent's own lane. The
+pre-push hook still checks lane scope. The repo profile's `autonomy.merge` controls whether
+the agent can arm its own GitLab merge request; it cannot merge another lane or approve a
+request. One agent runs per lane; `daemon.max_runs` (default 4) caps them per machine.
+Output is redacted and kept in `~/.shepherd/runs/`.
 
 ### Agents ask, you answer
 
@@ -311,9 +324,12 @@ the default home (`~/.shepherd`), not one chosen with `SHEPHERD_HOME`.
 hand-off or a review request to another lane; the asking agent ends its turn, Shepherd
 continues the target lane's conversation with it, and the reply (the target's `report`)
 comes back into the asker's conversation. A review goes to a different provider than
-the author, in a fresh session, and may not change files. A request Shepherd cannot
-route by rule (no lane named, or a lane with no agent yet) waits for the front desk or
-you; chains are capped at three requests.
+the author, in a fresh session, and may not change files. A request Shepherd cannot route by rule (no lane named, or a lane with no agent yet)
+explains why and waits for the front desk or you. Requests addressed to the person become
+decisions; a routed request starts the target agent when its lane is free, or says what is
+holding it. The dispatch core can close a request, but no CLI or MCP command exposes that
+operation yet. An agent out of quota is held until the limit resets. Chains are capped at
+three requests.
 
 ```sh
 shepherd request list                  # requests between lanes, and their replies
@@ -323,7 +339,7 @@ shepherd request route 4 --lane docs/api --agent cursor   # route one Shepherd c
 ### From Claude Code (MCP)
 
 `shepherd mcp` serves Shepherd's operator tools over MCP on stdio: `shepherd_status`,
-`shepherd_where`, `lane_list`, `lane_open`, `lane_close`, `lane_run`, `run_list`,
+`shepherd_where`, `lane_list`, `lane_open`, `lane_close`, `lane_ship`, `lane_run`, `run_list`,
 `run_status`, `run_continue`, `run_stop`, `decision_list`, `decision_answer`,
 `request_list`, `request_route` and `fold_gc`. (`shepherd mcp --worker` is the agents' own set, described above.) Each runs the CLI
 command of the same name. Register it once, then start Claude Code at the workspace root
@@ -347,6 +363,7 @@ bin/shepherd daemon install     # writes and loads the LaunchAgent or user unit,
 bin/shepherd daemon status      # running or not, and whether it starts at login
 bin/shepherd daemon stop        # stays stopped until the next login or `daemon start`
 bin/shepherd daemon start | restart | uninstall
+bin/shepherd daemon reload     # reload config on systems that support SIGHUP
 bin/shepherd daemon             # in the foreground, for debugging; Ctrl-C stops it
 ```
 
@@ -355,6 +372,10 @@ removes the latter, and `make install` restarts the daemon onto each new build.
 `install` copies your current PATH into the service, because launchd and systemd start
 programs with a bare one that would hide git and the agent CLIs. Set
 `SHEPHERD_NO_AUTOSTART=1` to stop commands starting a daemon (scripts, CI).
+On systems that support SIGHUP, `shepherd daemon reload` reloads the config without
+restarting the daemon. The daemon rotates its log; successful routine reads are logged at
+debug level. If it restarts after a crash, it stops leftover agent processes and marks
+their runs interrupted.
 
 Shepherd keeps its files in `~/.shepherd` on every OS (or `$SHEPHERD_HOME`): the config,
 the SQLite store, the daemon's log, and the running daemon's address and access token. The daemon listens on

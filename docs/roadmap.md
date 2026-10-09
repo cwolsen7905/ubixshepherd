@@ -1,7 +1,8 @@
 # Roadmap: the MVP, what follows, and the nice-to-haves
 
-**Status:** Proposal (2026-10-01), for the maintainer to cut and reorder. It builds on the
-decided scope in [v1.md](v1.md) and comes from three pieces of research done the same day:
+**Status:** Proposal (2026-10-01), for the maintainer to cut and reorder. Implementation
+notes below reflect the code as of 2026-10-08; they do not change the proposed scope or
+milestones. It builds on the decided scope in [v1.md](v1.md) and comes from three pieces of research done the same day:
 how the work runs today on uBixCore and the products built on it (coordination logs, agent
 working agreements, two months of git history), the current landscape of multi-agent
 tools, and which providers and non-LLM tools suit each kind of work. Model names and prices
@@ -75,37 +76,48 @@ SQLite store, HTTP API, config loader; `shepherd status`.
   merges, tags, deploys; plan-first or not).
 - ★ **Redaction** at every boundary that stores or shows agent output.
 
-**M2 Fold.** Lanes, leases (★ including **workspace-wide** ones for the CI runner, the deployment repo and the docs site), worktree open/close/gc, tag reservation, pre-push hook,
-generated `AGENTS-COORD.md`, `fold import`, `shepherd note`.
+**M2 Fold.** Built: per-repo scope leases, lane origin records, worktree open/close/gc,
+tag reservation, pre-push hook, generated `AGENTS-COORD.md`, and `fold import`.
+Outstanding: workspace-wide leases for the CI runner, deployment repo and docs site.
 - ★ **In-agent scope check**: a Claude Code `PreToolUse` hook (and Gemini's equivalent) asks
   Shepherd before a write outside the lane, earlier than the pre-push hook.
 - ★ **Per-lane port and env injection**, so parallel dev servers do not collide.
 - ★ **Shepherd-owned indexes**: generated status files replace hand-edited shared ones.
 
-**M3 Proofs.** GitLab polling, the task state machine, the gate runner.
+**M3 Proofs.** Built: GitLab polling, lane MR and pipeline state, merge-based lane closure
+on forge merge-commit proof, checks that reserved tags contain the merge, failed-pipeline
+handoff, and the gate runner used before Shepherd ships. The proposed merge discipline
+below is not complete.
 - ★ **Merge discipline**: base-branch check, `git merge-tree` against the target before an
   MR opens, no merge before the head pipeline has run, rebase remaining lanes in order after
   each merge. (Agent PRs conflict 28% of the time overall, **42% between different agents**
   against 20% within one; a multi-provider swarm needs this more, not less.)
-- ★ **Tag proof**: the tag commit contains the merge.
+- ★ **Tag proof (built)**: the tag commit contains the merge.
 - ★ **`verified-on:<env>`** with pluggable evidence: HTTP probe, failed-Jobs check, E2E run.
 
-**M4 MCP.** Operator and worker tool sets over the HTTP API.
+**M4 MCP.** Built: operator and worker tool sets, plus `shepherd chat` as a terminal front
+desk over the daemon feed.
 - ★ **Stateless tools with explicit lane and task handles**, matching where the MCP spec is
   heading; `ask` is a plain tool call now, MCP Tasks/elicitation later.
-- ★ **The decision queue** in the owner-queue shape: what it unblocks, effort, options,
+- ★ **The decision queue** in the owner-queue shape: decisions carry options and a
   recommendation. Browser acceptance and the test script for the human live here.
 
-**M5 Dispatch.** Work orders, routing table, adapters, held decisions, outcome records.
+**M5 Dispatch.** Partly built: adapters for Claude Code, Copilot and Cursor, deterministic
+request routing, held decisions, outcome records, per-run cost accounting, daily budgets,
+quota holds, configurable permission modes, agent push/merge autonomy and opt-in
+Shepherd shipping. Typed work orders, cross-repo orders and triage are still outstanding.
 - ★ **Adapter contract**, version-pinned with contract tests: parse each CLI's JSONL stream
   into one event model; final report constrained by schema (`--json-schema`,
-  `--output-schema`); explicit permission modes, never blanket "bypass" by default.
-- ★ **Price table and budget kill switch**: only Claude reports cost in dollars, so
-  Shepherd computes it from tokens and stops a task (and a day) at its budget itself.
+  `--output-schema`); explicit permission modes, never blanket "bypass" by default. The
+  current modes include the person's own mode (`auto` by default).
+- ★ **Price table and budget control**: run costs are recorded per run, including the
+  increment when an adapter reports a session total. The daily budget holds runs Shepherd
+  would start on its own; it does not stop an already running task.
 - ★ **Dependent and cross-repo work orders** (framework → tag → host pin bump). The release half is in: a repo `follows` another, and the followed repo's published release opens a lane and an agent run in it. Next: one work order spanning both repos, typed at the front desk.
 - ★ **Diff-size cap per work order**, and a cross-provider review **before** the task
   reaches the human, to protect his review time.
-- ★ **Concurrency limit that counts CI runners.**
+- ★ **Concurrency limit that counts CI runners.** The current limit counts agent runs per
+  machine, not CI capacity.
 - Work kinds in the MVP: **code, test, review, docs, release**. These are most of the
   volume and have the strongest gates. Plan and architect run too, always held for him.
 
@@ -117,18 +129,18 @@ generated `AGENTS-COORD.md`, `fold import`, `shepherd note`.
 Across M3 to M5:
 - ★ **Two forges from the start**: GitLab primary, GitHub in the mirror role (mirror sync,
   tag-triggered workflow runs, `workflow_dispatch` when a tag triggered nothing, published
-  artefact check). uBix releases already run through the GitHub mirror.
+  artefact check). GitHub mirror and publication proofs are not implemented.
 - ★ **Triage** for prompts with no front desk in front of them, routed to the person's
   cheapest allowed service.
 - ★ **Shepherd's conversation** ([design.md §3.15](design.md#315-shepherds-conversation-orchestrating-agent-systems),
   the maintainer's direction): lanes keep their agent's session (continue, attach);
   launched agents get `ask_shepherd`, `ask_human` and `report`; Shepherd routes between
   sessions; events continue sessions instead of the human.
-- ★ **The terminal** ([design.md §3.16](design.md#316-the-terminal-one-thread-many-feeds), a
-  revised 2026-10-08): the thread in the terminal's scrollback with the front desk (built);
-  then typed event lines and a dock sorted by what needs the person, decisions answered by
-  key, notifications outside the window, a board to drill into lanes and runs, and attach
-  to an agent.
+- ★ **The terminal** ([design.md §3.16](design.md#316-the-terminal-one-thread-many-feeds),
+  revised 2026-10-08): built thread in terminal scrollback, recent history on start,
+  searchable Ctrl-O transcript, markdown, typed events from a closed set, attention-sorted
+  dock with counts and MR badges, in-place decision answers, and agent attach. External
+  notifications and a richer board remain future work.
 - ★ **VS Code works as the front desk** from M4 through MCP (VS Code agent mode, Claude
   Code extension); nothing extra to build.
 
@@ -168,7 +180,9 @@ In the order the evidence suggests:
    boundary, failed-Jobs sweep across environments, dependency updates.
 6. **Server deployment**: Shepherd on the k3s cluster, uBixOps forwarding webhooks, the CI
    lease check, polling as fallback.
-7. **Web UI** (TypeScript/React on `@ubixsys/ubixcore`): status board, decision queue,
+7. **Web UI (in progress)**: work on a React and TypeScript client for `web/`, to be served
+   by the daemon later. No `web/` sources are present in this checkout, so the UI is not
+   counted as built here. Its proposed scope remains a status board, decision queue,
    outcome and cost dashboards.
 8. **Vault credential leasing** per task.
 9. **Playbooks**: release → ubixsys-web docs; uBixCore tag → host pin bumps; mirror-failure
@@ -176,6 +190,9 @@ In the order the evidence suggests:
 10. **Remaining work kinds**: optimize, security audit as a work order, migration, graphics,
    research, each with its gate pack.
 11. **Learning loop**: outcome records propose routing and gate changes as MRs.
+12. **OpenCode and local-model adapters**: extend dispatch beyond the three current
+    adapters, then connect a local model provider where its CLI or API can be run and
+    measured through Shepherd.
 
 ## 5. Nice-to-haves
 
