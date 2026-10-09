@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -9,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -75,15 +77,23 @@ func (f *fakeDesk) Turn(_ context.Context, session, message string, emit func(Li
 }
 
 type fakeAPI struct {
-	feed     []store.FeedItem
-	answered map[int64]string
-	settings map[string]string
-	ds       []api.DecisionView
-	spent    float64
-	asked    []string
+	feed       []store.FeedItem
+	answered   map[int64]string
+	settings   map[string]string
+	ds         []api.DecisionView
+	spent      float64
+	asked      []string
+	redialErrs []error
+	redials    int
+	feedCalls  int
+	laneCalls  int
+	runCalls   int
+	spendCalls int
+	sessCalls  int
 }
 
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
+	f.feedCalls++
 	if after < 0 {
 		return api.Feed{Last: 0}, nil
 	}
@@ -97,8 +107,12 @@ func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
 	}
 	return out, nil
 }
-func (f *fakeAPI) Lanes(context.Context, int64, int64) ([]api.LaneView, error) { return nil, nil }
+func (f *fakeAPI) Lanes(context.Context, int64, int64) ([]api.LaneView, error) {
+	f.laneCalls++
+	return nil, nil
+}
 func (f *fakeAPI) Runs(context.Context, int64, string, int) ([]api.RunView, error) {
+	f.runCalls++
 	return nil, nil
 }
 func (f *fakeAPI) RunLog(context.Context, int64, int64) (api.RunLog, error) {
@@ -110,6 +124,7 @@ func (f *fakeAPI) Answer(_ context.Context, id int64, a string) (store.Decision,
 	return store.Decision{ID: id, AnswerRun: 9}, nil
 }
 func (f *fakeAPI) SpendToday(context.Context) (api.SpendToday, error) {
+	f.spendCalls++
 	return api.SpendToday{Day: "today", USD: f.spent, Budget: 20}, nil
 }
 func (f *fakeAPI) AddSpend(_ context.Context, sp store.Spend) error {
@@ -117,6 +132,7 @@ func (f *fakeAPI) AddSpend(_ context.Context, sp store.Spend) error {
 	return nil
 }
 func (f *fakeAPI) Sessions(context.Context, int64) ([]api.SessionView, error) {
+	f.sessCalls++
 	return []api.SessionView{{Conversation: store.Conversation{ID: "71ffa009-aaaa", Title: "Stripe integration", Dir: "/w/app"}, Repo: "app"}}, nil
 }
 func (f *fakeAPI) AskSession(_ context.Context, id, q string) (convo.Answer, error) {
@@ -127,6 +143,15 @@ func (f *fakeAPI) Setting(_ context.Context, k string) (string, error) { return 
 func (f *fakeAPI) SetSetting(_ context.Context, k, v string) error {
 	f.settings[k] = v
 	return nil
+}
+func (f *fakeAPI) Redial() error {
+	f.redials++
+	if len(f.redialErrs) == 0 {
+		return nil
+	}
+	err := f.redialErrs[0]
+	f.redialErrs = f.redialErrs[1:]
+	return err
 }
 
 // drive runs a command and every command its messages lead to, the way the Bubble Tea
@@ -284,7 +309,7 @@ func TestDeskCostIsRecordedNotShown(t *testing.T) {
 
 func TestConversationsInTheChat(t *testing.T) {
 	m, d, a := newTestModel()
-	drive(t, m, m.pollPanel())
+	drive(t, m, m.pollPanel(true))
 	if v := m.View(); !strings.Contains(v, "CONVERSATIONS") || !strings.Contains(v, "71ffa009") {
 		t.Errorf("panel lacks conversations:\n%s", v)
 	}
@@ -323,5 +348,92 @@ func TestPanelMatchesRunsByLaneNotName(t *testing.T) {
 		if !rows[want] {
 			t.Errorf("panel lacks row %q:\n%s", want, p)
 		}
+	}
+}
+
+func TestMouseWheelScrollsAndCtrlTTogglesCapture(t *testing.T) {
+	m, _, _ := newTestModel()
+	m.thread.SetContent(strings.Repeat("a conversation line\n", 100))
+	m.thread.GotoTop()
+	m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress})
+	if m.ThreadYOffset() == 0 {
+		t.Fatal("mouse wheel did not scroll the conversation")
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.MouseOn() {
+		t.Fatal("Ctrl-T did not turn mouse capture off")
+	}
+	if !strings.Contains(m.View(), "Ctrl-T mouse on") {
+		t.Fatal("footer does not explain how to turn mouse capture back on")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlT})
+	if !m.MouseOn() {
+		t.Fatal("Ctrl-T did not turn mouse capture back on")
+	}
+	if !strings.Contains(m.View(), "Option/Shift-drag") {
+		t.Fatal("footer does not explain text selection while capture is on")
+	}
+}
+
+func TestPanelMouseSelectsLaneAndDecisionAndOpensRun(t *testing.T) {
+	m, _, _ := newTestModel()
+	m.lanes = []api.LaneView{{Lane: store.Lane{ID: 3, Name: "feat/chat"}, Repo: "app"}}
+	m.runs = []api.RunView{{Run: store.Run{ID: 9, LaneID: 3, Agent: "copilot", State: store.RunRunning}}}
+	m.decisions = []api.DecisionView{{Decision: store.Decision{ID: 12, Question: "Which port?"}}}
+
+	click := func(kind string, id int64) tea.Cmd {
+		t.Helper()
+		m.View()
+		for _, hit := range m.panelHits {
+			if hit.Kind == kind && hit.ID == id {
+				_, cmd := m.Update(tea.MouseMsg{
+					X: m.thread.Width + 2, Y: hit.Y,
+					Button: tea.MouseButtonLeft, Action: tea.MouseActionPress,
+				})
+				return cmd
+			}
+		}
+		t.Fatalf("panel hit not found: %s %d", kind, id)
+		return nil
+	}
+
+	click(selLane, 3)
+	if kind, id := m.Selection(); kind != selLane || id != 3 {
+		t.Fatalf("lane selection = %s %d", kind, id)
+	}
+
+	drive(t, m, click(selRun, 9))
+	if m.logRun != 9 || !strings.Contains(m.logText.String(), "line") {
+		t.Fatalf("run click did not open its log: run %d, text %q", m.logRun, m.logText.String())
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+
+	click(selDecision, 12)
+	if kind, id := m.Selection(); kind != selDecision || id != 12 {
+		t.Fatalf("decision selection = %s %d", kind, id)
+	}
+	if !has(m.Lines(), KindDecision, "Which port?") {
+		t.Fatalf("decision click did not show its details: %+v", m.Lines())
+	}
+}
+
+func TestReconnectRetriesAndRestoresChat(t *testing.T) {
+	m, _, a := newTestModel()
+	a.redialErrs = []error{errors.New("runtime file is being replaced"), nil}
+
+	_, cmd := m.Update(errorMsg{err: client.ErrNoDaemon})
+	if !m.Reconnecting() || !strings.Contains(m.View(), "reconnecting") {
+		t.Fatal("connection failure did not show reconnecting state")
+	}
+	drive(t, m, cmd)
+	if !m.Reconnecting() || a.redials != 1 {
+		t.Fatalf("first reconnect: state %v, attempts %d", m.Reconnecting(), a.redials)
+	}
+
+	_, cmd = m.Update(tickMsg{generation: m.tickGeneration})
+	drive(t, m, cmd)
+	if m.Reconnecting() || a.redials != 2 {
+		t.Fatalf("reconnect did not recover: state %v, attempts %d", m.Reconnecting(), a.redials)
 	}
 }

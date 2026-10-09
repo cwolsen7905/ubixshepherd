@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -34,6 +36,11 @@ type API interface {
 	AskSession(ctx context.Context, id, question string) (convo.Answer, error)
 }
 
+// Redialer re-reads daemon.json so the chat can follow a restarted daemon.
+type Redialer interface {
+	Redial() error
+}
+
 // Settings the chat keeps in the daemon.
 const settingSession = "desk.session"
 
@@ -46,6 +53,29 @@ var autoKinds = map[string]bool{
 }
 
 const panelWidth = 34
+
+const (
+	activeFeedInterval  = time.Second
+	maxIdleFeedInterval = 10 * time.Second
+	activePanelInterval = 5 * time.Second
+	idlePanelInterval   = 30 * time.Second
+	sessionsInterval    = time.Minute
+	activeWindow        = 30 * time.Second
+)
+
+// panel item kinds for click selection.
+const (
+	selLane     = "lane"
+	selRun      = "run"
+	selDecision = "decision"
+)
+
+// panelHit is one clickable row in the side panel.
+type panelHit struct {
+	Kind string
+	ID   int64
+	Y    int // row within the panel content (0 = top)
+}
 
 // Model is the chat's state.
 type Model struct {
@@ -62,9 +92,16 @@ type Model struct {
 	deskCh  chan tea.Msg
 	pending []string // events waiting for the desk to be free
 
-	lastFeed int64
-	lanes    []api.LaneView
-	runs     []api.RunView
+	lastFeed         int64
+	lanes            []api.LaneView
+	runs             []api.RunView
+	decisions        []api.DecisionView
+	lastActivity     time.Time
+	lastPanelPoll    time.Time
+	lastSessionsPoll time.Time
+	clock            func() time.Time
+	tickGeneration   uint64
+	focused          bool
 
 	spend    api.SpendToday
 	sessions []api.SessionView
@@ -79,6 +116,12 @@ type Model struct {
 	logView       viewport.Model
 	input         textarea.Model
 	ready         bool
+
+	mouseOn      bool
+	reconnecting bool
+	selKind      string
+	selID        int64
+	panelHits    []panelHit
 }
 
 // New returns the chat for a workspace.
@@ -89,7 +132,11 @@ func New(ctx context.Context, a API, d Desk, ws store.Workspace) *Model {
 	in.SetHeight(2)
 	in.CharLimit = 8000
 	in.Focus()
-	return &Model{ctx: ctx, api: a, desk: d, workspace: ws, auto: true, input: in, lastFeed: -1}
+	now := time.Now()
+	return &Model{
+		ctx: ctx, api: a, desk: d, workspace: ws, auto: true, input: in,
+		lastFeed: -1, mouseOn: true, lastActivity: now, clock: time.Now, focused: true,
+	}
 }
 
 // Lines returns the thread so far (for tests).
@@ -98,38 +145,70 @@ func (m *Model) Lines() []Line { return m.lines }
 // Busy reports whether the desk is mid-turn (for tests).
 func (m *Model) Busy() bool { return m.busy }
 
-type (
-	tickMsg  struct{}
-	feedMsg  api.Feed
-	panelMsg struct {
-		lanes    []api.LaneView
-		runs     []api.RunView
-		spend    api.SpendToday
-		sessions []api.SessionView
-	}
-	sessionMsg  string
-	deskLineMsg Line
-	deskDoneMsg struct {
-		session string
-		err     error
-	}
-	logMsg   api.RunLog
-	lineMsg  Line
-	errorMsg struct{ err error }
-)
+// MouseOn reports whether mouse capture is enabled (for tests).
+func (m *Model) MouseOn() bool { return m.mouseOn }
+
+// Reconnecting reports whether the chat is retrying the daemon (for tests).
+func (m *Model) Reconnecting() bool { return m.reconnecting }
+
+// Selection returns the side-panel selection kind and id (for tests).
+func (m *Model) Selection() (kind string, id int64) { return m.selKind, m.selID }
+
+// ThreadYOffset is the conversation pane's scroll offset (for tests).
+func (m *Model) ThreadYOffset() int { return m.thread.YOffset }
+
+type tickMsg struct {
+	at         time.Time
+	generation uint64
+}
+
+type feedMsg api.Feed
+
+type panelMsg struct {
+	lanes           []api.LaneView
+	runs            []api.RunView
+	decisions       []api.DecisionView
+	spend           api.SpendToday
+	sessions        []api.SessionView
+	panelUpdated    bool
+	sessionsUpdated bool
+}
+
+type sessionMsg string
+
+type deskLineMsg Line
+
+type deskDoneMsg struct {
+	session string
+	err     error
+}
+
+type logMsg api.RunLog
+
+type lineMsg Line
+
+type errorMsg struct{ err error }
+
+// reconnectMsg is the outcome of one Redial attempt.
+type reconnectMsg struct {
+	ok  bool
+	err error
+}
 
 func (m *Model) Init() tea.Cmd {
 	m.add(Line{KindInfo, fmt.Sprintf("Shepherd, workspace %s (%s). The desk delegates to agents in lanes; their events appear here. /help for commands.", m.workspace.Name, m.workspace.Path)})
-	return tea.Batch(textarea.Blink, m.loadSession(), m.openDecisions(), m.pollFeed(), m.pollPanel(), tick())
-}
-
-func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tickMsg{} })
+	now := m.clock()
+	m.lastPanelPoll = now
+	m.lastSessionsPoll = now
+	return tea.Batch(textarea.Blink, m.loadSession(), m.openDecisions(), m.pollFeed(), m.pollPanel(true), m.scheduleTick(m.feedInterval(now)))
 }
 
 func (m *Model) loadSession() tea.Cmd {
 	return func() tea.Msg {
-		s, _ := m.api.Setting(m.ctx, settingSession)
+		s, err := m.api.Setting(m.ctx, settingSession)
+		if err != nil {
+			return errorMsg{err}
+		}
 		return sessionMsg(s)
 	}
 }
@@ -137,7 +216,10 @@ func (m *Model) loadSession() tea.Cmd {
 func (m *Model) openDecisions() tea.Cmd {
 	return func() tea.Msg {
 		ds, err := m.api.Decisions(m.ctx, store.DecisionOpen)
-		if err != nil || len(ds) == 0 {
+		if err != nil {
+			return errorMsg{err}
+		}
+		if len(ds) == 0 {
 			return nil
 		}
 		return lineMsg{KindDecision, fmt.Sprintf("%d decision(s) waiting for you: %s. /decisions to see them.", len(ds), decisionIDs(ds))}
@@ -165,7 +247,15 @@ func (m *Model) pollFeed() tea.Cmd {
 	}
 }
 
-func (m *Model) pollPanel() tea.Cmd {
+func (m *Model) pollPanel(includeSessions bool) tea.Cmd {
+	return m.pollPanelAt(includeSessions, m.clock())
+}
+
+func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
+	m.lastPanelPoll = now
+	if includeSessions {
+		m.lastSessionsPoll = now
+	}
 	return func() tea.Msg {
 		lanes, err := m.api.Lanes(m.ctx, m.workspace.ID, 0)
 		if err != nil {
@@ -175,10 +265,95 @@ func (m *Model) pollPanel() tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
-		sp, _ := m.api.SpendToday(m.ctx)
-		ss, _ := m.api.Sessions(m.ctx, 0)
-		return panelMsg{lanes, runs, sp, ss}
+		ds, err := m.api.Decisions(m.ctx, store.DecisionOpen)
+		if err != nil {
+			return errorMsg{err}
+		}
+		sp, err := m.api.SpendToday(m.ctx)
+		if err != nil {
+			return errorMsg{err}
+		}
+		var ss []api.SessionView
+		if includeSessions {
+			ss, err = m.api.Sessions(m.ctx, 0)
+			if err != nil {
+				return errorMsg{err}
+			}
+		}
+		return panelMsg{
+			lanes: lanes, runs: runs, decisions: ds, spend: sp, sessions: ss,
+			panelUpdated: true, sessionsUpdated: includeSessions,
+		}
 	}
+}
+
+func (m *Model) pollSessionsAt(now time.Time) tea.Cmd {
+	m.lastSessionsPoll = now
+	return func() tea.Msg {
+		ss, err := m.api.Sessions(m.ctx, 0)
+		if err != nil {
+			return errorMsg{err}
+		}
+		return panelMsg{sessions: ss, sessionsUpdated: true}
+	}
+}
+
+func (m *Model) scheduleTick(interval time.Duration) tea.Cmd {
+	m.tickGeneration++
+	generation := m.tickGeneration
+	return tea.Tick(interval, func(at time.Time) tea.Msg {
+		return tickMsg{at: at, generation: generation}
+	})
+}
+
+func (m *Model) feedInterval(now time.Time) time.Duration {
+	if m.active(now) {
+		return activeFeedInterval
+	}
+	if !m.focused {
+		return maxIdleFeedInterval
+	}
+	idle := now.Sub(m.lastActivity) - activeWindow
+	if idle < 0 {
+		idle = 0
+	}
+	steps := int(idle/(10*time.Second)) + 1
+	interval := time.Duration(steps*2) * time.Second
+	if interval > maxIdleFeedInterval {
+		return maxIdleFeedInterval
+	}
+	return interval
+}
+
+func (m *Model) active(now time.Time) bool {
+	if !m.focused {
+		return false
+	}
+	if m.busy || (m.logRun != 0 && !m.logDone) || now.Sub(m.lastActivity) < activeWindow {
+		return true
+	}
+	for _, r := range m.runs {
+		if r.State == store.RunRunning {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Model) panelInterval(now time.Time) time.Duration {
+	if m.active(now) {
+		return activePanelInterval
+	}
+	return idlePanelInterval
+}
+
+func (m *Model) sessionsDue(now time.Time) bool {
+	return m.lastSessionsPoll.IsZero() || now.Sub(m.lastSessionsPoll) >= sessionsInterval
+}
+
+func (m *Model) noteActivity(now time.Time) tea.Cmd {
+	m.lastActivity = now
+	return m.scheduleTick(m.feedInterval(now))
 }
 
 func (m *Model) pollLog() tea.Cmd {
@@ -192,20 +367,55 @@ func (m *Model) pollLog() tea.Cmd {
 	}
 }
 
+func (m *Model) reconnect() tea.Cmd {
+	return func() tea.Msg {
+		r, ok := m.api.(Redialer)
+		if !ok {
+			return reconnectMsg{ok: false, err: errors.New("daemon unreachable")}
+		}
+		if err := r.Redial(); err != nil {
+			return reconnectMsg{ok: false, err: err}
+		}
+		// A cheap probe: settings round-trip proves the new address answers.
+		if _, err := m.api.Setting(m.ctx, settingSession); err != nil {
+			return reconnectMsg{ok: false, err: err}
+		}
+		return reconnectMsg{ok: true}
+	}
+}
+
+func isConnErr(err error) bool {
+	return err != nil && errors.Is(err, client.ErrNoDaemon)
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
+	case tea.MouseMsg:
+		cmds = append(cmds, m.noteActivity(m.clock()))
+		cmds = append(cmds, m.onMouse(msg)...)
 	case tea.KeyMsg:
+		cmds = append(cmds, m.noteActivity(m.clock()))
 		switch msg.Type {
 		case tea.KeyCtrlC:
-			return m, tea.Quit
+			return m, tea.Batch(append(cmds, tea.Quit)...)
+		case tea.KeyCtrlT:
+			m.mouseOn = !m.mouseOn
+			if m.mouseOn {
+				return m, tea.Batch(append(cmds, tea.EnableMouseCellMotion)...)
+			}
+			return m, tea.Batch(append(cmds, tea.DisableMouse)...)
 		case tea.KeyEsc:
 			if m.logRun != 0 {
 				m.logRun = 0
-				return m, nil
+				return m, tea.Batch(cmds...)
+			}
+			if m.selKind != "" {
+				m.selKind, m.selID = "", 0
+				return m, tea.Batch(cmds...)
 			}
 		case tea.KeyPgUp, tea.KeyPgDown:
 			var cmd tea.Cmd
@@ -214,17 +424,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.thread, cmd = m.thread.Update(msg)
 			}
-			return m, cmd
+			return m, tea.Batch(append(cmds, cmd)...)
 		case tea.KeyEnter:
 			if m.logRun != 0 {
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
 			if text == "" {
-				return m, nil
+				return m, tea.Batch(cmds...)
 			}
-			return m, m.handle(text)
+			return m, tea.Batch(append(cmds, m.handle(text))...)
 		}
 		if m.logRun == 0 {
 			var cmd tea.Cmd
@@ -232,16 +442,47 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 	case tickMsg:
-		cmds = append(cmds, m.pollFeed(), m.pollPanel(), tick())
-		if m.logRun != 0 && !m.logDone {
-			cmds = append(cmds, m.pollLog())
+		if msg.generation != m.tickGeneration {
+			break
 		}
+		if m.reconnecting {
+			cmds = append(cmds, m.reconnect(), m.scheduleTick(activeFeedInterval))
+		} else {
+			cmds = append(cmds, m.pollFeed())
+			if msg.at.Sub(m.lastPanelPoll) >= m.panelInterval(msg.at) {
+				cmds = append(cmds, m.pollPanelAt(m.sessionsDue(msg.at), msg.at))
+			} else if m.sessionsDue(msg.at) {
+				cmds = append(cmds, m.pollSessionsAt(msg.at))
+			}
+			if m.logRun != 0 && !m.logDone {
+				cmds = append(cmds, m.pollLog())
+			}
+			cmds = append(cmds, m.scheduleTick(m.feedInterval(msg.at)))
+		}
+	case tea.BlurMsg:
+		m.focused = false
+		cmds = append(cmds, m.scheduleTick(m.feedInterval(m.clock())))
+	case tea.FocusMsg:
+		m.focused = true
+		now := m.clock()
+		m.lastActivity = now
+		cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(activeFeedInterval))
 	case sessionMsg:
 		m.session = string(msg)
 	case feedMsg:
-		cmds = append(cmds, m.onFeed(api.Feed(msg)))
+		feed := api.Feed(msg)
+		if len(feed.Items) > 0 {
+			cmds = append(cmds, m.noteActivity(m.clock()))
+		}
+		cmds = append(cmds, m.onFeed(feed))
 	case panelMsg:
-		m.lanes, m.runs, m.spend, m.sessions = msg.lanes, msg.runs, msg.spend, msg.sessions
+		if msg.panelUpdated {
+			m.lanes, m.runs, m.decisions = msg.lanes, msg.runs, msg.decisions
+			m.spend = msg.spend
+		}
+		if msg.sessionsUpdated {
+			m.sessions = msg.sessions
+		}
 	case deskLineMsg:
 		if msg.Kind == KindCost {
 			usd, _ := strconv.ParseFloat(msg.Text, 64)
@@ -260,9 +501,83 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case lineMsg:
 		m.add(Line(msg))
 	case errorMsg:
+		if isConnErr(msg.err) {
+			if !m.reconnecting {
+				m.reconnecting = true
+				cmds = append(cmds, m.reconnect(), m.scheduleTick(activeFeedInterval))
+			}
+			break
+		}
 		m.add(Line{KindError, msg.err.Error()})
+	case reconnectMsg:
+		if msg.ok {
+			m.reconnecting = false
+			now := m.clock()
+			cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(m.feedInterval(now)))
+			if m.logRun != 0 && !m.logDone {
+				cmds = append(cmds, m.pollLog())
+			}
+		}
+		// Still down: stay in reconnecting; the next tick retries.
 	}
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) onMouse(msg tea.MouseMsg) []tea.Cmd {
+	if !m.mouseOn {
+		return nil
+	}
+	switch {
+	case msg.Button == tea.MouseButtonWheelUp || msg.Button == tea.MouseButtonWheelDown:
+		var cmd tea.Cmd
+		if m.logRun != 0 {
+			m.logView, cmd = m.logView.Update(msg)
+		} else {
+			m.thread, cmd = m.thread.Update(msg)
+		}
+		if cmd != nil {
+			return []tea.Cmd{cmd}
+		}
+		return nil
+	case msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft:
+		return m.clickPanel(msg.X, msg.Y)
+	}
+	return nil
+}
+
+// clickPanel selects a side-panel row under (x,y), or focuses a run (opens its log).
+func (m *Model) clickPanel(x, y int) []tea.Cmd {
+	if m.logRun != 0 || !m.ready {
+		return nil
+	}
+	if m.thread.Width >= m.width {
+		return nil // no panel on narrow terminals
+	}
+	if x < m.thread.Width+2 || y < 0 || y >= m.thread.Height {
+		return nil
+	}
+	for _, h := range m.panelHits {
+		if h.Y != y {
+			continue
+		}
+		m.selKind, m.selID = h.Kind, h.ID
+		switch h.Kind {
+		case selRun:
+			m.logRun, m.logOffset, m.logDone = h.ID, 0, false
+			m.logText.Reset()
+			m.logView.SetContent("")
+			return []tea.Cmd{m.pollLog()}
+		case selDecision:
+			for _, d := range m.decisions {
+				if d.ID == h.ID {
+					m.add(Line{KindDecision, decisionText(d)})
+					break
+				}
+			}
+		}
+		return nil
+	}
+	return nil
 }
 
 // handle is what the person typed: a command, or a message for the desk.
@@ -277,7 +592,11 @@ func (m *Model) handle(text string) tea.Cmd {
 		m.add(Line{KindInfo, "/answer <decision> <option number or words>   answer a decision yourself\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (Esc to come back)\n" +
-			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n/quit   leave (Ctrl-C too)"})
+			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
+			"/quit   leave (Ctrl-C too)\n" +
+			"Ctrl-T   toggle mouse capture (off to select text in the terminal)\n" +
+			"While mouse capture is on, Option/Shift-drag still selects text in most terminals.\n" +
+			"Click a lane, run or decision in the side panel to select or focus it."})
 	case "/quit", "/exit":
 		return tea.Quit
 	case "/new":
@@ -429,7 +748,7 @@ func (m *Model) answer(id int64, answer string) tea.Cmd {
 	}
 }
 
-// session finds an adopted conversation by id or prefix, among those last polled.
+// conversation finds an adopted conversation by id or prefix, among those last polled.
 func (m *Model) conversation(prefix string) (api.SessionView, error) {
 	var hit []api.SessionView
 	for _, s := range m.sessions {
@@ -557,28 +876,20 @@ func (m *Model) layout() {
 	h := m.height - inputH - 1
 	if !m.ready {
 		m.thread = viewport.New(threadW, h)
+		m.thread.MouseWheelEnabled = true
 		m.logView = viewport.New(m.width, m.height-2)
+		m.logView.MouseWheelEnabled = true
 		m.ready = true
 	} else {
 		m.thread.Width, m.thread.Height = threadW, h
 		m.logView.Width, m.logView.Height = m.width, m.height-2
+		m.thread.MouseWheelEnabled = true
+		m.logView.MouseWheelEnabled = true
 	}
 	m.input.SetWidth(m.width)
 	m.thread.SetContent(m.renderThread())
 	m.thread.GotoBottom()
 }
-
-var (
-	styleYou      = lipgloss.NewStyle().Bold(true)
-	styleDesk     = lipgloss.NewStyle()
-	styleTool     = lipgloss.NewStyle().Faint(true)
-	styleEvent    = lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	styleDecision = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	styleInfo     = lipgloss.NewStyle().Faint(true).Italic(true)
-	stylePanel    = lipgloss.NewStyle().BorderStyle(lipgloss.NormalBorder()).BorderLeft(true).PaddingLeft(1)
-	styleHead     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("39"))
-)
 
 func (m *Model) renderThread() string {
 	w := m.thread.Width - 2
@@ -587,22 +898,23 @@ func (m *Model) renderThread() string {
 	}
 	var b strings.Builder
 	for i, l := range m.lines {
+		body := wrapBody(l.Text, w)
 		var s string
 		switch l.Kind {
 		case KindYou:
-			s = styleYou.Width(w).Render("you  " + l.Text)
+			s = styleLabelYou.Render("you") + "\n" + styleYou.Render(body)
 		case KindDesk:
-			s = styleDesk.Width(w).Render(l.Text)
+			s = styleLabelDesk.Render("desk") + "\n" + styleDesk.Render(body)
 		case KindTool:
-			s = styleTool.Width(w).Render("  → " + l.Text)
+			s = styleTool.Render("  → " + body)
 		case KindEvent:
-			s = styleEvent.Width(w).Render("• " + l.Text)
+			s = styleShepherd.Render("shepherd") + "\n" + styleEvent.Render(tintAgents(body))
 		case KindDecision:
-			s = styleDecision.Width(w).Render("? " + l.Text)
+			s = styleDecision.Render("? " + body)
 		case KindError:
-			s = styleError.Width(w).Render("! " + l.Text)
+			s = styleError.Render("! " + body)
 		default:
-			s = styleInfo.Width(w).Render(l.Text)
+			s = styleInfo.Render(body)
 		}
 		b.WriteString(s)
 		b.WriteString("\n")
@@ -616,7 +928,22 @@ func (m *Model) renderThread() string {
 
 func (m *Model) renderPanel() string {
 	var b strings.Builder
-	// By lane id, not name: two repos can each have a lane called feat/x.
+	var hits []panelHit
+	y := 0
+	write := func(line string) {
+		b.WriteString(line)
+		b.WriteString("\n")
+		y++
+	}
+	row := func(kind string, id int64, plain string, shown string) {
+		hits = append(hits, panelHit{Kind: kind, ID: id, Y: y})
+		if m.selKind == kind && m.selID == id {
+			write(styleSel.Render(clipTo(plain, panelWidth-4)))
+			return
+		}
+		write(shown)
+	}
+
 	running := map[int64]string{}
 	names := map[string]int{}
 	for _, r := range m.runs {
@@ -627,9 +954,9 @@ func (m *Model) renderPanel() string {
 	for _, l := range m.lanes {
 		names[l.Name]++
 	}
-	b.WriteString(styleHead.Render("LANES") + "\n")
+	write(styleHead.Render("LANES"))
 	if len(m.lanes) == 0 {
-		b.WriteString(styleInfo.Render("none open") + "\n")
+		write(styleInfo.Render("none open"))
 	}
 	for _, l := range m.lanes {
 		mark, who, name := "○", "", l.Name
@@ -637,46 +964,53 @@ func (m *Model) renderPanel() string {
 			mark, who = "●", " "+a
 		}
 		if names[l.Name] > 1 {
-			name = l.Repo + ":" + l.Name // say which one
+			name = l.Repo + ":" + l.Name
 		}
-		b.WriteString(clipTo(fmt.Sprintf("%s %s%s", mark, name, who), panelWidth-2) + "\n")
+		plain := fmt.Sprintf("%s %s%s", mark, name, who)
+		nameWidth := panelWidth - 7
+		if who != "" {
+			nameWidth -= len([]rune(who)) + 1
+		}
+		shown := mark + " " + styleLane(l.Name).Render(clipTo(name, nameWidth))
+		if who != "" {
+			shown += " " + styleAgent(strings.TrimSpace(who)).Render(strings.TrimSpace(who))
+		}
+		row(selLane, l.ID, plain, shown)
 	}
-	b.WriteString("\n" + styleHead.Render("RUNS") + "\n")
+	write("")
+	write(styleHead.Render("RUNS"))
 	for _, r := range m.runs {
-		b.WriteString(clipTo(fmt.Sprintf("%-4d %-7s %s", r.ID, r.Agent, short(r.State)), panelWidth-2) + "\n")
+		agent := clipTo(fmt.Sprintf("%-7s", r.Agent), 7)
+		state := clipTo(short(r.State), panelWidth-17)
+		plain := clipTo(fmt.Sprintf("%-4d %-7s %s", r.ID, r.Agent, short(r.State)), panelWidth-4)
+		shown := clipTo(fmt.Sprintf("%-4d", r.ID), 4) + " " + styleAgent(r.Agent).Render(agent) + " " + state
+		row(selRun, r.ID, plain, shown)
 	}
 	if len(m.runs) > 0 {
-		b.WriteString(styleInfo.Render("/log <run> to watch one") + "\n")
+		write(styleInfo.Render("/log <run> · click to watch"))
+	}
+	if len(m.decisions) > 0 {
+		write("")
+		write(styleHead.Render("DECISIONS"))
+		for _, d := range m.decisions {
+			plain := fmt.Sprintf("%d %s", d.ID, clipTo(d.Question, panelWidth-8))
+			row(selDecision, d.ID, plain, styleDecision.Render(clipTo(plain, panelWidth-4)))
+		}
 	}
 	if len(m.sessions) > 0 {
-		b.WriteString("\n" + styleHead.Render("CONVERSATIONS") + "\n")
+		write("")
+		write(styleHead.Render("CONVERSATIONS"))
 		for i, s := range m.sessions {
 			if i == 5 {
-				b.WriteString(styleInfo.Render(fmt.Sprintf("+%d more: /sessions", len(m.sessions)-5)) + "\n")
+				write(styleInfo.Render(fmt.Sprintf("+%d more: /sessions", len(m.sessions)-5)))
 				break
 			}
-			b.WriteString(clipTo(fmt.Sprintf("%s %s", s.ID[:8], s.Title), panelWidth-2) + "\n")
+			write(clipTo(fmt.Sprintf("%s %s", s.ID[:8], s.Title), panelWidth-4))
 		}
-		b.WriteString(styleInfo.Render("/attach <id> · /ask <id> …") + "\n")
+		write(styleInfo.Render("/attach <id> · /ask <id> …"))
 	}
-	return stylePanel.Height(m.thread.Height).Render(b.String())
-}
-
-func short(state string) string {
-	switch state {
-	case store.RunRunning:
-		return "running"
-	case store.RunSucceeded:
-		return "done"
-	}
-	return state
-}
-
-func clipTo(s string, n int) string {
-	if len([]rune(s)) > n {
-		return string([]rune(s)[:n-1]) + "…"
-	}
-	return s
+	m.panelHits = hits
+	return stylePanel.Height(m.thread.Height).Width(panelWidth - 2).Render(strings.TrimRight(b.String(), "\n"))
 }
 
 func (m *Model) View() string {
@@ -688,7 +1022,12 @@ func (m *Model) View() string {
 		if m.logDone {
 			state = "ended"
 		}
-		head := styleHead.Render(fmt.Sprintf("run %d (%s)", m.logRun, state)) + styleInfo.Render("   Esc back to the thread · PgUp/PgDn scroll")
+		head := styleHead.Render(fmt.Sprintf("run %d (%s)", m.logRun, state))
+		if m.reconnecting {
+			head += styleInfo.Render("   reconnecting…")
+		} else {
+			head += styleInfo.Render("   Esc back · PgUp/PgDn or wheel scroll")
+		}
 		return head + "\n" + m.logView.View()
 	}
 	body := m.thread.View()
@@ -696,17 +1035,25 @@ func (m *Model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, body, m.renderPanel())
 	}
 	status := "desk ready"
-	if m.busy {
+	if m.reconnecting {
+		status = "reconnecting…"
+	} else if m.busy {
 		status = "desk working…"
 		if n := len(m.queue); n > 0 {
 			status += fmt.Sprintf(" (%d queued)", n)
 		}
 	}
-	if m.spend.Day != "" {
-		status += fmt.Sprintf("  ·  $%.2f today", m.spend.USD)
-		if m.spend.Budget > 0 {
-			status += fmt.Sprintf(" of $%.0f", m.spend.Budget)
-		}
+	status += fmtUSD(m.spend.USD, m.spend.Budget, m.spend.Day)
+	if m.selKind != "" && !m.reconnecting {
+		status += fmt.Sprintf("  ·  %s %d", m.selKind, m.selID)
 	}
-	return body + "\n" + styleInfo.Render(status+"  ·  Enter send · PgUp/PgDn scroll · /help · Ctrl-C quit") + "\n" + m.input.View()
+	mouse := "Ctrl-T mouse off"
+	if !m.mouseOn {
+		mouse = "Ctrl-T mouse on"
+	}
+	footer := status + "  ·  Enter send · wheel scroll · " + mouse + "  ·  /help · Ctrl-C quit"
+	if m.mouseOn {
+		footer += "\n" + styleInfo.Render("Option/Shift-drag selects text while mouse capture is on")
+	}
+	return body + "\n" + styleInfo.Render(footer) + "\n" + m.input.View()
 }
