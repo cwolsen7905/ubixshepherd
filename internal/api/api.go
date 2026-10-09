@@ -129,9 +129,23 @@ const PathFeed = "/v1/feed"
 const PathSettings = "/v1/settings"
 
 // Feed answers GET /v1/feed: items after the given id, and the id to ask after next.
+//
+// Events is parallel to Items (same length, same order): Events[i] is the event of
+// Items[i], one of the Event* values, mapped by EventKind from the item's kind. Draw
+// glyphs and colours from the event; Items[i].Kind is the store's raw kind and may grow.
+// Use Event(i) rather than indexing Events, so an older daemon's answer still works.
 type Feed struct {
-	Items []store.FeedItem `json:"items"`
-	Last  int64            `json:"last"`
+	Items  []store.FeedItem `json:"items"`
+	Events []string         `json:"events"`
+	Last   int64            `json:"last"`
+}
+
+// Event returns the event of item i, mapping its kind when the daemon sent no events.
+func (f Feed) Event(i int) string {
+	if i < len(f.Events) && f.Events[i] != "" {
+		return f.Events[i]
+	}
+	return EventKind(f.Items[i].Kind)
 }
 
 // Setting is a setting's value.

@@ -423,3 +423,27 @@ func TestLaneViewForge(t *testing.T) {
 		}
 	}
 }
+
+func TestFeedCarriesEvents(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	for _, k := range []string{store.FeedRunStarted, store.FeedRequestStuck, store.FeedSession, "mystery", FeedConfig} {
+		s.Store.AddFeed(ctx, k, "x", 0)
+	}
+	var f api.Feed
+	call(t, ts, s.Token, "GET", api.PathFeed+"?after=0", nil, &f)
+	want := []string{api.EventRunStarted, api.EventRequestAttention, api.EventInfo, api.EventInfo, api.EventConfig}
+	if len(f.Events) != len(want) {
+		t.Fatalf("events = %v", f.Events)
+	}
+	for i, w := range want {
+		if f.Events[i] != w || f.Event(i) != w {
+			t.Errorf("event %d (%s) = %q, want %q", i, f.Items[i].Kind, f.Events[i], w)
+		}
+	}
+	var empty api.Feed
+	call(t, ts, s.Token, "GET", api.PathFeed+"?after=latest", nil, &empty)
+	if empty.Items == nil || empty.Events == nil {
+		t.Error("an empty feed must send [] not null")
+	}
+}

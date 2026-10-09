@@ -2,6 +2,8 @@ package api
 
 import (
 	"testing"
+
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 func TestMRState(t *testing.T) {
@@ -24,5 +26,32 @@ func TestPipelineStatus(t *testing.T) {
 		if got := PipelineStatus(in); got != want {
 			t.Errorf("PipelineStatus(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestEventKindIsClosed(t *testing.T) {
+	valid := map[string]bool{}
+	for _, e := range []string{EventLaneOpened, EventLaneClosed, EventRunStarted, EventRunEnded, EventReport,
+		EventDecisionAsked, EventDecisionAnswer, EventRequest, EventRequestAttention, EventMR,
+		EventPipeline, EventBudget, EventTag, EventRelease, EventConfig, EventInfo} {
+		valid[e] = true
+	}
+	for k := range eventKinds {
+		if !valid[EventKind(k)] {
+			t.Errorf("kind %q maps outside the set: %q", k, EventKind(k))
+		}
+	}
+	if EventKind(store.FeedSession) != EventInfo || EventKind("brand_new") != EventInfo {
+		t.Error("unlisted kinds must be info")
+	}
+	if EventKind(store.FeedRequestStuck) != EventRequestAttention || EventKind(store.FeedDecision) != EventDecisionAsked {
+		t.Error("mapping wrong")
+	}
+}
+
+func TestFeedEventFallback(t *testing.T) {
+	f := Feed{Items: []store.FeedItem{{Kind: store.FeedMR}}}
+	if f.Event(0) != EventMR {
+		t.Errorf("Event(0) = %q", f.Event(0))
 	}
 }
