@@ -1,442 +1,110 @@
-import { boardItems, counts, countsText, laneClashes, noteOutcome } from './board'
+import { boardItems, counts, countsText, laneClashes, noteOutcome, type BoardInput, type Seen } from './board'
 import { decision, lane, request, run } from '../test/fixtures'
 
-describe('laneClashes', () => {
-  it('identifies lanes with same name but different repos', () => {
-    const lanes = [
-      lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-      lane({ id: 2, repo: 'other-api', name: 'feat/login' }),
-      lane({ id: 3, repo: 'acme-api', name: 'feat/payment' }),
-    ]
-    const clashes = laneClashes(lanes)
-    expect(clashes).toEqual(new Set(['feat/login']))
-  })
+// The person last cleared the board at 09:00; the fixtures' runs end at 10:04.
+const seen: Seen = { until: '2026-10-08T09:00:00Z', keys: new Set() }
 
-  it('returns empty set when no lane names clash', () => {
-    const lanes = [
-      lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-      lane({ id: 2, repo: 'other-api', name: 'feat/payment' }),
-    ]
-    const clashes = laneClashes(lanes)
-    expect(clashes).toEqual(new Set())
-  })
-})
+function items(o: Partial<BoardInput>) {
+  return boardItems({ lanes: [], runs: [], decisions: [], requests: [], seen, ...o })
+}
+
+function only(o: Partial<BoardInput>) {
+  const all = items(o)
+  expect(all).toHaveLength(1)
+  return all[0]
+}
+
+const openMR = (status: 'passed' | 'failed' | 'running') =>
+  ({ mr: 34, mr_state: 'open', mr_url: 'https://forge.example.com/acme/api/-/merge_requests/34', pipeline_status: status }) as const
 
 describe('boardItems', () => {
-  const seen = { until: '2026-10-08T09:00:00Z', keys: new Set<string>() }
-
-  describe('needs group', () => {
-    it('includes open decisions with detail starting "decision 5: "', () => {
-      const decisions = [decision({ id: 5, question: 'Should we use authentication?' })]
-      const items = boardItems({ lanes: [], runs: [], decisions, requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('needs')
-      expect(items[0].detail).toMatch(/^decision 5: /)
-    })
-
-    it('includes requests with glyph "!"', () => {
-      const requests = [request({ id: 3, message: 'What should we do about authentication?' })]
-      const items = boardItems({ lanes: [], runs: [], decisions: [], requests, seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('needs')
-      expect(items[0].glyph).toBe('!')
-    })
+  it('puts decisions and requests that need routing first', () => {
+    const [d, q] = items({ decisions: [decision()], requests: [request()], lanes: [lane()] })
+    expect(d).toMatchObject({ group: 'needs', detail: expect.stringMatching(/^decision 5: /), laneId: 1 })
+    expect(q).toMatchObject({ group: 'needs', glyph: '!', detail: expect.stringMatching(/^request 3 needs routing: /) })
   })
 
-  describe('broken group', () => {
-    it('includes failed or interrupted run with detail "run <id> failed"', () => {
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'failed' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('broken')
-      expect(items[0].detail).toBe('run 10 failed')
-    })
-
-    it('includes pipeline failed lane with detail "pipeline failed"', () => {
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        mr_state: 'open',
-        pipeline_status: 'failed'
-      })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'succeeded' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('broken')
-      expect(items[0].detail).toBe('pipeline failed')
-    })
-
-    it('includes running lane with pipeline failure with detail ending ", fixing"', () => {
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        mr_state: 'open',
-        pipeline_status: 'failed'
-      })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'running' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('broken')
-      expect(items[0].detail).toBe('pipeline failed, fixing')
-    })
-
-    it('includes interrupted run with detail "run <id> interrupted"', () => {
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'interrupted' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('broken')
-      expect(items[0].detail).toBe('run 10 interrupted')
-    })
+  it('reads a lane by its latest run', () => {
+    const runs = [run({ id: 10, state: 'failed' }), run({ id: 12, state: 'running', ended: undefined }), run({ id: 11, state: 'succeeded' })]
+    expect(only({ lanes: [lane()], runs })).toMatchObject({ group: 'working', detail: 'run 12', at: runs[1]?.started })
   })
 
-  describe('working group', () => {
-    it('includes lane with running latest run', () => {
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'running' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('working')
-      expect(items[0].detail).toBe('run 10')
-    })
+  it('calls a lane broken when its latest run failed or was interrupted', () => {
+    for (const state of ['failed', 'interrupted'] as const) {
+      expect(only({ lanes: [lane()], runs: [run({ state })] })).toMatchObject({ group: 'broken', detail: `run 10 ${state}`, at: '2026-10-08T10:04:00Z' })
+    }
   })
 
-  describe('review group', () => {
-    it('includes lane with open MR, pipeline status passed, and finished run seen already', () => {
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        mr_state: 'open',
-        pipeline_status: 'passed'
-      })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'succeeded' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('review')
-      expect(items[0].detail).toBe('waiting for a merge')
-    })
-
-    it('includes lane with open MR and passed pipeline even without completed run', () => {
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        mr_state: 'open',
-        pipeline_status: 'passed'
-      })]
-      const items = boardItems({ lanes, runs: [], decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('review')
-    })
+  it('calls a lane broken when its open MR failed its pipeline, and says when an agent is fixing it', () => {
+    expect(only({ lanes: [lane(openMR('failed'))], runs: [run()] })).toMatchObject({ group: 'broken', detail: 'pipeline failed' })
+    const fixing = run({ id: 11, state: 'running', ended: undefined })
+    expect(only({ lanes: [lane(openMR('failed'))], runs: [run(), fixing] })).toMatchObject({ group: 'broken', detail: 'pipeline failed, fixing' })
   })
 
-  describe('done group', () => {
-    it('includes lane with run ended after seen.until and key not in seen.keys', () => {
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'succeeded', ended: '2026-10-08T10:04:00Z' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('done')
-      expect(items[0].detail).toBe('run 10 succeeded')
-    })
-
-    it('includes closed lane with merged MR and closed after seen.until', () => {
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        state: 'closed',
-        mr_state: 'merged',
-        closed: '2026-10-08T10:04:00Z'
-      })]
-      const items = boardItems({ lanes, runs: [], decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('done')
-      expect(items[0].detail).toBe('merged')
-    })
-
-    it('does not include done item when key is in seen.keys', () => {
-      const seenWithKeys = { until: '2026-10-08T09:00:00Z', keys: new Set(['run:10']) }
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'succeeded', ended: '2026-10-08T10:04:00Z' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen: seenWithKeys })
-      expect(items).toHaveLength(0)
-    })
-
-    it('does not include done item when run ended before seen.until', () => {
-      const seenBefore = { until: '2026-10-08T11:00:00Z', keys: new Set<string>() }
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const runs = [run({ id: 10, lane_id: 1, state: 'succeeded', ended: '2026-10-08T10:04:00Z' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen: seenBefore })
-      expect(items).toHaveLength(0)
-    })
-
-    it('includes closed lane with merged MR even if closed before seen.until (but not if already seen)', () => {
-      const seenWithKeys = { until: '2026-10-08T11:00:00Z', keys: new Set<string>() }
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        state: 'closed',
-        mr_state: 'merged',
-        closed: '2026-10-08T10:04:00Z'
-      })]
-      const items = boardItems({ lanes, runs: [], decisions: [], requests: [], seen: seenWithKeys })
-      expect(items).toHaveLength(1) // should include the done item even though closed before seen.until
-    })
+  it('puts an open MR with a green pipeline to review, with or without a run', () => {
+    expect(only({ lanes: [lane(openMR('passed'))] })).toMatchObject({ group: 'review', detail: 'waiting for a merge' })
+    expect(only({ lanes: [lane(openMR('passed'))], runs: [run()] })).toMatchObject({ group: 'review' })
+    expect(items({ lanes: [lane({ ...openMR('passed'), mr_state: 'merged' })] })).toEqual([])
   })
 
-  describe('ordering', () => {
-    it('orders groups correctly: needs, broken, review, working, done', () => {
-      const lanes = [
-        lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-        lane({ id: 2, repo: 'acme-api', name: 'feat/payment' }),
-        lane({ id: 3, repo: 'acme-api', name: 'feat/auth' }),
-        lane({ id: 4, repo: 'acme-api', name: 'feat/merge' }),
-        lane({ id: 5, repo: 'acme-api', name: 'feat/done' }),
-      ]
-      const runs = [
-        run({ id: 10, lane_id: 1, state: 'failed' }), // broken
-        run({ id: 20, lane_id: 2, state: 'succeeded', ended: '2026-10-08T10:04:00Z' }), // done
-        run({ id: 30, lane_id: 3, state: 'running' }), // working
-        run({ id: 40, lane_id: 4, state: 'succeeded' }), // review (has open mr with passed pipeline)
-      ]
-      const decisions = [decision({ id: 5 })] // needs
-      const items = boardItems({ lanes, runs, decisions, requests: [], seen })
-      
-      expect(items).toHaveLength(5)
-      expect(items[0].group).toBe('needs')
-      expect(items[1].group).toBe('broken')
-      expect(items[2].group).toBe('review')
-      expect(items[3].group).toBe('working')
-      expect(items[4].group).toBe('done')
-    })
-
-    it('orders within groups from oldest to newest (except done which is newest first)', () => {
-      const lanes = [
-        lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-        lane({ id: 2, repo: 'acme-api', name: 'feat/payment' }),
-      ]
-      const runs = [
-        run({ id: 10, lane_id: 1, state: 'failed', started: '2026-10-08T09:30:00Z' }), // broken
-        run({ id: 20, lane_id: 2, state: 'running', started: '2026-10-08T10:00:00Z' }), // working
-      ]
-      
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      
-      // within broken group (oldest first): item 1 started at 09:30
-      expect(items[0].group).toBe('broken')
-      expect(items[0].at).toBe('2026-10-08T09:30:00Z')
-      
-      // within working group (oldest first): item 2 started at 10:00
-      expect(items[1].group).toBe('working')
-      expect(items[1].at).toBe('2026-10-08T10:00:00Z')
-      
-      // done group (newest first): items from runs with latest ended times  
-      const lanes2 = [
-        lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-        lane({ id: 2, repo: 'acme-api', name: 'feat/payment' }),
-      ]
-      const runs2 = [
-        run({ id: 10, lane_id: 1, state: 'succeeded', ended: '2026-10-08T10:03:00Z' }), // done  
-        run({ id: 20, lane_id: 2, state: 'succeeded', ended: '2026-10-08T10:04:00Z' }), // done
-      ]
-      const items2 = boardItems({ lanes: lanes2, runs: runs2, decisions: [], requests: [], seen })
-      
-      // newest first in done group: item from run 20 (ended at 10:04)
-      expect(items2[0].group).toBe('done')
-      expect(items2[0].at).toBe('2026-10-08T10:04:00Z')
-    })
+  it('shows a finished run as done until the person has seen it', () => {
+    expect(only({ lanes: [lane()], runs: [run()] })).toMatchObject({ group: 'done', detail: 'run 10 succeeded' })
+    expect(items({ lanes: [lane()], runs: [run()], seen: { ...seen, keys: new Set(['run:10']) } })).toEqual([])
+    expect(items({ lanes: [lane()], runs: [run()], seen: { ...seen, until: '2026-10-08T11:00:00Z' } })).toEqual([])
   })
 
-  describe('repo naming', () => {
-    it('shows repo:lane name when two repos use the same lane name', () => {
-      const lanes = [
-        lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-        lane({ id: 2, repo: 'other-api', name: 'feat/login' }),
-      ]
-      const runs = [run({ id: 10, lane_id: 1, state: 'failed' }), run({ id: 20, lane_id: 2, state: 'running' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      
-      expect(items).toHaveLength(2)
-      expect(items[0].name).toBe('acme-api:feat/login') // First item
-      expect(items[1].name).toBe('other-api:feat/login') // Second item
-    })
-
-    it('uses lane name only when repo names are different', () => {
-      const lanes = [
-        lane({ id: 1, repo: 'acme-api', name: 'feat/login' }),
-        lane({ id: 2, repo: 'other-api', name: 'feat/payment' }),
-      ]
-      const runs = [run({ id: 10, lane_id: 1, state: 'failed' }), run({ id: 20, lane_id: 2, state: 'running' })]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      
-      expect(items).toHaveLength(2)
-      expect(items[0].name).toBe('feat/login') // First item
-      expect(items[1].name).toBe('feat/payment') // Second item
-    })
+  it('shows a merged, closed lane as done until seen', () => {
+    const closed = lane({ state: 'closed', mr: 34, mr_state: 'merged', closed: '2026-10-08T10:30:00Z' })
+    expect(only({ lanes: [closed] })).toMatchObject({ group: 'done', detail: 'merged' })
+    expect(items({ lanes: [closed], seen: { ...seen, keys: new Set(['lane:1']) } })).toEqual([])
+    expect(items({ lanes: [{ ...closed, mr_state: 'closed' }] })).toEqual([])
   })
 
-  describe('edge cases', () => {
-    it('handles lanes with no matching runs properly', () => {
-      const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/login' })]
-      const items = boardItems({ lanes, runs: [], decisions: [], requests: [], seen })
-      expect(items).toHaveLength(0)
-    })
+  it('orders by group, waiting longest first, and done newest first', () => {
+    const lanes = [1, 2, 3, 4, 5, 6].map((id) => lane({ id, name: `l${id}` }))
+    lanes[2] = lane({ id: 3, name: 'l3', ...openMR('passed') })
+    const runs = [
+      run({ id: 1, lane_id: 1, state: 'failed', ended: '2026-10-08T10:20:00Z' }),
+      run({ id: 2, lane_id: 2, state: 'failed', ended: '2026-10-08T10:10:00Z' }),
+      run({ id: 4, lane_id: 4, state: 'running', started: '2026-10-08T10:00:00Z', ended: undefined }),
+      run({ id: 5, lane_id: 5, ended: '2026-10-08T10:01:00Z' }),
+      run({ id: 6, lane_id: 6, ended: '2026-10-08T10:02:00Z' }),
+    ]
+    const got = items({ lanes, runs, decisions: [decision({ lane: 'l9' })] }).map((it) => `${it.group}:${it.name}`)
+    expect(got).toEqual(['needs:l9', 'broken:l2', 'broken:l1', 'review:l3', 'working:l4', 'done:l6', 'done:l5'])
+  })
 
-    it('includes lane with open MR and passed pipeline even when no run exists', () => {
-      const lanes = [lane({ 
-        id: 1, 
-        repo: 'acme-api', 
-        name: 'feat/login',
-        mr_state: 'open',
-        pipeline_status: 'passed'
-      })]
-      const items = boardItems({ lanes, runs: [], decisions: [], requests: [], seen })
-      expect(items).toHaveLength(1)
-      expect(items[0].group).toBe('review')
-    })
-
-    it('handles multiple lanes with same name in different repos correctly', () => {
-      const lanes = [
-        lane({ id: 1, repo: 'repo1', name: 'feature' }),
-        lane({ id: 2, repo: 'repo2', name: 'feature' }),
-        lane({ id: 3, repo: 'repo1', name: 'feature2' }),
-      ]
-      const runs = [
-        run({ id: 10, lane_id: 1, state: 'failed' }),
-        run({ id: 20, lane_id: 2, state: 'succeeded' }),
-        run({ id: 30, lane_id: 3, state: 'running' }),
-      ]
-      const items = boardItems({ lanes, runs, decisions: [], requests: [], seen })
-      
-      expect(items).toHaveLength(3)
-      expect(items[0].name).toBe('repo1:feature')
-      expect(items[1].name).toBe('repo2:feature') 
-      expect(items[2].name).toBe('feature2')
-    })
+  it('names a lane by repo:lane only when two repos use its name', () => {
+    const lanes = [lane({ id: 1, repo: 'acme-api', name: 'feat/x' }), lane({ id: 2, repo: 'acme-web', name: 'feat/x' }), lane({ id: 3, name: 'feat/y' })]
+    const runs = lanes.map((l) => run({ id: l.id, lane_id: l.id }))
+    expect(items({ lanes, runs }).map((it) => it.name).sort()).toEqual(['acme-api:feat/x', 'acme-web:feat/x', 'feat/y'])
+    expect(laneClashes(lanes)).toEqual(new Set(['feat/x']))
   })
 })
 
 describe('counts', () => {
-  it('returns counts for each group', () => {
-    const items = [
-      { group: 'needs' } as any,
-      { group: 'broken' } as any,
-      { group: 'broken' } as any,
-      { group: 'review' } as any,
-      { group: 'working' } as any,
-      { group: 'done' } as any,
-    ]
-    const countsResult = counts(items)
-    expect(countsResult).toEqual({
-      needs: 1,
-      broken: 2,
-      review: 1,
-      working: 1,
-      done: 1
-    })
-  })
-})
-
-describe('countsText', () => {
-  it('formats counts into text like "1 needs you · 2 broken"', () => {
-    const countsResult = {
-      needs: 1,
-      broken: 2,
-      review: 0,
-      working: 3,
-      done: 0
-    }
-    const text = countsText(countsResult)
-    expect(text).toBe('1 needs you · 2 broken · 3 working')
-  })
-
-  it('omits groups with zero count', () => {
-    const countsResult = {
-      needs: 0,
-      broken: 0,
-      review: 0,
-      working: 1,
-      done: 0
-    }
-    const text = countsText(countsResult)
-    expect(text).toBe('1 working')
-  })
-
-  it('returns empty string when all counts are zero', () => {
-    const countsResult = {
-      needs: 0,
-      broken: 0,
-      review: 0,
-      working: 0,
-      done: 0
-    }
-    const text = countsText(countsResult)
-    expect(text).toBe('')
+  it('counts by group and writes the groups that hold anything, most urgent first', () => {
+    const n = counts(items({ decisions: [decision()], lanes: [lane(), lane({ id: 2, name: 'b' })], runs: [run({ state: 'failed' }), run({ id: 11, lane_id: 2, state: 'failed' })] }))
+    expect(n).toEqual({ needs: 1, broken: 2, review: 0, working: 0, done: 0 })
+    expect(countsText(n)).toBe('1 needs you · 2 broken')
+    expect(countsText(counts([]))).toBe('')
   })
 })
 
 describe('noteOutcome', () => {
-  it('updates running run with matching id to succeeded when event is run_passed', () => {
-    const runs = [run({ id: 10, state: 'running' })]
-    const updatedRuns = noteOutcome(runs, 'run_passed', 10, '2026-10-08T10:05:00Z')
-    
-    expect(updatedRuns).toHaveLength(1)
-    expect(updatedRuns[0].state).toBe('succeeded')
-    expect(updatedRuns[0].ended).toBe('2026-10-08T10:05:00Z')
+  const running = [run({ id: 10, state: 'running', ended: undefined }), run({ id: 11 })]
+
+  it("marks a running run's end as the feed reports it", () => {
+    const out = noteOutcome(running, 'run_failed', 10, '2026-10-08T10:09:00Z')
+    expect(out[0]).toMatchObject({ state: 'failed', ended: '2026-10-08T10:09:00Z' })
+    expect(noteOutcome(running, 'run_passed', 10, 'x')[0]?.state).toBe('succeeded')
+    expect(noteOutcome(running, 'run_interrupted', 10, 'x')[0]?.state).toBe('interrupted')
   })
 
-  it('updates running run to failed when event is run_failed', () => {
-    const runs = [run({ id: 10, state: 'running' })]
-    const updatedRuns = noteOutcome(runs, 'run_failed', 10, '2026-10-08T10:05:00Z')
-    
-    expect(updatedRuns).toHaveLength(1)
-    expect(updatedRuns[0].state).toBe('failed')
-    expect(updatedRuns[0].ended).toBe('2026-10-08T10:05:00Z')
-  })
-
-  it('updates running run to interrupted when event is run_interrupted', () => {
-    const runs = [run({ id: 10, state: 'running' })]
-    const updatedRuns = noteOutcome(runs, 'run_interrupted', 10, '2026-10-08T10:05:00Z')
-    
-    expect(updatedRuns).toHaveLength(1)
-    expect(updatedRuns[0].state).toBe('interrupted')
-    expect(updatedRuns[0].ended).toBe('2026-10-08T10:05:00Z')
-  })
-
-  it('does not change array when event is not run_passed, run_failed or run_interrupted', () => {
-    const runs = [run({ id: 10, state: 'running' })]
-    const updatedRuns = noteOutcome(runs, 'run_started', 10, '2026-10-08T10:05:00Z')
-    
-    expect(updatedRuns).toBe(runs) // Should return same array object
-  })
-
-  it('does not change array when ref does not match run id', () => {
-    const runs = [run({ id: 10, state: 'running' })]
-    const updatedRuns = noteOutcome(runs, 'run_passed', 20, '2026-10-08T10:05:00Z')
-    
-    expect(updatedRuns).toBe(runs) // Should return same array object
-  })
-
-  it('does not change array when run is not running', () => {
-    const runs = [run({ id: 10, state: 'succeeded' })]
-    const updatedRuns = noteOutcome(runs, 'run_passed', 10, '2026-10-08T10:05:00Z')
-    
-    expect(updatedRuns).toBe(runs) // Should return same array object
-  })
-
-  it('does not change array when event or ref is missing', () => {
-    const runs = [run({ id: 10, state: 'running' })]
-    
-    // Missing event
-    expect(noteOutcome(runs, '', 10, '2026-10-08T10:05:00Z')).toBe(runs)
-    
-    // Missing ref
-    expect(noteOutcome(runs, 'run_passed', undefined, '2026-10-08T10:05:00Z')).toBe(runs)
+  it('leaves the list alone for other events, other runs, and runs that already ended', () => {
+    expect(noteOutcome(running, 'run_ended', 10, 'x')).toBe(running)
+    expect(noteOutcome(running, 'run_passed', 99, 'x')).toBe(running)
+    expect(noteOutcome(running, 'run_failed', 11, 'x')).toBe(running)
+    expect(noteOutcome(running, 'run_passed', undefined, 'x')).toBe(running)
   })
 })
