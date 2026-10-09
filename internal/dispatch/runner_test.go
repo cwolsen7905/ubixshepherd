@@ -669,3 +669,54 @@ func mustRuns(st store.Store) []store.Run {
 	runs, _ := st.Runs(context.Background(), 0, store.RunRunning, 100)
 	return runs
 }
+
+// feedKind waits for a feed line containing s and returns its kind.
+func feedKind(t *testing.T, f *fixture, s string) string {
+	t.Helper()
+	waitFeed(t, f, s)
+	items, _ := f.st.Feed(context.Background(), 0, 500)
+	for _, it := range items {
+		if strings.Contains(it.Text, s) {
+			return it.Kind
+		}
+	}
+	return ""
+}
+
+func TestRunEndPostsOutcomeAndCommitKinds(t *testing.T) {
+	f := newFixture(t, "ok")
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, run.ID)
+	if k := feedKind(t, f, fmt.Sprintf("run %d: claude in lane work succeeded", run.ID)); k != store.FeedRunPassed {
+		t.Errorf("passed run kind = %q", k)
+	}
+	if k := feedKind(t, f, fmt.Sprintf("run %d: 1 commit(s) in lane work, latest: ", run.ID)); k != store.FeedCommit {
+		t.Errorf("commit kind = %q", k)
+	}
+
+	f2 := newFixture(t, "fail")
+	run, _ = f2.runner.Start(context.Background(), StartRequest{LaneID: f2.lane.ID, Agent: "cursor", Prompt: "x"})
+	f2.wait(t, run.ID)
+	if k := feedKind(t, f2, fmt.Sprintf("run %d: cursor in lane work failed", run.ID)); k != store.FeedRunFailed {
+		t.Errorf("failed run kind = %q", k)
+	}
+}
+
+func TestRunQuotaAndInterruptedKinds(t *testing.T) {
+	f := newFixture(t, "limit")
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "x"})
+	f.wait(t, run.ID)
+	if k := feedKind(t, f, fmt.Sprintf("run %d: cursor is out of quota", run.ID)); k != store.FeedRunQuota {
+		t.Errorf("quota kind = %q", k)
+	}
+
+	g := newFixture(t, "sleep")
+	run, _ = g.runner.Start(context.Background(), StartRequest{LaneID: g.lane.ID, Agent: "claude", Prompt: "x"})
+	time.Sleep(200 * time.Millisecond)
+	stop, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	g.runner.Shutdown(stop)
+	if k := feedKind(t, g, fmt.Sprintf("run %d: claude in lane work interrupted", run.ID)); k != store.FeedRunInterrupted {
+		t.Errorf("interrupted kind = %q", k)
+	}
+}

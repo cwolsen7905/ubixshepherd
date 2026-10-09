@@ -49,17 +49,17 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 		return
 	}
 	if len(run.Outside) > 0 {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "not pushing lane %s: run %d changed files outside its scope (%s)", lane.Name, run.ID, strings.Join(run.Outside, ", "))
+		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: run %d changed files outside its scope (%s)", lane.Name, run.ID, strings.Join(run.Outside, ", "))
 		return
 	}
 	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "not pushing lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
+		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
 		return
 	}
 	if why, busy := r.unfinished(ctx, run, lane); why != "" {
 		r.Log.Info("not shipping yet", "lane", lane.Name, "run", run.ID, "why", why)
 		if !busy {
-			r.feed(ctx, store.FeedPipeline, lane.ID, "not pushing lane %s yet: run %d %s; it ships when that is settled", lane.Name, run.ID, why)
+			r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s yet: run %d %s; it ships when that is settled", lane.Name, run.ID, why)
 		}
 		return
 	}
@@ -143,7 +143,7 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		return out, refuse("not shipping lane %s: %s", lane.Name, bad)
 	}
 	if ok, tail, logPath := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("lane-%d.gate.log", lane.ID)); !ok {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "the repo's gate, `%s`, failed in lane %s; not pushing (%s)", prof.Gate, lane.Name, logPath)
+		r.feed(ctx, store.FeedGate, lane.ID, "the repo's gate, `%s`, failed in lane %s; not pushing (%s)", prof.Gate, lane.Name, logPath)
 		return out, refuse("the repo's gate, `%s`, failed in lane %s; not pushing. The whole output is in %s; it ended:\n%s", prof.Gate, lane.Name, logPath, tail)
 	}
 	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship")
@@ -194,16 +194,16 @@ func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, 
 		return out
 	}
 	if _, err := git.Run(ctx, lane.Worktree, "push", "--quiet", "-u", "origin", lane.Branch); err != nil {
-		return say(store.FeedPipeline, "gate passed in lane %s, but the push failed: %s", lane.Name, clip(err.Error(), 300))
+		return say(store.FeedGate, "gate passed in lane %s, but the push failed: %s", lane.Name, clip(err.Error(), 300))
 	}
 	out.Pushed = true
 	f, err := r.forgeFor(repo.Remote)
 	if err != nil {
-		return say(store.FeedPipeline, "pushed lane %s (gate passed); open the merge request yourself: %v", lane.Name, err)
+		return say(store.FeedGate, "pushed lane %s (gate passed); open the merge request yourself: %v", lane.Name, err)
 	}
 	mr, err := f.MRForBranch(ctx, lane.Branch)
 	if err != nil {
-		return say(store.FeedPipeline, "pushed lane %s (gate passed); could not look up its merge request: %s", lane.Name, clip(err.Error(), 200))
+		return say(store.FeedGate, "pushed lane %s (gate passed); could not look up its merge request: %s", lane.Name, clip(err.Error(), 200))
 	}
 	if mr != nil && mr.State == "opened" {
 		out.MR, out.URL = mr.IID, mr.URL
@@ -212,7 +212,7 @@ func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, 
 	title, body := r.mrText(ctx, lane, gate, from)
 	mr, err = f.CreateMR(ctx, lane.Branch, lane.Base, title, body)
 	if err != nil {
-		return say(store.FeedPipeline, "pushed lane %s (gate passed), but opening the merge request failed: %s", lane.Name, clip(err.Error(), 300))
+		return say(store.FeedGate, "pushed lane %s (gate passed), but opening the merge request failed: %s", lane.Name, clip(err.Error(), 300))
 	}
 	r.Log.Info("lane shipped", "lane", lane.Name, "mr", mr.IID)
 	out.MR, out.URL = mr.IID, mr.URL
@@ -306,7 +306,7 @@ func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string
 	cmd.Dir = lane.Worktree
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
-	r.feed(ctx, store.FeedPipeline, lane.ID, "running the gate `%s` in lane %s before pushing", gate, lane.Name)
+	r.feed(ctx, store.FeedGate, lane.ID, "running the gate `%s` in lane %s before pushing", gate, lane.Name)
 	err := cmd.Run()
 	text := redact.String(out.String())
 	logPath := filepath.Join(r.Dir, logName)
@@ -320,6 +320,9 @@ func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string
 	if ctx.Err() != nil {
 		return false, tail + "\n(the gate timed out after " + GateTimeout.String() + ")", logPath
 	}
+	if err == nil {
+		r.feed(ctx, store.FeedGate, lane.ID, "gate `%s` passed in lane %s", gate, lane.Name)
+	}
 	return err == nil, tail, logPath
 }
 
@@ -331,11 +334,11 @@ func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane,
 		where = " (" + logPath + ")"
 	}
 	if lf.GateTries >= MaxGateTries {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed again in lane %s after %d fixes; not pushing, it is yours%s", strings.TrimSuffix(what, ","), lane.Name, lf.GateTries, where)
+		r.feed(ctx, store.FeedGate, lane.ID, "%s failed again in lane %s after %d fixes; not pushing, it is yours%s", strings.TrimSuffix(what, ","), lane.Name, lf.GateTries, where)
 		return
 	}
 	if run.Session == "" {
-		r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed in lane %s; not pushing%s", strings.TrimSuffix(what, ","), lane.Name, where)
+		r.feed(ctx, store.FeedGate, lane.ID, "%s failed in lane %s; not pushing%s", strings.TrimSuffix(what, ","), lane.Name, where)
 		return
 	}
 	prompt := fmt.Sprintf("[Shepherd] Before pushing your work, Shepherd checked %s in your lane, and it failed:\n\n%s\n\n"+
@@ -348,10 +351,10 @@ func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane,
 	if err != nil {
 		lf.GateTries--
 		r.Store.PutLaneForge(ctx, *lf)
-		r.feed(ctx, store.FeedPipeline, lane.ID, "the gate failed in lane %s, and handing it back failed: %s", lane.Name, clip(err.Error(), 200))
+		r.feed(ctx, store.FeedGate, lane.ID, "the gate failed in lane %s, and handing it back failed: %s", lane.Name, clip(err.Error(), 200))
 		return
 	}
-	r.feed(ctx, store.FeedPipeline, lane.ID, "%s failed in lane %s; asked %s to fix it (run %d, try %d of %d)", strings.TrimSuffix(what, ","), lane.Name, run.Agent, next.ID, lf.GateTries, MaxGateTries)
+	r.feed(ctx, store.FeedGate, lane.ID, "%s failed in lane %s; asked %s to fix it (run %d, try %d of %d)", strings.TrimSuffix(what, ","), lane.Name, run.Agent, next.ID, lf.GateTries, MaxGateTries)
 }
 
 // mrText is the merge request's title and description, from the lane's commits.
