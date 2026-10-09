@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -190,4 +191,38 @@ func TestQuestionToALaneAnsweredByItsConversation(t *testing.T) {
 	if spent, _, _ := f.runner.Spent(ctx); spent < 0.5 {
 		t.Errorf("the conversation's cost was not counted: %v", spent)
 	}
+}
+
+func TestRoutedRequestStartsOrSaysWhy(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	api := openLane(t, f, "api", "api/**")
+	prior, _ := f.runner.Start(ctx, StartRequest{LaneID: api.ID, Agent: "copilot", Prompt: "build the api"})
+	f.wait(t, prior.ID)
+	asker, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, asker.ID)
+
+	// A run going in the target lane queues the request, and says so.
+	busy, _ := f.st.CreateRun(ctx, store.Run{LaneID: api.ID, Agent: "copilot", Prompt: "busy", State: store.RunRunning, Log: "l"})
+	q, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindHandoff, Lane: "api", Message: "add an endpoint"})
+	waitFeed(t, f, fmt.Sprintf("request %d waits: queued: run %d (copilot) is going in lane api", q.ID, busy.ID))
+	busy.State = store.RunSucceeded
+	f.st.UpdateRun(ctx, busy)
+	f.runner.Route(ctx) // what the run's end does
+	waitRequest(t, f, q.ID, store.RequestReplied)
+
+	// Over the daily budget, Shepherd's own routing holds and says why...
+	budget := 0.01
+	f.runner.Config.Daemon.Budget = &budget
+	f.runner.Spend(ctx, store.Spend{Source: "claude", USD: 1})
+	held, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: asker.ID, Kind: KindHandoff, Lane: "api", Message: "more"})
+	waitFeed(t, f, fmt.Sprintf("request %d waits: held: today's spend", held.ID))
+	if got, _ := f.st.Request(ctx, held.ID); got.State != store.RequestPending || !strings.Contains(got.Note, "daily budget") {
+		t.Errorf("held request = %+v", got)
+	}
+	// ...but the desk's or the person's routing is their say, and goes.
+	if _, err := f.runner.RouteRequest(ctx, held.ID, "api", ""); err != nil {
+		t.Fatal(err)
+	}
+	waitRequest(t, f, held.ID, store.RequestReplied)
 }

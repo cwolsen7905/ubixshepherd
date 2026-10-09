@@ -26,12 +26,23 @@ import (
 // ErrRefused is wrapped by errors that are the caller's to fix.
 var ErrRefused = errors.New("refused")
 
-type refusal struct{ msg string }
+// ErrHeld is wrapped by refusals that time lifts: the lane's run going, the machine's run
+// limit, the daily budget. Shepherd tries such a run again later.
+var ErrHeld = errors.New("held")
 
-func (r refusal) Error() string        { return r.msg }
-func (r refusal) Is(target error) bool { return target == ErrRefused }
+type refusal struct {
+	msg  string
+	held bool
+}
 
-func refuse(format string, a ...any) error { return refusal{fmt.Sprintf(format, a...)} }
+func (r refusal) Error() string { return r.msg }
+func (r refusal) Is(target error) bool {
+	return target == ErrRefused || (r.held && target == ErrHeld)
+}
+
+func refuse(format string, a ...any) error { return refusal{msg: fmt.Sprintf(format, a...)} }
+
+func held(format string, a ...any) error { return refusal{msg: fmt.Sprintf(format, a...), held: true} }
 
 // noPush is where git sends the lane repo's pushes while an agent runs (see pushBlock):
 // it cannot connect, so `git push` fails whatever flags the agent passes.
@@ -75,6 +86,9 @@ type Runner struct {
 	procs   map[int64]*proc
 	wg      sync.WaitGroup
 	routeMu sync.Mutex
+	// said holds the ids of requests the person or the front desk routed: their runs
+	// are not Shepherd's own, so the daily budget does not hold them.
+	said sync.Map
 }
 
 type proc struct {
@@ -162,16 +176,16 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	}
 	for _, other := range running {
 		if other.LaneID == lane.ID {
-			return store.Run{}, refuse("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
+			return store.Run{}, held("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
 		}
 	}
 	if req.Auto {
 		if why := r.overBudget(ctx); why != "" {
-			return store.Run{}, refuse("%s", why)
+			return store.Run{}, held("%s", why)
 		}
 	}
 	if max := r.Config.Daemon.MaxRuns; len(running) >= max {
-		return store.Run{}, refuse("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
+		return store.Run{}, held("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
 	}
 
 	// The lane's conversation: continue its last session with this agent unless asked

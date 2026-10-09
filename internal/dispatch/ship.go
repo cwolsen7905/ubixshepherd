@@ -30,8 +30,11 @@ const GateTimeout = 20 * time.Minute
 // ship pushes a lane and opens its merge request after an agent's run, for repos whose
 // profile says Shepherd pushes. Shepherd runs the gate itself first, in the lane; the
 // agent's word that it passed is not enough. It never merges.
+//
+// It ships the lane's unpushed commits, not only the run's: a run that continues one
+// held back (by a question, a gate fix) may add none of its own.
 func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
-	if run.State != store.RunSucceeded || run.Commits == 0 {
+	if run.State != store.RunSucceeded {
 		return
 	}
 	repo, err := r.Store.Repo(ctx, lane.RepoID)
@@ -42,12 +45,22 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	if prof.Autonomy.Push != config.Shepherd {
 		return
 	}
+	if n, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", pushedRef(ctx, lane)+"..HEAD"); err != nil || n == "0" {
+		return
+	}
 	if len(run.Outside) > 0 {
 		r.feed(ctx, store.FeedPipeline, lane.ID, "not pushing lane %s: run %d changed files outside its scope (%s)", lane.Name, run.ID, strings.Join(run.Outside, ", "))
 		return
 	}
-	if why := r.unfinished(ctx, run, lane); why != "" {
+	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
+		r.feed(ctx, store.FeedPipeline, lane.ID, "not pushing lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
+		return
+	}
+	if why, busy := r.unfinished(ctx, run, lane); why != "" {
 		r.Log.Info("not shipping yet", "lane", lane.Name, "run", run.ID, "why", why)
+		if !busy {
+			r.feed(ctx, store.FeedPipeline, lane.ID, "not pushing lane %s yet: run %d %s; it ships when that is settled", lane.Name, run.ID, why)
+		}
 		return
 	}
 	lf, err := r.Store.LaneForge(ctx, lane.ID)
@@ -114,12 +127,7 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 	} else if dirty != "" {
 		return out, refuse("lane %s has uncommitted changes; commit or discard them first, so the gate checks what is pushed", lane.Name)
 	}
-	pushed := lane.Base
-	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Branch) {
-		pushed = "origin/" + lane.Branch
-	} else if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Base) {
-		pushed = "origin/" + lane.Base
-	}
+	pushed := pushedRef(ctx, lane)
 	n, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", pushed+"..HEAD")
 	if err != nil {
 		return out, err
@@ -141,6 +149,18 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship")
 	res.Lane, res.Commits = out.Lane, out.Commits
 	return res, nil
+}
+
+// pushedRef is what the lane's unpushed commits are counted from: its branch on origin,
+// or else its base there, or else the local base.
+func pushedRef(ctx context.Context, lane store.Lane) string {
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Branch) {
+		return "origin/" + lane.Branch
+	}
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Base) {
+		return "origin/" + lane.Base
+	}
+	return lane.Base
 }
 
 // outsideScope lists the files the lane's branch changes, since it left its base, that
@@ -231,22 +251,24 @@ func forbidden(ctx context.Context, lane store.Lane, patterns []string) string {
 }
 
 // unfinished says why a run's work is not ready to push, or "": it is waiting on the
-// person or another lane, it said it was blocked, or the lane has moved on to another run.
-func (r *Runner) unfinished(ctx context.Context, run store.Run, lane store.Lane) string {
-	if busy, _ := r.Store.Runs(ctx, lane.ID, store.RunRunning, 1); len(busy) > 0 {
-		return "another run is going in the lane"
+// person or on the answer to a question, it said it was blocked, or the lane has moved
+// on to another run (busy, which the feed need not hear about). Handoffs and reviews do
+// not hold it: they are work for others, or about work already done.
+func (r *Runner) unfinished(ctx context.Context, run store.Run, lane store.Lane) (why string, busy bool) {
+	if going, _ := r.Store.Runs(ctx, lane.ID, store.RunRunning, 1); len(going) > 0 {
+		return "another run is going in the lane", true
 	}
 	if ds, err := r.Store.Decisions(ctx, store.DecisionOpen); err == nil {
 		for _, d := range ds {
 			if d.RunID == run.ID {
-				return "it is waiting on decision " + fmt.Sprint(d.ID)
+				return fmt.Sprintf("waits on your decision %d", d.ID), false
 			}
 		}
 	}
 	if qs, err := r.Store.Requests(ctx, store.RequestPending, store.RequestNeedsRouting, store.RequestRouted, store.RequestReplyReady); err == nil {
 		for _, q := range qs {
-			if q.FromRun == run.ID {
-				return "it is waiting on request " + fmt.Sprint(q.ID)
+			if q.FromRun == run.ID && q.Kind == KindQuestion {
+				return fmt.Sprintf("waits on the answer to its question, request %d (%s)", q.ID, q.State), false
 			}
 		}
 	}
@@ -254,13 +276,13 @@ func (r *Runner) unfinished(ctx context.Context, run store.Run, lane store.Lane)
 		for i := len(events) - 1; i >= 0; i-- {
 			if events[i].Kind == EventReport && events[i].Status != "progress" {
 				if events[i].Status == "blocked" {
-					return "it reported blocked"
+					return "reported blocked", false
 				}
 				break
 			}
 		}
 	}
-	return ""
+	return "", false
 }
 
 func (r *Runner) forgeFor(remote string) (forge.Forge, error) {
