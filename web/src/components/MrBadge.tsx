@@ -59,7 +59,7 @@ export function mrBadge(lane: Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_statu
     return {
       text: `${mrText} …`,
       tone: 'muted',
-      label: `merge request ${mrText}, pipeline pending`
+      label: `merge request ${mrText}, pipeline ${pipeline_status}`
     }
   }
 
@@ -80,8 +80,12 @@ export function mrBadge(lane: Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_statu
   }
 }
 
-/** The badge as a link to the MR when the lane has mr_url (opens in a new tab), else a span; nothing without an mr. Class "badge tone-<tone>". */
-export function MrBadge({ lane }: { lane: Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_status' | 'mr_url'> }) {
+/**
+ * The badge as a link to the MR when the lane has mr_url (opens in a new tab), else a
+ * span; nothing without an mr. Class "badge tone-<tone>". link false keeps it a span, for
+ * a badge inside something that is already a link.
+ */
+export function MrBadge({ lane, link = true }: { lane: Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_status' | 'mr_url'>; link?: boolean }) {
   const badge = mrBadge(lane)
   if (badge === null) {
     return null
@@ -90,7 +94,7 @@ export function MrBadge({ lane }: { lane: Pick<LaneView, 'mr' | 'mr_state' | 'pi
   const { text, tone } = badge
   const className = `badge tone-${tone}`
 
-  if (lane.mr_url) {
+  if (link && lane.mr_url) {
     return (
       <a
         href={lane.mr_url}

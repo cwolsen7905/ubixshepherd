@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { mrBadge, MrBadge } from './MrBadge'
 import type { LaneView } from '../api/types'
@@ -117,7 +116,7 @@ describe('mrBadge', () => {
       expect(mrBadge(lane)).toEqual({
         text: '!34 …',
         tone: 'muted',
-        label: 'merge request !34, pipeline pending'
+        label: 'merge request !34, pipeline running'
       })
     })
   })
@@ -194,9 +193,8 @@ describe('MrBadge component', () => {
         mr_url: 'https://example.com'
       } as Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_status' | 'mr_url'>
       
-      render(<MrBadge lane={lane} />)
-      expect(screen.queryByRole('link')).not.toBeInTheDocument()
-      expect(screen.queryByRole('span')).not.toBeInTheDocument()
+      const { container } = render(<MrBadge lane={lane} />)
+      expect(container).toBeEmptyDOMElement()
     })
 
     it('renders nothing when mr is 0', () => {
@@ -207,9 +205,8 @@ describe('MrBadge component', () => {
         mr_url: 'https://example.com'
       } as Pick<LaneView, 'mr' | 'mr_state' | 'pipeline_status' | 'mr_url'>
       
-      render(<MrBadge lane={lane} />)
-      expect(screen.queryByRole('link')).not.toBeInTheDocument()
-      expect(screen.queryByRole('span')).not.toBeInTheDocument()
+      const { container } = render(<MrBadge lane={lane} />)
+      expect(container).toBeEmptyDOMElement()
     })
   })
 
@@ -251,6 +248,12 @@ describe('MrBadge component', () => {
       expect(span).toHaveAttribute('title', 'merge request !34, pipeline passed')
       expect(span).toHaveAttribute('aria-label', 'merge request !34, pipeline passed')
     })
+  })
+
+  it('renders a span, not a link, when link is false', () => {
+    render(<MrBadge lane={{ mr: 34, pipeline_status: 'failed', mr_url: 'https://example.com/34' }} link={false} />)
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.getByText('!34 ✗')).toHaveClass('badge', 'tone-bad')
   })
 
   describe('renders correct badge based on mr_state and pipeline_status', () => {

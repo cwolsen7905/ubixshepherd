@@ -84,7 +84,7 @@ export function BoardPage({ items }: { items: BoardItem[] }) {
                   <span className="row-lane">{it.name}</span>
                   <span className="row-agent">{it.agent ?? ''}</span>
                   <span className="row-repo">{it.repo}</span>
-                  <span className="row-mr">{it.lane && <MrBadge lane={it.lane} />}</span>
+                  <span className="row-mr">{it.lane && <MrBadge lane={it.lane} link={false} />}</span>
                   <span className="row-detail">{it.detail}</span>
                   <span className="row-age" title={it.at}>
                     {since(it.at, now)}
