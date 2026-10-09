@@ -127,6 +127,7 @@ type Model struct {
 	logOffset int64
 	logDone   bool
 
+	title         string // the window title last set
 	width, height int
 	input         textarea.Model
 	ready         bool
@@ -398,6 +399,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if p := m.flush(); p != nil {
 		cmd = tea.Batch(cmd, p)
 	}
+	if t := windowTitle(m.dockItems()); t != m.title && !m.quitting {
+		m.title = t
+		cmd = tea.Batch(cmd, tea.SetWindowTitle(t))
+	}
 	return m, cmd
 }
 
@@ -540,12 +545,16 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// quit prints what is left, clears the live region and ends the program.
+// quit prints what is left, clears the live region and the window title, and ends the
+// program. (The title the terminal had before is restored by SaveTitle's caller.)
 func (m *Model) quit() tea.Cmd {
 	m.quitting = true
 	m.pager = nil
-	return tea.Sequence(m.flush(), tea.Quit)
+	return tea.Sequence(m.flush(), tea.SetWindowTitle(""), tea.Quit)
 }
+
+// Title is the window title the chat last set (for tests).
+func (m *Model) Title() string { return m.title }
 
 // openLog shows a run's log in the pager.
 func (m *Model) openLog(id int64) tea.Cmd {
