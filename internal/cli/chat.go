@@ -15,6 +15,7 @@ import (
 func runChat(ctx context.Context, env Env, args []string) error {
 	fs := flags("chat", env)
 	model := fs.String("model", "", "the front desk's model, if not Claude Code's default")
+	history := fs.Int("history", chat.DefaultHistory, "how many earlier entries to show on start")
 	if pos, err := parse(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
@@ -40,6 +41,7 @@ func runChat(ctx context.Context, env Env, args []string) error {
 	}
 	desk := chat.ClaudeDesk{Bin: bin, Shepherd: env.Exe, Dir: h.Workspace.Path, Model: *model}
 	m := chat.New(ctx, c, desk, h.Workspace)
+	m.HistoryItems = *history
 	// Inline, not in the alternate screen: the conversation is printed into the terminal's
 	// own scrollback, and the mouse stays the terminal's.
 	if _, err := tea.NewProgram(m, tea.WithReportFocus(), tea.WithContext(ctx)).Run(); err != nil && !errors.Is(err, tea.ErrProgramKilled) {

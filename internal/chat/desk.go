@@ -62,6 +62,9 @@ type ClaudeDesk struct {
 	// operator tools; Dir is the workspace root the desk works from.
 	Bin, Shepherd, Dir string
 	Model              string
+	// Projects is where Claude Code keeps its sessions, to read history from; empty
+	// means its usual place.
+	Projects string
 }
 
 // Args builds one turn's command line.

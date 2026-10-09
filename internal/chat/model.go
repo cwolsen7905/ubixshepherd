@@ -73,6 +73,11 @@ type Model struct {
 	deskName  string
 	workspace store.Workspace
 
+	// HistoryItems is how many earlier entries to print when the chat starts.
+	HistoryItems   int
+	loadingHistory bool
+	welcomed       bool
+
 	lines     []Line // the whole thread, for the transcript
 	unprinted []Line // entries not yet printed to scrollback
 	printed   bool   // whether anything has been printed yet, for spacing
@@ -133,7 +138,7 @@ func New(ctx context.Context, a API, d Desk, ws store.Workspace) *Model {
 	}
 	now := time.Now()
 	return &Model{
-		ctx: ctx, api: a, desk: d, deskName: name, workspace: ws, auto: true, input: in,
+		ctx: ctx, api: a, desk: d, deskName: name, workspace: ws, HistoryItems: DefaultHistory, auto: true, input: in,
 		println: tea.Println, lastFeed: -1, lastActivity: now, clock: time.Now, tick: tea.Tick, focused: true,
 	}
 }
@@ -164,8 +169,6 @@ type panelMsg struct {
 	sessionsUpdated bool
 }
 
-type sessionMsg string
-
 type deskLineMsg Line
 
 type deskDoneMsg struct {
@@ -186,21 +189,11 @@ type reconnectMsg struct {
 }
 
 func (m *Model) Init() tea.Cmd {
-	m.add(Line{KindInfo, fmt.Sprintf("Shepherd, workspace %s (%s). The desk delegates to agents in lanes; their events appear here. /help for commands.", m.workspace.Name, m.workspace.Path)})
 	now := m.clock()
 	m.lastPanelPoll = now
 	m.lastSessionsPoll = now
-	return tea.Batch(textarea.Blink, m.loadSession(), m.openDecisions(), m.pollFeed(), m.pollPanel(true), m.scheduleTick(m.feedInterval(now)))
-}
-
-func (m *Model) loadSession() tea.Cmd {
-	return func() tea.Msg {
-		s, err := m.api.Setting(m.ctx, settingSession)
-		if err != nil {
-			return errorMsg{err}
-		}
-		return sessionMsg(s)
-	}
+	m.loadingHistory = true
+	return tea.Batch(textarea.Blink, m.loadHistory(), m.openDecisions(), m.pollPanel(true), m.scheduleTick(m.feedInterval(now)))
 }
 
 func (m *Model) openDecisions() tea.Cmd {
@@ -224,9 +217,13 @@ func decisionIDs(ds []api.DecisionView) string {
 	return strings.Join(ids, ", ")
 }
 
-// pollFeed asks for new feed items. The first poll only learns the newest id, so the
-// thread starts with what happens from now on.
+// pollFeed asks for new feed items. Without history, the first poll only learns the
+// newest id, so the thread goes on with what happens from now on. While history loads
+// it waits: history says where the feed ends.
 func (m *Model) pollFeed() tea.Cmd {
+	if m.loadingHistory {
+		return nil
+	}
 	after := m.lastFeed
 	return func() tea.Msg {
 		f, err := m.api.Feed(m.ctx, after)
@@ -448,8 +445,8 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		now := m.clock()
 		m.lastActivity = now
 		cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(activeFeedInterval))
-	case sessionMsg:
-		m.session = string(msg)
+	case historyMsg:
+		m.onHistory(msg)
 	case feedMsg:
 		feed := api.Feed(msg)
 		if len(feed.Items) > 0 {
@@ -488,6 +485,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case lineMsg:
 		m.add(Line(msg))
 	case errorMsg:
+		if m.loadingHistory && !isConnErr(msg.err) {
+			// History could not be read; the chat goes on from now. (When the daemon is
+			// down, history loads again once it is back.)
+			m.loadingHistory = false
+			m.welcome()
+		}
 		if isConnErr(msg.err) {
 			if !m.reconnecting {
 				m.reconnecting = true
@@ -501,6 +504,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.reconnecting = false
 			now := m.clock()
 			cmds = append(cmds, m.pollFeed(), m.pollPanelAt(m.sessionsDue(now), now), m.scheduleTick(m.feedInterval(now)))
+			if m.loadingHistory {
+				cmds = append(cmds, m.loadHistory())
+			}
 			if m.logRun != 0 && !m.logDone {
 				cmds = append(cmds, m.pollLog())
 			}
@@ -814,13 +820,7 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 		return nil
 	}
 	for _, it := range f.Items {
-		kind := KindEvent
-		text := it.Text
-		if it.Kind == store.FeedDecision {
-			kind = KindDecision
-			text += fmt.Sprintf("\n   /answer %d <option or words>", it.Ref)
-		}
-		m.add(Line{kind, text})
+		m.add(feedLine(it, true))
 		if autoKinds[it.Kind] {
 			m.pending = append(m.pending, it.Text)
 		}

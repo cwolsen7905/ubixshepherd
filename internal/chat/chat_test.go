@@ -98,7 +98,11 @@ type fakeAPI struct {
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
 	f.feedCalls++
 	if after < 0 {
-		return api.Feed{Last: 0}, nil
+		var last int64
+		if len(f.feed) > 0 {
+			last = f.feed[len(f.feed)-1].ID
+		}
+		return api.Feed{Last: last}, nil
 	}
 	var out api.Feed
 	out.Last = after
