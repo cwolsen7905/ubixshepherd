@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -45,9 +46,9 @@ func renderLine(l Line, width int) string {
 	case KindTool:
 		return hang(styleTool.Render("  → "), "    ", styleLines(styleTool, wrapText(l.Text, w-2)))
 	case KindEvent:
-		return hang(styleEvent.Render("·")+" ", "  ", styleLines(styleEvent, tintAgents(wrapText(l.Text, w))))
+		return hang(eventGlyph(l.Event)+" ", "  ", styleLines(styleEvent, tintAgents(wrapText(l.Text, w))))
 	case KindDecision:
-		return hang(styleDecision.Render("?")+" ", "  ", styleLines(styleDecision, wrapText(l.Text, w)))
+		return hang(eventGlyph(api.EventDecisionAsked)+" ", "  ", styleLines(styleDecision, wrapText(l.Text, w)))
 	case KindError:
 		return hang(styleError.Render("!")+" ", "  ", styleLines(styleError, wrapText(l.Text, w)))
 	}

@@ -205,7 +205,7 @@ func (m *Model) openDecisions() tea.Cmd {
 		if len(ds) == 0 {
 			return nil
 		}
-		return lineMsg{KindDecision, fmt.Sprintf("%d decision(s) waiting for you: %s. /decisions to see them.", len(ds), decisionIDs(ds))}
+		return lineMsg{Kind: KindDecision, Text: fmt.Sprintf("%d decision(s) waiting for you: %s. /decisions to see them.", len(ds), decisionIDs(ds))}
 	}
 }
 
@@ -501,7 +501,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			}
 			break
 		}
-		m.add(Line{KindError, msg.err.Error()})
+		m.add(Line{Kind: KindError, Text: msg.err.Error()})
 	case reconnectMsg:
 		if msg.ok {
 			m.reconnecting = false
@@ -573,13 +573,13 @@ func (m *Model) refreshPager() {
 // handle is what the person typed: a command, or a message for the desk.
 func (m *Model) handle(text string) tea.Cmd {
 	if !strings.HasPrefix(text, "/") {
-		m.add(Line{KindYou, text})
+		m.add(Line{Kind: KindYou, Text: text})
 		return m.send(text)
 	}
 	f := strings.Fields(text)
 	switch f[0] {
 	case "/help":
-		m.add(Line{KindInfo, "/answer <decision> <option number or words>   answer a decision yourself\n" +
+		m.add(Line{Kind: KindInfo, Text: "/answer <decision> <option number or words>   answer a decision yourself\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
@@ -590,13 +590,13 @@ func (m *Model) handle(text string) tea.Cmd {
 		return m.quit()
 	case "/new":
 		m.session = ""
-		m.add(Line{KindInfo, "The next message starts a new conversation with the desk."})
+		m.add(Line{Kind: KindInfo, Text: "The next message starts a new conversation with the desk."})
 		return func() tea.Msg { m.api.SetSetting(m.ctx, settingSession, ""); return nil }
 	case "/auto":
 		if len(f) == 2 && (f[1] == "on" || f[1] == "off") {
 			m.auto = f[1] == "on"
 		}
-		m.add(Line{KindInfo, fmt.Sprintf("Swarm events reach the desk on their own: %v.", m.auto)})
+		m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Swarm events reach the desk on their own: %v.", m.auto)})
 	case "/decisions":
 		return func() tea.Msg {
 			ds, err := m.api.Decisions(m.ctx, store.DecisionOpen)
@@ -604,27 +604,27 @@ func (m *Model) handle(text string) tea.Cmd {
 				return errorMsg{err}
 			}
 			if len(ds) == 0 {
-				return lineMsg{KindInfo, "No decisions waiting for you."}
+				return lineMsg{Kind: KindInfo, Text: "No decisions waiting for you."}
 			}
 			var b strings.Builder
 			for _, d := range ds {
 				b.WriteString(decisionText(d))
 				b.WriteString("\n")
 			}
-			return lineMsg{KindDecision, strings.TrimSpace(b.String())}
+			return lineMsg{Kind: KindDecision, Text: strings.TrimSpace(b.String())}
 		}
 	case "/answer":
 		if len(f) < 3 {
-			m.add(Line{KindError, "usage: /answer <decision> <option number or words>"})
+			m.add(Line{Kind: KindError, Text: "usage: /answer <decision> <option number or words>"})
 			return nil
 		}
 		id, err := strconv.ParseInt(f[1], 10, 64)
 		if err != nil {
-			m.add(Line{KindError, "decision id must be a number"})
+			m.add(Line{Kind: KindError, Text: "decision id must be a number"})
 			return nil
 		}
 		answer := strings.Join(f[2:], " ")
-		m.add(Line{KindYou, fmt.Sprintf("answer to decision %d: %s", id, answer)})
+		m.add(Line{Kind: KindYou, Text: fmt.Sprintf("answer to decision %d: %s", id, answer)})
 		return m.answer(id, answer)
 	case "/sessions":
 		return func() tea.Msg {
@@ -633,7 +633,7 @@ func (m *Model) handle(text string) tea.Cmd {
 				return errorMsg{err}
 			}
 			if len(ss) == 0 {
-				return lineMsg{KindInfo, "No conversations adopted. From a shell: shepherd session import"}
+				return lineMsg{Kind: KindInfo, Text: "No conversations adopted. From a shell: shepherd session import"}
 			}
 			var b strings.Builder
 			for _, s := range ss {
@@ -644,70 +644,70 @@ func (m *Model) handle(text string) tea.Cmd {
 				fmt.Fprintf(&b, "%s  %-10s %s  ·  %s%s\n", s.ID[:8], s.Repo, clipTo(s.Title, 70), s.Last.Local().Format("Jan 2"), open)
 			}
 			b.WriteString("/attach <id> to reopen one here; /ask <id> <question> to ask it")
-			return lineMsg{KindInfo, b.String()}
+			return lineMsg{Kind: KindInfo, Text: b.String()}
 		}
 	case "/attach":
 		if len(f) != 2 {
-			m.add(Line{KindError, "usage: /attach <conversation id>"})
+			m.add(Line{Kind: KindError, Text: "usage: /attach <conversation id>"})
 			return nil
 		}
 		s, err := m.conversation(f[1])
 		if err != nil {
-			m.add(Line{KindError, err.Error()})
+			m.add(Line{Kind: KindError, Text: err.Error()})
 			return nil
 		}
 		bin, err := exec.LookPath("claude")
 		if err != nil {
-			m.add(Line{KindError, "claude is not on PATH"})
+			m.add(Line{Kind: KindError, Text: "claude is not on PATH"})
 			return nil
 		}
 		if s.InUse {
-			m.add(Line{KindInfo, "That conversation changed in the last few minutes; if it is open in another terminal, use that one."})
+			m.add(Line{Kind: KindInfo, Text: "That conversation changed in the last few minutes; if it is open in another terminal, use that one."})
 		}
-		m.add(Line{KindInfo, fmt.Sprintf("Opening conversation %s (%s) in Claude Code; exit it to come back here.", s.ID[:8], clipTo(s.Title, 60))})
+		m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Opening conversation %s (%s) in Claude Code; exit it to come back here.", s.ID[:8], clipTo(s.Title, 60))})
 		cmd := exec.Command(bin, "--resume", s.ID)
 		cmd.Dir = s.Dir
 		id := s.ID[:8]
 		// Print the line above before Claude Code takes the terminal.
 		return tea.Sequence(m.flush(), tea.ExecProcess(cmd, func(err error) tea.Msg {
 			if err != nil {
-				return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s (%v).", id, err)}
+				return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Back from conversation %s (%v).", id, err)}
 			}
-			return lineMsg{KindInfo, fmt.Sprintf("Back from conversation %s.", id)}
+			return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Back from conversation %s.", id)}
 		}))
 	case "/ask":
 		if len(f) < 3 {
-			m.add(Line{KindError, "usage: /ask <conversation id> <question>"})
+			m.add(Line{Kind: KindError, Text: "usage: /ask <conversation id> <question>"})
 			return nil
 		}
 		s, err := m.conversation(f[1])
 		if err != nil {
-			m.add(Line{KindError, err.Error()})
+			m.add(Line{Kind: KindError, Text: err.Error()})
 			return nil
 		}
 		q := strings.Join(f[2:], " ")
-		m.add(Line{KindYou, fmt.Sprintf("to conversation %s: %s", s.ID[:8], q)})
+		m.add(Line{Kind: KindYou, Text: fmt.Sprintf("to conversation %s: %s", s.ID[:8], q)})
 		id, title := s.ID, s.Title
 		return func() tea.Msg {
 			a, err := m.api.AskSession(m.ctx, id, q)
 			if err != nil {
 				return errorMsg{err}
 			}
-			return lineMsg{KindDesk, fmt.Sprintf("conversation %s (%s):\n%s", id[:8], clipTo(title, 50), a.Text)}
+			return lineMsg{Kind: KindDesk, Text: fmt.Sprintf("conversation %s (%s):\n%s", id[:8], clipTo(title, 50), a.Text)}
 		}
 	case "/log":
 		if len(f) != 2 {
-			m.add(Line{KindError, "usage: /log <run>"})
+			m.add(Line{Kind: KindError, Text: "usage: /log <run>"})
 			return nil
 		}
 		id, err := strconv.ParseInt(f[1], 10, 64)
 		if err != nil {
-			m.add(Line{KindError, "run id must be a number"})
+			m.add(Line{Kind: KindError, Text: "run id must be a number"})
 			return nil
 		}
 		return m.openLog(id)
 	default:
-		m.add(Line{KindError, "unknown command " + f[0] + "; /help"})
+		m.add(Line{Kind: KindError, Text: "unknown command " + f[0] + "; /help"})
 	}
 	return nil
 }
@@ -729,9 +729,9 @@ func (m *Model) answer(id int64, answer string) tea.Cmd {
 			return errorMsg{err}
 		}
 		if d.AnswerRun != 0 {
-			return lineMsg{KindInfo, fmt.Sprintf("Answered decision %d; the agent carries on as run %d.", d.ID, d.AnswerRun)}
+			return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Answered decision %d; the agent carries on as run %d.", d.ID, d.AnswerRun)}
 		}
-		return lineMsg{KindInfo, fmt.Sprintf("Answered decision %d; the agent gets it when its turn ends.", d.ID)}
+		return lineMsg{Kind: KindInfo, Text: fmt.Sprintf("Answered decision %d; the agent gets it when its turn ends.", d.ID)}
 	}
 }
 
@@ -793,12 +793,12 @@ func (m *Model) onDeskDone(msg deskDoneMsg) tea.Cmd {
 	m.busy = false
 	if m.partial != "" {
 		// The stream ended without the whole reply: keep what came.
-		m.add(Line{KindDesk, strings.TrimSpace(m.partial)})
+		m.add(Line{Kind: KindDesk, Text: strings.TrimSpace(m.partial)})
 		m.partial = ""
 	}
 	var cmds []tea.Cmd
 	if msg.err != nil {
-		m.add(Line{KindError, "the desk: " + msg.err.Error()})
+		m.add(Line{Kind: KindError, Text: "the desk: " + msg.err.Error()})
 	}
 	if msg.session != "" && msg.session != m.session {
 		m.session = msg.session
@@ -824,8 +824,8 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 	if first {
 		return nil
 	}
-	for _, it := range f.Items {
-		m.add(feedLine(it, true))
+	for i, it := range f.Items {
+		m.add(feedLine(it, f.Event(i), true))
 		if autoKinds[it.Kind] {
 			m.pending = append(m.pending, it.Text)
 		}
@@ -916,7 +916,7 @@ func (m *Model) streaming() []string {
 	if text == "" {
 		return nil
 	}
-	lines := strings.Split(renderLine(Line{KindDesk, text}, m.width), "\n")
+	lines := strings.Split(renderLine(Line{Kind: KindDesk, Text: text}, m.width), "\n")
 	room := m.height - 7
 	if room < 1 {
 		room = 1

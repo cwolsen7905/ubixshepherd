@@ -74,7 +74,7 @@ func TestMarkdownFitsNarrowWidths(t *testing.T) {
 }
 
 func TestDeskRepliesRenderMarkdown(t *testing.T) {
-	out := renderLine(Line{KindDesk, "Done: **2 lanes**.\n\n| a | b |\n|---|---|\n| 1 | 2 |"}, 40)
+	out := renderLine(Line{Kind: KindDesk, Text: "Done: **2 lanes**.\n\n| a | b |\n|---|---|\n| 1 | 2 |"}, 40)
 	if !strings.HasPrefix(out, "● Done: 2 lanes.") || !strings.Contains(out, "  a │ b") {
 		t.Errorf("desk reply:\n%s", out)
 	}

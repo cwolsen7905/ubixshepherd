@@ -1,0 +1,70 @@
+package chat
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/x/ansi"
+
+	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/store"
+)
+
+var allEvents = []string{
+	api.EventLaneOpened, api.EventLaneClosed, api.EventRunStarted, api.EventRunEnded, api.EventReport,
+	api.EventDecisionAsked, api.EventDecisionAnswer, api.EventRequest, api.EventRequestAttention,
+	api.EventMR, api.EventPipeline, api.EventBudget, api.EventTag, api.EventRelease, api.EventConfig, api.EventInfo,
+}
+
+// Every event has its own glyph, one cell wide, so a line of events reads without colour.
+func TestEveryEventHasItsOwnGlyph(t *testing.T) {
+	seen := map[string]string{}
+	for _, e := range allEvents {
+		mk, ok := eventMarks[e]
+		if !ok {
+			t.Errorf("no mark for %s", e)
+			continue
+		}
+		if w := ansi.StringWidth(mk.glyph); w != 1 {
+			t.Errorf("%s: glyph %q is %d wide", e, mk.glyph, w)
+		}
+		if other, dup := seen[mk.glyph]; dup {
+			t.Errorf("%s and %s share %q", e, other, mk.glyph)
+		}
+		seen[mk.glyph] = e
+	}
+	if len(eventMarks) != len(allEvents) {
+		t.Errorf("%d marks for %d events", len(eventMarks), len(allEvents))
+	}
+	if markFor("something new").glyph != eventMarks[api.EventInfo].glyph {
+		t.Error("an unknown event does not read as info")
+	}
+}
+
+func TestEventLinesCarryTheirGlyph(t *testing.T) {
+	defer usePalette(pal)
+	usePalette(newPalette(false))
+	m, _, _ := newTestModel()
+	printed := capturePrints(m)
+	m.lastFeed = 0
+	m.Update(feedMsg(api.Feed{
+		Last: 3,
+		Items: []store.FeedItem{
+			{ID: 1, Kind: store.FeedRunStarted, Text: "run 3: copilot started in lane api"},
+			{ID: 2, Kind: store.FeedPipeline, Text: "!207 fix/crash: pipeline failed"},
+			{ID: 3, Kind: store.FeedDecision, Text: "decision 4 from claude: raise the price?", Ref: 4},
+		},
+		Events: []string{api.EventRunStarted, api.EventPipeline, api.EventDecisionAsked},
+	}))
+	out := ansi.Strip(strings.Join(*printed, "\n"))
+	for _, want := range []string{"▸ run 3: copilot", "◎ !207 fix/crash", "? decision 4"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("thread lacks %q:\n%s", want, out)
+		}
+	}
+	// An older daemon sends no events: the client's mapping fills them in.
+	m.Update(feedMsg(api.Feed{Last: 4, Items: []store.FeedItem{{ID: 4, Kind: store.FeedMR, Text: "!214 merged"}}}))
+	if out := ansi.Strip(strings.Join(*printed, "\n")); !strings.Contains(out, "◆ !214 merged") {
+		t.Errorf("thread:\n%s", out)
+	}
+}

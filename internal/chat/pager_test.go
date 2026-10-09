@@ -107,9 +107,9 @@ func TestCtrlOOpensTheTranscript(t *testing.T) {
 	m, _, _ := newTestModel()
 	printed := capturePrints(m)
 	for i := 0; i < 40; i++ {
-		m.Update(lineMsg{KindEvent, fmt.Sprintf("event %d.", i)})
+		m.Update(lineMsg{Kind: KindEvent, Text: fmt.Sprintf("event %d.", i)})
 	}
-	m.Update(lineMsg{KindDesk, "the webhook secret is in the vault"})
+	m.Update(lineMsg{Kind: KindDesk, Text: "the webhook secret is in the vault"})
 	n := len(*printed)
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
@@ -130,7 +130,7 @@ func TestCtrlOOpensTheTranscript(t *testing.T) {
 		t.Errorf("keys for the pager reached the input: %q", m.input.Value())
 	}
 	// Entries arriving meanwhile show in the transcript, and print once it closes.
-	m.Update(lineMsg{KindEvent, "run 9 started"})
+	m.Update(lineMsg{Kind: KindEvent, Text: "run 9 started"})
 	if len(*printed) != n {
 		t.Fatal("printed while the transcript was open")
 	}

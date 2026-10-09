@@ -36,10 +36,10 @@ func TestHistoryIsReplayedOnStart(t *testing.T) {
 		a.feed = append(a.feed, store.FeedItem{ID: i, Kind: store.FeedRunStarted, Text: fmt.Sprintf("event %d.", i), Created: t0.Add(time.Duration(i) * time.Minute)})
 	}
 	d := &historyDesk{fakeDesk: &fakeDesk{}, entries: []Entry{
-		{t0.Add(10 * time.Minute), Line{KindYou, "long ago"}},
-		{t0.Add(59*time.Minute + 30*time.Second), Line{KindYou, "hello"}},
-		{t0.Add(59*time.Minute + 40*time.Second), Line{KindTool, "lane_open app feat/x"}},
-		{t0.Add(59*time.Minute + 50*time.Second), Line{KindDesk, "hi there"}},
+		{t0.Add(10 * time.Minute), Line{Kind: KindYou, Text: "long ago"}},
+		{t0.Add(59*time.Minute + 30*time.Second), Line{Kind: KindYou, Text: "hello"}},
+		{t0.Add(59*time.Minute + 40*time.Second), Line{Kind: KindTool, Text: "lane_open app feat/x"}},
+		{t0.Add(59*time.Minute + 50*time.Second), Line{Kind: KindDesk, Text: "hi there"}},
 	}}
 	m := New(context.Background(), a, d, store.Workspace{ID: 1, Name: "git", Path: "/w"})
 	m.tick = func(time.Duration, func(time.Time) tea.Msg) tea.Cmd { return nil }
@@ -102,10 +102,10 @@ func TestClaudeDeskReadsItsSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Line{
-		{KindYou, "open a lane for the login fix"},
-		{KindTool, "lane_open app fix/login"},
-		{KindDesk, "Opened **fix/login**."},
-		{KindDesk, "Run 3 is done."},
+		{Kind: KindYou, Text: "open a lane for the login fix"},
+		{Kind: KindTool, Text: "lane_open app fix/login"},
+		{Kind: KindDesk, Text: "Opened **fix/login**."},
+		{Kind: KindDesk, Text: "Run 3 is done."},
 	}
 	if len(es) != len(want) {
 		t.Fatalf("entries = %+v", es)

@@ -72,7 +72,7 @@ func (f *fakeDesk) Turn(_ context.Context, session, message string, emit func(Li
 	f.mu.Lock()
 	f.got = append(f.got, message)
 	f.mu.Unlock()
-	emit(Line{KindDesk, "ok: " + strings.SplitN(message, "\n", 2)[0]})
+	emit(Line{Kind: KindDesk, Text: "ok: " + strings.SplitN(message, "\n", 2)[0]})
 	if session == "" {
 		session = "new-session"
 	}
@@ -319,7 +319,7 @@ func TestCommands(t *testing.T) {
 
 func TestDeskCostIsRecordedNotShown(t *testing.T) {
 	m, _, a := newTestModel()
-	_, cmd := m.Update(deskLineMsg{KindCost, "0.4"})
+	_, cmd := m.Update(deskLineMsg{Kind: KindCost, Text: "0.4"})
 	drive(t, m, cmd)
 	if a.spent != 0.4 || has(m.Lines(), KindCost, "") {
 		t.Errorf("spent %v, lines %+v", a.spent, m.Lines())
@@ -360,7 +360,7 @@ func TestEntriesArePrintedToScrollback(t *testing.T) {
 	}
 	// Each entry is printed once.
 	n := len(*printed)
-	m.Update(lineMsg{KindInfo, "later"})
+	m.Update(lineMsg{Kind: KindInfo, Text: "later"})
 	if len(*printed) != n+1 || strings.Contains((*printed)[n], "login fix") {
 		t.Errorf("reprinted: %q", (*printed)[n:])
 	}
@@ -370,7 +370,7 @@ func TestPrintedEntriesWrapToTheTerminal(t *testing.T) {
 	m, _, _ := newTestModel()
 	printed := capturePrints(m)
 	m.Update(tea.WindowSizeMsg{Width: 30, Height: 20})
-	m.Update(lineMsg{KindEvent, "run 3: copilot in lane api succeeded, 1 commit(s), and a long tail of words"})
+	m.Update(lineMsg{Kind: KindEvent, Text: "run 3: copilot in lane api succeeded, 1 commit(s), and a long tail of words"})
 	for _, l := range strings.Split(strings.Join(*printed, "\n"), "\n") {
 		if w := ansi.StringWidth(l); w > 30 {
 			t.Errorf("line %q is %d wide", l, w)
@@ -387,7 +387,7 @@ func TestEntriesWaitWhileThePagerIsOpen(t *testing.T) {
 		t.Fatalf("/log did not open the pager:\n%s", m.View())
 	}
 	n := len(*printed)
-	m.Update(lineMsg{KindEvent, "run 8 started"})
+	m.Update(lineMsg{Kind: KindEvent, Text: "run 8 started"})
 	if len(*printed) != n {
 		t.Fatal("printed while the pager was open")
 	}
@@ -402,12 +402,12 @@ func TestStreamingReplyIsLiveUntilWhole(t *testing.T) {
 	m, _, _ := newTestModel()
 	printed := capturePrints(m)
 	m.busy = true
-	m.Update(deskLineMsg{KindPartial, "Opening a lane "})
-	m.Update(deskLineMsg{KindPartial, "for the fix"})
+	m.Update(deskLineMsg{Kind: KindPartial, Text: "Opening a lane "})
+	m.Update(deskLineMsg{Kind: KindPartial, Text: "for the fix"})
 	if !strings.Contains(m.View(), "Opening a lane for the fix") || len(*printed) != 0 {
 		t.Fatalf("partial: printed %q, view:\n%s", *printed, m.View())
 	}
-	m.Update(deskLineMsg{KindDesk, "Opening a lane for the fix."})
+	m.Update(deskLineMsg{Kind: KindDesk, Text: "Opening a lane for the fix."})
 	if strings.Contains(m.View(), "Opening a lane") || len(*printed) != 1 || !strings.Contains((*printed)[0], "for the fix.") {
 		t.Fatalf("whole: printed %q, view:\n%s", *printed, m.View())
 	}
@@ -455,7 +455,7 @@ func TestParsePartials(t *testing.T) {
 `
 	var got []Line
 	Parse(strings.NewReader(stream), func(l Line) { got = append(got, l) })
-	want := []Line{{KindPartial, "Hel"}, {KindPartial, "lo"}, {KindDesk, "Hello"}}
+	want := []Line{{Kind: KindPartial, Text: "Hel"}, {Kind: KindPartial, Text: "lo"}, {Kind: KindDesk, Text: "Hello"}}
 	if len(got) != len(want) {
 		t.Fatalf("lines = %+v", got)
 	}
