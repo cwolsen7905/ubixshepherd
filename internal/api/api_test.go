@@ -33,6 +33,7 @@ func TestEventKindIsClosed(t *testing.T) {
 	valid := map[string]bool{}
 	for _, e := range []string{EventLaneOpened, EventLaneClosed, EventRunStarted, EventRunEnded, EventReport,
 		EventDecisionAsked, EventDecisionAnswer, EventRequest, EventRequestAttention, EventMR,
+		EventRunPassed, EventRunFailed, EventRunInterrupted, EventRunQuota, EventCommit, EventGate,
 		EventPipeline, EventBudget, EventTag, EventRelease, EventConfig, EventInfo} {
 		valid[e] = true
 	}
@@ -43,6 +44,16 @@ func TestEventKindIsClosed(t *testing.T) {
 	}
 	if EventKind(store.FeedSession) != EventInfo || EventKind("brand_new") != EventInfo {
 		t.Error("unlisted kinds must be info")
+	}
+	for kind, want := range map[string]string{
+		store.FeedPipeline: EventPipeline, store.FeedRunEnded: EventRunEnded, store.FeedGate: EventGate,
+		store.FeedCommit: EventCommit, store.FeedRunPassed: EventRunPassed, store.FeedRunFailed: EventRunFailed,
+		store.FeedRunInterrupted: EventRunInterrupted, store.FeedRunQuota: EventRunQuota,
+		"pipeline": EventPipeline, "run_ended": EventRunEnded, "gate": EventGate,
+	} {
+		if got := EventKind(kind); got != want {
+			t.Errorf("EventKind(%q) = %q, want %q", kind, got, want)
+		}
 	}
 	if EventKind(store.FeedRequestStuck) != EventRequestAttention || EventKind(store.FeedDecision) != EventDecisionAsked {
 		t.Error("mapping wrong")
