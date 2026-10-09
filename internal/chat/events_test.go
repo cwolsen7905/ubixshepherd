@@ -68,3 +68,32 @@ func TestEventLinesCarryTheirGlyph(t *testing.T) {
 		t.Errorf("thread:\n%s", out)
 	}
 }
+
+// Every way a run can end wakes the desk, from an older daemon (run_ended) or a newer
+// one (the outcome kinds); a commit or the gate alone does not.
+func TestFinishedRunsWakeTheDesk(t *testing.T) {
+	for _, c := range []struct {
+		kind string
+		wake bool
+	}{
+		{store.FeedRunEnded, true},
+		{kindRunPassed, true},
+		{kindRunFailed, true},
+		{kindRunInterrupted, true},
+		{kindRunQuota, true},
+		{kindCommit, false},
+		{kindGate, false},
+		{store.FeedRunStarted, false},
+	} {
+		t.Run(c.kind, func(t *testing.T) {
+			m, d, a := newTestModel()
+			drive(t, m, m.pollFeed())
+			a.feed = []store.FeedItem{{ID: 1, Kind: c.kind, Text: "run 3: claude in lane api, item " + c.kind, Ref: 3}}
+			drive(t, m, m.pollFeed())
+			woke := len(d.got) == 1 && strings.HasPrefix(d.got[0], "[Shepherd]") && strings.Contains(d.got[0], "item "+c.kind)
+			if woke != c.wake || len(d.got) > 1 {
+				t.Errorf("%s: desk got %q, want woken %v", c.kind, d.got, c.wake)
+			}
+		})
+	}
+}

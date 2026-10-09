@@ -44,9 +44,14 @@ type Redialer interface {
 const settingSession = "desk.session"
 
 // autoKinds are feed items that continue the desk on their own when it is idle: they
-// usually need someone to act.
+// usually need someone to act. A finished run is run_ended from an older daemon, and
+// one of the outcome kinds from a newer one.
 var autoKinds = map[string]bool{
 	store.FeedRunEnded:      true,
+	kindRunPassed:           true,
+	kindRunFailed:           true,
+	kindRunInterrupted:      true,
+	kindRunQuota:            true,
 	store.FeedRequestStuck:  true,
 	store.FeedRequestFailed: true,
 }
