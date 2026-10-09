@@ -25,6 +25,7 @@ type API interface {
 	Runs(ctx context.Context, laneID int64, state string, limit int) ([]api.RunView, error)
 	RunLog(ctx context.Context, id, offset int64) (api.RunLog, error)
 	Decisions(ctx context.Context, state string) ([]api.DecisionView, error)
+	Requests(ctx context.Context, states string) ([]api.RequestView, error)
 	Answer(ctx context.Context, id int64, answer string) (store.Decision, error)
 	Setting(ctx context.Context, key string) (string, error)
 	SetSetting(ctx context.Context, key, value string) error
@@ -57,6 +58,9 @@ const (
 	idlePanelInterval   = 30 * time.Second
 	sessionsInterval    = time.Minute
 	activeWindow        = 30 * time.Second
+	// recentRuns is how many of the latest runs the dock reads, enough to cover
+	// every open lane's last run.
+	recentRuns = 50
 )
 
 // Model is the chat's state.
@@ -95,8 +99,9 @@ type Model struct {
 
 	lastFeed         int64
 	lanes            []api.LaneView
-	runs             []api.RunView // running ones
+	runs             []api.RunView // the latest, of every state
 	decisions        []api.DecisionView
+	requests         []api.RequestView // those needing routing
 	lastActivity     time.Time
 	lastPanelPoll    time.Time
 	lastSessionsPoll time.Time
@@ -107,6 +112,12 @@ type Model struct {
 
 	spend    api.SpendToday
 	sessions []api.SessionView
+
+	// What the person has seen, for the dock's "done unseen": anything that finished
+	// before seenUntil (when the chat started, or they last cleared it), and anything
+	// they opened since.
+	seenUntil time.Time
+	seen      map[string]bool
 
 	// pager is the full-screen reader, when open: a run's log (logRun set) or the
 	// transcript.
@@ -140,6 +151,7 @@ func New(ctx context.Context, a API, d Desk, ws store.Workspace) *Model {
 	return &Model{
 		ctx: ctx, api: a, desk: d, deskName: name, workspace: ws, HistoryItems: DefaultHistory, auto: true, input: in,
 		println: tea.Println, lastFeed: -1, lastActivity: now, clock: time.Now, tick: tea.Tick, focused: true,
+		seenUntil: now,
 	}
 }
 
@@ -163,6 +175,7 @@ type panelMsg struct {
 	lanes           []api.LaneView
 	runs            []api.RunView
 	decisions       []api.DecisionView
+	requests        []api.RequestView
 	spend           api.SpendToday
 	sessions        []api.SessionView
 	panelUpdated    bool
@@ -248,11 +261,15 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
-		runs, err := m.api.Runs(m.ctx, 0, store.RunRunning, 20)
+		runs, err := m.api.Runs(m.ctx, 0, "", recentRuns)
 		if err != nil {
 			return errorMsg{err}
 		}
 		ds, err := m.api.Decisions(m.ctx, store.DecisionOpen)
+		if err != nil {
+			return errorMsg{err}
+		}
+		reqs, err := m.api.Requests(m.ctx, store.RequestNeedsRouting)
 		if err != nil {
 			return errorMsg{err}
 		}
@@ -268,7 +285,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 			}
 		}
 		return panelMsg{
-			lanes: lanes, runs: runs, decisions: ds, spend: sp, sessions: ss,
+			lanes: lanes, runs: runs, decisions: ds, requests: reqs, spend: sp, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions,
 		}
 	}
@@ -411,6 +428,10 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.Type == tea.KeyCtrlO {
 			return tea.Batch(append(cmds, m.openPager("transcript"))...)
 		}
+		if msg.Type == tea.KeyCtrlG {
+			m.clearDone()
+			return tea.Batch(cmds...)
+		}
 		if msg.Type == tea.KeyEnter {
 			text := strings.TrimSpace(m.input.Value())
 			m.input.Reset()
@@ -458,7 +479,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, m.onFeed(feed))
 	case panelMsg:
 		if msg.panelUpdated {
-			m.lanes, m.runs, m.decisions = msg.lanes, msg.runs, msg.decisions
+			m.lanes, m.runs, m.decisions, m.requests = msg.lanes, msg.runs, msg.decisions, msg.requests
 			m.spend = msg.spend
 		}
 		if msg.sessionsUpdated {
@@ -529,6 +550,7 @@ func (m *Model) quit() tea.Cmd {
 // openLog shows a run's log in the pager.
 func (m *Model) openLog(id int64) tea.Cmd {
 	m.logRun, m.logOffset, m.logDone = id, 0, false
+	m.markSeen(fmt.Sprintf("run:%d", id))
 	m.logText.Reset()
 	return tea.Batch(m.openPager(fmt.Sprintf("run %d", id)), m.pollLog())
 }
@@ -584,6 +606,7 @@ func (m *Model) handle(text string) tea.Cmd {
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/quit   leave (Ctrl-C too)\n" +
+			"The dock above the input: what needs you, what is broken, to review, working, and done since you last looked. Ctrl-G clears done; opening a run's log does too.\n" +
 			"The conversation is printed into your terminal: scroll, search, select and copy there as usual.\n" +
 			"Ctrl-O   the whole transcript: / search, n/N next/previous, g/G top/bottom, PgUp/PgDn, q or Esc back"})
 	case "/quit", "/exit":
@@ -888,9 +911,9 @@ func (m *Model) flush() tea.Cmd {
 	return m.println(strings.Join(parts, "\n"))
 }
 
-// View is the live region: the reply streaming in, the desk's status, the agents at
-// work, the input and a line of keys. Each line is cut to the terminal's width so the
-// region never wraps.
+// View is the live region: the reply streaming in, the desk's status, the dock, the
+// input and a line of keys. Each line is cut to the terminal's width so the region never
+// wraps.
 func (m *Model) View() string {
 	if m.quitting || !m.ready {
 		return ""
@@ -898,26 +921,40 @@ func (m *Model) View() string {
 	if m.pager != nil {
 		return m.pager.view()
 	}
+	items := m.dockItems()
 	var rows []string
-	rows = append(rows, m.streaming()...)
-	rows = append(rows, m.statusLine(), m.agentsLine())
+	dock := m.dockRows(items)
+	rows = append(rows, m.streaming(len(dock))...)
+	rows = append(rows, m.statusLine())
+	rows = append(rows, dock...)
 	rows = append(rows, strings.Split(m.input.View(), "\n")...)
-	rows = append(rows, styleInfo.Render("Enter send · Ctrl-O transcript · /help · Ctrl-C quit"))
+	if m.height >= 8 {
+		rows = append(rows, styleInfo.Render(m.keysHint(items)))
+	}
 	for i, r := range rows {
 		rows[i] = fit(r, m.width)
 	}
 	return strings.Join(rows, "\n")
 }
 
+// keysHint is the line of keys under the input, with the dock's keys when they apply.
+func (m *Model) keysHint(items []dockItem) string {
+	keys := []string{"Enter send"}
+	if n := counts(items); n[groupDone] > 0 {
+		keys = append(keys, "Ctrl-G clear done")
+	}
+	return strings.Join(append(keys, "Ctrl-O transcript", "/help", "Ctrl-C quit"), " · ")
+}
+
 // streaming is the tail of the reply as it streams, short enough to leave room for the
 // rest of the live region.
-func (m *Model) streaming() []string {
+func (m *Model) streaming(dockRows int) []string {
 	text := strings.TrimSpace(m.partial)
 	if text == "" {
 		return nil
 	}
 	lines := strings.Split(renderLine(Line{Kind: KindDesk, Text: text}, m.width), "\n")
-	room := m.height - 7
+	room := m.height - 6 - dockRows
 	if room < 1 {
 		room = 1
 	}
@@ -950,23 +987,4 @@ func (m *Model) statusLine() string {
 		s += styleInfo.Render(" · " + m.deskName)
 	}
 	return s + styleInfo.Render(fmtUSD(m.spend.USD, m.spend.Budget, m.spend.Day))
-}
-
-// agentsLine is a one-line strip of the agents running and the decisions waiting.
-func (m *Model) agentsLine() string {
-	var parts []string
-	for _, r := range m.runs {
-		if r.State != store.RunRunning {
-			continue
-		}
-		parts = append(parts, styleAgent(r.Agent).Render("● "+r.Agent)+" "+styleLane(r.Lane).Render(r.Lane)+styleInfo.Render(fmt.Sprintf(" #%d", r.ID)))
-	}
-	s := strings.Join(parts, "  ")
-	if s == "" {
-		s = styleInfo.Render(fmt.Sprintf("no agents running · %d lane(s) open", len(m.lanes)))
-	}
-	if n := len(m.decisions); n > 0 {
-		s += styleDecision.Render(fmt.Sprintf("  ? %d decision(s) waiting: /decisions", n))
-	}
-	return s
 }
