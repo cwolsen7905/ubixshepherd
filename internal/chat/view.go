@@ -73,7 +73,7 @@ func renderLine(l Line, width int) string {
 	case KindYou:
 		return hang(styleYou.Render("›")+" ", "  ", styleLines(styleYou, wrapText(l.Text, w)))
 	case KindDesk:
-		return hang(styleDeskMark.Render("●")+" ", "  ", wrapText(l.Text, w))
+		return hang(styleDeskMark.Render("●")+" ", "  ", renderMarkdown(l.Text, w))
 	case KindTool:
 		return hang(styleTool.Render("  → "), "    ", styleLines(styleTool, wrapText(l.Text, w-2)))
 	case KindEvent:
