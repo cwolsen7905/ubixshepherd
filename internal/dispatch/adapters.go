@@ -19,7 +19,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 )
@@ -52,6 +54,71 @@ type Adapter struct {
 	// returns, dollars or credits, so an adapter that starts reading a cost sets it
 	// when its CLI counts the session.
 	SessionCost bool
+	// Limit reads a line that says the agent's account is out of quota or past a usage
+	// limit.
+	Limit func(line string) (Limit, bool)
+}
+
+// Limit is an agent CLI saying its account is out of quota.
+type Limit struct {
+	// Text is what it said, for the person.
+	Text string
+	// Until is when the CLI says the limit resets; zero when it does not say.
+	Until time.Time
+	// Sure: the CLI said so in a structured event, not in words that a run's own work
+	// might contain.
+	Sure bool
+}
+
+// limitWords reads a usage limit from a line matching re: the words alone, so they
+// count only at the end of a failed run.
+func limitWords(re *regexp.Regexp) func(string) (Limit, bool) {
+	return func(line string) (Limit, bool) {
+		if m := re.FindString(line); m != "" {
+			return Limit{Text: clip(m, 200)}, true
+		}
+		return Limit{}, false
+	}
+}
+
+var (
+	claudeLimitWords  = regexp.MustCompile(`(?i)(claude ai )?usage limit reached(\|\d+)?|you.ve hit your (usage )?limit[^"]*|\b(5-hour|weekly|opus) limit reached[^"]*`)
+	copilotLimitWords = regexp.MustCompile(`(?i)[^.]*(premium requests? (allowance|limit|quota)|quota (exceeded|exhausted)|you.ve (reached|exceeded) your [a-z ]*(limit|quota|allowance))[^.]*`)
+	cursorLimitWords  = regexp.MustCompile(`(?i)(ActionRequiredError: )?you.ve hit your usage limit[^.]*`)
+)
+
+// claudeLimit reads Claude Code's rate limit event (stream-json), whose status is
+// rejected once the account is out, and failing that its words for it.
+func claudeLimit(line string) (Limit, bool) {
+	var m struct {
+		Type string `json:"type"`
+		Info struct {
+			Status   string `json:"status"`
+			ResetsAt int64  `json:"resetsAt"`
+			Kind     string `json:"rateLimitType"`
+		} `json:"rate_limit_info"`
+	}
+	if json.Unmarshal([]byte(line), &m) == nil && m.Type == "rate_limit_event" {
+		if m.Info.Status != "rejected" {
+			return Limit{}, false
+		}
+		l := Limit{Text: "Claude usage limit reached", Sure: true}
+		if m.Info.Kind != "" {
+			l.Text += " (" + strings.ReplaceAll(m.Info.Kind, "_", " ") + ")"
+		}
+		if m.Info.ResetsAt > 0 {
+			l.Until = time.Unix(m.Info.ResetsAt, 0)
+		}
+		return l, true
+	}
+	l, ok := limitWords(claudeLimitWords)(line)
+	// The older form carries the reset as a Unix time: "Claude AI usage limit reached|1759999999".
+	if _, at, found := strings.Cut(l.Text, "|"); ok && found {
+		if s, err := strconv.ParseInt(at, 10, 64); err == nil {
+			l.Until = time.Unix(s, 0)
+		}
+	}
+	return l, ok
 }
 
 // Opts are what a run's command line is built from.
@@ -155,6 +222,7 @@ var adapters = map[string]Adapter{
 		Read:       claudeOutput,
 		// total_cost_usd on a resumed session is the session's total, not the run's.
 		SessionCost: true,
+		Limit:       claudeLimit,
 	},
 	"copilot": {
 		Name: "copilot", Bin: "copilot",
@@ -205,6 +273,7 @@ var adapters = map[string]Adapter{
 		Read: copilotOutput,
 		// Its "AI Credits" line counts the session: a continued run reports the total.
 		SessionCost: true,
+		Limit:       limitWords(copilotLimitWords),
 	},
 	"cursor": {
 		Name: "cursor", Bin: "cursor-agent",
@@ -229,6 +298,8 @@ var adapters = map[string]Adapter{
 		},
 		WorkerReady: CursorWorkerReady,
 		Read:        plainOutput,
+		// It prints "ActionRequiredError: You've hit your usage limit" and exits at once.
+		Limit: limitWords(cursorLimitWords),
 		NewSession: func(ctx context.Context, bin, worktree string) (string, error) {
 			cmd := exec.CommandContext(ctx, bin, "create-chat")
 			cmd.Dir = worktree

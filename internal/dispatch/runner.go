@@ -90,12 +90,64 @@ type Runner struct {
 	// closing: Shutdown has begun. No run starts, and the runs it stops are recorded
 	// as interrupted, with nothing set off by their end.
 	closing bool
+	// outOf holds the agents out of quota, by name, until their limit lifts. It lives
+	// with the daemon: a restart tries each agent again.
+	outOf   map[string]outOfQuota
 	wg      sync.WaitGroup
 	routeMu sync.Mutex
 	// said holds the ids of requests the person or the front desk routed: their runs
 	// are not Shepherd's own, so the daily budget does not hold them.
 	said sync.Map
 	cfg  atomic.Pointer[config.Config]
+}
+
+// QuotaPause is how long an agent out of quota is held when its CLI does not say when
+// the limit resets.
+const QuotaPause = 30 * time.Minute
+
+// tailLines is how near the end of a failed run's output a usage limit in words must
+// be to count: the CLI's last word, not something the agent was working on.
+const tailLines = 20
+
+type outOfQuota struct {
+	Limit
+	run int64
+}
+
+// quotaHeld says why an agent cannot start for now, or "". Call it with r.mu held.
+func (r *Runner) quotaHeld(agent string) string {
+	q, ok := r.outOf[agent]
+	if !ok {
+		return ""
+	}
+	if !time.Now().Before(q.Until) {
+		delete(r.outOf, agent)
+		return ""
+	}
+	return fmt.Sprintf("%s is out of quota (run %d: %s); Shepherd holds %s runs until %s", agent, q.run, q.Text, agent, q.Until.Format("Jan 2 15:04"))
+}
+
+// outOfQuota records an agent out of quota until its limit lifts, and routes again then,
+// for the requests it held.
+func (r *Runner) outOfQuota(agent string, run int64, l Limit) time.Time {
+	if now := time.Now(); !l.Until.After(now) || l.Until.After(now.Add(8*24*time.Hour)) {
+		l.Until = now.Add(QuotaPause)
+	}
+	r.mu.Lock()
+	if r.outOf == nil {
+		r.outOf = map[string]outOfQuota{}
+	}
+	r.outOf[agent] = outOfQuota{Limit: l, run: run}
+	r.mu.Unlock()
+	time.AfterFunc(time.Until(l.Until)+time.Second, func() {
+		r.mu.Lock()
+		closing := r.closing
+		r.mu.Unlock()
+		if !closing {
+			r.Route(context.Background())
+		}
+	})
+	return l.Until
 }
 
 // SetConfig replaces the configuration, safely while runs go. Each operation (a start,
@@ -189,6 +241,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	defer r.mu.Unlock()
 	if r.closing {
 		return store.Run{}, held("the daemon is stopping; start the run when it is back")
+	}
+	if why := r.quotaHeld(ad.Name); why != "" {
+		return store.Run{}, held("%s", why)
 	}
 	if r.procs == nil {
 		r.procs = map[int64]*proc{}
@@ -333,8 +388,16 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	defer r.wg.Done()
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
+	var limit Limit
+	lines, limitAt := 0, 0
 	for sc.Scan() {
 		line := sc.Text()
+		lines++
+		if ad.Limit != nil {
+			if l, ok := ad.Limit(line); ok {
+				limit, limitAt = l, lines
+			}
+		}
 		// The latest id an agent reports wins, in case resuming ever moves a session.
 		if id := ad.SessionIn(line); id != "" {
 			run.Session = id
@@ -379,6 +442,13 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			run.Error = redact.String(err.Error())
 		}
 	}
+	// Out of quota: the CLI said so as the run failed, so the agent waits out its limit
+	// instead of failing every run Shepherd starts in the meantime.
+	var quotaUntil time.Time
+	if run.State == store.RunFailed && limit.Text != "" && (limit.Sure || lines-limitAt < tailLines) {
+		quotaUntil = r.outOfQuota(ad.Name, run.ID, limit)
+		run.Error = redact.String("out of quota: " + limit.Text)
+	}
 	if end, err := git.Run(ctx, lane.Worktree, "rev-parse", "HEAD"); err == nil {
 		run.EndSHA = end
 		if n, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", run.StartSHA+".."+end); err == nil {
@@ -417,6 +487,10 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		ended += ", outside its scope: " + strings.Join(run.Outside, ", ")
 	}
 	r.feed(ctx, store.FeedRunEnded, run.ID, "%s", ended)
+	if !quotaUntil.IsZero() {
+		r.feed(ctx, store.FeedRunEnded, run.ID, "run %d: %s is out of quota (%s); Shepherd holds %s runs until %s",
+			run.ID, run.Agent, clip(limit.Text, 160), run.Agent, quotaUntil.Format("Jan 2 15:04"))
+	}
 	if closing {
 		// The daemon is stopping: answers and requests wait for its next start, and a
 		// push (after a gate run of up to GateTimeout) is the person's or the next run's.
