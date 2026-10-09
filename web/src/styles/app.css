@@ -94,7 +94,7 @@ a.badge:hover { text-decoration: underline; }
 .button:hover { border-color: var(--muted); }
 
 .help {
-  min-width: 360px; padding: 20px 24px; border: 1px solid var(--rule-strong); border-radius: 6px;
+  min-width: 360px; max-width: 560px; padding: 20px 24px; border: 1px solid var(--rule-strong); border-radius: 6px;
   background: var(--sheet); color: var(--ink);
 }
 .help::backdrop { background: color-mix(in srgb, var(--field) 60%, transparent); }

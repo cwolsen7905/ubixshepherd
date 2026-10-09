@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Legend } from './Legend'
 
 const KEYS: [string, string][] = [
   ['j / k', 'Move down and up the board'],
@@ -30,6 +31,8 @@ export function Help({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </dl>
+      <h2>Glyphs</h2>
+      <Legend />
       <form method="dialog">
         <button type="submit" className="button">Close</button>
       </form>
