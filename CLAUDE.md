@@ -5,13 +5,15 @@ Guidance for Claude Code (or any AI session) working in this repository.
 ## Where things stand
 
 uBixShepherd is in **active build**. M1 is complete; M2 is partly implemented, with
-workspace-wide leases and real use in uBixCore still outstanding. M3 proofs and M5 dispatch
+workspace-wide leases and established real use still outstanding. M3 proofs and M5 dispatch
 are partly implemented; M4's MCP tools and terminal front desk are implemented; M6 has not
-started. The code now includes lanes, per-repo scope leases, tag reservations and import;
-dispatch for Claude Code, Copilot and Cursor, decisions, inter-lane requests, budgets and
-opt-in shipping; GitLab polling, merge closure and failed-pipeline handoffs; operator and
-worker MCP tools; and `shepherd chat`. GitHub mirror proofs through publication, typed work
-orders and triage, and the end-to-end cross-repo delivery criterion are not implemented.
+started. The code includes per-repo scope leases, lane origins, tag reservations and import;
+Claude Code, Copilot and Cursor dispatch with configured permission modes and repo-level
+push and merge autonomy; per-run costs, quota holds and routed requests; GitLab polling,
+merge closure and failed-pipeline handoffs; and `shepherd chat`. GitHub mirror proofs through
+publication, typed cross-repo work orders and triage, and the end-to-end cross-repo delivery
+criterion are not implemented. The web UI is in progress, but no `web/` sources are present
+in this checkout.
 v1's scope and stack were decided on 2026-10-01: a **Go** core (daemon, CLI, MCP server, HTTP
 API in one binary for Windows, macOS and Linux), the Fold and dispatch together, GitLab and
 GitHub, running over a workspace of repos, terminal first with a TypeScript web UI later.
@@ -48,34 +50,50 @@ release targets. CI runs `public-boundary`, `go-check` and `go-cross`.
 - `internal/store` is an interface; `store/sqlite` uses a pure-Go driver so `CGO_ENABLED=0`
   cross-compiles. Schema changes are appended migrations, never edits.
 - Text that stores or shows agent output goes through `internal/redact`.
-- `internal/fold` is lanes (and next, leases and reservations). It drives the git CLI
-  through `internal/git`, never a git library, so hooks and config behave as for people.
-  Its tests build real repos with a bare origin; keep them that way.
+- `internal/fold` owns lanes, per-repo scope leases, lane origins, tag reservations and
+  import. It drives the git CLI through `internal/git`, never a git library, so hooks and
+  config behave as for people. Its tests build real repos with a bare origin; keep them
+  that way.
 - `shepherd mcp` (`internal/cli/mcp.go`) maps each MCP tool onto a CLI command and runs
   it with output captured. Add a tool by adding a command first, then its mapping.
-- `internal/dispatch` starts agents (`lane run`). An adapter per CLI builds its headless
-  command line; the runner briefs the agent, blocks pushing for the whole run, redacts
-  its output into `~/.shepherd/runs/`, and records the outcome. Its tests use a fake agent
-  script; a real run of each CLI is a manual check before changing an adapter. Each
-  adapter also says how its CLI names a session (chosen up front, created first, or
-  printed in the output), how to resume it headless, and how to attach to it.
+- `internal/dispatch` starts agents (`lane run`). Adapters for Claude Code, Copilot and
+  Cursor use the repo's `agent.permission_mode` (default `auto`) and push/merge autonomy.
+  Agents can push when `autonomy.push: agent`; on GitLab, `autonomy.merge: agent` lets
+  them arm merge-when-pipeline-succeeds, still subject to forge rules. `lane ship` is an
+  explicit Shepherd ship for repos set to `push: shepherd`, after the repo gate passes;
+  Shepherd never merges. The runner records cost per run even when a CLI reports a session
+  total, holds an agent that is out of quota until reset, redacts output into
+  `~/.shepherd/runs/`, and records outcomes. Its tests use a fake agent script; a real run
+  of each CLI is a manual check before changing an adapter. Each adapter also says how its
+  CLI names a session (chosen up front, created first, or printed in the output), how to
+  resume it headless, and how to attach to it.
 - Worker tools (`shepherd mcp --worker`, `internal/cli/decision.go`) are for agents
   Shepherd starts: the run comes from `SHEPHERD_RUN`. A decision's answer is delivered by
   continuing the asking run's session (`dispatch.Runner.Answer`), at once or when the run
   ends. Never let an agent answer a decision: `decision_answer` takes the person's words.
-- Routing between lanes is `internal/dispatch/route.go`: deterministic rules only (a
-  named open lane, its last agent, another provider for reviews); anything needing
-  judgment becomes `needs_routing` for the front desk. `Route` runs whenever a run ends.
-- `shepherd chat` is `internal/chat`: a Bubble Tea model over the daemon's feed, and a
-  front desk (`ClaudeDesk`) run headless and resumed per turn. The desk gets operator
-  tools and reads only (`--disallowedTools Edit Write Bash`); its standing instruction is
-  `DeskBrief`. Test the model with fakes (`chat_test.go`); the desk needs a real check.
+- Routing between lanes is `internal/dispatch/route.go`: deterministic rules start the
+  target agent or explain why they cannot. The dispatch core can close requests; requests
+  addressed to the person become decisions. The close operation is not yet exposed through
+  the CLI or MCP. Anything needing routing judgment waits for the front desk; `Route` runs
+  whenever a run ends and when a quota hold lifts.
+- `shepherd chat` is `internal/chat`: a Bubble Tea model over the daemon's feed, with a
+  front desk (`ClaudeDesk`) run headless and resumed per turn. The thread prints inline to
+  terminal scrollback, replays history on start, and has a searchable Ctrl-O transcript and
+  markdown rendering. Its attention-sorted dock shows counts, lane/run state and MR
+  badges, and supports answering decisions in place. Colors adapt to the terminal and
+  `NO_COLOR`. The desk gets operator tools and reads only (`--disallowedTools Edit Write
+  Bash`); its standing instruction is `DeskBrief`. Test the model with fakes
+  (`chat_test.go`); the desk needs a real check.
 - `internal/forge` reads a forge through its CLI (`glab api`), never a stored token;
   `internal/watch` polls it for open lanes and acts on changes (`Fold.CloseMerged` on a
-  merge commit, the agent continued on a failed pipeline, capped at `MaxFixTries`). Test
-  the watcher with a fake forge; check the forge reader against a real MR read-only.
-  `dispatch/ship.go` pushes and opens MRs only for `autonomy.push: shepherd` repos, after
-  Shepherd's own gate run; never merge, and never push for a repo that has not opted in.
+  merge commit, the agent continued on a failed pipeline, capped at `MaxFixTries`). Lane
+  views include MR and pipeline state. The feed maps events to a closed set of kinds,
+  including gate, commit and run outcomes. Test the watcher with a fake forge; check the
+  forge reader against a real MR read-only.
+- `internal/config` validates repo profiles, including `agent.permission_mode` and the
+  `autonomy.push` and `autonomy.merge` choices. `internal/daemon` reloads config on SIGHUP
+  (`shepherd daemon reload` on supported systems), stops agents left by a crashed daemon,
+  rotates its log and logs routine reads at debug.
 - Commands autostart the daemon (`internal/cli/daemon.go`); `internal/service` registers it
   with launchd or systemd. Tests leave `Env.Autostart` false; set `SHEPHERD_NO_AUTOSTART=1`
   and `SHEPHERD_HOME` to a temp dir when running the binary by hand.
@@ -128,7 +146,8 @@ stranger:
 ## Good first step for a new session
 
 Read all of `docs/` (design.md, then v1.md last), then the uBixCore standards that
-`origins.md` cites. M1 is complete. Before choosing implementation work, check the status
-column in `v1.md`: M2 still lacks workspace-wide leases and established real use; M3 and M5
-have substantial gaps; M6 has not started. The milestones and everything below v1.md's
-"Decided" table are proposals: confirm them with the maintainer before writing code.
+`origins.md` cites. Check the current status in `v1.md` and `docs/roadmap.md` before
+choosing implementation work: workspace-wide leases, GitHub mirror proofs, typed cross-repo
+work orders and other milestone gaps remain. M6 has not started. The milestones and
+everything below v1.md's "Decided" table are proposals: confirm them with the maintainer
+before writing code.
