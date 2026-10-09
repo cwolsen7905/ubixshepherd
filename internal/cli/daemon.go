@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/term"
 
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -96,7 +99,18 @@ func daemonRun(ctx context.Context, env Env) error {
 		return err
 	}
 	defer st.Close()
-	srv, err := daemon.NewServer(st, cfg, l.Config(), daemon.NewLogger())
+	// The daemon writes and rotates its own log; whatever started it captures only what
+	// the log cannot (see consoleLog). Run by hand in a terminal, it logs there too.
+	var also io.Writer
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		also = os.Stderr
+	}
+	logger, logFile, err := daemon.OpenLogger(l.Log(), also)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	srv, err := daemon.NewServer(st, cfg, l.Config(), logger)
 	if err != nil {
 		return err
 	}
@@ -144,9 +158,16 @@ func startDaemon(ctx context.Context, env Env, auto bool) (*client.Client, error
 	return c, nil
 }
 
-// spawn starts `shepherd daemon` detached from this terminal, logging to the home's log.
+// consoleLog is where a detached daemon's stdout and stderr go, and where a service
+// manager is told to put them: a panic, or an error before the daemon has opened its
+// log. The daemon's own log (Layout.Log) is written, and rotated, by the daemon alone,
+// because a file a manager or parent holds open cannot be renamed out from under it.
+func consoleLog(l paths.Layout) string { return filepath.Join(l.Home, "daemon.out") }
+
+// spawn starts `shepherd daemon` detached from this terminal, its output going to the
+// console file.
 func spawn(env Env) (int, error) {
-	logf, err := os.OpenFile(env.Layout.Log(), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	logf, err := os.OpenFile(consoleLog(env.Layout), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return 0, err
 	}
@@ -295,7 +316,7 @@ func daemonInstall(ctx context.Context, env Env) error {
 			return err
 		}
 	}
-	spec := service.Spec{Exe: env.Exe, Log: env.Layout.Log(), Path: os.Getenv("PATH")}
+	spec := service.Spec{Exe: env.Exe, Log: env.Layout.Log(), Console: consoleLog(env.Layout), Path: os.Getenv("PATH")}
 	if os.Getenv(paths.HomeEnv) != "" {
 		spec.Home = env.Layout.Home
 	}
@@ -309,7 +330,8 @@ func daemonInstall(ctx context.Context, env Env) error {
 	fmt.Fprintf(w, "installed %s\n", mgr.File())
 	fmt.Fprintf(w, "  runs   %s daemon\n", spec.Exe)
 	fmt.Fprintf(w, "  PATH   %s\n", spec.Path)
-	fmt.Fprintf(w, "  log    %s\n", spec.Log)
+	fmt.Fprintf(w, "  log    %s (rotated at %d MB, %d old files kept)\n", spec.Log, daemon.LogMaxBytes>>20, daemon.LogKeep)
+	fmt.Fprintf(w, "  other  %s (panics and startup errors)\n", spec.Console)
 	fmt.Fprintln(w, "It starts at login and restarts if it crashes; `shepherd daemon stop` stops it until the next login.")
 	if mgr.Name() == "systemd" {
 		fmt.Fprintln(w, "To keep it running while you are logged out: loginctl enable-linger $USER")

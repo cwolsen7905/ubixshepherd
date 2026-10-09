@@ -43,6 +43,23 @@ func TestPlistIsWellFormed(t *testing.T) {
 	}
 }
 
+// The manager writes to the console file, never to the log the daemon rotates itself;
+// without one it falls back to the log, as before.
+func TestManagerOutputGoesToConsole(t *testing.T) {
+	withConsole := spec
+	withConsole.Console = "/Users/a b/.shepherd/daemon.out"
+	for name, out := range map[string]string{"plist": string(Plist(withConsole)), "unit": string(Unit(withConsole))} {
+		if !strings.Contains(out, "daemon.out") || strings.Contains(out, "daemon.log") {
+			t.Errorf("%s does not send manager output to the console file only:\n%s", name, out)
+		}
+	}
+	for name, out := range map[string]string{"plist": string(Plist(spec)), "unit": string(Unit(spec))} {
+		if !strings.Contains(out, "daemon.log") {
+			t.Errorf("%s without a console file does not use the log:\n%s", name, out)
+		}
+	}
+}
+
 func TestUnit(t *testing.T) {
 	s := string(Unit(spec))
 	for _, want := range []string{
