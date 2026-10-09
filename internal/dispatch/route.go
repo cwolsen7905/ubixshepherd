@@ -508,7 +508,7 @@ func (r *Runner) askConversation(ctx context.Context, q store.Request, c store.C
 		ask = defaultAsk
 	}
 	r.wg.Add(1)
-	go func() {
+	go func(q store.Request) { // its own copy: the caller returns q while this runs
 		defer r.wg.Done()
 		ctx := context.Background()
 		a, err := ask(ctx, c, prompt)
@@ -520,7 +520,7 @@ func (r *Runner) askConversation(ctx context.Context, q store.Request, c store.C
 		q.State, q.Reply = store.RequestReplyReady, reply
 		r.save(ctx, q)
 		r.Route(ctx)
-	}()
+	}(q)
 	return q
 }
 

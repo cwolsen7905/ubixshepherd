@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -67,7 +68,9 @@ type StartRequest struct {
 
 // Runner starts agents and watches them until they exit.
 type Runner struct {
-	Store  store.Store
+	Store store.Store
+	// Config is the configuration until the first SetConfig; after that SetConfig's
+	// wins. A daemon that reloads its configuration calls SetConfig, never assigns this.
 	Config config.Config
 	// Dir holds the run logs.
 	Dir string
@@ -89,6 +92,19 @@ type Runner struct {
 	// said holds the ids of requests the person or the front desk routed: their runs
 	// are not Shepherd's own, so the daily budget does not hold them.
 	said sync.Map
+	cfg  atomic.Pointer[config.Config]
+}
+
+// SetConfig replaces the configuration, safely while runs go. Each operation (a start,
+// a ship, a gate) reads the configuration once, so a reload never splits one.
+func (r *Runner) SetConfig(c config.Config) { r.cfg.Store(&c) }
+
+// conf is the configuration for one operation: the last SetConfig's, else Config.
+func (r *Runner) conf() config.Config {
+	if c := r.cfg.Load(); c != nil {
+		return *c
+	}
+	return r.Config
 }
 
 type proc struct {
@@ -116,6 +132,7 @@ func (r *Runner) Recover(ctx context.Context) error {
 // Start starts an agent in a lane and returns at once; the run is watched in the
 // background and recorded when it exits.
 func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error) {
+	cfg := r.conf()
 	var parent store.Run
 	if req.Continue != 0 {
 		p, err := r.Store.Run(ctx, req.Continue)
@@ -180,11 +197,11 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		}
 	}
 	if req.Auto {
-		if why := r.overBudget(ctx); why != "" {
+		if why := r.overBudget(ctx, cfg); why != "" {
 			return store.Run{}, held("%s", why)
 		}
 	}
-	if max := r.Config.Daemon.MaxRuns; len(running) >= max {
+	if max := cfg.Daemon.MaxRuns; len(running) >= max {
 		return store.Run{}, held("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
 	}
 
@@ -230,7 +247,7 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		return run, r.fail(ctx, run, err)
 	}
 
-	prof := r.Config.Profile(repo.Name)
+	prof := cfg.Profile(repo.Name)
 	gate := prof.Gate
 	may := powers(prof, repo.Remote)
 	// A new session gets the full brief; a continuing one already has it.

@@ -216,6 +216,40 @@ func TestMaxRuns(t *testing.T) {
 	}
 }
 
+func TestSetConfigWhileRunsGo(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	// SetConfig wins over the field, and may come while runs start and end.
+	one := config.Default()
+	one.Daemon.MaxRuns = 1
+	f.runner.SetConfig(one)
+	busy, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunRunning, Log: "l"})
+	other := openLane(t, f, "other", "docs/**")
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: other.ID, Agent: "claude", Prompt: "y"}); !errors.Is(err, ErrHeld) || !strings.Contains(err.Error(), "max_runs") {
+		t.Errorf("SetConfig's limit not applied: %v", err)
+	}
+	busy.State = store.RunSucceeded
+	f.st.UpdateRun(ctx, busy)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			c := config.Default()
+			c.Daemon.MaxRuns = 2 + i%2
+			f.runner.SetConfig(c)
+		}
+	}()
+	for i := 0; i < 3; i++ {
+		run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "z"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.wait(t, run.ID)
+	}
+	<-done
+}
+
 func TestRecoverMarksInterrupted(t *testing.T) {
 	f := newFixture(t, "ok")
 	ctx := context.Background()
