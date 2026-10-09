@@ -87,9 +87,10 @@ export function LogPage({ run: id }: { run: number }) {
   const hits = useMemo(() => (q ? countHits(text.toLowerCase(), q) : 0), [text, q])
 
   // Following keeps the end of the log in view; scrolling up stops it.
+  const running = run?.state === 'running' && !done
   useEffect(() => {
-    if (follow && !q) window.scrollTo({ top: document.documentElement.scrollHeight })
-  }, [text, follow, q])
+    if (follow && running && !q) window.scrollTo({ top: document.documentElement.scrollHeight })
+  }, [text, follow, running, q])
   useEffect(() => {
     const onScroll = () => {
       const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 40
@@ -132,8 +133,6 @@ export function LogPage({ run: id }: { run: number }) {
     },
     [hit, jump],
   )
-
-  const running = run?.state === 'running' && !done
 
   return (
     <div className="page log">
