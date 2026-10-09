@@ -11,6 +11,7 @@ import { useLive, useSnapshot } from '../state/context'
 /** Where a row leads: a decision to its answer, a lane to its page. */
 function target(it: BoardItem): string | null {
   if (it.decision) return href.decisions(it.decision.id)
+  if (it.request) return href.decisions()
   if (it.laneId !== undefined) return href.lane(it.laneId)
   return null
 }

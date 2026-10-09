@@ -39,7 +39,7 @@ export function App() {
     [],
   )
 
-  const decisions = snap.decisions.length
+  const decisions = snap.decisions.length + snap.requests.length
   const spend = snap.spend
 
   return (
