@@ -880,6 +880,7 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 	}
 	for i, it := range f.Items {
 		m.add(feedLine(it, feedEvent(f, i), true))
+		m.noteOutcome(it, feedEvent(f, i))
 		if autoKinds[it.Kind] {
 			m.pending = append(m.pending, it.Text)
 		}

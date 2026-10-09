@@ -140,6 +140,30 @@ func (m *Model) dockItems() []dockItem {
 	return items
 }
 
+// outcomeStates is the run state a feed outcome reports. An interrupted run may also
+// have been stopped by the person; the runs list says which at the next poll.
+var outcomeStates = map[string]string{
+	kindRunPassed:      store.RunSucceeded,
+	kindRunFailed:      store.RunFailed,
+	kindRunInterrupted: store.RunInterrupted,
+}
+
+// noteOutcome lets the dock show a run's end as soon as the feed reports it, instead of
+// at the next poll. The runs list stays the source of truth: the next poll replaces this,
+// and an older daemon, which sends run_ended without an outcome, changes nothing here.
+func (m *Model) noteOutcome(it store.FeedItem, event string) {
+	state, ok := outcomeStates[event]
+	if !ok || it.Ref == 0 {
+		return
+	}
+	for i, r := range m.runs {
+		if r.ID == it.Ref && r.State == store.RunRunning {
+			ended := it.Created
+			m.runs[i].State, m.runs[i].Ended = state, &ended
+		}
+	}
+}
+
 // unseen says whether something that finished at t is news to the person: it finished
 // since the chat started or since they last cleared the dock, and they have not opened it.
 func (m *Model) unseen(key string, t time.Time) bool {

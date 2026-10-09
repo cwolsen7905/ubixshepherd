@@ -269,3 +269,32 @@ func TestAges(t *testing.T) {
 		}
 	}
 }
+
+// A run's outcome in the feed shows in the dock at once; the runs list still has the
+// last word, and run_ended (an older daemon) leaves the run as the list said.
+func TestFeedOutcomeShowsBeforeThePoll(t *testing.T) {
+	for _, c := range []struct {
+		kind, want string
+	}{
+		{kindRunPassed, "done unseen feat/working run 3 done"},
+		{kindRunFailed, "broken feat/working run 3 failed"},
+		{kindRunInterrupted, "broken feat/working run 3 interrupted"},
+		{kindRunQuota, "working feat/working run 3 · 13m"},
+		{kindCommit, "working feat/working run 3 · 13m"},
+		{store.FeedRunEnded, "working feat/working run 3 · 13m"},
+	} {
+		m := dockModel()
+		m.lastFeed = 0
+		m.Update(feedMsg(api.Feed{Last: 1, Items: []store.FeedItem{{ID: 1, Kind: c.kind, Ref: 3, Created: dockNow, Text: "run 3"}}}))
+		if !strings.Contains(strings.Join(describe(m.dockItems()), "\n"), c.want) {
+			t.Errorf("%s: dock lacks %q:\n%s", c.kind, c.want, strings.Join(describe(m.dockItems()), "\n"))
+		}
+		// The next poll is the truth: here the person had stopped it.
+		runs := append([]api.RunView(nil), dockModel().runs...)
+		runs[2] = run(3, 3, "copilot", store.RunStopped, &dockNow)
+		m.Update(panelMsg{panelUpdated: true, lanes: m.lanes, runs: runs, decisions: m.decisions, requests: m.requests})
+		if !strings.Contains(strings.Join(describe(m.dockItems()), "\n"), "done unseen feat/working run 3 stopped") {
+			t.Errorf("%s: the poll did not win:\n%s", c.kind, strings.Join(describe(m.dockItems()), "\n"))
+		}
+	}
+}
