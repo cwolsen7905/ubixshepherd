@@ -92,7 +92,7 @@ func logLevel() slog.Level {
 // NewLogger returns a logger whose output is redacted before it is written, at the level
 // LogLevelEnv sets.
 func NewLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(redact.Writer(os.Stderr), &slog.HandlerOptions{Level: logLevel()}))
+	return newLogger(os.Stderr)
 }
 
 // Handler is the API, behind token authentication.

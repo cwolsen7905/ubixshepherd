@@ -110,10 +110,15 @@ func (r *RotatingFile) Close() error {
 	return err
 }
 
+// newLogger writes text records to w, redacted, at LogLevelEnv's level, with an
+// identical warning or error held back for RepeatWindow after it was logged.
+func newLogger(w io.Writer) *slog.Logger {
+	return slog.New(newDedupHandler(slog.NewTextHandler(redact.Writer(w), &slog.HandlerOptions{Level: logLevel()})))
+}
+
 // OpenLogger returns a logger that writes to a rotating file at path, and to also (a
-// terminal, for a daemon run by hand) when it is not nil. Output is redacted before it
-// is written, and the level is LogLevelEnv's. Close the returned closer when the daemon
-// stops.
+// terminal, for a daemon run by hand) when it is not nil. See newLogger. Close the
+// returned closer when the daemon stops.
 func OpenLogger(path string, also io.Writer) (*slog.Logger, io.Closer, error) {
 	f, err := OpenRotating(path, LogMaxBytes, LogKeep)
 	if err != nil {
@@ -123,5 +128,5 @@ func OpenLogger(path string, also io.Writer) (*slog.Logger, io.Closer, error) {
 	if also != nil {
 		w = io.MultiWriter(f, also)
 	}
-	return slog.New(slog.NewTextHandler(redact.Writer(w), &slog.HandlerOptions{Level: logLevel()})), f, nil
+	return newLogger(w), f, nil
 }
