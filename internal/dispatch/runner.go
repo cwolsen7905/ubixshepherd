@@ -85,8 +85,11 @@ type Runner struct {
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
-	mu      sync.Mutex
-	procs   map[int64]*proc
+	mu    sync.Mutex
+	procs map[int64]*proc
+	// closing: Shutdown has begun. No run starts, and the runs it stops are recorded
+	// as interrupted, with nothing set off by their end.
+	closing bool
 	wg      sync.WaitGroup
 	routeMu sync.Mutex
 	// said holds the ids of requests the person or the front desk routed: their runs
@@ -184,6 +187,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closing {
+		return store.Run{}, held("the daemon is stopping; start the run when it is back")
+	}
 	if r.procs == nil {
 		r.procs = map[int64]*proc{}
 	}
@@ -356,7 +362,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	code := p.cmd.ProcessState.ExitCode()
 	run.ExitCode = &code
 	r.mu.Lock()
-	stopped := p.stopped
+	stopped, closing := p.stopped, r.closing
 	delete(r.procs, run.ID)
 	r.mu.Unlock()
 	switch {
@@ -364,6 +370,9 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		run.State = store.RunStopped
 	case err == nil && code == 0:
 		run.State = store.RunSucceeded
+	case closing:
+		// Cut short by Shutdown: not the agent's failure.
+		run.State, run.Error = store.RunInterrupted, "the daemon stopped while this run was going"
 	default:
 		run.State = store.RunFailed
 		if err != nil {
@@ -408,6 +417,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		ended += ", outside its scope: " + strings.Join(run.Outside, ", ")
 	}
 	r.feed(ctx, store.FeedRunEnded, run.ID, "%s", ended)
+	if closing {
+		// The daemon is stopping: answers and requests wait for its next start, and a
+		// push (after a gate run of up to GateTimeout) is the person's or the next run's.
+		return
+	}
 	r.deliverAnswers(ctx, run.ID)
 	r.Route(ctx)
 	r.ship(ctx, run, lane)
@@ -543,9 +557,12 @@ func (r *Runner) Stop(ctx context.Context, id int64) error {
 }
 
 // Shutdown stops every running agent and waits for their outcomes to be recorded, up
-// to the context's deadline. Runs cut short this way are recorded as interrupted.
+// to the context's deadline. Runs cut short this way are recorded as interrupted. No
+// run's end sets anything off once it has begun (no answer delivered, no request
+// routed, no push), and no run starts.
 func (r *Runner) Shutdown(ctx context.Context) {
 	r.mu.Lock()
+	r.closing = true
 	for _, p := range r.procs {
 		terminate(p.cmd)
 	}

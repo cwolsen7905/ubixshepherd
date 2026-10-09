@@ -250,6 +250,40 @@ func TestSetConfigWhileRunsGo(t *testing.T) {
 	<-done
 }
 
+func TestShutdownInterruptsAndSetsNothingOff(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	pushes, _ := config.Parse([]byte("repos:\n  app:\n    gate: \"true\"\n    autonomy:\n      push: shepherd\n"))
+	f.runner.SetConfig(pushes)
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q, _ := f.runner.RequestHelp(ctx, store.Request{FromRun: run.ID, Kind: KindReview, Message: "review me"})
+	time.Sleep(200 * time.Millisecond) // the agent is asleep in its run
+	stop, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	f.runner.Shutdown(stop)
+
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunInterrupted || !strings.Contains(got.Error, "daemon stopped") {
+		t.Errorf("run after shutdown = %+v", got)
+	}
+	// The run's end routed nothing: the review still waits on the asker's first turn.
+	if r, _ := f.st.Request(ctx, q.ID); r.State != store.RequestPending || strings.Contains(r.Note, "stopping") {
+		t.Errorf("request after shutdown = %+v", r)
+	}
+	items, _ := f.st.Feed(ctx, 0, 100)
+	for _, it := range items {
+		if strings.Contains(it.Text, "gate") {
+			t.Errorf("shutdown set a ship off: %s", it.Text)
+		}
+	}
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "y"}); !errors.Is(err, ErrHeld) {
+		t.Errorf("start while stopping: %v", err)
+	}
+}
+
 func TestRecoverMarksInterrupted(t *testing.T) {
 	f := newFixture(t, "ok")
 	ctx := context.Background()
