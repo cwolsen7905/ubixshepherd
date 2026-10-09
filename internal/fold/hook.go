@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -51,19 +52,41 @@ type Verdict struct {
 	Notes    []string `json:"notes,omitempty"`
 }
 
-// CheckPush decides whether a push may go ahead. From a lane: only the lane's branch,
-// only changes inside its scope, and no push while an agent runs in it. From any
-// checkout of a repo whose tags are reserved: release tags must be reserved, and contain
-// their lane's merge. Everything else is left alone.
+// PushAgent is the autonomy.push value that lets an agent push its own lane branch. It is
+// compared as a string so this works whichever config package version is built.
+const PushAgent = "agent"
+
+// CheckPush decides whether a push may go ahead, without knowing where it goes. While an
+// agent runs in the lane that means refusing, since the remote of an agent's push cannot
+// be verified. See CheckPushTo.
 func (f *Fold) CheckPush(ctx context.Context, lane *store.Lane, repo *store.Repo, dir string, refs []PushRef) (Verdict, error) {
+	return f.CheckPushTo(ctx, lane, repo, dir, "", refs)
+}
+
+// CheckPushTo decides whether a push to remote (the name or URL git hands the hook, "" if
+// unknown) may go ahead. From a lane: only the lane's branch, only changes inside its
+// scope, no commit message the repo forbids, and no push while an agent runs in it,
+// unless the repo's profile says autonomy.push: agent, which lets the agent push the
+// lane's own branch to the repo's origin. From any checkout of a repo whose tags are
+// reserved: release tags must be reserved, and contain their lane's merge. Everything
+// else is left alone.
+func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Repo, dir, remote string, refs []PushRef) (Verdict, error) {
 	v := Verdict{OK: true}
 	if lane != nil {
 		v.Lane = lane.Name
 		if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
-			v.OK = false
-			v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) is going in lane %s; agents Shepherd starts never push. Review the lane's commits when it ends, then push yourself",
-				running[0].ID, running[0].Agent, lane.Name))
-			return v, nil
+			switch {
+			case repo == nil || f.Config.Profile(repo.Name).Autonomy.Push != PushAgent:
+				v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) is going in lane %s; agents Shepherd starts never push. Review the lane's commits when it ends, then push yourself",
+					running[0].ID, running[0].Agent, lane.Name))
+			case !isOrigin(ctx, dir, remote):
+				v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) in lane %s may push only to the repo's origin; this pushes to %q",
+					running[0].ID, running[0].Agent, lane.Name, remote))
+			}
+			if len(v.Problems) > 0 {
+				v.OK = false
+				return v, nil
+			}
 		}
 	}
 	reserved := repo != nil && f.Config.Profile(repo.Name).Tags == config.TagsReserved
@@ -110,9 +133,60 @@ func (f *Fold) CheckPush(ctx context.Context, lane *store.Lane, repo *store.Repo
 			v.Problems = append(v.Problems, fmt.Sprintf("changes outside lane %s's scope (%s):\n    %s",
 				lane.Name, strings.Join(lane.Scope, ", "), strings.Join(firstLinesN(outside, 20), "\n    ")))
 		}
+		if repo != nil {
+			bad, err := forbiddenMessage(ctx, dir, from, r.LocalSHA, f.Config.Profile(repo.Name).Forbid)
+			if err != nil {
+				return v, err
+			}
+			if bad != "" {
+				v.Problems = append(v.Problems, bad)
+			}
+		}
 	}
 	v.OK = len(v.Problems) == 0
 	return v, nil
+}
+
+// isOrigin reports whether remote, as git names it to a hook (a remote name or a URL),
+// is the checkout's origin. An empty remote is not verified, so it is not origin.
+func isOrigin(ctx context.Context, dir, remote string) bool {
+	if remote == "" {
+		return false
+	}
+	if remote == "origin" {
+		return true
+	}
+	for _, args := range [][]string{{"remote", "get-url", "origin"}, {"remote", "get-url", "--push", "origin"}} {
+		if u, err := git.Run(ctx, dir, args...); err == nil && u == remote {
+			return true
+		}
+	}
+	return false
+}
+
+// forbiddenMessage checks the messages of the commits from..to against the repo's forbid
+// patterns and describes the first match, or returns "".
+func forbiddenMessage(ctx context.Context, dir, from, to string, patterns []string) (string, error) {
+	if len(patterns) == 0 {
+		return "", nil
+	}
+	out, err := git.Run(ctx, dir, "log", "--format=%h%x00%B%x01", from+".."+to)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range patterns {
+		re, err := regexp.Compile(p)
+		if err != nil {
+			continue
+		}
+		for _, c := range strings.Split(out, "\x01") {
+			sha, msg, _ := strings.Cut(strings.TrimSpace(c), "\x00")
+			if m := re.FindString(msg); m != "" {
+				return fmt.Sprintf("commit %s's message contains %q, which this repo does not allow (pattern %s)", sha, m, p), nil
+			}
+		}
+	}
+	return "", nil
 }
 
 // pushBase is where the pushed changes start: the remote's current tip when the branch
