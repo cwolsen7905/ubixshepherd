@@ -90,8 +90,8 @@ export function App() {
       <main className="main">
         {route.page === 'board' && <BoardPage items={items} />}
         {route.page === 'decisions' && <DecisionsPage focus={route.focus} />}
-        {route.page === 'lane' && <LanePage id={route.id} />}
-        {route.page === 'log' && <LogPage run={route.run} />}
+        {route.page === 'lane' && <LanePage key={route.id} id={route.id} />}
+        {route.page === 'log' && <LogPage key={route.run} run={route.run} />}
         {route.page === 'missing' && (
           <p className="empty">
             Nothing lives at <code>{route.path}</code>. <a href={href.board()}>Go to the board</a>.

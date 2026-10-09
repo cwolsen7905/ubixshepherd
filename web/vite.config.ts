@@ -1,7 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { daemonProxy } from './daemon-proxy'
+import { daemonProxy } from './daemon-proxy.ts'
 
 // Relative base and relative API URLs, so the built app works unchanged when the daemon
 // serves it.
