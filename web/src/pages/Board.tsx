@@ -6,6 +6,12 @@ import { DEFAULT_RANGE, ending, finished, RANGE_PHRASE, rangeStart } from '../mo
 import { useHistory } from '../state/history'
 import type { Range } from '../router'
 import { GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
+import {
+  collapseKey, groupByProject, readCollapsed, readView, summaryText, writeCollapsed, writeView, type BoardView,
+} from '../model/projects'
+import { useProjectList } from '../state/projects'
+import { projectHref } from './Projects'
+import '../styles/projects.css'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
 import { MrBadge } from '../components/MrBadge'
@@ -34,7 +40,27 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
     return (await Promise.all(ids.map((id) => history.lanes(id, since0)))).flat()
   })
   const done = useMemo(() => finished(closed.data ?? [], rangeStart(range, now)), [closed.data, range, now])
-  const total = items.length + done.length
+
+  const projects = useProjectList()
+  const [view, setView] = useState<BoardView | null>(() => readView(window.localStorage))
+  const [collapsed, setCollapsed] = useState(() => readCollapsed(window.localStorage))
+  const list = projects.data?.projects
+  // Grouping needs a project to group by; Unassigned alone is the flat board.
+  const hasProjects = !!list?.some((p) => !p.unassigned)
+  const grouped = hasProjects && (view ?? 'grouped') === 'grouped'
+  const groups = useMemo(() => (grouped && list ? groupByProject(items, list) : []), [grouped, list, items])
+  const shown = grouped ? groups.filter((g) => !collapsed.has(collapseKey(g))).reduce((n, g) => n + g.items.length, 0) : items.length
+  const total = shown + done.length
+  const choose = (v: BoardView) => {
+    setView(v)
+    writeView(window.localStorage, v)
+  }
+  const toggle = (key: string) => {
+    const next = new Set(collapsed)
+    if (!next.delete(key)) next.add(key)
+    setCollapsed(next)
+    writeCollapsed(window.localStorage, next)
+  }
 
   const clamped = Math.min(sel, Math.max(0, total - 1))
   useEffect(() => {
@@ -56,24 +82,14 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
     return <p className="empty">{snap.error ? 'Waiting for the daemon.' : 'Loading lanes…'}</p>
   }
 
-  const byGroup = new Map<Group, BoardItem[]>()
-  for (const it of items) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it])
   let index = -1
-
-  return (
-    <div className="board">
-      {items.length === 0 && (
-        <div className="empty">
-          <p>Nothing needs you, nothing is running, and nothing finished since you last looked.</p>
-          <p className="faint">
-            Start work from the terminal: <code>shepherd lane run &lt;lane&gt; --agent claude</code>.
-          </p>
-        </div>
-      )}
-      {GROUPS.flatMap((g) => {
-        const list = byGroup.get(g)
-        return list ? [{ g, list }] : []
-      }).map(({ g, list }) => (
+  const renderGroups = (its: BoardItem[]) => {
+    const byGroup = new Map<Group, BoardItem[]>()
+    for (const it of its) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it])
+    return GROUPS.flatMap((g) => {
+      const list = byGroup.get(g)
+      return list ? [{ g, list }] : []
+    }).map(({ g, list }) => (
         <section key={g} className={`group group-${g}`} aria-labelledby={`group-${g}`}>
           <h2 id={`group-${g}`} className="group-head">
             <Glyph glyph={GROUP_MARKS[g].glyph} tone={GROUP_MARKS[g].tone} label="" />
@@ -138,13 +154,70 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
             })}
           </ul>
         </section>
-      ))}
+    ))
+  }
+
+  return (
+    <div className="board">
+      {hasProjects && (
+        <p className="board-tools">
+          <span>View</span>
+          <button type="button" className="link-button" aria-pressed={grouped} onClick={() => choose('grouped')}>
+            By project
+          </button>
+          <button type="button" className="link-button" aria-pressed={!grouped} onClick={() => choose('flat')}>
+            Flat
+          </button>
+        </p>
+      )}
+      {items.length === 0 && !grouped && (
+        <div className="empty">
+          <p>Nothing needs you, nothing is running, and nothing finished since you last looked.</p>
+          <p className="faint">
+            Start work from the terminal: <code>shepherd lane run &lt;lane&gt; --agent claude</code>.
+          </p>
+        </div>
+      )}
+      {grouped
+        ? groups.map((g) => {
+            const key = collapseKey(g)
+            const open = !collapsed.has(key)
+            const id = `project-${g.unassigned ? 'unassigned' : g.name}`
+            return (
+              <section key={key} className="project-group" aria-labelledby={id}>
+                <h2 id={id} className="project-group-head">
+                  <button type="button" className="project-toggle" aria-expanded={open} onClick={() => toggle(key)}>
+                    <span className="caret" aria-hidden="true">
+                      {open ? '▾' : '▸'}
+                    </span>
+                    {g.title}
+                  </button>
+                  <span className="project-summary">{summaryText(g.summary, (n) => usd(n) || '$0.00')}</span>
+                  <a
+                    href={projectHref({ name: g.name, unassigned: g.unassigned })}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      go(projectHref({ name: g.name, unassigned: g.unassigned }))
+                    }}
+                  >
+                    Open
+                  </a>
+                </h2>
+                {open && (
+                  <div className="project-group-body">
+                    {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items)}
+                  </div>
+                )}
+              </section>
+            )
+          })
+        : renderGroups(items)}
       <FinishedSection
         lanes={done}
         range={range}
         loading={closed.loading && closed.data === null}
         error={closed.error}
-        offset={items.length}
+        offset={shown}
         now={now}
         selected={clamped}
         onSelect={setSel}

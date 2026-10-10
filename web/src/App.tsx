@@ -9,6 +9,8 @@ import { ChatPage } from './pages/Chat'
 import { DecisionsPage } from './pages/Decisions'
 import { LanePage } from './pages/Lane'
 import { LogPage } from './pages/Log'
+import { ProjectPage } from './pages/Project'
+import { ProjectsPage } from './pages/Projects'
 import { RunsPage } from './pages/Runs'
 import { SettingsPage } from './pages/Settings'
 import { UsagePage } from './pages/Usage'
@@ -65,6 +67,12 @@ export function App() {
           <a href={href.board()} aria-current={route.page === 'board' ? 'page' : undefined}>
             Board
           </a>
+          <a
+            href={href.projects()}
+            aria-current={route.page === 'projects' || route.page === 'project' || route.page === 'unassigned' ? 'page' : undefined}
+          >
+            Projects
+          </a>
           <a href={href.decisions()} aria-current={route.page === 'decisions' ? 'page' : undefined}>
             Decisions
             {decisions > 0 && <span className="nav-count tone-warn">{decisions}</span>}
@@ -114,6 +122,9 @@ export function App() {
 
       <main className="main">
         {route.page === 'board' && <BoardPage items={items} range={route.range} />}
+        {route.page === 'projects' && <ProjectsPage />}
+        {route.page === 'project' && <ProjectPage key={route.name} name={route.name} />}
+        {route.page === 'unassigned' && <ProjectPage key="unassigned" name={null} />}
         {route.page === 'runs' && <RunsPage range={route.range} agent={route.agent} lane={route.lane} />}
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'decisions' && <DecisionsPage focus={route.focus} />}
