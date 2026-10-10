@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -44,6 +46,40 @@ func TestWebOpensASigninLink(t *testing.T) {
 	}
 	if resp := openLink(t, opened[0]); resp.StatusCode != http.StatusUnauthorized {
 		t.Errorf("the link worked twice: %d", resp.StatusCode)
+	}
+}
+
+// --allow-settings asks for a session that may save settings; without it the session
+// reads only.
+func TestWebAllowSettings(t *testing.T) {
+	h := newHarness(t, "", false)
+	defer func(f func(string) error) { openBrowser = f }(openBrowser)
+	for _, c := range []struct {
+		args []string
+		want bool
+	}{{[]string{"--print"}, false}, {[]string{"--print", "--allow-settings"}, true}} {
+		h.out.Reset()
+		if err := runWeb(context.Background(), h.env, c.args); err != nil {
+			t.Fatal(err)
+		}
+		link := strings.TrimSpace(h.out.String())
+		resp := openLink(t, link)
+		if len(resp.Cookies()) != 1 {
+			t.Fatalf("%v: exchange gave %v", c.args, resp.Cookies())
+		}
+		u, _ := url.Parse(link)
+		req, _ := http.NewRequest("GET", u.Scheme+"://"+u.Host+api.PathWebSession, nil)
+		req.AddCookie(resp.Cookies()[0])
+		got, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ws api.WebSession
+		json.NewDecoder(got.Body).Decode(&ws)
+		got.Body.Close()
+		if ws.AllowSettings != c.want {
+			t.Errorf("%v: allow_settings = %v, want %v", c.args, ws.AllowSettings, c.want)
+		}
 	}
 }
 
