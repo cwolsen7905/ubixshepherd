@@ -15,6 +15,7 @@ import '../styles/projects.css'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
 import { MrBadge } from '../components/MrBadge'
+import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { go, href } from '../router'
@@ -148,6 +149,9 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
                     >
                       {body}
                     </div>
+                  )}
+                  {it.group === 'broken' && it.run?.diagnosis && (
+                    <RunFailure run={it.run} compact onFixed={() => void live.refresh()} />
                   )}
                 </li>
               )

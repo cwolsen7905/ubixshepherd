@@ -4,7 +4,7 @@
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
 import type {
-  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Feed, LaneRecord, LaneView, ProjectDetail, ProjectList, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneRecord, LaneView, ProjectDetail, ProjectList, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -114,6 +114,15 @@ export const api = {
   feed: (after: number) => get<Feed>(`/v1/feed?${qs({ after })}`),
   /** The person's words, sent only from their own click. */
   answer: (decisionId: number, answer: string) => post<Decision>(`/v1/decisions/${decisionId}/answer`, { answer }),
+}
+
+/** A failed run's diagnoses and its suggested fixes. */
+export const runFailures = {
+  /** Newest first, evidence included. */
+  diagnoses: (runId: number) => get<Diagnosis[]>(`/v1/runs/${runId}/diagnoses`),
+  /** Takes one of the fixes; the person's click only. */
+  fix: (runId: number, action: string, overrides?: Record<string, string>) =>
+    post<FixResult>(`/v1/runs/${runId}/fix`, { action, ...(overrides ? { overrides } : {}) }),
 }
 
 /** What the daemon popover reads, outside `api` so the poller's fakes need not carry it. */

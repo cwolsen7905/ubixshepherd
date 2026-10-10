@@ -94,3 +94,26 @@ agent and model for `retry_other`). `widen_scope`, `raise_budget`, `open_mr` and
 
 Taking a fix never approves anything: a run it starts is checked, gated and ended like
 any other.
+
+## Seeing and taking them
+
+The same diagnosis and fixes are offered in the API, the CLI, the MCP tools and the web UI.
+
+| Surface | What it does |
+|---|---|
+| API | `GET /v1/runs/{id}` and `GET /v1/lanes` carry the newest diagnosis (`diagnosis`) on a run or on a lane's latest run. A list leaves `evidence` out and sets `evidence_omitted`. `GET /v1/runs/{id}/diagnoses` returns all of a run's, newest first, with evidence. `POST /v1/runs/{id}/fix` takes `{action, overrides}` and returns the `FixResult`. |
+| CLI | `shepherd run why <id>` prints the reason, the evidence and the fixes. `shepherd run fix <id> <action> [--agent A] [--model M] [--prompt P]` takes one; the flags replace the fix's arguments, such as the agent of a `retry_other`. |
+| MCP | `run_why` and `run_fix`, mapped onto the two commands. |
+| Web | The Lane page, the Run page and the Board show a failed run's reason, its evidence in a disclosure and the fixes as buttons. A fix marked `needs_person` asks for a confirmation that says what it will do. |
+
+Who may take a fix follows the token that asks:
+
+| Caller | May take |
+|---|---|
+| The operator token and a signed-in browser session (the person) | Any fix, with its arguments edited. |
+| The front desk's token | Only a fix marked `desk_ok` and not `needs_person`, as suggested: an edited fix is refused. |
+| An agent's worker token | None. The routes are not an agent's, so an agent cannot fix its own run, and it cannot read diagnoses either. |
+
+`widen_scope` is carried out by the daemon through the Fold when the person takes it, and
+says so in its result. `raise_budget`, `open_mr` and `fix_config_text` are the person's own
+edits: the web UI shows them as a note, not a button, and the API answers that it is theirs.

@@ -236,7 +236,9 @@ func runRun(ctx context.Context, env Env, args []string) error {
 	followFlag := fs.Bool("f", false, "follow until the run ends")
 	all := fs.Bool("all", false, "every lane's runs, not only this lane's")
 	withLog := fs.Bool("with-log", false, "show: also print the run's log")
-	model := fs.String("model", "", "continue: model, if not the one the run used")
+	model := fs.String("model", "", "continue: model, if not the one the run used; fix retry_other: the model to retry with")
+	fixAgent := fs.String("agent", "", "fix retry_other: the agent to retry with")
+	fixPrompt := fs.String("prompt", "", "fix continue: the follow-up to send instead of the suggested one")
 	detach := fs.Bool("detach", false, "continue: start it and return")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
@@ -284,6 +286,16 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		}
 		return started(ctx, env, c, run, *detach)
 	}
+	if sub == "fix" {
+		if len(pos) != 2 {
+			return errUsage
+		}
+		id, err := strconv.ParseInt(pos[0], 10, 64)
+		if err != nil {
+			return fmt.Errorf("run id %q is not a number", pos[0])
+		}
+		return runFix(ctx, env, c, id, pos[1], fixOverrides(*fixAgent, *model, *fixPrompt))
+	}
 	if len(pos) != 1 {
 		return errUsage
 	}
@@ -292,6 +304,8 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		return fmt.Errorf("run id %q is not a number", pos[0])
 	}
 	switch sub {
+	case "why":
+		return runWhy(ctx, env, c, id)
 	case "show":
 		r, err := c.Run(ctx, id)
 		if err != nil {

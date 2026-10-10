@@ -92,6 +92,8 @@ func TestRoleEndpointMatrix(t *testing.T) {
 		{"GET", api.PathRuns + "/" + other, nil, opDesk},
 		{"GET", api.PathRuns + "/" + run + "/log", nil, all},
 		{"POST", api.PathRuns + "/" + run + "/stop", nil, opDesk},
+		{"GET", api.PathRunDiagnoses(a.ID), nil, opDesk},
+		{"POST", api.PathRunFix(a.ID), api.RunFix{Action: "retry"}, opDesk},
 		{"POST", api.PathRuns + "/" + run + "/events", map[string]any{}, opWorker},
 		{"POST", api.PathRuns + "/" + other + "/events", map[string]any{}, op},
 		{"GET", api.PathRuns + "/" + run + "/events", nil, all},

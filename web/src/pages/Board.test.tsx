@@ -4,7 +4,7 @@ import type { BoardItem } from '../model/board'
 import { COLLAPSED_KEY, VIEW_KEY } from '../model/projects'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
-import { lane, project, spend, status, unassigned } from '../test/fixtures'
+import { lane, project, run, spend, status, unassigned } from '../test/fixtures'
 import { BoardPage } from './Board'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -21,7 +21,7 @@ function daemon(projects = [project({ lanes: 2, spend_today: 1.5 }), unassigned(
   })
 }
 
-async function show() {
+async function show(shown: BoardItem[] = items) {
   const api: Api = {
     status: async () => status(),
     lanes: async () => [],
@@ -41,7 +41,7 @@ async function show() {
   await act(async () => {
     render(
       <LiveProvider live={live}>
-        <BoardPage items={items} />
+        <BoardPage items={shown} />
       </LiveProvider>,
     )
   })
@@ -49,6 +49,22 @@ async function show() {
 
 beforeEach(() => window.localStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
+
+describe('BoardPage failures', () => {
+  it('shows a broken lane’s reason with its fixes beside the row', async () => {
+    daemon([unassigned()])
+    const failed = run({
+      id: 12, state: 'failed',
+      diagnosis: {
+        id: 1, run_id: 12, kind: 'quota', summary: 'claude hit its usage limit', evidence_omitted: true, created: '2026-10-08T10:04:00Z',
+        fixes: [{ id: 'other', label: 'Retry with another agent', op: 'retry_other', needs_person: true, desk_ok: false }],
+      },
+    })
+    await show([{ key: 'lane:1', group: 'broken', name: 'feat/login', laneId: 1, repo: 'acme-api', lane: lane(), run: failed, detail: 'run 12 failed', at: '2026-10-08T10:00:00Z' }])
+    expect(screen.getByText('claude hit its usage limit').tagName).toBe('SUMMARY')
+    expect(screen.getByRole('button', { name: /Retry with another agent/ })).toBeInTheDocument()
+  })
+})
 
 describe('BoardPage by project', () => {
   it('groups lanes under their project with a summary, Unassigned last', async () => {

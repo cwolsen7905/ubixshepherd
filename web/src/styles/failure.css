@@ -1,0 +1,12 @@
+/* A failed run: its reason, the output that shows it, and the fixes on offer. */
+.failure { margin-block: var(--s-3); padding: var(--s-3); border: 1px solid color-mix(in srgb, var(--bad, #c0392b) 40%, var(--rule)); border-radius: 4px; }
+.failure-compact { margin-block: 0; margin-inline-start: var(--gutter, 1.5rem); border-style: dashed; padding: var(--s-1) var(--s-2); }
+.failure-reason { margin: 0; font-weight: 600; }
+.failure-meta { margin: var(--s-1) 0 0; color: var(--muted); font-size: var(--t-sm); }
+.failure-evidence { margin: var(--s-2) 0 0; }
+.failure-evidence > summary { cursor: pointer; color: var(--muted); }
+.failure-evidence pre { margin: var(--s-1) 0 0; padding: var(--s-2); overflow: auto; max-height: 20rem; font-family: var(--mono, ui-monospace, monospace); font-size: var(--t-sm); background: color-mix(in srgb, var(--rule) 25%, transparent); white-space: pre-wrap; word-break: break-word; }
+.failure-fixes { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-2) 0 0; padding: 0; list-style: none; align-items: center; }
+.failure-confirm { margin: var(--s-2) 0 0; padding: var(--s-2); border-inline-start: 3px solid var(--lantern, #d4a017); }
+.failure-confirm p { margin: 0 0 var(--s-2); }
+.failure-result { margin: var(--s-2) 0 0; }

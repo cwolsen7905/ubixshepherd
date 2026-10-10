@@ -247,6 +247,38 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "run_why",
+			Description: "Say why a run failed, or why Shepherd could not push what it produced: the reason in one line, the output that shows it (already redacted) and the fixes on offer.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"run", "why", fmt.Sprint(int64(id))}, nil
+			},
+			more: "run_fix takes one of the fixes. Only those marked [the desk may] are yours; the rest are the person's call.",
+		},
+		{
+			Name: "run_fix",
+			Description: "Take one of a failed run's suggested fixes (an id from run_why): continue its session with a follow-up, or retry it. " +
+				"You may take only fixes run_why marks as the desk's; a fix that widens scope, spends beyond a cap or changes rules is the person's, and is refused.",
+			InputSchema: obj(map[string]any{
+				"id":     map[string]any{"type": "integer"},
+				"action": map[string]any{"type": "string", "description": "the fix's id from run_why, such as continue or retry"},
+			}, "id", "action"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				if str(a, "action") == "" {
+					return nil, fmt.Errorf("action is required")
+				}
+				return []string{"run", "fix", fmt.Sprint(int64(id)), str(a, "action")}, nil
+			},
+		},
+		{
 			Name: "lane_review",
 			Description: "Judge each of a repo's worktrees, lanes or not: finished (everything in the base or a merged request), live (uncommitted work, an open request, recent activity) or unclear (unlanded work, nothing recent), with the evidence. Changes nothing. " +
 				"Use it to tell the person which old worktrees are safe to retire; retiring is theirs to ask for.",
