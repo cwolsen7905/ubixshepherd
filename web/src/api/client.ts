@@ -4,7 +4,7 @@
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
 import type {
-  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Feed, LaneRecord, LaneView, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats,
+  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Feed, LaneRecord, LaneView, ProjectDetail, ProjectList, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats,
 } from './types'
 
 export class ApiError extends Error {
@@ -126,6 +126,14 @@ export const history = {
     get<RunHistory>(
       `/v1/history/runs?${qs({ workspace_id: workspaceId, since, ...(agent ? { agent } : {}), ...(laneId ? { lane_id: laneId } : {}) })}`,
     ),
+}
+
+/** Projects with their lanes, runs, spend and brief; read-only. */
+export const projects = {
+  list: () => get<ProjectList>('/v1/projects'),
+  one: (name: string) => get<ProjectDetail>(`/v1/projects/${encodeURIComponent(name)}`),
+  /** The repos that are in no project, as a project's detail. */
+  unassigned: () => get<ProjectDetail>('/v1/unassigned'),
 }
 
 /** Tokens and context sizes of the daemon's runs and desk turns over a range of local days ("2006-01-02", inclusive). */

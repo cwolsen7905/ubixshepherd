@@ -12,6 +12,9 @@ export type Route =
   | { page: 'runs'; range?: Range; agent?: string; lane?: number }
   | { page: 'decisions'; focus?: number }
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
+  | { page: 'projects' }
+  | { page: 'project'; name: string }
+  | { page: 'unassigned' }
   | { page: 'chat' }
   | { page: 'settings'; scope?: string }
   | { page: 'lane'; id: number }
@@ -49,9 +52,20 @@ export function parse(hash: string): Route {
       ...(usageRange === 'custom' && day.test(to) ? { to } : {}),
     }
   }
+  let m: RegExpExecArray | null
+  if (path === '/projects') return { page: 'projects' }
+  if (path === '/unassigned') return { page: 'unassigned' }
+  m = /^\/projects\/(.+)$/.exec(path)
+  if (m) {
+    try {
+      return { page: 'project', name: decodeURIComponent(m[1] as string) }
+    } catch {
+      return { page: 'missing', path }
+    }
+  }
   if (path === '/chat') return { page: 'chat' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
-  let m = /^\/lanes\/(\d+)$/.exec(path)
+  m = /^\/lanes\/(\d+)$/.exec(path)
   if (m) return { page: 'lane', id: Number(m[1]) }
   m = /^\/runs\/(\d+)\/log$/.exec(path)
   if (m) return { page: 'log', run: Number(m[1]) }
@@ -77,6 +91,9 @@ export const href = {
     }
     return q.size ? `#/usage?${q}` : '#/usage'
   },
+  projects: () => '#/projects',
+  project: (name: string) => `#/projects/${encodeURIComponent(name)}`,
+  unassigned: () => '#/unassigned',
   chat: () => '#/chat',
   settings: (scope?: string) => (scope ? `#/settings?scope=${encodeURIComponent(scope)}` : '#/settings'),
   lane: (id: number) => `#/lanes/${id}`,

@@ -11,7 +11,8 @@ import type {
   LaneState,
   RunState,
   DecisionState,
-  DeskEvent
+  DeskEvent,
+  ProjectSummary
 } from '../api/types';
 
 export function lane(o?: Partial<LaneView>): LaneView {
@@ -188,3 +189,22 @@ export function fakeDeskApi(over: Partial<DeskApi> = {}): DeskApi {
   }
 }
 
+
+export function project(o?: Partial<ProjectSummary>): ProjectSummary {
+  const base: ProjectSummary = {
+    name: 'shop',
+    repos: ['acme-api'],
+    lanes: 1,
+    running: 0,
+    decisions: 0,
+    requests: 0,
+    waiting: 0,
+    spend_today: 1.5,
+    budget: { amount: 10, cap: 'hard', period: 'day', since: '2026-10-08', spent: 1.5 },
+  };
+  return { ...base, ...o };
+}
+
+export function unassigned(o?: Partial<ProjectSummary>): ProjectSummary {
+  return project({ name: '', unassigned: true, repos: ['docs'], lanes: 1, spend_today: 0, budget: undefined, ...o });
+}

@@ -401,3 +401,62 @@ export interface ConfigDoc {
   projects: Record<string, { raw: Record<string, unknown>; effective: Record<string, unknown> }>
   sections: ConfigSection[]
 }
+
+/** A project's brief text with its author and approval; GET /v1/projects/{name}. */
+export interface ProjectBrief {
+  id: number
+  project: string
+  text: string
+  state: 'draft' | 'approved' | 'superseded' | string
+  drafted_by: string
+  approved_by?: string
+  created: string
+  approved?: string
+}
+
+export interface BriefView {
+  project: string
+  approved?: ProjectBrief
+  /** Nanoseconds as a Go duration. */
+  age?: number
+  age_text?: string
+  stale?: boolean
+  max_age: number
+  pending?: ProjectBrief
+  caches?: { path: string; repo: string; recipe: string; note?: string }[]
+}
+
+export interface ProjectBudget {
+  /** Dollars per period; 0 is no cap. */
+  amount: number
+  cap: 'soft' | 'hard' | string
+  period: 'day' | 'month' | string
+  since: string
+  spent: number
+}
+
+/** A project, or the Unassigned group (unassigned, no name, no budget). */
+export interface ProjectSummary {
+  name: string
+  unassigned?: boolean
+  repos: string[]
+  lanes: number
+  running: number
+  decisions: number
+  requests: number
+  waiting: number
+  spend_today: number
+  budget?: ProjectBudget
+}
+
+export interface ProjectList {
+  projects: ProjectSummary[]
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  open_lanes: LaneView[]
+  runs: RunView[]
+  pending_decisions: DecisionView[]
+  pending_requests: RequestView[]
+  brief?: BriefView
+}
