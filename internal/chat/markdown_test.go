@@ -24,7 +24,7 @@ const sample = "## Lanes\n" +
 	"| feat/a-much-longer-lane-name | claude | done |\n"
 
 func TestMarkdownRendersBlocks(t *testing.T) {
-	out := renderMarkdown(sample, 80)
+	out := ansi.Strip(renderMarkdown(sample, 80)) // visible text; link escapes are in links_test.go
 	for _, want := range []string{
 		"Lanes\n",
 		"Opened fix/login with scope src/auth/** (MR (https://example.com/mr/1)).",
