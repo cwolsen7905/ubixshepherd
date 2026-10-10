@@ -282,6 +282,23 @@ var migrations = []string{
 		last_seen TEXT NOT NULL,
 		expires   TEXT NOT NULL
 	);`,
+	// Run diagnoses: why a run, or the push of its work, went wrong. A run may have
+	// several; the newest is the headline. fixes and files are JSON.
+	`CREATE TABLE run_diagnoses (
+		id        INTEGER PRIMARY KEY AUTOINCREMENT,
+		run_id    INTEGER NOT NULL,
+		kind      TEXT NOT NULL,
+		summary   TEXT NOT NULL,
+		evidence  TEXT NOT NULL DEFAULT '',
+		command   TEXT NOT NULL DEFAULT '',
+		exit_code INTEGER,
+		files     TEXT NOT NULL DEFAULT '[]',
+		log       TEXT NOT NULL DEFAULT '',
+		reset_at  TEXT NOT NULL DEFAULT '',
+		fixes     TEXT NOT NULL DEFAULT '[]',
+		created   TEXT NOT NULL
+	);
+	CREATE INDEX run_diagnoses_run ON run_diagnoses (run_id, id);`,
 }
 
 // DB is a SQLite-backed store.Store.

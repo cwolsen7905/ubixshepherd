@@ -222,6 +222,8 @@ func (r *Runner) Recover(ctx context.Context) error {
 		if err := r.Store.UpdateRun(ctx, run); err != nil {
 			return err
 		}
+		r.diagnose(ctx, run, store.Diagnosis{Kind: store.DiagInterrupted, Log: run.Log, Evidence: tailFile(run.Log),
+			Summary: "the daemon stopped, or crashed, while this run was going"})
 	}
 	return nil
 }
@@ -472,6 +474,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	var limit Limit
 	lines, limitAt := 0, 0
+	var ring []string // the end of what the agent printed, to diagnose a bad end from
 	for sc.Scan() {
 		line := sc.Text()
 		p.lastOut.Store(time.Now().UnixNano())
@@ -500,7 +503,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			run.CostUSD, run.Credits = out.USD, out.Credits // the session's latest total
 		}
 		if out.Show != "" {
-			fmt.Fprintln(logf, scrub(out.Show, p.token))
+			shown := scrub(out.Show, p.token)
+			fmt.Fprintln(logf, shown)
+			if ring = append(ring, shown); len(ring) > ringLines {
+				ring = ring[1:]
+			}
 		}
 	}
 	err := p.cmd.Wait()
@@ -512,6 +519,8 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	now := time.Now().UTC()
 	run.Ended = &now
 	why := "" // set when Shepherd, not the agent's exit code, made the run fail
+	noChange := false
+	procErr := ""
 	code := p.cmd.ProcessState.ExitCode()
 	run.ExitCode = &code
 	r.mu.Lock()
@@ -533,6 +542,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		run.State = store.RunFailed
 		if err != nil {
 			run.Error = redact.String(err.Error())
+			procErr = run.Error
 		}
 	}
 	// Out of quota: the CLI said so as the run failed, so the agent waits out its limit
@@ -558,6 +568,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if ad.NoChangeFails && run.State == store.RunSucceeded && r.changedNothing(ctx, run, lane) {
 		why = fmt.Sprintf("%s exited 0 but changed nothing: no commit, no file change and nothing asked or reported; see the run log", ad.Name)
 		run.State, run.Error = store.RunFailed, why
+		noChange = true
 	}
 	if ad.SessionCost {
 		r.sessionCost(ctx, &run)
@@ -585,6 +596,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if err := r.Store.UpdateRun(ctx, run); err != nil {
 		r.Log.Error("record run outcome", "run", run.ID, "err", err)
 	}
+	var diag store.Diagnosis
+	if d, ok := classifyEnd(endInfo{Run: run, Agent: ad.Name, Stopped: stopped, Idled: idled && !stopped, Closing: run.State == store.RunInterrupted,
+		Idle: p.idle, Err: procErr, NoChange: noChange, Limit: limit, QuotaUntil: quotaUntil, Tail: strings.Join(ring, "\n")}); ok {
+		diag = r.diagnose(ctx, run, d)
+	}
 	r.Log.Info("run ended", "run", run.ID, "state", run.State, "exit", code, "commits", run.Commits, "outside", len(run.Outside))
 	ended := fmt.Sprintf("run %d: %s in lane %s %s, %d commit(s)", run.ID, run.Agent, lane.Name, run.State, run.Commits)
 	if len(run.Outside) > 0 {
@@ -593,7 +609,10 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if run.Commits > 0 {
 		r.feed(ctx, store.FeedCommit, run.ID, "run %d: %d commit(s) in lane %s, latest: %s", run.ID, run.Commits, lane.Name, clip(latestSubject(ctx, lane.Worktree), 100))
 	}
-	if why != "" {
+	switch {
+	case diag.Summary != "" && run.State != store.RunSucceeded:
+		ended += ": " + diag.Summary
+	case why != "":
 		ended += ": " + why
 	}
 	r.feed(ctx, outcomeKind(run.State), run.ID, "%s", ended)
@@ -880,6 +899,8 @@ func (r *Runner) fail(ctx context.Context, run store.Run, err error) error {
 	now := time.Now().UTC()
 	run.State, run.Ended, run.Error = store.RunFailed, &now, redact.String(err.Error())
 	r.Store.UpdateRun(ctx, run)
+	d := r.diagnose(ctx, run, store.Diagnosis{Kind: store.DiagStartFailed, Summary: "could not start: " + clip(run.Error, 200), Evidence: run.Error})
+	r.feed(ctx, store.FeedRunFailed, run.ID, "run %d: %s %s", run.ID, run.Agent, d.Summary)
 	return err
 }
 
