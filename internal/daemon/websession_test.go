@@ -26,12 +26,12 @@ func TestWebSessionsSurviveARestart(t *testing.T) {
 	st := sessionStore(t)
 	now := time.Now()
 	a := &webAuth{st: st, now: func() time.Time { return now }}
-	val, ws, err := a.start("4321")
+	val, ws, err := a.start(("4321"), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	gone, _, _ := a.start("4321")
-	other, _, _ := a.start("4321")
+	gone, _, _ := a.start(("4321"), false)
+	other, _, _ := a.start(("4321"), false)
 
 	// The raw value is never stored.
 	rows, err := st.LiveWebSessions(context.Background(), now)
@@ -83,7 +83,7 @@ func TestWebSessionsEndAllAndCap(t *testing.T) {
 	a := &webAuth{st: st, now: clock}
 	var vals []string
 	for i := 0; i < maxWebSessions+3; i++ {
-		v, _, err := a.start("1")
+		v, _, err := a.start(("1"), false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func TestWebSessionLastSeenIsThrottled(t *testing.T) {
 	now := time.Now().UTC()
 	cur := now
 	a := &webAuth{st: st, now: func() time.Time { return cur }}
-	val, _, _ := a.start("1")
+	val, _, _ := a.start(("1"), false)
 	seen := func() time.Time {
 		rows, _ := st.LiveWebSessions(context.Background(), now)
 		return rows[0].LastSeen
@@ -137,7 +137,7 @@ func TestWebServerSessionsPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	val, _, err := s1.web.start("1")
+	val, _, err := s1.web.start(("1"), false)
 	if err != nil {
 		t.Fatal(err)
 	}

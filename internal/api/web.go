@@ -43,11 +43,21 @@ type WebSignin struct {
 	Expires time.Time `json:"expires"`
 }
 
+// WebSigninRequest is the optional body of POST /v1/web/signin. AllowSettings makes the
+// session the link starts able to save config changes (PUT /v1/config); without it the
+// browser may read and preview settings only. It lasts as long as the session, and not
+// past a daemon restart: a session the daemon reloads from its store reads only.
+type WebSigninRequest struct {
+	AllowSettings bool `json:"allow_settings,omitempty"`
+}
+
 // WebSession answers GET /v1/web/session. CSRF is set for a browser session only.
 type WebSession struct {
 	Role    string    `json:"role"`
 	CSRF    string    `json:"csrf,omitempty"`
 	Expires time.Time `json:"expires,omitzero"`
+	// AllowSettings: this browser session may save config changes.
+	AllowSettings bool `json:"allow_settings,omitempty"`
 }
 
 // WebSignedOut answers POST /v1/web/signout and DELETE /v1/web/sessions: how many
