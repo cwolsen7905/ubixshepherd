@@ -93,9 +93,34 @@ projects:
 	}
 }
 
+func TestProjectMembersNeedNoReposEntry(t *testing.T) {
+	c, err := Parse([]byte(`defaults:
+  base_branch: dev
+projects:
+  p:
+    repos: [api, web]
+    caches:
+      - {path: /x, made_by: "tools:build.sh"}
+`))
+	if err != nil {
+		t.Fatalf("members without a repos entry: %v", err)
+	}
+	if name, ok := c.ProjectOf("api"); !ok || name != "p" {
+		t.Errorf("ProjectOf(api) = %q %v", name, ok)
+	}
+	if got := c.Profile("api").BaseBranch; got != "dev" {
+		t.Errorf("a member with no entry uses the defaults profile: base_branch = %q", got)
+	}
+	// One project at most still holds for a name with no entry.
+	_, err = Parse([]byte("projects:\n  p:\n    repos: [api]\n  q:\n    repos: [api]\n"))
+	if err == nil || !strings.Contains(err.Error(), `"api" is already in project "p"`) {
+		t.Errorf("a name in two projects: %v", err)
+	}
+}
+
 func TestProjectRejects(t *testing.T) {
 	cases := map[string]struct{ in, want string }{
-		"unknown member":        {"projects:\n  p:\n    repos: [zzz]\n", `projects.p.repos: "zzz" is not in repos`},
+		"empty member":          {"projects:\n  p:\n    repos: [\"\"]\n", "projects.p.repos: empty repo name"},
 		"repo in two projects":  {"projects:\n  p:\n    repos: [a]\n  q:\n    repos: [a, b]\n", `projects.q.repos: "a" is already in project "p"`},
 		"repo listed twice":     {"projects:\n  p:\n    repos: [a, a]\n", `"a" is listed twice`},
 		"bad cap":               {"projects:\n  p:\n    budget: {cap: firm}\n", "projects.p.budget.cap"},
@@ -107,7 +132,6 @@ func TestProjectRejects(t *testing.T) {
 		"made_by no colon":      {"projects:\n  p:\n    caches: [{path: /x, made_by: a}]\n", "projects.p.caches[0].made_by"},
 		"made_by empty path":    {"projects:\n  p:\n    caches: [{path: /x, made_by: \"a:\"}]\n", "projects.p.caches[0].made_by"},
 		"made_by empty repo":    {"projects:\n  p:\n    caches: [{path: /x, made_by: \":tools/x.sh\"}]\n", "projects.p.caches[0].made_by"},
-		"made_by unknown repo":  {"projects:\n  p:\n    caches: [{path: /x, made_by: \"zzz:x.sh\"}]\n", `made_by: "zzz" is not in repos`},
 		"cache no path":         {"projects:\n  p:\n    caches: [{made_by: \"a:x.sh\"}]\n", "projects.p.caches[0].path"},
 		"decide":                {"projects:\n  p:\n    intake: [{from: \"*\", decide: maybe}]\n", "projects.p.intake[0].decide"},
 		"decide missing":        {"projects:\n  p:\n    intake: [{from: \"*\"}]\n", "projects.p.intake[0].decide"},

@@ -36,8 +36,13 @@ build: web
 
 # Copy the binary to a stable path (the one `shepherd daemon install` should register),
 # replacing it atomically, and restart the daemon if one is running so it runs the new
-# build.
+# build. The config is checked with the new binary first: a config key the new build
+# rejects stops here, with the old binary and daemon still in place.
 install: build
+	@SHEPHERD_NO_AUTOSTART=1 bin/shepherd daemon check || { \
+		echo "make install: the new build does not accept your config.yaml (see above);"; \
+		echo "  nothing was installed and the running daemon was left alone. Fix the config and run make install again."; \
+		exit 1; }
 	@mkdir -p $(PREFIX)
 	@cp bin/shepherd $(PREFIX)/.shepherd.new && mv -f $(PREFIX)/.shepherd.new $(PREFIX)/shepherd
 	@echo "installed $(PREFIX)/shepherd ($(VERSION))"

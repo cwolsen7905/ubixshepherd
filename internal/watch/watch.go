@@ -41,6 +41,41 @@ type Watcher struct {
 	skipped map[int64]bool        // repos with no readable forge, logged once
 	noted   map[string]bool       // follow problems, logged once
 	down    map[string]*hostState // forge hosts that did not answer, by host (backoff.go)
+
+	// statMu guards poll; apart from mu, which Check holds for a whole pass, so Status
+	// never waits on a forge.
+	statMu sync.Mutex
+	poll   Status
+}
+
+// Status is how the watcher's polling last went.
+type Status struct {
+	// LastPoll is when a pass last finished with no forge error; zero before one has.
+	LastPoll time.Time
+	// Error is the last pass's first forge error, redacted, on one line; empty when
+	// the last pass had none. ErrorAt says when it happened.
+	Error   string
+	ErrorAt time.Time
+}
+
+// Status reports how polling last went. It does not block on a pass in progress.
+func (w *Watcher) Status() Status {
+	w.statMu.Lock()
+	defer w.statMu.Unlock()
+	return w.poll
+}
+
+// passed records a finished pass: its first error, or none.
+func (w *Watcher) passed(err error) {
+	w.statMu.Lock()
+	defer w.statMu.Unlock()
+	now := w.now()
+	if err == nil {
+		w.poll.LastPoll, w.poll.Error, w.poll.ErrorAt = now, "", time.Time{}
+		return
+	}
+	w.poll.Error = strings.Join(strings.Fields(redact.String(err.Error())), " ")
+	w.poll.ErrorAt = now
 }
 
 // Run checks every Interval until ctx is done.
@@ -64,9 +99,17 @@ func (w *Watcher) Check(ctx context.Context) {
 	if w.skipped == nil {
 		w.skipped = map[int64]bool{}
 	}
+	var first error // the pass's first forge or store error, for Status
+	note := func(err error) {
+		if first == nil {
+			first = err
+		}
+	}
+	defer func() { w.passed(first) }()
 	wss, err := w.Store.Workspaces(ctx)
 	if err != nil {
 		w.Log.Error("watch: workspaces", "err", err)
+		note(err)
 		return
 	}
 	for _, ws := range wss {
@@ -92,7 +135,15 @@ func (w *Watcher) Check(ctx context.Context) {
 				if lane.State != store.LaneOpen {
 					continue
 				}
-				if w.skipHost(host) || !w.result(host, w.checkLane(ctx, f, lane)) {
+				if w.skipHost(host) {
+					note(fmt.Errorf("forge host %s is unreachable; skipped while backing off", host))
+					break
+				}
+				err := w.checkLane(ctx, f, lane)
+				if err != nil {
+					note(err)
+				}
+				if !w.result(host, err) {
 					break
 				}
 			}

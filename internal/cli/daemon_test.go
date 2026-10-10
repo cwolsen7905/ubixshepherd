@@ -8,7 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/watch"
 )
 
 const badConfig = "repos:\n  x:\n    autonomy:\n      merge: sometimes\n"
@@ -64,5 +67,46 @@ func TestConsoleSince(t *testing.T) {
 	}
 	if got := consoleSince(l, int64(b.Len())); got != "" {
 		t.Errorf("nothing new: %q", got)
+	}
+}
+
+func TestStatusHooksMapWhatTheRunnerAndWatcherKnow(t *testing.T) {
+	// Nothing held and nothing polled is an empty list and a zero poll, not "unreported".
+	if h := quotaHolds(&dispatch.Runner{}); h == nil || len(h) != 0 {
+		t.Errorf("quota holds of an idle runner = %#v", h)
+	}
+	if fw := forgeWatch(&watch.Watcher{}); !fw.LastPoll.IsZero() || fw.Error != "" {
+		t.Errorf("forge watch before a poll = %+v", fw)
+	}
+}
+
+func TestDaemonCheck(t *testing.T) {
+	l := paths.Layout{Home: t.TempDir()}
+	var out, errOut bytes.Buffer
+	env := Env{Stdout: &out, Stderr: &errOut, Layout: l, Cwd: l.Home}
+	run := func(cfg string) int {
+		out.Reset()
+		errOut.Reset()
+		if err := os.WriteFile(l.Config(), []byte(cfg), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return Run(context.Background(), env, []string{"daemon", "check"})
+	}
+	if code := run("daemon:\n  max_runs: 2\n"); code != 0 || !strings.Contains(out.String(), "ok") || errOut.Len() != 0 {
+		t.Errorf("valid config: %d out=%q err=%q", code, out.String(), errOut.String())
+	}
+	if code := run(badConfig); code != 1 || !strings.Contains(errOut.String(), "is not human or agent") {
+		t.Errorf("bad config: %d err=%q", code, errOut.String())
+	}
+	// A key that is only a typo still fails; a retired one warns and passes.
+	old := config.RetiredKeys
+	config.RetiredKeys = map[string]string{"daemon.old_poll": "use daemon.poll"}
+	t.Cleanup(func() { config.RetiredKeys = old })
+	if code := run("daemon:\n  old_poll: 30s\n"); code != 0 ||
+		!strings.Contains(errOut.String(), "daemon.old_poll: retired key, ignored: use daemon.poll") || !strings.Contains(out.String(), "ok") {
+		t.Errorf("retired key: %d out=%q err=%q", code, out.String(), errOut.String())
+	}
+	if code := run("daemon:\n  old_pol: 30s\n"); code != 1 {
+		t.Errorf("typo: %d", code)
 	}
 }
