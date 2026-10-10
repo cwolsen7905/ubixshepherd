@@ -50,10 +50,12 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	}
 	if len(run.Outside) > 0 {
 		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: run %d changed files outside its scope (%s)", lane.Name, run.ID, strings.Join(run.Outside, ", "))
+		r.diagnose(ctx, run, outsideDiagnosis(run.Outside))
 		return
 	}
 	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
 		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
+		r.diagnose(ctx, run, outsideDiagnosis(outside))
 		return
 	}
 	if why, busy := r.unfinished(ctx, run, lane); why != "" {
@@ -69,16 +71,16 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	}
 
 	if bad := forbidden(ctx, lane, prof.Forbid); bad != "" {
-		r.gateFailed(ctx, run, lane, "the repo's commit rules", bad+"\nAmend your unpushed commits (git commit --amend, or git rebase) so no commit message matches.", "", &lf)
+		r.gateFailed(ctx, run, lane, "the repo's commit rules", bad+"\nAmend your unpushed commits (git commit --amend, or git rebase) so no commit message matches.", "", &lf, forbiddenDiagnosis(bad))
 		return
 	}
-	ok, tail, logPath := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("%d.gate.log", run.ID))
+	ok, tail, logPath, code := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("%d.gate.log", run.ID))
 	if !ok {
-		r.gateFailed(ctx, run, lane, "the repo's gate, `"+prof.Gate+"`,", tail, logPath, &lf)
+		r.gateFailed(ctx, run, lane, "the repo's gate, `"+prof.Gate+"`,", tail, logPath, &lf, commandFailure(store.DiagGateFailed, "the gate", prof.Gate, &code, tail, logPath))
 		return
 	}
 	if blocked, tail := r.standardsChecks(ctx, lane, prof); blocked {
-		r.gateFailed(ctx, run, lane, "the repo's standards checks", tail, "", &lf)
+		r.gateFailed(ctx, run, lane, "the repo's standards checks", tail, "", &lf, diagnoseStandards(tail))
 		return
 	}
 	lf.GateTries = 0
@@ -141,16 +143,20 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		return out, refuse("lane %s has no commits beyond %s: nothing to ship", lane.Name, pushed)
 	}
 	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
+		r.diagnoseLane(ctx, lane, outsideDiagnosis(outside))
 		return out, refuse("not shipping lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
 	}
 	if bad := forbidden(ctx, lane, prof.Forbid); bad != "" {
+		r.diagnoseLane(ctx, lane, forbiddenDiagnosis(bad))
 		return out, refuse("not shipping lane %s: %s", lane.Name, bad)
 	}
-	if ok, tail, logPath := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("lane-%d.gate.log", lane.ID)); !ok {
+	if ok, tail, logPath, code := r.gate(ctx, lane, prof.Gate, fmt.Sprintf("lane-%d.gate.log", lane.ID)); !ok {
+		r.diagnoseLane(ctx, lane, commandFailure(store.DiagGateFailed, "the gate", prof.Gate, &code, tail, logPath))
 		r.feed(ctx, store.FeedGate, lane.ID, "the repo's gate, `%s`, failed in lane %s; not pushing (%s)", prof.Gate, lane.Name, logPath)
 		return out, refuse("the repo's gate, `%s`, failed in lane %s; not pushing. The whole output is in %s; it ended:\n%s", prof.Gate, lane.Name, logPath, tail)
 	}
 	if blocked, tail := r.standardsChecks(ctx, lane, prof); blocked {
+		r.diagnoseLane(ctx, lane, diagnoseStandards(tail))
 		return out, refuse("not shipping lane %s: %s", lane.Name, tail)
 	}
 	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship")
@@ -216,6 +222,8 @@ func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, 
 		return out
 	}
 	if _, err := git.Run(ctx, lane.Worktree, "push", "--quiet", "-u", "origin", lane.Branch); err != nil {
+		r.diagnoseLane(ctx, lane, store.Diagnosis{Kind: store.DiagPushRefused, Evidence: err.Error(),
+			Summary: "the gate passed, but the push failed: " + clip(err.Error(), 160)})
 		return say(store.FeedGate, "gate passed in lane %s, but the push failed: %s", lane.Name, clip(err.Error(), 300))
 	}
 	out.Pushed = true
@@ -234,6 +242,8 @@ func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, 
 	title, body := r.mrText(ctx, lane, gate, from)
 	mr, err = f.CreateMR(ctx, lane.Branch, lane.Base, title, body)
 	if err != nil {
+		r.diagnoseLane(ctx, lane, store.Diagnosis{Kind: store.DiagMergeRefused, Evidence: err.Error(),
+			Summary: "pushed, but the forge refused the merge request: " + clip(err.Error(), 160)})
 		return say(store.FeedGate, "pushed lane %s (gate passed), but opening the merge request failed: %s", lane.Name, clip(err.Error(), 300))
 	}
 	r.Log.Info("lane shipped", "lane", lane.Name, "mr", mr.IID)
@@ -316,7 +326,7 @@ func (r *Runner) forgeFor(remote string) (forge.Forge, error) {
 
 // gate runs the repo's gate in the lane's worktree. It reports whether it passed, the
 // end of its output, and where the whole output is (logName, in the runs directory).
-func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string) (bool, string, string) {
+func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string) (ok bool, tail, logPath string, code int) {
 	ctx, cancel := context.WithTimeout(ctx, GateTimeout)
 	defer cancel()
 	var cmd *exec.Cmd
@@ -330,27 +340,34 @@ func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string
 	cmd.Stdout, cmd.Stderr = &out, &out
 	r.feed(ctx, store.FeedGate, lane.ID, "running the gate `%s` in lane %s before pushing", gate, lane.Name)
 	err := cmd.Run()
+	if err != nil {
+		code = -1
+		if cmd.ProcessState != nil {
+			code = cmd.ProcessState.ExitCode()
+		}
+	}
 	text := redact.String(out.String())
-	logPath := filepath.Join(r.Dir, logName)
+	logPath = filepath.Join(r.Dir, logName)
 	os.MkdirAll(r.Dir, 0o700)
 	os.WriteFile(logPath, []byte(text), 0o600)
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	if len(lines) > 60 {
 		lines = lines[len(lines)-60:]
 	}
-	tail := strings.Join(lines, "\n")
+	tail = strings.Join(lines, "\n")
 	if ctx.Err() != nil {
-		return false, tail + "\n(the gate timed out after " + GateTimeout.String() + ")", logPath
+		return false, tail + "\n(the gate timed out after " + GateTimeout.String() + ")", logPath, code
 	}
 	if err == nil {
 		r.feed(ctx, store.FeedGate, lane.ID, "gate `%s` passed in lane %s", gate, lane.Name)
 	}
-	return err == nil, tail, logPath
+	return err == nil, tail, logPath, code
 }
 
 // gateFailed hands the gate's failure back to the agent while tries remain.
 // what names the check: "the repo's gate, `make check`," or "the repo's commit rules".
-func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane, what, tail, logPath string, lf *store.LaneForge) {
+func (r *Runner) gateFailed(ctx context.Context, run store.Run, lane store.Lane, what, tail, logPath string, lf *store.LaneForge, diag store.Diagnosis) {
+	r.diagnose(ctx, run, diag)
 	where := ""
 	if logPath != "" {
 		where = " (" + logPath + ")"
@@ -401,4 +418,16 @@ func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string)
 	}
 	fmt.Fprintf(&b, "\nScope: `%s`. Shepherd does not merge; that is yours.\n", strings.Join(lane.Scope, "`, `"))
 	return title, b.String()
+}
+
+// outsideDiagnosis is the diagnosis of commits that change files outside the lane's scope.
+func outsideDiagnosis(files []string) store.Diagnosis {
+	return store.Diagnosis{Kind: store.DiagOutsideScope, Files: files,
+		Summary: "not pushed: commits change files outside the lane's scope: " + clip(strings.Join(files, ", "), 160)}
+}
+
+// forbiddenDiagnosis is the diagnosis of a commit message the repo does not allow; bad is
+// what forbidden said.
+func forbiddenDiagnosis(bad string) store.Diagnosis {
+	return store.Diagnosis{Kind: store.DiagCommitsForbidden, Evidence: bad, Summary: "not pushed: " + clip(bad, 200)}
 }

@@ -34,6 +34,10 @@ case "$MODE" in stream) cat "$STREAM_FILE"; exit 0 ;; esac
 case "$MODE" in sleep) sleep 30 ;; esac
 case "$MODE" in limit) echo "ActionRequiredError: You've hit your usage limit. Upgrade to continue."; exit 1 ;; esac
 case "$MODE" in mention) echo "fixing: You've hit your usage limit in the error text"; seq 1 30; exit 1 ;; esac
+case "$MODE" in refused) echo "shepherd: push refused for lane work"; echo "  changes outside lane work's scope (stray.txt)"; exit 1 ;; esac
+case "$MODE" in forbidden) echo "shepherd: push refused for lane work"; echo "  commit abc123's message contains \"x\", which this repo does not allow"; exit 1 ;; esac
+case "$MODE" in turns) echo '{"type":"result","subtype":"error_max_turns","is_error":true}'; exit 1 ;; esac
+case "$MODE" in boom) echo "compiling"; echo "panic: runtime error: index out of range password=hunter2hunter2"; exit 2 ;; esac
 mkdir -p src && echo "work $SHEPHERD_RUN" >> src/work.txt
 git add src/work.txt && git commit -q -m "agent work"
 if [ "$MODE" = stray ]; then echo x > stray.txt && git add stray.txt && git commit -q -m stray; fi
