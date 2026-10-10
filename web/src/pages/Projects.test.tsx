@@ -75,6 +75,12 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('link', { name: 'shop' })).toHaveAttribute('href', '#/projects/shop')
   })
 
+  it('has a New project button that goes to Settings', async () => {
+    daemon({ projects: [project(), unassigned()] })
+    await show(<ProjectsPage />)
+    expect(screen.getByRole('link', { name: 'New project' })).toHaveAttribute('href', '#/settings?scope=new-project')
+  })
+
   it('says so when the daemon cannot be read', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }))
     await show(<ProjectsPage />)
@@ -102,12 +108,19 @@ describe('ProjectPage', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('links a project to its settings, and Unassigned to none', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectPage name="shop" />)
+    expect(await screen.findByRole('link', { name: 'Edit' })).toHaveAttribute('href', '#/settings?scope=project%3Ashop')
+  })
+
   it('shows the Unassigned group without a brief or budget', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name={null} />)
     expect(await screen.findByRole('heading', { name: 'Unassigned' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Brief' })).toBeNull()
     expect(screen.getByText('No lane is open.')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
   })
 
   it('names a project the daemon does not know', async () => {

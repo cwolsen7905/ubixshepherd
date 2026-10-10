@@ -26,6 +26,32 @@ spaces and blank lines between entries may move; values are never reinterpreted.
 file that is only comments (the first-start template) keeps them all and gets new keys
 appended.
 
+## Projects
+
+Projects live under `projects:` in `config.yaml`. Settings edits them in the same
+preview, save and etag flow as everything else; nothing is written until the diff is
+reviewed and saved.
+
+- **Add a project.** The *add a project* box in the sidebar, beside *add a repo*, takes a
+  name (letters, digits, dots, dashes and underscores) and starts the project with an
+  empty `repos` list, so it is written even before it has a repo. Its other fields
+  (budget, brief age, caches, intake rules) are the project's page of the form.
+  The **New project** button on the Projects page opens Settings with that box ready.
+- **Repos.** A project's repos are a checklist over every configured repo. Each repo says
+  which project it is in now. A repo is in at most one project, so ticking one that
+  another project holds moves it: the draft changes both projects' `repos` lists, and the
+  review shows both as one diff. Unticking leaves the repo in no project, where the
+  Board lists it as Unassigned.
+- **Delete a project.** *Delete project…* on its page asks first, naming the repos that
+  become Unassigned and warning that its budget, caches and intake rules go with it.
+  Confirming only adds the removal to the draft; the review and save make it real. A rule
+  in another project that names the deleted one as `from` fails validation, so the save
+  is refused with that message until the rule is changed.
+- **Edit** on a project's page (`#/projects/<name>`) opens `?scope=project:<name>`.
+
+A session that cannot save sees none of the add or delete controls, as for repos, but the
+repo checklist still previews.
+
 ## Who may save
 
 | Caller | Read and preview | Save |

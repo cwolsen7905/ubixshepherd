@@ -29,7 +29,7 @@ export function getAt(obj: unknown, path: string[]): unknown {
 const asMap = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {})
 
 /** Every place the form can edit, in the order the sidebar lists them. */
-export function scopes(doc: ConfigDoc, extraRepos: string[] = []): Scope[] {
+export function scopes(doc: ConfigDoc, extraRepos: string[] = [], extraProjects: string[] = []): Scope[] {
   const by = new Map(doc.sections.map((s) => [s.id, s]))
   const out: Scope[] = []
   const one = (id: string, effective: Record<string, unknown>, raw: Record<string, unknown>) => {
@@ -50,7 +50,7 @@ export function scopes(doc: ConfigDoc, extraRepos: string[] = []): Scope[] {
   }
   const project = by.get('project')
   if (project) {
-    for (const name of Object.keys(doc.projects).sort()) {
+    for (const name of [...new Set([...Object.keys(doc.projects), ...extraProjects])].sort()) {
       const p = doc.projects[name]
       out.push({ id: `project:${name}`, label: name, section: project, root: [...project.root, name], raw: asMap(p?.raw), effective: asMap(p?.effective), inherits: false })
     }
@@ -131,4 +131,76 @@ export function show(v: unknown): string {
   if (v === undefined || v === null || v === '') return '(empty)'
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
+}
+
+// Projects: a repo is in at most one, so the picker moves a repo by editing two lists in
+// one draft and the person reviews both together.
+
+/** The scope the Projects page's "New project" button names: Settings with the add box focused. */
+export const NEW_PROJECT = 'new-project'
+
+/** Whether a name can be a project's key: what a YAML key can safely be here. */
+export const PROJECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+const asStrings = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : [])
+
+/** The projects that the draft deletes (an unset of the project's whole entry). */
+export function deletedProjects(draft: Draft): Set<string> {
+  const out = new Set<string>()
+  for (const op of Object.values(draft)) {
+    if (op.unset && op.path.length === 2 && op.path[0] === 'projects') out.add(op.path[1] as string)
+  }
+  return out
+}
+
+/**
+ * Each project's repos as the draft leaves them, by project name: the file's projects
+ * and the ones the draft adds, less the ones it deletes.
+ */
+export function projectRepos(doc: ConfigDoc, draft: Draft, added: string[] = []): Map<string, string[]> {
+  const names = new Set([...Object.keys(doc.projects), ...added])
+  for (const op of Object.values(draft)) {
+    if (op.path[0] === 'projects' && op.path.length >= 2) names.add(op.path[1] as string)
+  }
+  for (const n of deletedProjects(draft)) names.delete(n)
+  const out = new Map<string, string[]>()
+  for (const n of [...names].sort()) {
+    const op = draft[keyOf(['projects', n, 'repos'])]
+    const repos = op ? (op.unset ? [] : asStrings(op.value)) : asStrings(asMap(doc.projects[n]?.raw).repos)
+    out.set(n, repos)
+  }
+  return out
+}
+
+/** The project a repo is in, if any. */
+export function ownerOf(map: Map<string, string[]>, repo: string): string | undefined {
+  for (const [name, repos] of map) if (repos.includes(repo)) return name
+  return undefined
+}
+
+/**
+ * Put a repo in a project, or take it out. Putting a repo in a project that another holds
+ * it in moves it: both lists change in the one draft.
+ */
+export function moveRepo(doc: ConfigDoc, draft: Draft, added: string[], project: string, repo: string, member: boolean): Draft {
+  const map = projectRepos(doc, draft, added)
+  const here = (map.get(project) ?? []).filter((r) => r !== repo)
+  let d = draft
+  if (member) {
+    const owner = ownerOf(map, repo)
+    if (owner && owner !== project) {
+      d = setValue(d, ['projects', owner, 'repos'], (map.get(owner) ?? []).filter((r) => r !== repo))
+    }
+    here.push(repo)
+  }
+  return setValue(d, ['projects', project, 'repos'], here)
+}
+
+/** Delete a project: what the draft says about it is dropped and, if the file has it, it is unset. */
+export function removeProject(doc: ConfigDoc, draft: Draft, name: string): Draft {
+  const d: Draft = {}
+  for (const [k, op] of Object.entries(draft)) {
+    if (!(op.path[0] === 'projects' && op.path[1] === name)) d[k] = op
+  }
+  return name in doc.projects ? unsetValue(d, ['projects', name]) : d
 }

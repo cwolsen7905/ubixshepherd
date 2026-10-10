@@ -75,6 +75,20 @@ export function ProjectPage({ name }: { name: string | null }) {
         <h1>{title}</h1>
         <p className="page-sub">
           <a href={href.projects()}>All projects</a>
+          {name !== null && (
+            <>
+              {' · '}
+              <a
+                href={href.settings(`project:${name}`)}
+                onClick={(e) => {
+                  e.preventDefault()
+                  go(href.settings(`project:${name}`))
+                }}
+              >
+                Edit
+              </a>
+            </>
+          )}
           {' · '}
           {data.repos.length === 0 ? 'no repos' : data.repos.join(', ')}
         </p>
