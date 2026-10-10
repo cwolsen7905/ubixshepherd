@@ -10,7 +10,7 @@ const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: ()
 
 const detail: ProjectDetail = {
   ...project({ waiting: 2, decisions: 1, requests: 1, running: 1, lanes: 1 }),
-  open_lanes: [lane({ id: 7, name: 'feat/login', mr: 34, mr_state: 'opened', pipeline_status: 'passed' })],
+  open_lanes: [lane({ id: 7, name: 'feat/login', mr: 34, mr_state: 'open', pipeline_status: 'passed' })],
   runs: [run({ id: 10, state: 'running', ended: undefined })],
   pending_decisions: [decision({ id: 5, question: 'Use SSO?' })],
   pending_requests: [request({ id: 3, message: 'Who owns auth?' })],
