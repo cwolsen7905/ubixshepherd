@@ -2,6 +2,7 @@ package chat
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
@@ -18,7 +19,6 @@ var (
 	reList    = regexp.MustCompile(`^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$`)
 	reQuote   = regexp.MustCompile(`^\s*>\s?(.*)$`)
 	reBold    = regexp.MustCompile(`\*\*([^*\s](?:[^*]*[^*\s])?)\*\*|__([^_\s](?:[^_]*[^_\s])?)__`)
-	reLink    = regexp.MustCompile(`\[([^\]]+)\]\(([^)\s]+)\)`)
 	reAlign   = regexp.MustCompile(`^:?-+:?$`)
 )
 
@@ -73,7 +73,8 @@ func renderMarkdown(text string, width int) string {
 	return strings.Join(out, "\n")
 }
 
-// inline styles bold, code spans and links. Code spans are kept as written.
+// inline styles bold, code spans and links: markdown links and bare URLs become
+// hyperlinks. Code spans are kept as written.
 func inline(s string) string {
 	parts := strings.Split(s, "`")
 	if len(parts)%2 == 0 {
@@ -85,15 +86,19 @@ func inline(s string) string {
 			parts[i] = styleMdCode.Render(p)
 			continue
 		}
+		// Links are held aside while bold is drawn, so a URL's own punctuation is
+		// not read as emphasis.
+		var held []string
+		p = replaceLinks(p, func(l string) string {
+			held = append(held, l)
+			return "\x00" + strconv.Itoa(len(held)-1) + "\x00"
+		})
 		p = reBold.ReplaceAllStringFunc(p, func(m string) string {
 			return styleMdBold.Render(m[2 : len(m)-2])
 		})
-		p = reLink.ReplaceAllStringFunc(p, func(m string) string {
-			mm := reLink.FindStringSubmatch(m)
-			if mm[1] == mm[2] {
-				return mm[1]
-			}
-			return mm[1] + " " + styleMdFaint.Render("("+mm[2]+")")
+		p = reHeld.ReplaceAllStringFunc(p, func(m string) string {
+			n, _ := strconv.Atoi(strings.Trim(m, "\x00"))
+			return held[n]
 		})
 		parts[i] = p
 	}
@@ -169,7 +174,7 @@ func renderTable(lines []string, width int) []string {
 			if c < len(r) {
 				cell = r[c]
 			}
-			wrapped[c] = strings.Split(ansi.Wrap(cell, widths[c], ""), "\n")
+			wrapped[c] = strings.Split(wrapText(cell, widths[c]), "\n")
 			height = max(height, len(wrapped[c]))
 		}
 		for y := 0; y < height; y++ {

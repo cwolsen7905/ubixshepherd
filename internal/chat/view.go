@@ -40,21 +40,21 @@ func renderLine(l Line, width int) string {
 	}
 	switch l.Kind {
 	case KindYou:
-		return hang(styleYou.Render("›")+" ", "  ", styleLines(styleYou, wrapText(l.Text, w)))
+		return hang(styleYou.Render("›")+" ", "  ", styleLines(styleYou, wrapLinks(l.Text, w)))
 	case KindDesk:
 		return hang(styleDeskMark.Render("●")+" ", "  ", renderMarkdown(l.Text, w))
 	case KindTool:
-		return hang(styleTool.Render("  → "), "    ", styleLines(styleTool, wrapText(l.Text, w-2)))
+		return hang(styleTool.Render("  → "), "    ", styleLines(styleTool, wrapLinks(l.Text, w-2)))
 	case KindEvent:
-		return hang(eventGlyph(l.Event)+" ", "  ", styleLines(styleEvent, tintAgents(wrapText(l.Text, w))))
+		return hang(eventGlyph(l.Event)+" ", "  ", styleLines(styleEvent, tintAgents(wrapLinks(l.Text, w))))
 	case KindDecision:
-		return hang(eventGlyph(api.EventDecisionAsked)+" ", "  ", styleLines(styleDecision, wrapText(l.Text, w)))
+		return hang(eventGlyph(api.EventDecisionAsked)+" ", "  ", styleLines(styleDecision, wrapLinks(l.Text, w)))
 	case KindShell:
 		return hang(styleHead.Render("$")+" ", "  ", renderShell(l.Text, w))
 	case KindError:
-		return hang(styleError.Render("!")+" ", "  ", styleLines(styleError, wrapText(l.Text, w)))
+		return hang(styleError.Render("!")+" ", "  ", styleLines(styleError, wrapLinks(l.Text, w)))
 	}
-	return hang("  ", "  ", styleLines(styleInfo, wrapText(l.Text, w)))
+	return hang("  ", "  ", styleLines(styleInfo, wrapLinks(l.Text, w)))
 }
 
 // hang prefixes the first line of body with first and the others with rest.
@@ -89,7 +89,7 @@ func wrapText(text string, width int) string {
 	}
 	lines := strings.Split(text, "\n")
 	for i, l := range lines {
-		lines[i] = ansi.Wrap(strings.TrimRight(l, " \t"), width, "")
+		lines[i] = wrapLine(strings.TrimRight(l, " \t"), width)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -115,10 +115,14 @@ func clipTo(s string, n int) string {
 
 // tintAgents colors known agent names inside a plain line (panel / event text).
 func tintAgents(s string) string {
+	return mapOutsideLinks(s, tintPlain)
+}
+
+func tintPlain(s string) string {
 	for _, a := range []string{"claude", "copilot", "cursor", "opencode"} {
 		if i := indexFold(s, a); i >= 0 {
 			before, mid, after := s[:i], s[i:i+len(a)], s[i+len(a):]
-			return before + styleAgent(a).Render(mid) + tintAgents(after)
+			return before + styleAgent(a).Render(mid) + tintPlain(after)
 		}
 	}
 	return s
@@ -183,7 +187,7 @@ func renderShell(text string, w int) string {
 	// The first line is "$ <command>": the glyph is the hang's.
 	lines[0] = strings.TrimPrefix(lines[0], "$ ")
 	for i, l := range lines {
-		lines[i] = wrapText(l, w)
+		lines[i] = wrapLinks(l, w)
 	}
 	last := len(lines) - 1
 	for i, l := range lines {

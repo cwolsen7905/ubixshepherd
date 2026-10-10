@@ -16,7 +16,7 @@ type palette struct {
 	color bool
 
 	you, deskMark, tool, event, decision, err, info, head, sel lipgloss.Style
-	mdHead, mdBold, mdCode, mdBlock, mdFaint                   lipgloss.Style
+	mdHead, mdBold, mdCode, mdBlock, mdFaint, link             lipgloss.Style
 
 	// States, for event glyphs, the dock and badges: passed, failed (the loudest),
 	// broken (the dock's group, and runs cut short), waiting on the person, activity,
@@ -58,6 +58,8 @@ func newPalette(color bool) palette {
 		mdCode:  fg("130", "180"),
 		mdBlock: fg("238", "250"),
 		mdFaint: lipgloss.NewStyle().Faint(true),
+		// Underline marks a link without colour, so it survives NO_COLOR.
+		link: fg("25", "75").Underline(true),
 
 		ok:     fg("28", "78"),
 		bad:    fg("160", "203").Bold(true),
@@ -92,7 +94,7 @@ var (
 	styleYou, styleDeskMark, styleTool, styleEvent, styleDecision lipgloss.Style
 	styleError, styleInfo, styleHead, styleSel                    lipgloss.Style
 	styleMdHead, styleMdBold, styleMdCode, styleMdBlock           lipgloss.Style
-	styleMdFaint                                                  lipgloss.Style
+	styleMdFaint, styleLink                                       lipgloss.Style
 )
 
 func init() { usePalette(newPalette(colorEnabled(os.Getenv))) }
@@ -103,6 +105,7 @@ func usePalette(p palette) {
 	styleYou, styleDeskMark, styleTool, styleEvent, styleDecision = p.you, p.deskMark, p.tool, p.event, p.decision
 	styleError, styleInfo, styleHead, styleSel = p.err, p.info, p.head, p.sel
 	styleMdHead, styleMdBold, styleMdCode, styleMdBlock, styleMdFaint = p.mdHead, p.mdBold, p.mdCode, p.mdBlock, p.mdFaint
+	styleLink = p.link
 }
 
 // agentColor is an agent's own colour, or one picked from its name.

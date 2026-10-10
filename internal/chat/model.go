@@ -729,7 +729,7 @@ func (m *Model) refreshPager() {
 	text := strings.TrimRight(m.logText.String(), "\n")
 	var lines []string
 	if text != "" {
-		lines = strings.Split(wrapText(text, m.width), "\n")
+		lines = strings.Split(wrapLinks(text, m.width), "\n")
 	}
 	m.pager.setLines(lines)
 }
