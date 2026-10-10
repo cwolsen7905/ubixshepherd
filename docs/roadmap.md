@@ -212,6 +212,17 @@ a learning loop; and additional agent adapters. The OpenCode adapter is no longe
 general proposal: it is decided for low-risk lanes, as recorded above and in
 [open-questions.md](open-questions.md).
 
+- **Agents defined in config.** Today each agent adapter is Go code in internal/dispatch/adapters.go,
+  so supporting a new agent CLI needs a release. Proposal: an `agents:` section in config.yaml
+  declares an agent by its binary, argument templates for new and resumed runs, how it names
+  a session (chosen, printed or created first, with a pattern to find a printed id), how it
+  receives Shepherd's worker tools over MCP, its output format (plain, or JSON with paths to
+  text and cost) and a pattern for quota messages. The four built-in adapters stay in Go.
+  Safety does not depend on the adapter: the push block, the pre-push scope hook, the gate
+  and standards checks apply to every agent. Also research the Agent Client Protocol (ACP):
+  if enough agent CLIs speak it, one ACP adapter could replace per-CLI parsing. Gemini CLI
+  would be the first agent to try. Not started; noted 2026-10-10.
+
 ## 5. Nice-to-haves
 
 - **Adapters through ACP** (the Agent Client Protocol from Zed): one client-side adapter for
