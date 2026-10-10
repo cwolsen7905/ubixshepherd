@@ -98,6 +98,18 @@
 #   ## Patterns commit messages must not match before Shepherd pushes; a match goes
 #   ## back to the agent to amend.
 #   forbid: ["(?i)co-authored-by"]
+#   ## Standards packs every agent is told about, the same way: folders of markdown rules
+#   ## under ~/.shepherd/standards/<pack>/ (a `house` example is written there on first
+#   ## start). The repo's own standards win over them where they disagree.
+#   standards: [house]
+#   ## The repo's own standards docs, named to the agent when they exist, and the repo's
+#   ## own pack directory (a rule there with a Shepherd rule's id replaces it; `disabled:
+#   ## true` switches it off). Both are relative to the repo.
+#   standards_docs: [docs/standards, docs/architecture, AGENTS.md, CLAUDE.md]
+#   standards_pack_dir: .shepherd/standards
+#   ## Extra `when` tags active in every lane (commit and ship always are; test, docs and
+#   ## migration follow the lane's scope).
+#   standards_when: []
 #   ## How the agents Shepherd starts run.
 #   agent:
 #     ## Claude Code permission mode: auto (your own auto mode and settings, as in your
@@ -121,7 +133,8 @@
 #     ## agent's run, once the gate passes in the lane; needs gate set; never merges);
 #     ## or agent (the agent pushes its own lane's branch; needs no gate).
 #     push: human
-#     ## Propose a plan and wait before changing anything.
+#     ## Every agent's brief tells it to post its plan as a decision and wait for the
+#     ## answer before changing code.
 #     plan_first: true
 
 ## Per-repo profiles, keyed by the repo's path in its workspace as `shepherd init`
