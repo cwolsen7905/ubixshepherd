@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ func runWeb(ctx context.Context, env Env, args []string) error {
 	fs := flags("web", env)
 	printOnly := fs.Bool("print", false, "print the sign-in link instead of opening a browser")
 	endAll := fs.Bool("sign-out-all", false, "end every browser session")
+	allowSettings := fs.Bool("allow-settings", false, "let this browser session save settings (otherwise the Settings tab is read-only)")
 	if pos, err := parse(fs, args); err != nil {
 		return err
 	} else if len(pos) > 0 {
@@ -49,8 +51,16 @@ func runWeb(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	var link api.WebSignin
-	if err := webCall(ctx, base, rt.Token, env.Client, http.MethodPost, api.PathWebSignin, &link); err != nil {
-		return err
+	// Build request body with allow_settings flag if set
+	if *allowSettings {
+		body := map[string]interface{}{"allow_settings": true}
+		if err := webCallWithBody(ctx, base, rt.Token, env.Client, http.MethodPost, api.PathWebSignin, &link, body); err != nil {
+			return err
+		}
+	} else {
+		if err := webCall(ctx, base, rt.Token, env.Client, http.MethodPost, api.PathWebSignin, &link); err != nil {
+			return err
+		}
 	}
 	u := base + link.Path
 	note := fmt.Sprintf("The link works once, until %s.", link.Expires.Local().Format("15:04:05"))
@@ -78,6 +88,41 @@ func webCall(ctx context.Context, base, token, client, method, path string, out 
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if client != "" {
+		req.Header.Set(api.ClientHeader, client)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		var e api.Error
+		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
+			return fmt.Errorf("daemon: %s", e.Error)
+		}
+		return fmt.Errorf("daemon: %s", resp.Status)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// webCallWithBody makes one call to the daemon with a JSON body and operator token.
+func webCallWithBody(ctx context.Context, base, token, client, method, path string, out any, body map[string]interface{}) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Marshal the body into JSON
+	bodyBytes, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, base+path, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
 	if client != "" {
 		req.Header.Set(api.ClientHeader, client)
 	}
