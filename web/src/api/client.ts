@@ -4,14 +4,17 @@
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
 import type {
-  Decision, DecisionView, Feed, LaneRecord, LaneView, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats,
+  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Feed, LaneRecord, LaneView, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats,
 } from './types'
 
 export class ApiError extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  /** The error response's whole body, for the ones that carry more than a line (config refusals). */
+  readonly body: unknown
+  constructor(status: number, message: string, body?: unknown) {
     super(message)
     this.status = status
+    this.body = body
   }
 }
 
@@ -74,19 +77,22 @@ async function exchange<T>(path: string, init: RequestInit | undefined, token: s
   if (res.status === 401 || res.status === 403) csrf = null
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`
+    let parsed: unknown
     try {
       const body = (await res.json()) as { error?: string }
+      parsed = body
       if (body.error) msg = body.error
     } catch {
       // not JSON: keep the status line
     }
-    throw new ApiError(res.status, msg)
+    throw new ApiError(res.status, msg, parsed)
   }
   return (await res.json()) as T
 }
 
 export const get = <T>(path: string) => call<T>(path)
 export const post = <T>(path: string, body: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body) })
+export const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 export const qs = (params: Record<string, string | number>) => new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
 
 /** How many runs the board reads: enough to know every open lane's latest run. */
@@ -124,3 +130,10 @@ export const history = {
 
 /** Tokens and context sizes of the daemon's runs and desk turns over a range of local days ("2006-01-02", inclusive). */
 export const usage = (from: string, to: string) => get<UsageStats>(`/v1/usage?${qs({ from, to })}`)
+
+/** The config editor: read the settings, preview a change, save it. */
+export const config = {
+  get: () => get<ConfigDoc>('/v1/config'),
+  preview: (change: ConfigChange) => post<ConfigPreview>('/v1/config/preview', change),
+  save: (change: ConfigChange) => put<ConfigSaved>('/v1/config', change),
+}

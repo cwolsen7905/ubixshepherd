@@ -15,7 +15,9 @@ import "time"
 // A browser session has the web role: everything the front desk may do, the front desk
 // conversation (api/desk.go), and answering decisions as the person. It cannot change
 // the daemon's setup (workspaces, scopes, hooks, imports, settings, shutdown) or mint
-// sign-in links; the shepherd command does those with the operator token.
+// sign-in links; the shepherd command does those with the operator token. It may read
+// and preview config (api/config.go), and save it only when its link was minted with
+// WebSigninRequest.AllowSettings.
 //
 // A request with the cookie must come from the daemon's own origin: its Origin header,
 // when present, must be http://<the Host it was sent to>, and Sec-Fetch-Site, when
