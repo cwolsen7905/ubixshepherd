@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -296,8 +297,19 @@ type Profile struct {
 	Brief string `yaml:"brief,omitempty" json:"brief,omitempty"`
 	// Forbid are regular expressions commit messages must not match before Shepherd
 	// pushes ("(?i)co-authored-by"); a match goes back to the agent to amend.
-	Forbid   []string `yaml:"forbid,omitempty" json:"forbid,omitempty"`
-	Autonomy Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
+	Forbid []string `yaml:"forbid,omitempty" json:"forbid,omitempty"`
+	// Standards names the Shepherd standards packs (~/.shepherd/standards/<pack>/) every
+	// agent in the repo is told about. See docs/standards-packs.md.
+	Standards []string `yaml:"standards,omitempty" json:"standards,omitempty"`
+	// StandardsDocs are repo paths holding the repo's own standards. They win over a
+	// Shepherd pack where they disagree; only those that exist are named to the agent.
+	StandardsDocs []string `yaml:"standards_docs,omitempty" json:"standards_docs,omitempty"`
+	// StandardsPackDir is the repo's own pack directory, relative to the repo. Its rules
+	// replace a Shepherd rule of the same id, and `disabled: true` switches one off.
+	StandardsPackDir string `yaml:"standards_pack_dir,omitempty" json:"standards_pack_dir,omitempty"`
+	// StandardsWhen are extra `when` tags active in every lane of the repo.
+	StandardsWhen []string `yaml:"standards_when,omitempty" json:"standards_when,omitempty"`
+	Autonomy      Autonomy `yaml:"autonomy,omitempty" json:"autonomy"`
 	// Agent says how the agents Shepherd starts in the repo run.
 	Agent AgentOpts `yaml:"agent,omitempty" json:"agent"`
 	// Follows are the repos this one depends on: a release of one opens a lane here and
@@ -387,12 +399,14 @@ func Default() Config {
 	return Config{
 		Daemon: Daemon{Listen: "127.0.0.1:0", MaxRuns: 4, Poll: "60s", Budget: ptr(20.0), CreditUSD: ptr(0.04), LogLevel: "info"},
 		Defaults: Profile{
-			BaseBranch:  "main",
-			TagPrefix:   "v",
-			Tags:        TagsFree,
-			BranchModel: Trunk,
-			Autonomy:    Autonomy{Merge: Human, Tag: Human, Deploy: Human, Push: Human, PlanFirst: &yes},
-			Agent:       AgentOpts{PermissionMode: PermAuto},
+			BaseBranch:       "main",
+			TagPrefix:        "v",
+			Tags:             TagsFree,
+			BranchModel:      Trunk,
+			Autonomy:         Autonomy{Merge: Human, Tag: Human, Deploy: Human, Push: Human, PlanFirst: &yes},
+			Agent:            AgentOpts{PermissionMode: PermAuto},
+			StandardsDocs:    []string{"docs/standards", "docs/architecture", "AGENTS.md", "CLAUDE.md"},
+			StandardsPackDir: ".shepherd/standards",
 		},
 	}
 }
@@ -601,6 +615,21 @@ func (p Profile) validate(at string) []error {
 	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
 	}
+	for i, n := range p.Standards {
+		if n == "" || strings.ContainsAny(n, `/\`) || n == "." || n == ".." {
+			errs = append(errs, fmt.Errorf("%s.standards[%d]: %q is not a pack name (a folder under ~/.shepherd/standards)", at, i, n))
+		}
+	}
+	for i, d := range p.StandardsDocs {
+		if bad := badRepoPath(d); bad != "" {
+			errs = append(errs, fmt.Errorf("%s.standards_docs[%d]: %q %s", at, i, d, bad))
+		}
+	}
+	if d := p.StandardsPackDir; d != "" {
+		if bad := badRepoPath(d); bad != "" {
+			errs = append(errs, fmt.Errorf("%s.standards_pack_dir: %q %s", at, d, bad))
+		}
+	}
 	for i, f := range p.Follows {
 		f, at := f.Effective(), fmt.Sprintf("%s.follows[%d]", at, i)
 		if strings.TrimSpace(f.Repo) == "" {
@@ -624,6 +653,22 @@ func (p Profile) validate(at string) []error {
 	}
 	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
 	return errs
+}
+
+// badRepoPath says why p is not a path inside a repo, or "" if it is.
+func badRepoPath(p string) string {
+	switch {
+	case strings.TrimSpace(p) == "":
+		return "is empty"
+	case filepath.IsAbs(p) || strings.HasPrefix(p, "/") || strings.HasPrefix(p, `\`):
+		return "must be relative to the repo"
+	}
+	for _, seg := range strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return "must stay inside the repo"
+		}
+	}
+	return ""
 }
 
 // merge returns base with every set field of over applied.
@@ -664,6 +709,18 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Forbid != nil {
 		out.Forbid = over.Forbid
+	}
+	if over.Standards != nil {
+		out.Standards = over.Standards
+	}
+	if over.StandardsDocs != nil {
+		out.StandardsDocs = over.StandardsDocs
+	}
+	if over.StandardsPackDir != "" {
+		out.StandardsPackDir = over.StandardsPackDir
+	}
+	if over.StandardsWhen != nil {
+		out.StandardsWhen = over.StandardsWhen
 	}
 	if over.Autonomy.Merge != "" {
 		out.Autonomy.Merge = over.Autonomy.Merge

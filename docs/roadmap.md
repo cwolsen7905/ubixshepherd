@@ -27,6 +27,7 @@ means committed on a branch but not merged, and **decided** means not started.
 | OpenCode adapter, restricted to low-risk lanes | **decided** | Shepherd's own gate, not the model, decides success. |
 | Direct TCP with TLS | **decided** | A possible second transport if SSH tunnelling proves insufficient; it is off by default and would pin a generated certificate's fingerprint. |
 | Separate-account or OS-sandbox isolation for agents | **decided** | Later work; scoped tokens do not isolate processes running as the same OS user. |
+| Standards packs: agent-agnostic coding rules in every brief, mechanical checks at ship, `plan_first` in the brief | **built, in review** | See [standards-packs.md](standards-packs.md). Written-only rules are advice; a post-lane review run that judges them is not built. |
 
 The first release is `v0.1.0-beta.1`. The development and release branch model is
 decided, and its sign-off, promotion and publication workflow is shipped. The supported
@@ -46,6 +47,9 @@ git floor is 2.31 and is enforced at daemon start.
 
 ### Known gaps and limits
 
+- Standards packs enforce only rules with a `check`. A review run after a lane (a different
+  agent reading the diff against the written-only rules, reporting by rule id) is future
+  work, as is a settings page that edits packs and repo profiles.
 - Desk wake-ups are not per workspace, and queued desk turns do not survive a restart.
 - Copilot and Cursor adapters' handling of the run token is unverified.
 - Windows builds, but has not been tested.

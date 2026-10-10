@@ -74,6 +74,9 @@ type Runner struct {
 	Config config.Config
 	// Dir holds the run logs.
 	Dir string
+	// Standards is the directory of Shepherd's standards packs; "" means "standards"
+	// next to Dir.
+	Standards string
 	// Exe is the shepherd binary that serves agents their worker tools; "" gives
 	// agents none.
 	Exe string
@@ -374,7 +377,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 			workspace, repoRules = cfg.Defaults.Brief, cfg.Repos[repo.Name].Brief
 		}
 		note := Standing(ad.Note, workspace, pc, repoRules)
-		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, may, worker != "", note)
+		// A lane Shepherd starts on its own (a follow) has no one to approve a plan.
+		may.PlanFirst = !req.Auto && prof.Autonomy.PlanFirst != nil && *prof.Autonomy.PlanFirst
+		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, may, worker != "", note, r.standardsDigest(ctx, prof, lane))
 	}
 	agentPushes := may.Push == config.Agent
 	opts := Opts{Model: req.Model, Gate: gate, Worktree: lane.Worktree,

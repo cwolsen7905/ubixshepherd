@@ -274,3 +274,44 @@ func TestOpenCodeLimits(t *testing.T) {
 		}
 	}
 }
+
+func TestStandardsFields(t *testing.T) {
+	c, err := Parse([]byte(`
+defaults:
+  standards: [house]
+repos:
+  a: {}
+  b:
+    standards: [other, house]
+    standards_docs: [docs/rules]
+    standards_pack_dir: .rules
+  c:
+    standards: []
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b, d := c.Profile("a"), c.Profile("b"), c.Profile("c")
+	if len(a.Standards) != 1 || a.Standards[0] != "house" || a.StandardsPackDir != ".shepherd/standards" || len(a.StandardsDocs) != 4 {
+		t.Errorf("inherited: %+v", a)
+	}
+	if len(b.Standards) != 2 || len(b.StandardsDocs) != 1 || b.StandardsPackDir != ".rules" {
+		t.Errorf("overridden: %+v", b)
+	}
+	if len(d.Standards) != 0 {
+		t.Errorf("an empty list does not clear the defaults': %v", d.Standards)
+	}
+}
+
+func TestStandardsValidation(t *testing.T) {
+	for name, y := range map[string]string{
+		"pack path":   "defaults:\n  standards: [../x]\n",
+		"abs docs":    "defaults:\n  standards_docs: [/etc]\n",
+		"escape docs": "defaults:\n  standards_docs: [docs/../../x]\n",
+		"pack dir":    "defaults:\n  standards_pack_dir: ../elsewhere\n",
+	} {
+		if _, err := Parse([]byte(y)); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

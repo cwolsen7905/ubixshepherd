@@ -404,7 +404,7 @@ func TestAdapterArgs(t *testing.T) {
 	if id, _ := newUUID(); len(id) != 36 || id[14] != '4' {
 		t.Errorf("uuid = %q", id)
 	}
-	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", Powers{}, false, ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "Do not merge") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
+	if b := Brief("fix it", "l", "r", "l", "main", "/w", []string{"src/**"}, "make check", Powers{}, false, "", ""); !strings.Contains(b, "Do not push") || !strings.Contains(b, "Do not merge") || !strings.Contains(b, "src/**") || !strings.HasSuffix(b, "fix it\n") {
 		t.Errorf("brief:\n%s", b)
 	}
 }
@@ -428,11 +428,11 @@ func TestAgentPowersArgsAndBrief(t *testing.T) {
 		t.Errorf("copilot denies push to an agent allowed to: %s", j)
 	}
 
-	shep := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "make check", Powers{Push: config.Shepherd}, false, "")
+	shep := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "make check", Powers{Push: config.Shepherd}, false, "", "")
 	if !strings.Contains(shep, "Shepherd runs the gate itself") || !strings.Contains(shep, "Do not push") {
 		t.Errorf("shepherd-push brief:\n%s", shep)
 	}
-	own := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "", Powers{Push: config.Agent, Merge: true, GitLab: true, Forbid: []string{"(?i)co-authored-by"}}, false, "")
+	own := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "", Powers{Push: config.Agent, Merge: true, GitLab: true, Forbid: []string{"(?i)co-authored-by"}}, false, "", "")
 	for _, want := range []string{"git push -u origin feat/x -o merge_request.create -o merge_request.target=dev", "co-authored-by",
 		"glab mr merge <iid> --when-pipeline-succeeds --sha", "Never approve"} {
 		if !strings.Contains(own, want) {
@@ -584,7 +584,7 @@ func TestWorkerToolsInjected(t *testing.T) {
 	if j := strings.Join(c.Args(Opts{Worker: "/bin/shepherd"}), " "); !strings.Contains(j, "--additional-mcp-config") || !strings.Contains(j, `"tools":["*"]`) || !strings.Contains(j, "--allow-tool shepherd") {
 		t.Errorf("copilot worker args: %s", j)
 	}
-	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
+	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, "", ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
 		t.Errorf("brief with tools:\n%s", b)
 	}
 }
