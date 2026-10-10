@@ -258,3 +258,28 @@ func TestLaneOpenListCloseFromCLI(t *testing.T) {
 		t.Errorf("gc: %d\n%s%s", code, h.out, h.err)
 	}
 }
+
+func TestStandardsInitAndList(t *testing.T) {
+	var out bytes.Buffer
+	env := Env{Stdout: &out, Stderr: &bytes.Buffer{}, Layout: paths.Layout{Home: t.TempDir()}, Cwd: t.TempDir()}
+	ctx := context.Background()
+	if err := runStandards(ctx, env, []string{"list"}); err != nil || !strings.Contains(out.String(), "shepherd standards init") {
+		t.Fatalf("empty list: %v %q", err, out.String())
+	}
+	out.Reset()
+	if err := runStandards(ctx, env, []string{"init"}); err != nil || !strings.Contains(out.String(), "Wrote the example house pack") {
+		t.Fatalf("init: %v %q", err, out.String())
+	}
+	out.Reset()
+	if err := runStandards(ctx, env, []string{"init"}); err != nil || !strings.Contains(out.String(), "already there") {
+		t.Fatalf("second init: %v %q", err, out.String())
+	}
+	out.Reset()
+	if err := runStandards(ctx, env, nil); err != nil || !strings.Contains(out.String(), "house  (7 rules)") || !strings.Contains(out.String(), "no-ai-attribution") {
+		t.Fatalf("list: %v %q", err, out.String())
+	}
+	out.Reset()
+	if err := runStandards(ctx, env, []string{"list", "--json"}); err != nil || !strings.Contains(out.String(), `"pack": "house"`) {
+		t.Fatalf("list --json: %v %q", err, out.String())
+	}
+}

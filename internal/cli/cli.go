@@ -84,6 +84,8 @@ func commands() []command {
 			"shepherd tag reserve major|minor|patch [--lane L | --no-lane] [--repo R] | list | release <tag>", runTag},
 		{"request", "Requests between lanes: list them, route the ones Shepherd cannot, close stale ones",
 			"shepherd request list [--all] | route <id> --lane L [--agent A] | close <id> [--why TEXT]", runRequest},
+		{"standards", "Standards packs: the rules every agent is told, the same way, and the repo's own that win over them",
+			"shepherd standards list | show [dir] | init   (each takes --json)", runStandards},
 		{"agents", "Set up an agent CLI for Shepherd", "shepherd agents setup cursor", runAgents},
 		{"worker", "", "shepherd worker report|ask-human|ask-shepherd (for agents Shepherd starts)", runWorker},
 		{"mcp", "Serve Shepherd's operator tools over MCP on stdio, for Claude Code and other agents",

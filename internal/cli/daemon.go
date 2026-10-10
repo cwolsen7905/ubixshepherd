@@ -23,6 +23,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/service"
+	"github.com/ubixsys/ubixshepherd/internal/standards"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
 	"github.com/ubixsys/ubixshepherd/internal/watch"
 )
@@ -107,6 +108,12 @@ func daemonRun(ctx context.Context, env Env) error {
 		return err
 	} else if wrote {
 		fmt.Fprintf(env.Stderr, "Wrote %s: every setting commented out, defaults apply.\n", l.Config())
+		// With the config: the example pack, which no repo uses until its profile lists it.
+		if seeded, err := standards.SeedHouse(filepath.Join(l.Home, "standards")); err != nil {
+			fmt.Fprintf(env.Stderr, "Could not write the example standards pack: %v\n", err)
+		} else if seeded {
+			fmt.Fprintf(env.Stderr, "Wrote an example standards pack to %s.\n", filepath.Join(l.Home, "standards", "house"))
+		}
 	}
 	cfg, err := config.Load(l.Config())
 	if err != nil {
