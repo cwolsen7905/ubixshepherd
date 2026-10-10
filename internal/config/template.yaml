@@ -166,8 +166,8 @@
 
 ## Projects: named groups of repos that share a brief, a budget and a way of taking
 ## requests from other projects (see docs/projects.md). A repo is in at most one project,
-## and every member and recipe repo must be listed under repos above. A repo in no
-## project behaves as before. The brief is not here: the front desk drafts it and you
+## and a member or recipe repo needs no entry under repos above (it uses defaults). A
+## repo in no project behaves as before. The brief is not here: the front desk drafts it and you
 ## approve it.
 # projects:
 #   framework-group:

@@ -77,7 +77,8 @@ const AnySender = "*"
 // rules. Its brief is not here; it has an author and an approval, so it lives in the store.
 // Use Config.Project for the effective values.
 type Project struct {
-	// Repos are the project's members, each a key of Config.Repos and in no other project.
+	// Repos are the project's members, by repo name, each in no other project. A member
+	// needs no entry in Config.Repos: it uses the defaults profile.
 	Repos []string `yaml:"repos" json:"repos"`
 	// BriefMaxAge is how old the approved brief may be before it shows as stale: "30d",
 	// or a Go duration ("720h"); "" is DefaultBriefMaxAge.
@@ -234,8 +235,11 @@ func (c Config) validateProjects() []error {
 			errs = append(errs, fmt.Errorf("projects: %q is not a project name", name))
 		}
 		for _, r := range p.Repos {
-			if _, ok := c.Repos[r]; !ok {
-				errs = append(errs, fmt.Errorf("%s.repos: %q is not in repos", at, r))
+			// A member need not have a repos: entry: without one it uses the defaults
+			// profile. Whether the name is a repo of the workspace is the daemon's to
+			// say, since only it knows the workspace.
+			if strings.TrimSpace(r) == "" {
+				errs = append(errs, fmt.Errorf("%s.repos: empty repo name", at))
 				continue
 			}
 			if first, dup := owner[r]; dup {
@@ -267,14 +271,9 @@ func (c Config) validateProjects() []error {
 			if strings.TrimSpace(ch.Path) == "" {
 				errs = append(errs, fmt.Errorf("%s.path: empty", at))
 			}
-			repo, _, ok := ch.Recipe()
-			switch {
-			case !ok:
+			// made_by may name a repo with no repos: entry, like a member.
+			if _, _, ok := ch.Recipe(); !ok {
 				errs = append(errs, fmt.Errorf("%s.made_by: %q is not <repo>:<recipe path>", at, ch.MadeBy))
-			default:
-				if _, in := c.Repos[repo]; !in {
-					errs = append(errs, fmt.Errorf("%s.made_by: %q is not in repos", at, repo))
-				}
 			}
 		}
 		for i, r := range p.Intake {

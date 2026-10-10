@@ -17,6 +17,17 @@ See [standards-packs.md](standards-packs.md) for what the fields do.
 | `standards_when` | none | Extra `when` tags active in every lane of the repo. |
 | `autonomy.plan_first` | `true` | The brief tells the agent to post its plan as a decision and wait before changing code. |
 
+## Projects and the `repos:` section
+
+A project's `repos:` lists repo names; each name need not also appear under the top-level
+`repos:`. A repo with no entry there simply uses the `defaults:` profile, so grouping
+repos needs no `name: {}` line per repo. Add a `repos:` entry only to override something
+for that repo. The same holds for the repo a cache's `made_by` names. A repo is still in
+at most one project, and a repeated name is an error.
+
+Parsing cannot know which names are real repos of your workspace, so a name that matches
+no repo is not rejected: it simply never matches anything.
+
 ## Unknown and retired keys
 
 The file is read strictly: a key Shepherd does not know is an error, so a typo cannot
