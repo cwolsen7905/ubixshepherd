@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -134,5 +135,38 @@ func TestUsageMigrationKeepsOldRows(t *testing.T) {
 	st, err := db.UsageStats(ctx, "2026-01-01", "2026-01-01")
 	if err != nil || st.Total.Count != 0 {
 		t.Errorf("stats = %+v, %v", st, err)
+	}
+}
+
+func TestDiagnoses(t *testing.T) {
+	ctx := context.Background()
+	db, _ := open(t)
+	_, _, runA := fixture(t, db, "a")
+	_, _, runB := fixture(t, db, "b")
+	code := 2
+	reset := time.Date(2026, 10, 11, 3, 0, 0, 0, time.UTC)
+	if _, err := db.AddDiagnosis(ctx, store.Diagnosis{RunID: runA.ID, Kind: store.DiagAgentError, Summary: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.AddDiagnosis(ctx, store.Diagnosis{RunID: runA.ID, Kind: store.DiagGateFailed, Summary: "second", Evidence: "FAIL x",
+		Command: "make check", ExitCode: &code, Files: []string{"a.go"}, ResetAt: &reset,
+		Fixes: []store.Fix{{ID: "continue", Op: store.FixContinue, Args: map[string]string{"prompt": "fix"}, DeskOK: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	all, err := db.Diagnoses(ctx, runA.ID)
+	if err != nil || len(all) != 2 || all[0].Summary != "second" {
+		t.Fatalf("diagnoses = %+v, %v", all, err)
+	}
+	d := all[0]
+	if d.ExitCode == nil || *d.ExitCode != 2 || d.Command != "make check" || len(d.Files) != 1 || d.ResetAt == nil || !d.ResetAt.Equal(reset) ||
+		len(d.Fixes) != 1 || !d.Fixes[0].DeskOK || d.Fixes[0].Args["prompt"] != "fix" || d.Created.IsZero() {
+		t.Fatalf("round trip lost something: %+v", d)
+	}
+	latest, err := db.LatestDiagnoses(ctx, runA.ID, runB.ID)
+	if err != nil || len(latest) != 1 || latest[runA.ID].Summary != "second" {
+		t.Fatalf("latest = %+v, %v", latest, err)
+	}
+	if got, _ := db.LatestDiagnoses(ctx); len(got) != 0 {
+		t.Fatalf("no ids gave %+v", got)
 	}
 }

@@ -838,6 +838,14 @@ type Store interface {
 	// the desk and the rest.
 	SpendRollup(ctx context.Context, from, to string) (SpendRollup, error)
 
+	// AddDiagnosis records why a run, or the push of its work, went wrong.
+	AddDiagnosis(ctx context.Context, d Diagnosis) (Diagnosis, error)
+	// Diagnoses returns a run's diagnoses, newest first.
+	Diagnoses(ctx context.Context, runID int64) ([]Diagnosis, error)
+	// LatestDiagnoses returns the newest diagnosis of each of the runs that has one,
+	// keyed by run id.
+	LatestDiagnoses(ctx context.Context, runIDs ...int64) (map[int64]Diagnosis, error)
+
 	// AddUsage records a run's or a desk turn's usage; a run has at most one record, and
 	// adding another replaces it.
 	AddUsage(ctx context.Context, u Usage) error

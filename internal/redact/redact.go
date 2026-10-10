@@ -9,6 +9,8 @@ package redact
 import (
 	"io"
 	"regexp"
+	"strings"
+	"unicode/utf8"
 )
 
 // Mask replaces a redacted value.
@@ -63,4 +65,30 @@ func (r writer) Write(p []byte) (int, error) {
 		return 0, err
 	}
 	return len(p), nil
+}
+
+// Tail returns the end of s, redacted: at most lines whole lines and at most max bytes,
+// the cut falling on a line start. When it cut anything it begins with a marker line.
+func Tail(s string, lines, max int) string {
+	s = strings.TrimRight(String(s), "\n")
+	ls := strings.Split(s, "\n")
+	cut := false
+	if lines > 0 && len(ls) > lines {
+		ls, cut = ls[len(ls)-lines:], true
+	}
+	out := strings.Join(ls, "\n")
+	for max > 0 && len(out) > max && len(ls) > 1 {
+		ls, cut = ls[1:], true
+		out = strings.Join(ls, "\n")
+	}
+	if max > 0 && len(out) > max { // one line longer than the cap
+		out, cut = out[len(out)-max:], true
+		for len(out) > 0 && !utf8.RuneStart(out[0]) {
+			out = out[1:]
+		}
+	}
+	if cut {
+		return "[...]\n" + out
+	}
+	return out
 }

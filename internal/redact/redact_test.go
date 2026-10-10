@@ -64,3 +64,23 @@ func TestWriter(t *testing.T) {
 		t.Errorf("Writer leaked: %q", buf.String())
 	}
 }
+
+func TestTail(t *testing.T) {
+	in := "one\ntwo\nthree\nfour\n"
+	if got := Tail(in, 10, 100); got != "one\ntwo\nthree\nfour" {
+		t.Fatalf("uncut = %q", got)
+	}
+	if got := Tail(in, 2, 100); got != "[...]\nthree\nfour" {
+		t.Fatalf("lines = %q", got)
+	}
+	if got := Tail(in, 10, 9); got != "[...]\nfour" {
+		t.Fatalf("bytes = %q", got)
+	}
+	if got := Tail("a very long single line", 5, 6); got != "[...]\ne line" {
+		t.Fatalf("one line = %q", got)
+	}
+	got := Tail("x\npassword=hunter2hunter2\n", 5, 100)
+	if strings.Contains(got, "hunter2") {
+		t.Fatalf("not redacted: %q", got)
+	}
+}
