@@ -313,6 +313,17 @@ func TestOutOfQuotaHoldsTheAgent(t *testing.T) {
 		t.Fatalf("claude held for cursor's limit: %v", err)
 	}
 	f.wait(t, other.ID)
+	holdOf := func(agent string) (Hold, bool) {
+		for _, h := range f.runner.QuotaHolds() {
+			if h.Agent == agent {
+				return h, true
+			}
+		}
+		return Hold{}, false
+	}
+	if h, ok := holdOf("cursor"); !ok || !h.Until.After(time.Now()) || h.Reason == "" {
+		t.Errorf("quota holds = %+v", f.runner.QuotaHolds())
+	}
 	// The hold lifts when the limit does.
 	f.runner.mu.Lock()
 	q := f.runner.outOf["cursor"]
@@ -324,6 +335,9 @@ func TestOutOfQuotaHoldsTheAgent(t *testing.T) {
 	f.runner.mu.Unlock()
 	if why != "" {
 		t.Errorf("hold outlived its limit: %s", why)
+	}
+	if h, ok := holdOf("cursor"); ok {
+		t.Errorf("a lifted hold is still reported: %+v", h)
 	}
 }
 

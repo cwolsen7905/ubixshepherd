@@ -2,6 +2,7 @@ package watch
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -298,5 +299,34 @@ func TestMergeLeavesWorkBeyondTheRequestAlone(t *testing.T) {
 	}
 	if !strings.Contains(f.feed(t), "commits beyond its merged request") {
 		t.Errorf("feed = %s", f.feed(t))
+	}
+}
+
+func TestStatusRecordsLastPollAndError(t *testing.T) {
+	f := newFixture(t)
+	if s := f.w.Status(); !s.LastPoll.IsZero() || s.Error != "" {
+		t.Fatalf("status before a poll = %+v", s)
+	}
+	at := time.Date(2026, 10, 10, 12, 0, 0, 0, time.UTC)
+	f.w.Clock = func() time.Time { return at }
+	f.w.Check(f.ctx)
+	if s := f.w.Status(); !s.LastPoll.Equal(at) || s.Error != "" {
+		t.Fatalf("status after a clean poll = %+v", s)
+	}
+	// A failing poll keeps the last good time and says what failed, on one line.
+	later := at.Add(time.Minute)
+	f.w.Clock = func() time.Time { return later }
+	f.f.err = errors.New("glab: could not reach\ngitlab.example")
+	f.w.Check(f.ctx)
+	s := f.w.Status()
+	if !s.LastPoll.Equal(at) || !s.ErrorAt.Equal(later) || s.Error != "glab: could not reach gitlab.example" {
+		t.Fatalf("status after a failed poll = %+v", s)
+	}
+	// The next clean poll clears it.
+	f.f.err = nil
+	f.w.Clock = func() time.Time { return later.Add(time.Minute) }
+	f.w.Check(f.ctx)
+	if s := f.w.Status(); !s.LastPoll.Equal(later.Add(time.Minute)) || s.Error != "" || !s.ErrorAt.IsZero() {
+		t.Fatalf("status after recovery = %+v", s)
 	}
 }

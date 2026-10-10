@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/watch"
 )
 
 const badConfig = "repos:\n  x:\n    autonomy:\n      merge: sometimes\n"
@@ -64,5 +66,15 @@ func TestConsoleSince(t *testing.T) {
 	}
 	if got := consoleSince(l, int64(b.Len())); got != "" {
 		t.Errorf("nothing new: %q", got)
+	}
+}
+
+func TestStatusHooksMapWhatTheRunnerAndWatcherKnow(t *testing.T) {
+	// Nothing held and nothing polled is an empty list and a zero poll, not "unreported".
+	if h := quotaHolds(&dispatch.Runner{}); h == nil || len(h) != 0 {
+		t.Errorf("quota holds of an idle runner = %#v", h)
+	}
+	if fw := forgeWatch(&watch.Watcher{}); !fw.LastPoll.IsZero() || fw.Error != "" {
+		t.Errorf("forge watch before a poll = %+v", fw)
 	}
 }

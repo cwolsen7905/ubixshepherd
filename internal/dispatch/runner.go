@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -143,6 +144,30 @@ func (r *Runner) projectContext(ctx context.Context, cfg config.Config, repo str
 		return nil, nil
 	}
 	return pc, nil
+}
+
+// Hold is an agent held out of quota: until its limit resets, and why.
+type Hold struct {
+	Agent  string
+	Until  time.Time
+	Reason string
+}
+
+// QuotaHolds reports the agents held for quota now, by agent name. It is a copy, safe
+// to read while runs start and end, and omits a hold whose time has passed.
+func (r *Runner) QuotaHolds() []Hold {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	now := time.Now()
+	var out []Hold
+	for agent, q := range r.outOf {
+		if !now.Before(q.Until) {
+			continue
+		}
+		out = append(out, Hold{Agent: agent, Until: q.Until, Reason: q.Text})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Agent < out[j].Agent })
+	return out
 }
 
 // quotaHeld says why an agent cannot start for now, or "". Call it with r.mu held.

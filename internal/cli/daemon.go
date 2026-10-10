@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/term"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
@@ -144,12 +145,29 @@ func daemonRun(ctx context.Context, env Env) error {
 	srv.Level = level
 	srv.Fold.Exe = env.Exe
 	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
+	srv.QuotaHolds = func() []api.QuotaHold { return quotaHolds(srv.Runner) }
 	if cfg.Daemon.Poll != "off" {
 		every, _ := time.ParseDuration(cfg.Daemon.Poll)
 		w := &watch.Watcher{Store: st, Fold: srv.Fold, Runner: srv.Runner, Log: srv.Log, Interval: every}
+		srv.ForgeWatch = func() api.ForgeWatch { return forgeWatch(w) }
 		go w.Run(ctx)
 	}
 	return srv.Run(ctx, l.Runtime())
+}
+
+// quotaHolds maps the runner's quota holds to the status detail's.
+func quotaHolds(r *dispatch.Runner) []api.QuotaHold {
+	holds := []api.QuotaHold{}
+	for _, h := range r.QuotaHolds() {
+		holds = append(holds, api.QuotaHold{Agent: h.Agent, Until: h.Until})
+	}
+	return holds
+}
+
+// forgeWatch maps the watcher's last poll to the status detail's.
+func forgeWatch(w *watch.Watcher) api.ForgeWatch {
+	s := w.Status()
+	return api.ForgeWatch{LastPoll: s.LastPoll, Error: s.Error}
 }
 
 // startDaemon starts the daemon, through the service manager when it is installed and
