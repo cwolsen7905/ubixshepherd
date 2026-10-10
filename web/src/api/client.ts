@@ -4,7 +4,7 @@
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
 import type {
-  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Feed, LaneRecord, LaneView, ProjectDetail, ProjectList, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats,
+  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Feed, LaneRecord, LaneView, ProjectDetail, ProjectList, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -114,6 +114,14 @@ export const api = {
   feed: (after: number) => get<Feed>(`/v1/feed?${qs({ after })}`),
   /** The person's words, sent only from their own click. */
   answer: (decisionId: number, answer: string) => post<Decision>(`/v1/decisions/${decisionId}/answer`, { answer }),
+}
+
+/** What the daemon popover reads, outside `api` so the poller's fakes need not carry it. */
+export const daemonInfo = {
+  /** The status with its detail. */
+  status: () => get<Status>('/v1/status?detail=1'),
+  /** This browser's session. */
+  session: () => get<WebSession>('/v1/web/session'),
 }
 
 /** What ran and how it ended, closed lanes included. `since` is an RFC 3339 time. */

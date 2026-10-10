@@ -26,6 +26,37 @@ export interface Status {
   store: string
   config: string
   workspaces: WorkspaceSummary[]
+  /** Only from GET /v1/status?detail=1. */
+  detail?: StatusDetail
+}
+
+/** What the daemon popover shows; fields the daemon does not report are absent. */
+export interface StatusDetail {
+  commit?: string
+  built_at?: string
+  os: string
+  arch: string
+  host?: string
+  /** The daemon's clock. */
+  now: string
+  config_loaded: string
+  reload_error?: string
+  reload_failed_at?: string
+  running: number
+  open_lanes: number
+  decisions: number
+  /** Absent when this daemon does not report quota holds. */
+  quota_holds?: { agent: string; until: string }[]
+  spend_usd: number
+  budget_usd?: number
+  forge?: { last_poll?: string; error?: string }
+}
+
+/** GET /v1/web/session: this browser's session. */
+export interface WebSession {
+  role: string
+  expires?: string
+  allow_settings?: boolean
 }
 
 export interface Origin {
