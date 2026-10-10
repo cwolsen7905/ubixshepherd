@@ -32,6 +32,9 @@ interface LaneData {
   requests: RequestView[]
 }
 
+/** How often a lane with a running run reads its runs again, for the progress line. */
+export const PROGRESS_POLL = 5000
+
 type Tab = 'overview' | 'conversation'
 
 /** `conversation` replaces the daemon's reader; tests give it a fake. */
@@ -81,6 +84,14 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
       current = false
     }
   }, [id, feedLast, reload])
+
+  // A run's progress changes without a feed event: read again while one is going.
+  const going = data?.runs[0]?.state === 'running'
+  useEffect(() => {
+    if (!going) return
+    const t = window.setInterval(() => setReload((n) => n + 1), PROGRESS_POLL)
+    return () => window.clearInterval(t)
+  }, [going])
 
   // Opening a lane is looking at it: what finished there is no longer news.
   const latest = data?.runs[0]
@@ -182,6 +193,11 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
           <h2 id="runs-h" className="section-h">Runs</h2>
           {error && <p className="tone-bad">Could not load the runs: {error}</p>}
           {data && runs.length === 0 && <p className="faint">No agent has run in this lane yet.</p>}
+          {latest?.state === 'running' && latest.progress && (
+            <p className="lane-progress" aria-live="polite">
+              <Glyph glyph="▸" tone="ok" label="running" /> Run {latest.id}: {latest.progress.line}
+            </p>
+          )}
           {latest?.diagnosis && (
             <RunFailure run={latest} onFixed={() => void live.refresh().then(() => setReload((n) => n + 1))} />
           )}

@@ -10,3 +10,6 @@
 .failure-confirm { margin: var(--s-2) 0 0; padding: var(--s-2); border-inline-start: 3px solid var(--lantern, #d4a017); }
 .failure-confirm p { margin: 0 0 var(--s-2); }
 .failure-result { margin: var(--s-2) 0 0; }
+
+/* What a running run is doing now. */
+.lane-progress { margin: 0 0 var(--s-3); color: var(--muted); }

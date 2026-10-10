@@ -117,3 +117,24 @@ Who may take a fix follows the token that asks:
 `widen_scope` is carried out by the daemon through the Fold when the person takes it, and
 says so in its result. `raise_budget`, `open_mr` and `fix_config_text` are the person's own
 edits: the web UI shows them as a note, not a button, and the API answers that it is theirs.
+
+## While a run goes
+
+A run that is still going carries a one-line `progress` on its run view and, for a lane's
+latest run, on the lane view: what it is doing now, worked out by the daemon each time it
+is asked (and reused for two seconds). It is derived, not stored, so nothing is added to
+the run's record.
+
+- The step is the last tool call in the end of the run's log (the Claude Code and
+  OpenCode adapters write one per call): `running make check`, `editing internal/x.go`,
+  `reading README.md`, `searching for func Run`. An agent whose log has no tool lines shows
+  its last line of output. It passes through `internal/redact` and is cut to one line.
+- The line adds the commits made since the run started (`git rev-list --count`) and the
+  time it has run: `running make check (3 commits, 12m)`. With no step yet it reads
+  `3 commits so far, 12m`, or `just started, 5s`.
+- The Board shows it in place of `run N` on a working lane, and the Lane page above its
+  runs. Both read the lists again every few seconds while a run goes, so it stays current
+  without a new event. `shepherd run show` prints it as `now`.
+
+The derivation is `StepFromLog`, `ProgressLine` and `Server.RunProgress` in
+`internal/daemon/progress.go`, so the terminal dock can reuse it.

@@ -160,6 +160,9 @@ func printRun(env Env, r api.RunView) {
 		took = r.Ended.Sub(r.Started).Round(time.Second).String()
 	}
 	fmt.Fprintf(w, "  time      %s, started %s\n", took, r.Started.Local().Format("15:04"))
+	if r.Progress != nil {
+		fmt.Fprintf(w, "  now       %s\n", r.Progress.Line)
+	}
 	if r.ExitCode != nil {
 		fmt.Fprintf(w, "  exit      %d\n", *r.ExitCode)
 	}

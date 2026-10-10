@@ -88,8 +88,8 @@ func (s *Server) widenScope(ctx context.Context, run store.Run, res *dispatch.Fi
 	return nil
 }
 
-// attachDiagnoses sets Diagnosis on each run view from the store's newest of each run.
-// full keeps the evidence; a list leaves it out.
+// attachDiagnoses sets Diagnosis on each run view from the store's newest of each run,
+// and Progress on each run still going. full keeps the evidence; a list leaves it out.
 func (s *Server) attachDiagnoses(ctx context.Context, views []api.RunView, full bool) error {
 	ids := make([]int64, len(views))
 	for i, v := range views {
@@ -103,6 +103,7 @@ func (s *Server) attachDiagnoses(ctx context.Context, views []api.RunView, full 
 		if d, ok := latest[views[i].ID]; ok {
 			views[i].Diagnosis = diagnosisView(d, full)
 		}
+		views[i].Progress = s.RunProgress(ctx, views[i].Run, views[i].Worktree)
 	}
 	return nil
 }
@@ -116,7 +117,7 @@ func diagnosisView(d store.Diagnosis, full bool) *api.Diagnosis {
 }
 
 // attachLaneDiagnoses sets Diagnosis on each lane view to the newest diagnosis of the
-// lane's latest run.
+// lane's latest run, and Progress when that run is still going.
 func (s *Server) attachLaneDiagnoses(ctx context.Context, lanes []api.LaneView) error {
 	byRun := map[int64][]int{}
 	var ids []int64
@@ -128,6 +129,7 @@ func (s *Server) attachLaneDiagnoses(ctx context.Context, lanes []api.LaneView) 
 		if len(runs) == 1 {
 			ids = append(ids, runs[0].ID)
 			byRun[runs[0].ID] = append(byRun[runs[0].ID], i)
+			lanes[i].Progress = s.RunProgress(ctx, runs[0], l.Worktree)
 		}
 	}
 	latest, err := s.Store.LatestDiagnoses(ctx, ids...)

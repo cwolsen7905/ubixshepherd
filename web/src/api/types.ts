@@ -93,6 +93,8 @@ export interface LaneView extends Lane {
   pipeline_status?: PipelineStatus
   /** The newest diagnosis of the lane's latest run. */
   diagnosis?: Diagnosis
+  /** What the lane's latest run is doing now, while it runs. */
+  progress?: Progress
 }
 
 export interface Run {
@@ -150,6 +152,16 @@ export interface Diagnosis {
   created: string
 }
 
+/** What a running run is doing now, worked out by the daemon from its log and commits. */
+export interface Progress {
+  /** The whole phrase: "running make check (3 commits, 12m)". */
+  line: string
+  /** The part from the log; absent when the log shows nothing yet. */
+  step?: string
+  commits: number
+  elapsed_seconds: number
+}
+
 /** What taking a fix did. */
 export interface FixResult {
   fix: Fix
@@ -164,6 +176,8 @@ export interface RunView extends Run {
   worktree: string
   /** The run's newest diagnosis. */
   diagnosis?: Diagnosis
+  /** What the run is doing now; only while it runs. */
+  progress?: Progress
 }
 
 export interface RunLog {

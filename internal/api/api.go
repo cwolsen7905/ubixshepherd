@@ -250,8 +250,21 @@ type RunView struct {
 	// agent reported any; nil on a run still going and on runs from before it was kept.
 	// Only a single run's view (GET /v1/runs/{id}) carries it.
 	Usage *store.Usage `json:"usage,omitempty"`
-	// Diagnosis is the run's newest diagnosis, when it has one.
+	// Diagnosis is the run's newest diagnosis, when it has one; Progress what a run that
+	// is still going is doing now.
 	Diagnosis *Diagnosis `json:"diagnosis,omitempty"`
+	Progress  *Progress  `json:"progress,omitempty"`
+}
+
+// Progress is a one-line account of what a running run is doing now, worked out from
+// the tail of its log, its commits so far and how long it has run. Line is the whole
+// phrase ("running make check (3 commits, 12m)"); Step is the part from the log, absent
+// when the log shows nothing yet.
+type Progress struct {
+	Line    string `json:"line"`
+	Step    string `json:"step,omitempty"`
+	Commits int    `json:"commits"`
+	Elapsed int64  `json:"elapsed_seconds"`
 }
 
 // RunLog answers GET /v1/runs/{id}/log?offset=N: the next piece of the log.
@@ -389,8 +402,9 @@ type LaneView struct {
 	Pipeline       int64  `json:"pipeline,omitempty"`
 	PipelineStatus string `json:"pipeline_status,omitempty"`
 	// Diagnosis is the newest diagnosis of the lane's latest run; it is not set for a
-	// lane that has run nothing.
+	// lane that has run nothing. Progress is what that run is doing now while it goes.
 	Diagnosis *Diagnosis `json:"diagnosis,omitempty"`
+	Progress  *Progress  `json:"progress,omitempty"`
 }
 
 // PathLaneShip is POST /v1/lanes/{id}/ship: push the lane's committed work and open or

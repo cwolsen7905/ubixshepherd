@@ -68,6 +68,8 @@ type Server struct {
 	// tokens are the scoped tokens minted since start; addr is where the API listens.
 	tokens tokens
 	addr   atomic.Pointer[string]
+	// progress remembers what running runs are doing, briefly (progress.go).
+	progress progressCache
 	// web holds browser sign-in codes and sessions (web.go); sessions persist in the store.
 	web webAuth
 	// reload is how the last config reload went (statusdetail.go).

@@ -231,3 +231,42 @@ describe('following a running lane', () => {
     expect(read).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('a failed or running latest run', () => {
+  async function showRuns(runs: ReturnType<typeof run>[]) {
+    const live = liveWith()
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => {
+      const body = path.startsWith('/v1/runs') ? runs : []
+      return new Response(JSON.stringify(body), { status: 200 })
+    })
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} conversation={() => source()} />
+      </LiveProvider>,
+    )
+  }
+
+  it('shows what a running run is doing now', async () => {
+    await showRuns([
+      run({ id: 12, state: 'running', ended: undefined, progress: { line: 'editing internal/x.go (2 commits, 5m)', step: 'editing internal/x.go', commits: 2, elapsed_seconds: 300 } }),
+    ])
+    expect(await screen.findByText(/editing internal\/x.go \(2 commits, 5m\)/)).toBeInTheDocument()
+  })
+
+  it('shows why the latest run failed, with its fixes', async () => {
+    await showRuns([
+      run({
+        id: 12, state: 'failed',
+        diagnosis: {
+          id: 1, run_id: 12, kind: 'hung', summary: 'claude went quiet for 10 minutes and was stopped', evidence: 'last output', created: '2026-10-08T10:04:00Z',
+          fixes: [{ id: 'retry', label: 'Start again', op: 'retry', needs_person: false, desk_ok: true }],
+        },
+      }),
+    ])
+    expect(await screen.findByText('claude went quiet for 10 minutes and was stopped')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Start again' })).toBeInTheDocument()
+  })
+})

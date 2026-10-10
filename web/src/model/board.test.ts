@@ -18,6 +18,12 @@ const openMR = (status: 'passed' | 'failed' | 'running') =>
   ({ mr: 34, mr_state: 'open', mr_url: 'https://forge.example.com/acme/api/-/merge_requests/34', pipeline_status: status }) as const
 
 describe('boardItems', () => {
+  it('says what a running run is doing now, when the daemon says', () => {
+    const progress = { line: 'running make check (3 commits, 12m)', step: 'running make check', commits: 3, elapsed_seconds: 720 }
+    const runs = [run({ id: 12, state: 'running', ended: undefined, progress })]
+    expect(only({ lanes: [lane()], runs })).toMatchObject({ group: 'working', detail: 'running make check (3 commits, 12m)' })
+  })
+
   it('puts decisions and requests that need routing first', () => {
     const [d, q] = items({ decisions: [decision()], requests: [request()], lanes: [lane()] })
     expect(d).toMatchObject({ group: 'needs', detail: expect.stringMatching(/^decision 5: /), laneId: 1 })
