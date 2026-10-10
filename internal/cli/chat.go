@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ubixsys/ubixshepherd/internal/chat"
+	"github.com/ubixsys/ubixshepherd/internal/config"
 )
 
 // shepherd chat: the one conversation, with the front desk and the swarm's events.
@@ -43,6 +44,9 @@ func runChat(ctx context.Context, env Env, args []string) error {
 	m := chat.New(ctx, c, desk, h.Workspace)
 	m.ModelFlag = *model
 	m.HistoryItems = *history
+	// chat.hyperlinks is read once, here: a daemon reload does not reach a running chat,
+	// so a change applies to the next one.
+	chat.SetHyperlinks(chatHyperlinks(env))
 	chat.DetectBackground()
 	restore := chat.SaveTitle(env.Stdout)
 	defer restore()
@@ -52,4 +56,14 @@ func runChat(ctx context.Context, env Env, args []string) error {
 		return fmt.Errorf("chat: %w", err)
 	}
 	return nil
+}
+
+// chatHyperlinks is chat.hyperlinks from config.yaml, or auto when the file cannot be
+// read: a broken config is the daemon's to report, and must not stop the chat drawing.
+func chatHyperlinks(env Env) string {
+	cfg, _, err := config.LoadWarn(env.Layout.Config())
+	if err != nil {
+		return config.HyperlinksAuto
+	}
+	return cfg.Chat.HyperlinksMode()
 }

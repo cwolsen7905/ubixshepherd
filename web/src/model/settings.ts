@@ -55,7 +55,7 @@ export function scopes(doc: ConfigDoc, extraRepos: string[] = [], extraProjects:
       out.push({ id: `project:${name}`, label: name, section: project, root: [...project.root, name], raw: asMap(p?.raw), effective: asMap(p?.effective), inherits: false })
     }
   }
-  for (const id of ['daemon', 'desk', 'opencode']) one(id, asMap(doc.effective[id]), asMap(doc.raw[id]))
+  for (const id of ['daemon', 'desk', 'chat', 'opencode']) one(id, asMap(doc.effective[id]), asMap(doc.raw[id]))
   return out
 }
 

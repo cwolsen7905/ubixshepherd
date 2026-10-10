@@ -6,7 +6,7 @@ import { SettingsPage } from './Settings'
 const doc = (o: Partial<ConfigDoc> = {}): ConfigDoc => ({
   path: '/h/config.yaml', etag: 'e1', can_write: true,
   raw: { repos: { api: { base_branch: 'dev' } } },
-  effective: { daemon: { max_runs: 4 }, desk: {}, opencode: {} },
+  effective: { daemon: { max_runs: 4 }, desk: {}, chat: {}, opencode: {} },
   defaults: { raw: {}, effective: { gate: 'make check', autonomy: { push: 'human' } }, overridden: [] },
   repos: { api: { raw: { base_branch: 'dev' }, effective: { gate: 'make check', base_branch: 'dev', autonomy: { push: 'human' } }, overridden: ['base_branch'] } },
   projects: {},

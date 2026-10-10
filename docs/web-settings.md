@@ -1,7 +1,7 @@
 # Web settings
 
 The **Settings** tab of the web UI (`shepherd web`) reads and edits Shepherd's
-`config.yaml`: the daemon, the front desk, OpenCode, the defaults, each repo's profile
+`config.yaml`: the daemon, the front desk, chat, OpenCode, the defaults, each repo's profile
 and each project's budget. It is the same file the CLI and a text editor use; nothing is
 kept elsewhere.
 
@@ -110,11 +110,15 @@ check as at daemon start, unknown keys included) before anything is written.
 The form is built from `sections` in `GET /v1/config`. Each section's fields come from
 the `yaml` tags of the structs in `internal/config` by reflection (`configSections` in
 `internal/daemon/configfields.go`), so a field added to `Profile`, `Daemon`, `Desk`,
-`OpenCode` or `Project` appears as a plain input of the right kind (string, number,
+`Chat`, `OpenCode` or `Project` appears as a plain input of the right kind (string, number,
 bool, list, map, or JSON for a structured value) with no change to the web code. To give
 it a label, help text, a closed set of choices, a group or a `power` mark, add an entry
 to the matching table in `configfields.go`. The standards fields (`standards`,
 `standards_docs`, `standards_pack_dir`, `standards_when`) are described this way.
+
+`chat.hyperlinks` (the *Chat* section) is read when `shepherd chat` starts, so a
+saved change or a daemon reload does not reach a chat already running: restart the chat
+to apply it.
 
 An editor for the standards packs' rule files is not part of this: those are files under
 `~/.shepherd/standards/<pack>/`, not keys in `config.yaml`. A later tab can reuse the

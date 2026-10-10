@@ -224,3 +224,16 @@ func TestConfigAuth(t *testing.T) {
 		t.Errorf("operator write: %d", c)
 	}
 }
+
+func TestConfigSectionsHaveChatHyperlinks(t *testing.T) {
+	for _, s := range configSections() {
+		if s.ID != "chat" {
+			continue
+		}
+		if len(s.Fields) != 1 || strings.Join(s.Fields[0].Key, ".") != "hyperlinks" || len(s.Fields[0].Choices) != 3 {
+			t.Errorf("chat section = %+v", s.Fields)
+		}
+		return
+	}
+	t.Error("no chat section")
+}

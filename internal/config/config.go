@@ -29,6 +29,7 @@ import (
 type Config struct {
 	Daemon   Daemon             `yaml:"daemon" json:"daemon"`
 	Desk     Desk               `yaml:"desk" json:"desk"`
+	Chat     Chat               `yaml:"chat" json:"chat"`
 	OpenCode OpenCode           `yaml:"opencode" json:"opencode,omitempty"`
 	Defaults Profile            `yaml:"defaults" json:"defaults"`
 	Repos    map[string]Profile `yaml:"repos" json:"repos,omitempty"`
@@ -116,6 +117,31 @@ func (o OpenCode) Idle() time.Duration {
 		return DefaultOpenCodeIdle
 	}
 	return d
+}
+
+// Chat holds shepherd chat's own display settings. They are read when the chat starts, so
+// a change applies to the next chat, not to one already running.
+type Chat struct {
+	// Hyperlinks is how links are drawn: one of HyperlinkModes; "" is HyperlinksAuto.
+	Hyperlinks string `yaml:"hyperlinks" json:"hyperlinks,omitempty"`
+}
+
+// chat.hyperlinks' choices: auto follows the terminal, on and off force it.
+const (
+	HyperlinksAuto = "auto"
+	HyperlinksOn   = "on"
+	HyperlinksOff  = "off"
+)
+
+// HyperlinkModes are chat.hyperlinks' choices.
+var HyperlinkModes = []string{HyperlinksAuto, HyperlinksOn, HyperlinksOff}
+
+// HyperlinksMode is chat.hyperlinks, with its default filled in.
+func (c Chat) HyperlinksMode() string {
+	if c.Hyperlinks == "" {
+		return HyperlinksAuto
+	}
+	return c.Hyperlinks
 }
 
 // Desk holds the front desk's settings: the daemon's, and shepherd chat's own.
@@ -477,6 +503,7 @@ func ParseWarn(b []byte) (Config, []string, error) {
 		c.Daemon.LogLevel = file.Daemon.LogLevel
 	}
 	c.Desk = file.Desk
+	c.Chat = file.Chat
 	c.OpenCode = file.OpenCode
 	c.Defaults = merge(c.Defaults, file.Defaults)
 	c.Repos = file.Repos
@@ -507,6 +534,9 @@ func (c Config) Validate() error {
 	}
 	if c.Desk.Wake != "" && !slices.Contains(WakeModes, c.Desk.Wake) {
 		errs = append(errs, fmt.Errorf("desk.wake: %q is not %s", c.Desk.Wake, strings.Join(WakeModes, ", ")))
+	}
+	if !slices.Contains(HyperlinkModes, c.Chat.HyperlinksMode()) {
+		errs = append(errs, fmt.Errorf("chat.hyperlinks: %q is not %s", c.Chat.Hyperlinks, strings.Join(HyperlinkModes, ", ")))
 	}
 	if badModel(c.Desk.Model) {
 		errs = append(errs, fmt.Errorf("desk.model: %q is not a model name", c.Desk.Model))

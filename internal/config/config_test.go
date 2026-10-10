@@ -171,6 +171,23 @@ func TestDeskWake(t *testing.T) {
 	}
 }
 
+func TestChatHyperlinks(t *testing.T) {
+	if m := Default().Chat.HyperlinksMode(); m != HyperlinksAuto {
+		t.Errorf("default hyperlinks = %q", m)
+	}
+	for _, m := range HyperlinkModes {
+		c, err := Parse([]byte("chat:\n  hyperlinks: " + m + "\n"))
+		if err != nil {
+			t.Errorf("hyperlinks %s: %v", m, err)
+		} else if c.Chat.HyperlinksMode() != m {
+			t.Errorf("hyperlinks %s read as %q", m, c.Chat.HyperlinksMode())
+		}
+	}
+	if _, err := Parse([]byte("chat:\n  hyperlinks: sometimes\n")); err == nil || !strings.Contains(err.Error(), "chat.hyperlinks") {
+		t.Errorf("bad hyperlinks: %v", err)
+	}
+}
+
 func TestOpenCode(t *testing.T) {
 	c, err := Parse([]byte("opencode:\n  bin: /opt/oc/bin/opencode\n  endpoint: http://localhost:11434/v1\n" +
 		"defaults:\n  agent:\n    model: {opencode: \"local/qwen3-coder:30b\"}\n"))

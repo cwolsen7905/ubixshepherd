@@ -6,7 +6,7 @@ import {
 const doc: ConfigDoc = {
   path: '/h/config.yaml', etag: 'e1', can_write: true,
   raw: { defaults: { gate: 'make check' }, repos: { api: { base_branch: 'dev' } } },
-  effective: { daemon: { max_runs: 4 }, desk: {}, opencode: {} },
+  effective: { daemon: { max_runs: 4 }, desk: {}, chat: {}, opencode: {} },
   defaults: { raw: { gate: 'make check' }, effective: { gate: 'make check', base_branch: 'main' }, overridden: ['gate'] },
   repos: { api: { raw: { base_branch: 'dev' }, effective: { gate: 'make check', base_branch: 'dev' }, overridden: ['base_branch'] } },
   projects: {},
