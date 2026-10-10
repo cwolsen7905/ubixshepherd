@@ -93,6 +93,8 @@ type webAuth struct {
 type signinCode struct {
 	hash    [32]byte
 	expires time.Time
+	// allowSettings: the session this code starts may save config changes.
+	allowSettings bool
 }
 
 type webSession struct {
@@ -104,6 +106,9 @@ type webSession struct {
 	// saved is when lastSeen was last written to the store.
 	saved   time.Time
 	expires time.Time
+	// allowSettings says this session may save config changes. It is memory only: a
+	// session loaded from the store after a restart reads settings but cannot write.
+	allowSettings bool
 }
 
 func (ws *webSession) key() string { return hex.EncodeToString(ws.hash[:]) }
@@ -177,7 +182,7 @@ func (a *webAuth) clock() time.Time {
 }
 
 // mintCode returns a new sign-in code and when it stops working.
-func (a *webAuth) mintCode() (string, time.Time, error) {
+func (a *webAuth) mintCode(allowSettings bool) (string, time.Time, error) {
 	code, err := newToken()
 	if err != nil {
 		return "", time.Time{}, err
@@ -190,15 +195,16 @@ func (a *webAuth) mintCode() (string, time.Time, error) {
 		a.codes = a.codes[1:]
 	}
 	exp := now.Add(signinTTL)
-	a.codes = append(a.codes, signinCode{hash: sha256.Sum256([]byte(code)), expires: exp})
+	a.codes = append(a.codes, signinCode{hash: sha256.Sum256([]byte(code)), expires: exp, allowSettings: allowSettings})
 	return code, exp, nil
 }
 
-// spend uses up a sign-in code: true if it was live. Every waiting code is compared, in
-// constant time, so how long it takes says nothing about the code.
-func (a *webAuth) spend(code string) bool {
+// spend uses up a sign-in code: ok if it was live, and allowSettings if it was minted
+// for a session that may save settings. Every waiting code is compared, in constant
+// time, so how long it takes says nothing about the code.
+func (a *webAuth) spend(code string) (allowSettings, ok bool) {
 	if code == "" {
-		return false
+		return false, false
 	}
 	h := sha256.Sum256([]byte(code))
 	a.mu.Lock()
@@ -211,14 +217,15 @@ func (a *webAuth) spend(code string) bool {
 		}
 	}
 	if found < 0 {
-		return false
+		return false, false
 	}
+	allowSettings = a.codes[found].allowSettings
 	a.codes = slices.Delete(a.codes, found, found+1)
-	return true
+	return allowSettings, true
 }
 
 // start begins a browser session: its cookie value, and the session.
-func (a *webAuth) start(port string) (string, *webSession, error) {
+func (a *webAuth) start(port string, allowSettings bool) (string, *webSession, error) {
 	val, err := newToken()
 	if err != nil {
 		return "", nil, err
@@ -248,7 +255,7 @@ func (a *webAuth) start(port string) (string, *webSession, error) {
 		a.forget(oldest)
 	}
 	ws := &webSession{hash: sha256.Sum256([]byte(val)), csrf: csrf, port: port,
-		created: now, lastSeen: now, saved: now, expires: now.Add(webSessionTTL)}
+		created: now, lastSeen: now, saved: now, expires: now.Add(webSessionTTL), allowSettings: allowSettings}
 	if a.st != nil {
 		err := a.st.SaveWebSession(context.Background(), store.WebSession{
 			Hash: ws.key(), CSRF: csrf, Port: port, Created: now, LastSeen: now, Expires: ws.expires})
@@ -444,12 +451,16 @@ func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
 
 // webSignin mints a one-time sign-in link (POST /v1/web/signin, operator only).
 func (s *Server) webSignin(w http.ResponseWriter, r *http.Request) {
-	code, exp, err := s.web.mintCode()
+	var req api.WebSigninRequest
+	if !decodeOptional(w, r, &req) {
+		return
+	}
+	code, exp, err := s.web.mintCode(req.AllowSettings)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("web sign-in link issued", "expires", exp.Format(time.RFC3339))
+	s.Log.Info("web sign-in link issued", "expires", exp.Format(time.RFC3339), "allow_settings", req.AllowSettings)
 	writeJSON(w, http.StatusOK, api.WebSignin{Path: api.PathWebSignin + "?code=" + url.QueryEscape(code), Expires: exp.UTC()})
 }
 
@@ -464,7 +475,8 @@ func (s *Server) webExchange(w http.ResponseWriter, r *http.Request) {
 		signinPage(w, http.StatusForbidden, "A sign-in link only works when you open it yourself, not from another page.")
 		return
 	}
-	if !s.web.spend(r.URL.Query().Get("code")) {
+	allowSettings, ok := s.web.spend(r.URL.Query().Get("code"))
+	if !ok {
 		s.Log.Warn("web sign-in refused: the link is unknown, used or expired")
 		signinPage(w, http.StatusUnauthorized, "This sign-in link has expired or was already used. Run shepherd web for a new one.")
 		return
@@ -475,7 +487,7 @@ func (s *Server) webExchange(w http.ResponseWriter, r *http.Request) {
 			s.web.end(old)
 		}
 	}
-	val, ws, err := s.web.start(s.listenPort())
+	val, ws, err := s.web.start(s.listenPort(), allowSettings)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -484,7 +496,7 @@ func (s *Server) webExchange(w http.ResponseWriter, r *http.Request) {
 		Name: s.cookieName(), Value: val, Path: "/v1", MaxAge: int(webSessionTTL / time.Second),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
-	s.Log.Info("web session started", "expires", ws.expires.UTC().Format(time.RFC3339))
+	s.Log.Info("web session started", "expires", ws.expires.UTC().Format(time.RFC3339), "allow_settings", allowSettings)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -503,7 +515,7 @@ func (s *Server) webSessionInfo(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r.Context())
 	out := api.WebSession{Role: p.Role}
 	if p.web != nil {
-		out.CSRF, out.Expires = p.web.csrf, p.web.expires.UTC()
+		out.CSRF, out.Expires, out.AllowSettings = p.web.csrf, p.web.expires.UTC(), p.web.allowSettings
 	}
 	writeJSON(w, http.StatusOK, out)
 }

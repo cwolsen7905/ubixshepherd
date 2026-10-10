@@ -10,6 +10,7 @@ import { DecisionsPage } from './pages/Decisions'
 import { LanePage } from './pages/Lane'
 import { LogPage } from './pages/Log'
 import { RunsPage } from './pages/Runs'
+import { SettingsPage } from './pages/Settings'
 import { UsagePage } from './pages/Usage'
 import { Help } from './components/Help'
 import { GROUP_MARKS } from './model/groups'
@@ -77,6 +78,9 @@ export function App() {
           <a href={href.chat()} aria-current={route.page === 'chat' ? 'page' : undefined}>
             Chat
           </a>
+          <a href={href.settings()} aria-current={route.page === 'settings' ? 'page' : undefined}>
+            Settings
+          </a>
         </nav>
         <p className="bar-counts" aria-live="polite">
           {GROUPS.filter((g) => n[g] > 0).map((g) => (
@@ -114,6 +118,7 @@ export function App() {
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'decisions' && <DecisionsPage focus={route.focus} />}
         {route.page === 'chat' && <ChatPage />}
+        {route.page === 'settings' && <SettingsPage scope={route.scope} />}
         {route.page === 'lane' && <LanePage key={route.id} id={route.id} />}
         {route.page === 'log' && <LogPage key={route.run} run={route.run} />}
         {route.page === 'missing' && (

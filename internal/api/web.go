@@ -15,7 +15,9 @@ import "time"
 // A browser session has the web role: everything the front desk may do, the front desk
 // conversation (api/desk.go), and answering decisions as the person. It cannot change
 // the daemon's setup (workspaces, scopes, hooks, imports, settings, shutdown) or mint
-// sign-in links; the shepherd command does those with the operator token.
+// sign-in links; the shepherd command does those with the operator token. It may read
+// and preview config (api/config.go), and save it only when its link was minted with
+// WebSigninRequest.AllowSettings.
 //
 // A request with the cookie must come from the daemon's own origin: its Origin header,
 // when present, must be http://<the Host it was sent to>, and Sec-Fetch-Site, when
@@ -43,11 +45,21 @@ type WebSignin struct {
 	Expires time.Time `json:"expires"`
 }
 
+// WebSigninRequest is the optional body of POST /v1/web/signin. AllowSettings makes the
+// session the link starts able to save config changes (PUT /v1/config); without it the
+// browser may read and preview settings only. It lasts as long as the session, and not
+// past a daemon restart: a session the daemon reloads from its store reads only.
+type WebSigninRequest struct {
+	AllowSettings bool `json:"allow_settings,omitempty"`
+}
+
 // WebSession answers GET /v1/web/session. CSRF is set for a browser session only.
 type WebSession struct {
 	Role    string    `json:"role"`
 	CSRF    string    `json:"csrf,omitempty"`
 	Expires time.Time `json:"expires,omitzero"`
+	// AllowSettings: this browser session may save config changes.
+	AllowSettings bool `json:"allow_settings,omitempty"`
 }
 
 // WebSignedOut answers POST /v1/web/signout and DELETE /v1/web/sessions: how many

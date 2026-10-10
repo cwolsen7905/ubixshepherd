@@ -176,6 +176,11 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathSpend, operatorOnly, s.withRunner(s.addSpend))
 	handle("GET "+api.PathSettings+"/{key}", operatorOnly, s.getSetting)
 	handle("PUT "+api.PathSettings+"/{key}", operatorOnly, s.putSetting)
+	// The config editor. Never forDesk: the desk could widen its own autonomy. A save is
+	// for a browser only when its session was signed in to allow it (configSave).
+	handle("GET "+api.PathConfig, web, s.configDoc)
+	handle("POST "+api.PathConfigPreview, web, s.configPreview)
+	handle("PUT "+api.PathConfig, web, s.configSave)
 	// A project's brief is the person's: the desk drafts and reads it, and only the person
 	// approves. No worker route: an agent suggests a change through ask_shepherd.
 	handle("GET "+api.PathProjects+"/{name}/brief", desk, s.getBrief)

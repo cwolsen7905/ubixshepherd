@@ -13,6 +13,7 @@ export type Route =
   | { page: 'decisions'; focus?: number }
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
   | { page: 'chat' }
+  | { page: 'settings'; scope?: string }
   | { page: 'lane'; id: number }
   | { page: 'log'; run: number }
   | { page: 'missing'; path: string }
@@ -49,6 +50,7 @@ export function parse(hash: string): Route {
     }
   }
   if (path === '/chat') return { page: 'chat' }
+  if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
   let m = /^\/lanes\/(\d+)$/.exec(path)
   if (m) return { page: 'lane', id: Number(m[1]) }
   m = /^\/runs\/(\d+)\/log$/.exec(path)
@@ -76,6 +78,7 @@ export const href = {
     return q.size ? `#/usage?${q}` : '#/usage'
   },
   chat: () => '#/chat',
+  settings: (scope?: string) => (scope ? `#/settings?scope=${encodeURIComponent(scope)}` : '#/settings'),
   lane: (id: number) => `#/lanes/${id}`,
   log: (run: number) => `#/runs/${run}/log`,
 }

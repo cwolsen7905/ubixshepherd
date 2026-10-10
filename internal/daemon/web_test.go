@@ -40,9 +40,12 @@ func (b *syncBuffer) String() string {
 
 // webDaemon runs a real daemon in-process, listening on loopback the way the binary does,
 // logging everything to the buffer it returns.
-func webDaemon(t *testing.T) (*Server, string, *syncBuffer) {
+func webDaemon(t *testing.T, setup ...func(*Server)) (*Server, string, *syncBuffer) {
 	t.Helper()
 	s, _ := newServer(t)
+	for _, f := range setup {
+		f(s)
+	}
 	logs := &syncBuffer{}
 	s.Log = slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	rtPath := filepath.Join(t.TempDir(), "daemon.json")

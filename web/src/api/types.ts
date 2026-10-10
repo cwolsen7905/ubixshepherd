@@ -313,3 +313,91 @@ export interface UsageStats {
   by_lane?: UsageGroup[]
   desk_by_model?: UsageGroup[]
 }
+
+// The config editor (api/config.go).
+
+/** One change: set `path` (keys from the file's top) to `value`, or `unset` it to inherit again. */
+export interface ConfigOp {
+  path: string[]
+  value?: unknown
+  unset?: boolean
+}
+
+export interface ConfigChange {
+  etag: string
+  ops: ConfigOp[]
+  confirm?: string[]
+}
+
+/** A change that gives agents more power or removes a guard; a save needs its path confirmed. */
+export interface ConfigRisk {
+  path: string
+  from: string
+  to: string
+  why: string
+}
+
+export interface ConfigPreview {
+  etag: string
+  diff: string
+  errors?: string[]
+  risky?: ConfigRisk[]
+}
+
+/** The body of a 409, 422 or 428 from a save. */
+export interface ConfigRefusal {
+  error: string
+  problems?: string[]
+  risky?: ConfigRisk[]
+}
+
+export interface ConfigSaved {
+  etag: string
+  diff: string
+  reloaded: boolean
+  reload_error?: string
+}
+
+export interface ConfigProfile {
+  raw: Record<string, unknown>
+  effective: Record<string, unknown>
+  overridden: string[]
+}
+
+export type ConfigFieldKind = 'string' | 'text' | 'number' | 'bool' | 'enum' | 'list' | 'map' | 'json'
+
+export interface ConfigField {
+  key: string[]
+  kind: ConfigFieldKind
+  label: string
+  help?: string
+  group?: string
+  choices?: string[]
+  nullable?: boolean
+  risk?: boolean
+  restart?: boolean
+}
+
+export interface ConfigSection {
+  id: string
+  label: string
+  root: string[]
+  many?: boolean
+  inherits?: string
+  fields: ConfigField[]
+}
+
+export interface ConfigDoc {
+  path: string
+  etag: string
+  missing?: boolean
+  can_write: boolean
+  why?: string
+  invalid?: string[]
+  raw: Record<string, unknown>
+  effective: Record<string, unknown>
+  defaults: ConfigProfile
+  repos: Record<string, ConfigProfile>
+  projects: Record<string, { raw: Record<string, unknown>; effective: Record<string, unknown> }>
+  sections: ConfigSection[]
+}
