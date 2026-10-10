@@ -67,16 +67,20 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 		return daemonStop(ctx, env)
 	case "restart":
 		// Refuse before stopping, so a bad config.yaml leaves the running daemon alone.
-		if err := checkConfig(env.Layout); err != nil {
-			return err
+		warns, err := checkConfig(env.Layout)
+		if err != nil {
+			return fmt.Errorf("%w\n  a running daemon was left as it is; fix %s, then restart", err, env.Layout.Config())
 		}
+		printConfigWarnings(env, warns)
 		if err := daemonStop(ctx, env); err != nil {
 			return err
 		}
-		_, err := startDaemon(ctx, env, false)
+		_, err = startDaemon(ctx, env, false)
 		return err
 	case "reload":
 		return daemonReload(ctx, env)
+	case "check":
+		return daemonCheck(env)
 	case "status":
 		return daemonStatus(ctx, env)
 	case "install":
@@ -116,7 +120,7 @@ func daemonRun(ctx context.Context, env Env) error {
 			fmt.Fprintf(env.Stderr, "Wrote an example standards pack to %s.\n", filepath.Join(l.Home, "standards", "house"))
 		}
 	}
-	cfg, err := config.Load(l.Config())
+	cfg, warns, err := config.LoadWarn(l.Config())
 	if err != nil {
 		return err
 	}
@@ -143,6 +147,9 @@ func daemonRun(ctx context.Context, env Env) error {
 		return err
 	}
 	srv.Level = level
+	for _, w := range warns {
+		srv.Log.Warn("config", "warning", w)
+	}
 	srv.Fold.Exe = env.Exe
 	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
 	srv.QuotaHolds = func() []api.QuotaHold { return quotaHolds(srv.Runner) }
@@ -175,7 +182,7 @@ func forgeWatch(w *watch.Watcher) api.ForgeWatch {
 // command made on its own, which says so and suggests installing.
 func startDaemon(ctx context.Context, env Env, auto bool) (*client.Client, error) {
 	l := env.Layout
-	if err := checkConfig(l); err != nil {
+	if _, err := checkConfig(l); err != nil {
 		return nil, err
 	}
 	if err := os.MkdirAll(l.Home, 0o700); err != nil {
@@ -217,11 +224,32 @@ func startDaemon(ctx context.Context, env Env, auto bool) (*client.Client, error
 }
 
 // checkConfig reads config.yaml as the daemon will, so a start that would fail on it
-// says why at once instead of waiting for a daemon that has already exited.
-func checkConfig(l paths.Layout) error {
-	if _, err := config.Load(l.Config()); err != nil {
-		return fmt.Errorf("the daemon will not start with this config: %w", err)
+// says why at once instead of waiting for a daemon that has already exited. It returns
+// the warnings for retired keys the file still has, which do not stop a start.
+func checkConfig(l paths.Layout) ([]string, error) {
+	_, warns, err := config.LoadWarn(l.Config())
+	if err != nil {
+		return nil, fmt.Errorf("the daemon will not start with this config: %w", err)
 	}
+	return warns, nil
+}
+
+func printConfigWarnings(env Env, warns []string) {
+	for _, w := range warns {
+		fmt.Fprintf(env.Stderr, "warning: %s: %s\n", env.Layout.Config(), w)
+	}
+}
+
+// daemonCheck reads config.yaml as the daemon will and says whether it would start. It
+// touches no daemon; `make install` runs it with the new binary before replacing the
+// installed one.
+func daemonCheck(env Env) error {
+	warns, err := checkConfig(env.Layout)
+	if err != nil {
+		return err
+	}
+	printConfigWarnings(env, warns)
+	fmt.Fprintf(env.Stdout, "%s: ok\n", env.Layout.Config())
 	return nil
 }
 
@@ -315,6 +343,11 @@ func daemonReload(ctx context.Context, env Env) error {
 	if err != nil {
 		return fmt.Errorf("the daemon is not running; it reads %s when it starts", env.Layout.Config())
 	}
+	// The daemon's reload says only that it took; the warnings for retired keys are
+	// read here, the same way.
+	if _, warns, err := config.LoadWarn(env.Layout.Config()); err == nil {
+		printConfigWarnings(env, warns)
+	}
 	st, err := c.Status(ctx)
 	if err != nil {
 		return err
@@ -385,7 +418,7 @@ func daemonInstall(ctx context.Context, env Env) error {
 	if warn := service.Warning(env.Exe); warn != "" {
 		fmt.Fprintf(env.Stderr, "warning: registering %s: %s\n", env.Exe, warn)
 	}
-	if err := checkConfig(env.Layout); err != nil {
+	if _, err := checkConfig(env.Layout); err != nil {
 		return err
 	}
 	// A daemon started by hand would hold the lock and make the managed one fail.
