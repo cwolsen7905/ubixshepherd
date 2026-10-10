@@ -77,6 +77,10 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 		r.gateFailed(ctx, run, lane, "the repo's gate, `"+prof.Gate+"`,", tail, logPath, &lf)
 		return
 	}
+	if blocked, tail := r.standardsChecks(ctx, lane, prof); blocked {
+		r.gateFailed(ctx, run, lane, "the repo's standards checks", tail, "", &lf)
+		return
+	}
 	lf.GateTries = 0
 	r.Store.PutLaneForge(ctx, lf)
 	r.publish(ctx, lane, repo, prof.Gate, fmt.Sprintf("run %d", run.ID))
@@ -146,6 +150,9 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		r.feed(ctx, store.FeedGate, lane.ID, "the repo's gate, `%s`, failed in lane %s; not pushing (%s)", prof.Gate, lane.Name, logPath)
 		return out, refuse("the repo's gate, `%s`, failed in lane %s; not pushing. The whole output is in %s; it ended:\n%s", prof.Gate, lane.Name, logPath, tail)
 	}
+	if blocked, tail := r.standardsChecks(ctx, lane, prof); blocked {
+		return out, refuse("not shipping lane %s: %s", lane.Name, tail)
+	}
 	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship")
 	res.Lane, res.Commits = out.Lane, out.Commits
 	return res, nil
@@ -166,21 +173,36 @@ func pushedRef(ctx context.Context, lane store.Lane) string {
 // outsideScope lists the files the lane's branch changes, since it left its base, that
 // its scope does not cover.
 func (r *Runner) outsideScope(ctx context.Context, lane store.Lane) []string {
-	base := lane.Base
-	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+base) {
-		base = "origin/" + base
-	}
-	files, err := git.Run(ctx, lane.Worktree, "diff", "--name-only", "--no-renames", base+"...HEAD")
-	if err != nil {
-		return nil
-	}
 	var outside []string
-	for _, f := range strings.Split(files, "\n") {
-		if f != "" && !scope.Any(lane.Scope, f) {
+	for _, f := range changedFiles(ctx, lane) {
+		if !scope.Any(lane.Scope, f) {
 			outside = append(outside, f)
 		}
 	}
 	return outside
+}
+
+// baseRef is what the lane's changes are counted from: its base on origin if there.
+func baseRef(ctx context.Context, lane store.Lane) string {
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Base) {
+		return "origin/" + lane.Base
+	}
+	return lane.Base
+}
+
+// changedFiles lists the files the lane's branch changes since it left its base.
+func changedFiles(ctx context.Context, lane store.Lane) []string {
+	files, err := git.Run(ctx, lane.Worktree, "diff", "--name-only", "--no-renames", baseRef(ctx, lane)+"...HEAD")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, f := range strings.Split(files, "\n") {
+		if f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // publish pushes a lane whose gate has passed and opens its merge request, or says the

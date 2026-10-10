@@ -417,6 +417,8 @@ type Powers struct {
 	GitLab bool
 	// Forbid are the patterns commit messages must not match.
 	Forbid []string
+	// PlanFirst: the agent posts its plan as a decision and waits before changing code.
+	PlanFirst bool
 }
 
 // ProjectContext is what a project adds to the standing text of an agent in one of its
@@ -499,7 +501,7 @@ func Standing(note, workspace string, p *ProjectContext, repo string) string {
 
 // Brief wraps a task with what every agent needs to know about its lane, so the same
 // task means the same thing to every provider.
-func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, may Powers, tools bool, note string) string {
+func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, may Powers, tools bool, note, standards string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "You are working for uBixShepherd in lane %s of repo %s.\n", lane, repo)
 	fmt.Fprintf(&b, "Work only inside this directory: %s (branch %s, cut from %s).\n", worktree, branch, base)
@@ -531,6 +533,16 @@ func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate
 	}
 	if note != "" {
 		b.WriteString(note + "\n")
+	}
+	if standards != "" {
+		b.WriteString(strings.TrimRight(standards, "\n") + "\n")
+	}
+	if may.PlanFirst {
+		if tools {
+			b.WriteString("Plan first: before you change any code, post your plan (the approach, and the files you expect to touch) with ask_human, then end your turn and wait for the answer. Do not edit until it arrives.\n")
+		} else {
+			b.WriteString("Plan first: before you change any code, state your plan (the approach, and the files you expect to touch), then stop and wait to be continued with the go-ahead. Do not edit until then.\n")
+		}
 	}
 	if tools {
 		b.WriteString(`You have Shepherd's tools. Use them instead of guessing or stopping silently:
