@@ -65,3 +65,72 @@ type BriefCache struct {
 	Recipe string `json:"recipe"`
 	Note   string `json:"note,omitempty"`
 }
+
+// PathProjectsUnassigned is GET /v1/unassigned: the same view as a project's, for the
+// repos that are in no project. It is not under PathProjects so that no project name can
+// clash with it.
+const PathProjectsUnassigned = "/v1/unassigned"
+
+// PathProject reads one project (GET): its summary, repos, open lanes, recent runs,
+// pending decisions and requests, and brief.
+func PathProject(project string) string {
+	return fmt.Sprintf("%s/%s", PathProjects, url.PathEscape(project))
+}
+
+// ProjectBudgetView is a project's spend limit and what its period has spent. A project
+// with no budget of its own shows the daemon's, as the dispatcher applies it.
+type ProjectBudgetView struct {
+	// Amount is dollars per period; 0 is no cap.
+	Amount float64 `json:"amount"`
+	// Cap is soft or hard.
+	Cap string `json:"cap"`
+	// Period is day or month; Since is its first day, a local day.
+	Period string `json:"period"`
+	Since  string `json:"since"`
+	// Spent is dollars this period, credits priced at credit_usd.
+	Spent float64 `json:"spent"`
+}
+
+// ProjectSummary is what the project list and the board's groups show. A repo is in at
+// most one project: Unassigned is the group of the repos that are in none.
+type ProjectSummary struct {
+	// Name is the project's name; empty on the Unassigned group.
+	Name       string `json:"name"`
+	Unassigned bool   `json:"unassigned,omitempty"`
+	// Repos are the members' names, as in the configuration. Unassigned lists the repos
+	// of the workspace that no project names.
+	Repos []string `json:"repos"`
+	// Lanes counts the open lanes; Running those with a run going.
+	Lanes   int `json:"lanes"`
+	Running int `json:"running"`
+	// Decisions counts the open decisions of the project's lanes, and Requests the
+	// requests of its lanes, or addressed to it, that are still unanswered.
+	Decisions int `json:"decisions"`
+	Requests  int `json:"requests"`
+	// Waiting is what needs the person: open decisions and requests that need routing.
+	Waiting int `json:"waiting"`
+	// SpendToday is today's dollars, credits priced at credit_usd.
+	SpendToday float64 `json:"spend_today"`
+	// Budget is the project's own limit and period; nil on Unassigned, which has none.
+	Budget *ProjectBudgetView `json:"budget,omitempty"`
+}
+
+// ProjectList answers GET /v1/projects: the configured projects by name, then
+// Unassigned when some repo is in none.
+type ProjectList struct {
+	Projects []ProjectSummary `json:"projects"`
+}
+
+// ProjectDetail answers GET /v1/projects/{name} and GET /v1/unassigned.
+type ProjectDetail struct {
+	ProjectSummary
+	// OpenLanes are the project's open lanes with their merge request and pipeline.
+	OpenLanes []LaneView `json:"open_lanes"`
+	// Runs are the project's most recent runs, newest first.
+	Runs []RunView `json:"runs"`
+	// PendingDecisions and PendingRequests are those of the lanes above, oldest first.
+	PendingDecisions []DecisionView `json:"pending_decisions"`
+	PendingRequests  []RequestView  `json:"pending_requests"`
+	// Brief is nil on Unassigned, which has none.
+	Brief *BriefView `json:"brief,omitempty"`
+}

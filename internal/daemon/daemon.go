@@ -183,6 +183,9 @@ func (s *Server) Handler() http.Handler {
 	handle("PUT "+api.PathConfig, web, s.configSave)
 	// A project's brief is the person's: the desk drafts and reads it, and only the person
 	// approves. No worker route: an agent suggests a change through ask_shepherd.
+	handle("GET "+api.PathProjects, desk, s.listProjects)
+	handle("GET "+api.PathProjects+"/{name}", desk, s.getProject)
+	handle("GET "+api.PathProjectsUnassigned, desk, s.getUnassigned)
 	handle("GET "+api.PathProjects+"/{name}/brief", desk, s.getBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/draft", desk, s.draftBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/approve", desk, s.personsApproval(s.approveBrief))
@@ -1455,7 +1458,16 @@ func (s *Server) getBrief(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ctx := r.Context()
+	view, err := s.briefView(r.Context(), name, p)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, view)
+}
+
+// briefView is a project's brief as getBrief and the project view give it.
+func (s *Server) briefView(ctx context.Context, name string, p config.Project) (api.BriefView, error) {
 	view := api.BriefView{Project: name, MaxAge: p.MaxAge()}
 	b, err := s.Store.ApprovedBrief(ctx, name)
 	switch {
@@ -1464,22 +1476,20 @@ func (s *Server) getBrief(w http.ResponseWriter, r *http.Request) {
 		view.Approved, view.Age = &b, b.Age(now)
 		view.AgeText, view.Stale = "approved "+dispatch.AgeText(view.Age), b.Stale(now, view.MaxAge)
 	case !errors.Is(err, store.ErrNotFound):
-		s.fail(w, err)
-		return
+		return view, err
 	}
 	d, err := s.Store.PendingBrief(ctx, name)
 	switch {
 	case err == nil:
 		view.Pending = &d
 	case !errors.Is(err, store.ErrNotFound):
-		s.fail(w, err)
-		return
+		return view, err
 	}
 	for _, c := range p.Caches {
 		repo, recipe, _ := c.Recipe()
 		view.Caches = append(view.Caches, api.BriefCache{Path: c.Path, Repo: repo, Recipe: recipe, Note: c.Note})
 	}
-	writeJSON(w, http.StatusOK, view)
+	return view, nil
 }
 
 // draftBrief records a draft, redacted like other agent text. It is never given to an
