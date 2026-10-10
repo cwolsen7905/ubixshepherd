@@ -42,10 +42,17 @@ func (s *Server) ReloadConfig(ctx context.Context) error {
 	next, err := config.Load(s.ConfigPath)
 	if err != nil {
 		s.Log.Warn("config reload refused; keeping the current config", "err", err)
+		// The config in force is still the one loaded before.
+		rs := reloadState{failed: time.Now().UTC(), err: err.Error()}
+		if prev := s.reload.Load(); prev != nil {
+			rs.loaded = prev.loaded
+		}
+		s.reload.Store(&rs)
 		s.postFeed(ctx, FeedConfig, 0, fmt.Sprintf("config not reloaded, keeping the current one: %v", err))
 		return err
 	}
 	s.applyConfig(next)
+	s.reload.Store(&reloadState{loaded: time.Now().UTC()})
 	msg := ReloadedPrefix
 	if changed := configChanges(old, next); changed != "" {
 		msg += ": " + changed

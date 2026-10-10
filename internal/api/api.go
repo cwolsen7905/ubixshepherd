@@ -259,6 +259,59 @@ type Status struct {
 	Store      string             `json:"store"`
 	Config     string             `json:"config"`
 	Workspaces []WorkspaceSummary `json:"workspaces"`
+	// Detail is set only when asked for with StatusDetailQuery, and not for an agent's
+	// token: every command probes status first, and most need none of it.
+	Detail *StatusDetail `json:"detail,omitempty"`
+}
+
+// StatusDetailQuery is the query that asks GET /v1/status for Status.Detail.
+const StatusDetailQuery = "detail=1"
+
+// StatusDetail is what the web UI's daemon popover shows. It is read-only and holds no
+// token, environment or path beyond the config's.
+type StatusDetail struct {
+	// Commit and BuiltAt are from the build's VCS stamp; empty when it has none (go
+	// install ...@version, or a build outside a checkout).
+	Commit  string `json:"commit,omitempty"`
+	BuiltAt string `json:"built_at,omitempty"`
+	OS      string `json:"os"`
+	Arch    string `json:"arch"`
+	Host    string `json:"host,omitempty"`
+	// Now is the daemon's clock, so a browser can show uptime without trusting its own.
+	Now time.Time `json:"now"`
+	// ConfigLoaded is when the config in force was read: at start or by the last
+	// reload that took.
+	ConfigLoaded time.Time `json:"config_loaded"`
+	// ReloadError is why the last reload was refused, on one line; empty when the
+	// last reload took (or there was none). ReloadFailedAt says when.
+	ReloadError    string    `json:"reload_error,omitempty"`
+	ReloadFailedAt time.Time `json:"reload_failed_at,omitzero"`
+	// Running is agents running now, OpenLanes lanes in the open state, Decisions the
+	// ones waiting on the person.
+	Running   int `json:"running"`
+	OpenLanes int `json:"open_lanes"`
+	Decisions int `json:"decisions"`
+	// QuotaHolds is the agents held for quota. Absent, not empty, when this daemon
+	// does not report them.
+	QuotaHolds *[]QuotaHold `json:"quota_holds,omitempty"`
+	// SpendUSD is today's spend; BudgetUSD the daily budget, 0 for none.
+	SpendUSD  float64 `json:"spend_usd"`
+	BudgetUSD float64 `json:"budget_usd,omitempty"`
+	// Forge is the forge watcher; absent when this daemon does not report it.
+	Forge *ForgeWatch `json:"forge,omitempty"`
+}
+
+// QuotaHold is an agent held until its limit resets.
+type QuotaHold struct {
+	Agent string    `json:"agent"`
+	Until time.Time `json:"until"`
+}
+
+// ForgeWatch is how the forge watcher last went: when it last polled without error, and
+// the last error, on one line, if its latest poll failed.
+type ForgeWatch struct {
+	LastPoll time.Time `json:"last_poll,omitzero"`
+	Error    string    `json:"error,omitempty"`
 }
 
 // WorkspaceSummary is one workspace in Status.

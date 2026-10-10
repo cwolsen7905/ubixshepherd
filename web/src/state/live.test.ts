@@ -127,6 +127,29 @@ describe('Live', () => {
     expect(live.getSnapshot().runs).toHaveLength(1)
   })
 
+  it('remembers when the connection was first lost, and forgets it once back', async () => {
+    const c = fakeClock()
+    const f = fakeApi()
+    const live = new Live(f.api, c.clock)
+    live.start()
+    await settle()
+    expect(live.getSnapshot().downSince).toBeNull()
+    const { status } = f.api
+    f.api.status = async () => {
+      throw new Error('Failed to fetch')
+    }
+    await live.refresh()
+    const lost = live.getSnapshot().downSince
+    expect(lost).toBe(c.clock.now())
+    c.advance(30_000)
+    await live.refresh()
+    expect(live.getSnapshot().downSince).toBe(lost)
+    f.api.status = status
+    await live.refresh()
+    expect(live.getSnapshot().error).toBeNull()
+    expect(live.getSnapshot().downSince).toBeNull()
+  })
+
   it('backs off from 1s to 15s while the daemon is down, then catches up from its cursor', async () => {
     const c = fakeClock()
     const f = fakeApi()

@@ -14,6 +14,7 @@ import { ProjectsPage } from './pages/Projects'
 import { RunsPage } from './pages/Runs'
 import { SettingsPage } from './pages/Settings'
 import { UsagePage } from './pages/Usage'
+import { DaemonStatus } from './components/DaemonStatus'
 import { Help } from './components/Help'
 import { GROUP_MARKS } from './model/groups'
 
@@ -104,10 +105,12 @@ export function App() {
               {spend.budget > 0 && <span className="faint"> of {usd(spend.budget)}</span>} today
             </span>
           )}
-          <span className={`live-dot ${snap.error ? 'is-down' : snap.ready ? 'is-up' : ''}`} title={snap.error ?? 'Live'}>
-            <span aria-hidden="true">{snap.error ? '○' : '●'}</span>
-            <span className="visually-hidden">{snap.error ? 'Not connected' : 'Connected'}</span>
-          </span>
+          <DaemonStatus
+            error={snap.error}
+            downSince={snap.downSince}
+            ready={snap.ready}
+            lastEvent={snap.feed.at(-1)?.created}
+          />
           <button type="button" className="help-button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
             <kbd>?</kbd>
           </button>

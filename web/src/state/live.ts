@@ -21,6 +21,8 @@ export interface Snapshot {
   feed: FeedEntry[]
   /** The daemon could not be reached, or refused: what it said. */
   error: string | null
+  /** When `error` was first set in this run of failures (ms); null while connected. */
+  downSince: number | null
   /** Lists have loaded at least once. */
   ready: boolean
   /** When the lists last loaded. */
@@ -74,7 +76,7 @@ export class Live {
     this.clock = clock
     this.snap = {
       status: null, lanes: [], runs: [], decisions: [], requests: [], spend: null, feed: [],
-      error: null, ready: false, updated: 0, seen: loadSeen(clock.now()),
+      error: null, downSince: null, ready: false, updated: 0, seen: loadSeen(clock.now()),
     }
   }
 
@@ -86,6 +88,9 @@ export class Live {
   getSnapshot = () => this.snap
 
   private set(patch: Partial<Snapshot>) {
+    if ('error' in patch) {
+      patch.downSince = patch.error ? (this.snap.downSince ?? this.clock.now()) : null
+    }
     this.snap = { ...this.snap, ...patch }
     for (const fn of this.listeners) fn()
   }

@@ -70,6 +70,12 @@ type Server struct {
 	addr   atomic.Pointer[string]
 	// web holds browser sign-in codes and sessions (web.go); sessions persist in the store.
 	web webAuth
+	// reload is how the last config reload went (statusdetail.go).
+	reload atomic.Pointer[reloadState]
+	// QuotaHolds and ForgeWatch report what the runner and the forge watcher know, for
+	// the status detail; nil leaves it out of the answer. They must not block.
+	QuotaHolds func() []api.QuotaHold
+	ForgeWatch func() api.ForgeWatch
 }
 
 // NewServer returns a Server with a fresh random token.
@@ -311,6 +317,14 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 			sum.Lanes += len(lanes)
 		}
 		out.Workspaces = append(out.Workspaces, sum)
+	}
+	if r.URL.Query().Get("detail") != "" && principalOf(ctx).Role != RoleWorker {
+		d, err := s.statusDetail(ctx)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out.Detail = &d
 	}
 	writeJSON(w, http.StatusOK, out)
 }
