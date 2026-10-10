@@ -91,6 +91,10 @@ export interface LaneView extends Lane {
   mr_url?: string
   pipeline?: number
   pipeline_status?: PipelineStatus
+  /** The newest diagnosis of the lane's latest run. */
+  diagnosis?: Diagnosis
+  /** What the lane's latest run is doing now, while it runs. */
+  progress?: Progress
 }
 
 export interface Run {
@@ -118,10 +122,62 @@ export interface Run {
   session_credits?: number
 }
 
+/** One suggested action of a diagnosis: a button a client may offer. */
+export interface Fix {
+  id: string
+  label: string
+  /** continue, retry, retry_other, wait_quota, ship, widen_scope, raise_budget, open_mr, fix_config_text or open_log. */
+  op: string
+  args?: Record<string, string>
+  /** Only the person chooses it: it widens what an agent may touch, spends beyond a cap or changes rules. */
+  needs_person: boolean
+  desk_ok: boolean
+}
+
+/** Why a run, or the push of its work, went wrong; the output is redacted. */
+export interface Diagnosis {
+  id: number
+  run_id: number
+  kind: string
+  summary: string
+  evidence?: string
+  /** A list leaves the evidence out; GET /v1/runs/{id}/diagnoses or one run's view has it. */
+  evidence_omitted?: boolean
+  command?: string
+  exit_code?: number
+  files?: string[]
+  log?: string
+  reset_at?: string
+  fixes?: Fix[]
+  created: string
+}
+
+/** What a running run is doing now, worked out by the daemon from its log and commits. */
+export interface Progress {
+  /** The whole phrase: "running make check (3 commits, 12m)". */
+  line: string
+  /** The part from the log; absent when the log shows nothing yet. */
+  step?: string
+  commits: number
+  elapsed_seconds: number
+}
+
+/** What taking a fix did. */
+export interface FixResult {
+  fix: Fix
+  run?: Run
+  message?: string
+  done: boolean
+}
+
 export interface RunView extends Run {
   lane: string
   repo: string
   worktree: string
+  /** The run's newest diagnosis. */
+  diagnosis?: Diagnosis
+  /** What the run is doing now; only while it runs. */
+  progress?: Progress
 }
 
 export interface RunLog {

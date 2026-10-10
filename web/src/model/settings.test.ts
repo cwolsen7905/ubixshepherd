@@ -1,6 +1,6 @@
 import type { ConfigDoc, ConfigField } from '../api/types'
 import {
-  fieldState, mapText, opsOf, parseList, parseMap, problemsFor, revert, scopes, setValue, unsetValue,
+  deletedProjects, fieldState, mapText, moveRepo, opsOf, ownerOf, parseList, parseMap, problemsFor, projectRepos, removeProject, revert, scopes, setValue, unsetValue,
 } from './settings'
 
 const doc: ConfigDoc = {
@@ -55,5 +55,52 @@ describe('settings model', () => {
     const ps = ['repos.api.autonomy.push: "robot" is not human, shepherd or agent', 'repos.apix.gate: empty']
     expect(problemsFor(ps, 'repos.api.autonomy.push')).toHaveLength(1)
     expect(problemsFor(ps, 'repos.api')).toHaveLength(1)
+  })
+})
+
+describe('projects', () => {
+  const pdoc: ConfigDoc = {
+    ...doc,
+    projects: { shop: { raw: { repos: ['api', 'web'] }, effective: {} }, site: { raw: { repos: ['docs'] }, effective: {} } },
+    sections: [...doc.sections, { id: 'project', label: 'Project', root: ['projects'], many: true, fields: [] }],
+  }
+
+  it('lists the projects of the file and the ones just added', () => {
+    expect(scopes(pdoc, [], ['lab']).map((s) => s.id).filter((i) => i.startsWith('project:'))).toEqual(['project:lab', 'project:shop', 'project:site'])
+  })
+
+  it('moves a repo from the project that holds it, changing both lists once', () => {
+    const d = moveRepo(pdoc, {}, [], 'site', 'api', true)
+    expect(opsOf(d)).toEqual([
+      { path: ['projects', 'shop', 'repos'], value: ['web'] },
+      { path: ['projects', 'site', 'repos'], value: ['docs', 'api'] },
+    ])
+    const map = projectRepos(pdoc, d)
+    expect(ownerOf(map, 'api')).toBe('site')
+    expect(map.get('shop')).toEqual(['web'])
+  })
+
+  it('takes a repo out without touching others', () => {
+    const d = moveRepo(pdoc, {}, [], 'shop', 'web', false)
+    expect(opsOf(d)).toEqual([{ path: ['projects', 'shop', 'repos'], value: ['api'] }])
+    expect(ownerOf(projectRepos(pdoc, d), 'web')).toBeUndefined()
+  })
+
+  it('deletes a project, dropping its drafted edits, and its repos become unowned', () => {
+    let d = moveRepo(pdoc, {}, [], 'shop', 'docs', true)
+    d = removeProject(pdoc, d, 'shop')
+    expect(opsOf(d)).toEqual([
+      { path: ['projects', 'site', 'repos'], value: [] },
+      { path: ['projects', 'shop'], unset: true },
+    ])
+    expect([...deletedProjects(d)]).toEqual(['shop'])
+    const map = projectRepos(pdoc, d)
+    expect([...map.keys()]).toEqual(['site'])
+    expect(ownerOf(map, 'api')).toBeUndefined()
+  })
+
+  it('forgets a project that was only drafted', () => {
+    const d = removeProject(pdoc, setValue({}, ['projects', 'lab', 'repos'], []), 'lab')
+    expect(opsOf(d)).toEqual([])
   })
 })

@@ -262,6 +262,25 @@ func (c *Client) Run(ctx context.Context, id int64) (api.RunView, error) {
 	return out, c.do(ctx, http.MethodGet, api.PathRun(id), nil, &out)
 }
 
+// RunDiagnoses lists why a run, or the push of its work, went wrong, newest first.
+func (c *Client) RunDiagnoses(ctx context.Context, id int64) ([]api.Diagnosis, error) {
+	var out []api.Diagnosis
+	return out, c.do(ctx, http.MethodGet, api.PathRunDiagnoses(id), nil, &out)
+}
+
+// FixRun takes one of a run's suggested fixes. A ship runs the repo's gate, so the call
+// may take as long as shipping a lane does.
+func (c *Client) FixRun(ctx context.Context, id int64, req api.RunFix) (dispatch.FixResult, error) {
+	var out dispatch.FixResult
+	c.mu.RLock()
+	long := &Client{
+		Name: c.Name, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
+		http: &http.Client{Timeout: dispatch.GateTimeout + 5*time.Minute},
+	}
+	c.mu.RUnlock()
+	return out, long.do(ctx, http.MethodPost, api.PathRunFix(id), req, &out)
+}
+
 func (c *Client) RunLog(ctx context.Context, id, offset int64) (api.RunLog, error) {
 	var out api.RunLog
 	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?offset=%d", api.PathRunLog(id), offset), nil, &out)

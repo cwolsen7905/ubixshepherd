@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, config as configApi } from '../api/client'
 import type { ConfigDoc, ConfigField, ConfigPreview, ConfigRefusal, ConfigRisk } from '../api/types'
 import {
-  dotted, fieldState, listText, mapText, opsOf, parseList, parseMap, pickScope, problemsFor, revert, scopes, setValue,
-  show, unsetValue, type Draft, type Scope,
+  deletedProjects, dotted, fieldState, listText, mapText, moveRepo, NEW_PROJECT, opsOf, ownerOf, parseList, parseMap, pickScope, PROJECT_NAME,
+  problemsFor, projectRepos, removeProject, revert, scopes, setValue, show, unsetValue, type Draft, type Scope,
 } from '../model/settings'
 import { go, href } from '../router'
 import '../styles/settings.css'
@@ -123,6 +123,74 @@ function Field({ scope, field, draft, onDraft, problems }: FieldProps) {
   )
 }
 
+/**
+ * A project's repos as checkboxes over every configured repo. A repo already in another
+ * project says which; ticking it moves it, and the move is part of the same review.
+ */
+function RepoPicker({ project, doc, draft, added, repos, onDraft }: {
+  project: string
+  doc: ConfigDoc
+  draft: Draft
+  added: string[]
+  repos: string[]
+  onDraft: (d: Draft) => void
+}) {
+  const map = projectRepos(doc, draft, added)
+  const mine = new Set(map.get(project) ?? [])
+  const names = [...new Set([...repos, ...mine])].sort()
+  const saved = new Set(asList(doc.projects[project]?.raw.repos))
+  return (
+    <fieldset className="field repo-picker">
+      <legend>Repos</legend>
+      {names.length === 0 && <p className="faint">No repo is configured yet. Add one first.</p>}
+      <ul>
+        {names.map((r) => {
+          const owner = ownerOf(map, r)
+          const elsewhere = owner !== undefined && owner !== project
+          return (
+            <li key={r}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={mine.has(r)}
+                  onChange={(e) => onDraft(moveRepo(doc, draft, added, project, r, e.target.checked))}
+                />{' '}
+                <code>{r}</code>
+              </label>{' '}
+              <span className={elsewhere ? 'tone-warn' : 'faint'}>
+                {mine.has(r) ? (saved.has(r) ? 'in this project' : 'added here') : elsewhere ? `in ${owner}: ticking moves it here` : 'in no project'}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      <p className="field-help">A repo is in at most one project. Moving one changes both projects in the same saved change.</p>
+    </fieldset>
+  )
+}
+
+const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : [])
+
+/** Delete a project, after saying what happens to its repos. */
+function DeleteProject({ name, repos, onDelete }: { name: string; repos: string[]; onDelete: () => void }) {
+  const [asking, setAsking] = useState(false)
+  if (!asking) {
+    return <button type="button" className="danger" onClick={() => setAsking(true)}>Delete project…</button>
+  }
+  return (
+    <div className="banner tone-warn" role="group" aria-label={`Delete project ${name}`}>
+      <p>
+        Delete project <strong>{name}</strong>?{' '}
+        {repos.length > 0 ? <>Its repos ({repos.join(', ')}) become Unassigned.</> : 'It has no repos.'} Its budget, caches
+        and intake rules go with it, and a rule in another project that names it will stop the save until it is changed.
+        Nothing is written until you review and save.
+      </p>
+      <button type="button" className="danger" onClick={onDelete}>Delete {name}</button>{' '}
+      <button type="button" onClick={() => setAsking(false)}>Cancel</button>
+    </div>
+  )
+}
+
 function Review({
   preview, risky, typed, onTyped, onSave, onClose, saving, canWrite, problems,
 }: {
@@ -195,6 +263,10 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   const [stale, setStale] = useState(false)
   const [added, setAdded] = useState<string[]>([])
   const [newRepo, setNewRepo] = useState('')
+  const [addedProjects, setAddedProjects] = useState<string[]>([])
+  const [newProject, setNewProject] = useState('')
+  const [projectProblem, setProjectProblem] = useState<string | null>(null)
+  const projectBox = useRef<HTMLInputElement>(null)
 
   const load = useCallback(() => {
     configApi.get().then(
@@ -207,8 +279,17 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     )
   }, [])
   useEffect(() => load(), [load])
+  // "New project" on the Projects page lands here with the add box ready.
+  const loaded = doc !== null
+  useEffect(() => {
+    if (scopeId === NEW_PROJECT && loaded) projectBox.current?.focus()
+  }, [scopeId, loaded])
 
-  const all = useMemo(() => (doc ? scopes(doc, added) : []), [doc, added])
+  const gone = useMemo(() => deletedProjects(draft), [draft])
+  const all = useMemo(
+    () => (doc ? scopes(doc, added, addedProjects).filter((s) => !(s.id.startsWith('project:') && gone.has(s.id.slice('project:'.length)))) : []),
+    [doc, added, addedProjects, gone],
+  )
   const scope = pickScope(all, scopeId)
 
   if (loadError && !doc) return <div className="page settings-page"><p className="banner tone-bad" role="alert">Settings did not load: {loadError}</p></div>
@@ -273,6 +354,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
       setRisky([])
       setTyped('')
       setAdded([])
+      setAddedProjects([])
       setNotice(out.reloaded ? { tone: 'ok', text: 'Saved and reloaded. Running agents keep what they started with.' } : { tone: 'bad', text: `Saved, but the daemon did not reload it: ${out.reload_error ?? 'unknown error'}` })
       load()
     } catch (e) {
@@ -282,6 +364,8 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     }
   }
 
+  const isProject = scope.id.startsWith('project:')
+  const projectName = isProject ? scope.id.slice('project:'.length) : ''
   const groups = new Map<string, ConfigField[]>()
   for (const f of scope.section.fields) {
     const g = f.group ?? ''
@@ -324,6 +408,31 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
             </form>
           )}
           {nav('Projects', 'project:')}
+          {!readOnly && (
+            <form className="add-repo" onSubmit={(e) => {
+              e.preventDefault()
+              const n = newProject.trim()
+              if (!n) return
+              if (!PROJECT_NAME.test(n)) {
+                setProjectProblem('A project name uses letters, digits, dots, dashes and underscores.')
+                return
+              }
+              setProjectProblem(null)
+              setNewProject('')
+              if (!(n in doc.projects) && !addedProjects.includes(n)) {
+                setAddedProjects((a) => [...a, n])
+                // An entry with its list of repos, so the project is written even if empty.
+                onDraft(setValue(draft, ['projects', n, 'repos'], []))
+              }
+              go(href.settings(`project:${n}`))
+            }}>
+              <label className="visually-hidden" htmlFor="new-project">Project name</label>
+              <input id="new-project" ref={projectBox} value={newProject} placeholder="add a project" aria-invalid={projectProblem !== null}
+                onChange={(e) => setNewProject(e.target.value)} />
+              <button type="submit">Add</button>
+            </form>
+          )}
+          {projectProblem && <p className="field-problem" role="alert">{projectProblem}</p>}
         </nav>
         <div className="settings-main">
           <h1>{scope.section.label}{scope.id.includes(':') ? `: ${scope.label}` : ''}</h1>
@@ -348,11 +457,27 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
           {[...groups].map(([g, fields]) => (
             <fieldset key={g} className="group">
               {g && <legend>{g}</legend>}
-              {fields.map((f) => (
-                <Field key={f.key.join('.')} scope={scope} field={f} draft={draft} onDraft={onDraft} problems={problems} />
-              ))}
+              {fields.map((f) =>
+                isProject && f.key.join('.') === 'repos' ? (
+                  <RepoPicker key="repos" project={projectName} doc={doc} draft={draft} added={addedProjects} repos={Object.keys(doc.repos).concat(added)} onDraft={onDraft} />
+                ) : (
+                  <Field key={f.key.join('.')} scope={scope} field={f} draft={draft} onDraft={onDraft} problems={problems} />
+                ),
+              )}
             </fieldset>
           ))}
+          {isProject && !readOnly && (
+            <DeleteProject
+              key={projectName}
+              name={projectName}
+              repos={projectRepos(doc, draft, addedProjects).get(projectName) ?? []}
+              onDelete={() => {
+                onDraft(removeProject(doc, draft, projectName))
+                setAddedProjects((a) => a.filter((n) => n !== projectName))
+                go(href.settings())
+              }}
+            />
+          )}
           <div className="actions sticky">
             <span className="faint">{ops.length === 0 ? 'No changes' : `${ops.length} change${ops.length === 1 ? '' : 's'}`}</span>
             <button type="button" className="primary" disabled={ops.length === 0 || busy} onClick={review}>Review changes</button>

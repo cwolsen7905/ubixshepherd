@@ -2,9 +2,10 @@
 
 The **Projects** tab of the web UI (`shepherd web`) shows projects, which until now existed
 only in `config.yaml` and the store (see [projects.md](projects.md)), and the **Board**
-can group its lanes by project. Everything here is read-only: a project is changed in
-Settings or the configuration file, and its brief is approved by the person through the
-front desk.
+can group its lanes by project. The views are read-only: a project is changed in
+[Settings](web-settings.md#projects) (the **Edit** link on a project's page and the **New
+project** button on the Projects page lead there) or the configuration file, and its brief
+is approved by the person through the front desk.
 
 ## Projects view
 

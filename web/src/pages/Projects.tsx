@@ -2,6 +2,7 @@ import { BudgetMeter } from '../components/BudgetMeter'
 import { go, href } from '../router'
 import { useProjectList } from '../state/projects'
 import { UNASSIGNED } from '../model/projects'
+import { NEW_PROJECT } from '../model/settings'
 import type { ProjectSummary } from '../api/types'
 import '../styles/projects.css'
 
@@ -16,6 +17,18 @@ export function ProjectsPage() {
       <header className="page-head">
         <h1>Projects</h1>
         <p className="page-sub">Repos grouped as the configuration groups them. Repos in no project are listed as {UNASSIGNED}.</p>
+        <p>
+          <a
+            className="button"
+            href={href.settings(NEW_PROJECT)}
+            onClick={(e) => {
+              e.preventDefault()
+              go(href.settings(NEW_PROJECT))
+            }}
+          >
+            New project
+          </a>
+        </p>
       </header>
       {error && <p className="tone-bad">Could not load projects: {error}</p>}
       {loading && !data && !error && <p className="faint">Loading…</p>}

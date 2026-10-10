@@ -45,3 +45,8 @@
 .diff-add { background: #e3f1e8; color: var(--ok); }
 .diff-del { background: var(--broken-wash); color: var(--broken); }
 .diff-gap { color: var(--faint); }
+
+/* Projects: the repo picker and the delete button. */
+.repo-picker ul { margin: 0; padding: 0; list-style: none; }
+.repo-picker li { padding-block: var(--s-1); }
+.danger { color: var(--bad, #c0392b); }

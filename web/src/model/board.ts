@@ -118,7 +118,7 @@ export function boardItems({ lanes, runs, decisions, requests, seen }: BoardInpu
       if (running) detail += ', fixing'
       items.push({ ...base, group: 'broken', at: failedRun ? endedAt(run) : l.created, detail })
     } else if (running) {
-      items.push({ ...base, group: 'working', at: run.started, detail: `run ${run.id}` })
+      items.push({ ...base, group: 'working', at: run.started, detail: run.progress?.line ?? `run ${run.id}` })
     } else if (mrOpen(l) && l.pipeline_status === 'passed') {
       items.push({ ...base, group: 'review', at: l.created, detail: 'waiting for a merge' })
     } else if (run?.ended && unseen(seen, `run:${run.id}`, run.ended)) {

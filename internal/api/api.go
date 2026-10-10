@@ -216,6 +216,30 @@ func PathRun(id int64) string     { return fmt.Sprintf("%s/%d", PathRuns, id) }
 func PathRunLog(id int64) string  { return fmt.Sprintf("%s/%d/log", PathRuns, id) }
 func PathRunStop(id int64) string { return fmt.Sprintf("%s/%d/stop", PathRuns, id) }
 
+// PathRunDiagnoses is GET /v1/runs/{id}/diagnoses: why the run, or the push of its work,
+// went wrong, newest first, with each one's evidence and suggested fixes.
+func PathRunDiagnoses(id int64) string { return fmt.Sprintf("%s/%d/diagnoses", PathRuns, id) }
+
+// PathRunFix is POST /v1/runs/{id}/fix: take one of the run's suggested fixes.
+func PathRunFix(id int64) string { return fmt.Sprintf("%s/%d/fix", PathRuns, id) }
+
+// RunFix is the body of POST /v1/runs/{id}/fix. Action is a fix id from the run's
+// diagnoses. Overrides replace the fix's arguments (the agent and model of a retry on
+// another agent, an edited prompt) and are the person's alone: the front desk takes a
+// fix as suggested.
+type RunFix struct {
+	Action    string            `json:"action"`
+	Overrides map[string]string `json:"overrides,omitempty"`
+}
+
+// Diagnosis is a stored diagnosis as run and lane views carry it. Lists leave the
+// evidence out to stay small (EvidenceOmitted says there is some); a single run's view
+// and GET /v1/runs/{id}/diagnoses carry it.
+type Diagnosis struct {
+	store.Diagnosis
+	EvidenceOmitted bool `json:"evidence_omitted,omitempty"`
+}
+
 // RunView is a run with its lane's and repo's names.
 type RunView struct {
 	store.Run
@@ -226,6 +250,21 @@ type RunView struct {
 	// agent reported any; nil on a run still going and on runs from before it was kept.
 	// Only a single run's view (GET /v1/runs/{id}) carries it.
 	Usage *store.Usage `json:"usage,omitempty"`
+	// Diagnosis is the run's newest diagnosis, when it has one; Progress what a run that
+	// is still going is doing now.
+	Diagnosis *Diagnosis `json:"diagnosis,omitempty"`
+	Progress  *Progress  `json:"progress,omitempty"`
+}
+
+// Progress is a one-line account of what a running run is doing now, worked out from
+// the tail of its log, its commits so far and how long it has run. Line is the whole
+// phrase ("running make check (3 commits, 12m)"); Step is the part from the log, absent
+// when the log shows nothing yet.
+type Progress struct {
+	Line    string `json:"line"`
+	Step    string `json:"step,omitempty"`
+	Commits int    `json:"commits"`
+	Elapsed int64  `json:"elapsed_seconds"`
 }
 
 // RunLog answers GET /v1/runs/{id}/log?offset=N: the next piece of the log.
@@ -362,6 +401,10 @@ type LaneView struct {
 	MRURL          string `json:"mr_url,omitempty"`
 	Pipeline       int64  `json:"pipeline,omitempty"`
 	PipelineStatus string `json:"pipeline_status,omitempty"`
+	// Diagnosis is the newest diagnosis of the lane's latest run; it is not set for a
+	// lane that has run nothing. Progress is what that run is doing now while it goes.
+	Diagnosis *Diagnosis `json:"diagnosis,omitempty"`
+	Progress  *Progress  `json:"progress,omitempty"`
 }
 
 // PathLaneShip is POST /v1/lanes/{id}/ship: push the lane's committed work and open or

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { api } from '../api/client'
 import type { RunView } from '../api/types'
 import { EventGlyph } from '../components/Glyph'
+import { RunFailure } from '../components/RunFailure'
 import { duration, runCost } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { parseLog, type Block } from '../model/log'
@@ -152,6 +153,8 @@ export function LogPage({ run: id }: { run: number }) {
           </p>
         )}
       </header>
+
+      {run?.diagnosis && <RunFailure run={run} onFixed={() => api.run(id).then(setRun, () => {})} />}
 
       <div className="log-tools" role="toolbar" aria-label="Log">
         <label className="log-search">

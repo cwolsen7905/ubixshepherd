@@ -43,6 +43,84 @@ function daemon(d: ConfigDoc, answer: (m: string, p: string, b?: ConfigChange) =
 
 const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status })
 
+const withProjects = (): ConfigDoc =>
+  doc({
+    raw: { repos: { api: {}, web: {}, docs: {} }, projects: { shop: { repos: ['api', 'web'] }, site: { repos: [] } } },
+    repos: {
+      api: { raw: {}, effective: {}, overridden: [] }, web: { raw: {}, effective: {}, overridden: [] }, docs: { raw: {}, effective: {}, overridden: [] },
+    },
+    projects: {
+      shop: { raw: { repos: ['api', 'web'] }, effective: { repos: ['api', 'web'] } },
+      site: { raw: { repos: [] }, effective: { repos: [] } },
+    },
+    sections: [
+      ...doc().sections,
+      { id: 'project', label: 'Project', root: ['projects'], many: true, fields: [{ key: ['repos'], kind: 'list', label: 'Repos' }] },
+    ],
+  })
+
+describe('SettingsPage projects', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('adds a project and writes it with an empty repo list', async () => {
+    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '+  lab:\n+    repos: []\n' }) : undefined))
+    const user = userEvent.setup()
+    render(<SettingsPage scope="repo:api" />)
+    await user.type(await screen.findByPlaceholderText('add a project'), 'lab{Enter}')
+    expect(await screen.findByText('1 change')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await screen.findByRole('region', { name: 'Review changes' })
+    expect(seen.find((s) => s.path === '/v1/config/preview')?.body?.ops).toEqual([{ path: ['projects', 'lab', 'repos'], value: [] }])
+  })
+
+  it('refuses a project name that is not a plain key', async () => {
+    daemon(withProjects())
+    const user = userEvent.setup()
+    render(<SettingsPage scope="repo:api" />)
+    await user.type(await screen.findByPlaceholderText('add a project'), 'a b!{Enter}')
+    expect(await screen.findByRole('alert')).toHaveTextContent('letters, digits')
+  })
+
+  it('shows which project each repo is in, and moves one with a single reviewed change', async () => {
+    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '-    repos: [api, web]\n+    repos: [web]\n' }) : undefined))
+    const user = userEvent.setup()
+    render(<SettingsPage scope="project:site" />)
+    const picker = await screen.findByRole('group', { name: 'Repos' })
+    expect(within(picker).getAllByText('in shop: ticking moves it here')).toHaveLength(2)
+    expect(within(picker).getByText('in no project')).toBeInTheDocument()
+    await user.click(within(picker).getByRole('checkbox', { name: 'api' }))
+    expect(within(picker).getByRole('checkbox', { name: 'api' })).toBeChecked()
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await screen.findByRole('region', { name: 'Review changes' })
+    expect(seen.find((s) => s.path === '/v1/config/preview')?.body?.ops).toEqual([
+      { path: ['projects', 'shop', 'repos'], value: ['web'] },
+      { path: ['projects', 'site', 'repos'], value: ['api'] },
+    ])
+  })
+
+  it('deletes a project only after confirming, and says its repos become unassigned', async () => {
+    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '-  shop: ...\n' }) : undefined))
+    const user = userEvent.setup()
+    render(<SettingsPage scope="project:shop" />)
+    await user.click(await screen.findByRole('button', { name: 'Delete project…' }))
+    const ask = screen.getByRole('group', { name: 'Delete project shop' })
+    expect(ask).toHaveTextContent('api, web) become Unassigned')
+    expect(screen.getByText('No changes')).toBeInTheDocument()
+    await user.click(within(ask).getByRole('button', { name: 'Delete shop' }))
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await screen.findByRole('region', { name: 'Review changes' })
+    expect(seen.find((s) => s.path === '/v1/config/preview')?.body?.ops).toEqual([{ path: ['projects', 'shop'], unset: true }])
+  })
+
+  it('cannot add or delete in a session that may not save', async () => {
+    daemon({ ...withProjects(), can_write: false, why: 'read-only' })
+    render(<SettingsPage scope="project:shop" />)
+    await screen.findByText(/read-only/)
+    expect(screen.queryByPlaceholderText('add a project')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete project…' })).toBeNull()
+  })
+})
+
 describe('SettingsPage', () => {
   afterEach(() => vi.unstubAllGlobals())
 

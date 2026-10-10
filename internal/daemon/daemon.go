@@ -68,6 +68,8 @@ type Server struct {
 	// tokens are the scoped tokens minted since start; addr is where the API listens.
 	tokens tokens
 	addr   atomic.Pointer[string]
+	// progress remembers what running runs are doing, briefly (progress.go).
+	progress progressCache
 	// web holds browser sign-in codes and sessions (web.go); sessions persist in the store.
 	web webAuth
 	// reload is how the last config reload went (statusdetail.go).
@@ -156,6 +158,10 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathHistoryRuns, desk, api.HistoryRuns(s.Store))
 	handle("GET "+api.PathRuns+"/{id}", desk|own, s.getRun)
 	handle("GET "+api.PathRuns+"/{id}/log", desk|own, s.runLog)
+	// A run's diagnoses are the person's and the desk's to read; no worker route, so an
+	// agent cannot take a fix on its own run. fixRun keeps the desk to desk_ok fixes.
+	handle("GET "+api.PathRuns+"/{id}/diagnoses", desk, s.listDiagnoses)
+	handle("POST "+api.PathRuns+"/{id}/fix", desk, s.withRunner(s.fixRun))
 	handle("POST "+api.PathRuns+"/{id}/stop", desk, s.withRunner(s.stopRun))
 	handle("POST "+api.PathRuns+"/{id}/events", own, s.withRunner(s.addEvent))
 	handle("GET "+api.PathRuns+"/{id}/events", desk|own, s.runEvents)
@@ -507,6 +513,10 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			out = append(out, v)
 		}
 	}
+	if err := s.attachLaneDiagnoses(ctx, out); err != nil {
+		s.fail(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -732,6 +742,10 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, v)
 	}
+	if err := s.attachDiagnoses(r.Context(), out, false); err != nil {
+		s.fail(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -752,7 +766,12 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, v)
+	one := []api.RunView{v}
+	if err := s.attachDiagnoses(r.Context(), one, true); err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, one[0])
 }
 
 func (s *Server) runLog(w http.ResponseWriter, r *http.Request) {
