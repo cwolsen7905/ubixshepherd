@@ -53,6 +53,12 @@
 #   budget: 5
 #   budget_cap: soft
 
+## shepherd chat's display.
+# chat:
+#   ## How links are drawn: auto (clickable links where the terminal supports them),
+#   ## on, or off. Read when the chat starts, so a restart of the chat applies a change.
+#   hyperlinks: auto
+
 ## OpenCode, for small mechanical edits on a local model (see docs/opencode.md).
 # opencode:
 #   ## The opencode executable; empty looks on PATH, then in ~/.opencode/bin.

@@ -77,6 +77,10 @@ var deskMeta = map[string]fieldMeta{
 	"budget_cap":        {label: "Budget cap", choices: config.Caps},
 }
 
+var chatMeta = map[string]fieldMeta{
+	"hyperlinks": {label: "Hyperlinks", help: "auto draws clickable links where the terminal supports them; on or off forces it. Applies to the next shepherd chat.", choices: config.HyperlinkModes},
+}
+
 var openCodeMeta = map[string]fieldMeta{
 	"bin":          {label: "Executable", help: "Empty looks on PATH, then in ~/.opencode/bin."},
 	"endpoint":     {label: "Endpoint", help: "Base URL of an OpenAI-compatible model host (an Ollama's http://localhost:11434/v1)."},
@@ -100,6 +104,7 @@ func configSections() []api.ConfigSection {
 	return []api.ConfigSection{
 		{ID: "daemon", Label: "Daemon", Root: []string{"daemon"}, Fields: describe(reflect.TypeFor[config.Daemon](), daemonMeta)},
 		{ID: "desk", Label: "Front desk", Root: []string{"desk"}, Fields: describe(reflect.TypeFor[config.Desk](), deskMeta)},
+		{ID: "chat", Label: "Chat", Root: []string{"chat"}, Fields: describe(reflect.TypeFor[config.Chat](), chatMeta)},
 		{ID: "opencode", Label: "OpenCode", Root: []string{"opencode"}, Fields: describe(reflect.TypeFor[config.OpenCode](), openCodeMeta)},
 		{ID: "defaults", Label: "Defaults", Root: []string{"defaults"}, Fields: describe(reflect.TypeFor[config.Profile](), profileMeta)},
 		{ID: "repo", Label: "Repo profile", Root: []string{"repos"}, Many: true, Inherits: "defaults", Fields: describe(reflect.TypeFor[config.Profile](), profileMeta)},
