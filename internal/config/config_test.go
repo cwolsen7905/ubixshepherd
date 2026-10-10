@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -313,5 +314,67 @@ func TestStandardsValidation(t *testing.T) {
 		if _, err := Parse([]byte(y)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+// withRetired sets the retired-key table for one test.
+func withRetired(t *testing.T, m map[string]string) {
+	t.Helper()
+	old := RetiredKeys
+	RetiredKeys = m
+	t.Cleanup(func() { RetiredKeys = old })
+}
+
+func TestRetiredKeysWarnInsteadOfFailing(t *testing.T) {
+	withRetired(t, map[string]string{
+		"daemon.old_poll":  "use daemon.poll",
+		"repos.*.old_gate": "use gate",
+	})
+	src := "daemon:\n  old_poll: 30s\n  max_runs: 3\nrepos:\n  a:\n    old_gate: make\n    base_branch: dev\n  b:\n    old_gate: make\n"
+	c, warns, err := ParseWarn([]byte(src))
+	if err != nil {
+		t.Fatalf("retired keys must not fail: %v", err)
+	}
+	if c.Daemon.MaxRuns != 3 || c.Repos["a"].BaseBranch != "dev" {
+		t.Errorf("the rest of the file was not loaded: %+v", c.Daemon)
+	}
+	want := []string{
+		"daemon.old_poll: retired key, ignored: use daemon.poll",
+		"repos.a.old_gate: retired key, ignored: use gate",
+		"repos.b.old_gate: retired key, ignored: use gate",
+	}
+	if strings.Join(warns, "\n") != strings.Join(want, "\n") {
+		t.Errorf("warnings = %q, want %q", warns, want)
+	}
+	// Parse and Load take it the same way.
+	if _, err := Parse([]byte(src)); err != nil {
+		t.Errorf("Parse: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	os.WriteFile(path, []byte(src), 0o600)
+	if _, w, err := LoadWarn(path); err != nil || len(w) != 3 {
+		t.Errorf("LoadWarn = %q, %v", w, err)
+	}
+}
+
+func TestTyposStillFailWithRetiredKeys(t *testing.T) {
+	withRetired(t, map[string]string{"daemon.old_poll": "use daemon.poll"})
+	_, _, err := ParseWarn([]byte("daemon:\n  old_poll: 30s\n  pol: 30s\n"))
+	if err == nil || !strings.Contains(err.Error(), "pol") {
+		t.Errorf("a typo next to a retired key = %v", err)
+	}
+	// No retired key present: no warnings, and the file is untouched.
+	if _, w, err := ParseWarn([]byte("daemon:\n  max_runs: 2\n")); err != nil || len(w) != 0 {
+		t.Errorf("clean file: %q, %v", w, err)
+	}
+	if _, w, err := ParseWarn(nil); err != nil || len(w) != 0 {
+		t.Errorf("empty file: %q, %v", w, err)
+	}
+}
+
+func TestNoRetiredKeysShipped(t *testing.T) {
+	// Tests set the table for themselves; the shipped one starts empty.
+	if len(RetiredKeys) != 0 {
+		t.Errorf("RetiredKeys = %v", RetiredKeys)
 	}
 }

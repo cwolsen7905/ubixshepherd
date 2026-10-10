@@ -415,29 +415,47 @@ func ptr(f float64) *float64 { return &f }
 
 // Load reads path over the defaults. A missing file gives Default().
 func Load(path string) (Config, error) {
+	c, _, err := LoadWarn(path)
+	return c, err
+}
+
+// LoadWarn is Load, and also returns a warning for each retired key the file still
+// has (see RetiredKeys). The keys are ignored; the file loads.
+func LoadWarn(path string) (Config, []string, error) {
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return Default(), nil
+		return Default(), nil, nil
 	}
 	if err != nil {
-		return Config{}, err
+		return Config{}, nil, err
 	}
-	c, err := Parse(b)
+	c, warns, err := ParseWarn(b)
 	if err != nil {
-		return Config{}, fmt.Errorf("%s: %w", path, err)
+		return Config{}, nil, fmt.Errorf("%s: %w", path, err)
 	}
-	return c, nil
+	return c, warns, nil
 }
 
 // Parse reads YAML over the defaults and validates the result. Unknown keys are errors,
-// so a typo cannot silently fall back to a default.
+// so a typo cannot silently fall back to a default; a retired key (RetiredKeys) is
+// dropped, with a warning from ParseWarn.
 func Parse(b []byte) (Config, error) {
+	c, _, err := ParseWarn(b)
+	return c, err
+}
+
+// ParseWarn is Parse, and also returns a warning for each retired key found.
+func ParseWarn(b []byte) (Config, []string, error) {
+	b, warns, err := stripRetired(b)
+	if err != nil {
+		return Config{}, nil, err
+	}
 	c := Default()
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	var file Config
 	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
-		return Config{}, err
+		return Config{}, nil, err
 	}
 	if file.Daemon.Listen != "" {
 		c.Daemon.Listen = file.Daemon.Listen
@@ -463,7 +481,7 @@ func Parse(b []byte) (Config, error) {
 	c.Defaults = merge(c.Defaults, file.Defaults)
 	c.Repos = file.Repos
 	c.Projects = file.Projects
-	return c, c.Validate()
+	return c, warns, c.Validate()
 }
 
 // Validate checks every value against its closed set.
