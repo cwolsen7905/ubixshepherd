@@ -272,3 +272,37 @@ describe('a failed or running latest run', () => {
     expect(screen.getByRole('button', { name: 'Start again' })).toBeInTheDocument()
   })
 })
+
+describe('the Changes tab', () => {
+  it('opens beside Overview and Conversation and reads the lane\'s diff', async () => {
+    const calls: string[] = []
+    const live = liveWith()
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => {
+      calls.push(path)
+      if (path.startsWith('/v1/config')) return new Response(JSON.stringify({ effective: { web: { editor_url: 'cursor://file/{path}' } } }))
+      if (path.includes('/diff')) {
+        return new Response(JSON.stringify({
+          lane_id: 1, lane: 'x', branch: 'x', base: 'dev', base_ref: 'origin/dev', head: 'abc1234', mode: 'stat', read_at: '2026-10-08T10:04:00Z',
+          commits: [], commits_total: 0, committed: [], uncommitted: [{ path: 'a.go', status: 'modified', added: 1, removed: 0, in_scope: true }],
+          untracked: [], out_of_scope: 0,
+        }))
+      }
+      return new Response(JSON.stringify(path.startsWith('/v1/runs') ? [run()] : []))
+    })
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} />
+      </LiveProvider>,
+    )
+    await userEvent.click(await screen.findByRole('tab', { name: 'Changes' }))
+    expect(await screen.findByText('a.go')).toBeInTheDocument()
+    expect(calls.some((c) => c.startsWith('/v1/lanes/1/diff'))).toBe(true)
+    // The worktree's own link uses the configured template.
+    await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    const link = await screen.findByRole('link', { name: 'open in editor' })
+    expect(link.getAttribute('href')).toMatch(/^cursor:\/\/file\//)
+  })
+})

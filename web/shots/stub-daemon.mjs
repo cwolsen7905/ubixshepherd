@@ -355,6 +355,38 @@ function deskStream(req, res, u) {
   }
 }
 
+// A lane's changes: a few commits, one file outside the scope, one uncommitted, one untracked.
+function laneDiff(id, file) {
+  const f = (path, status, added, removed, o = {}) => ({ path, status, added, removed, in_scope: true, ...o })
+  const base = {
+    lane_id: id, lane: 'feat/login-sessions', repo: 'acme-api', branch: 'feat/login-sessions', base: 'dev', base_ref: 'origin/dev',
+    merge_base: '9f1c2ab0', head: '4be7d19c33aa', mode: file ? 'file' : 'stat', read_at: new Date().toISOString(),
+    commits: [
+      { sha: '1a2b3c4d5e6f', subject: 'feat(auth): store sessions server side', author: 'Claude', date: ago(95), files: 3 },
+      { sha: '5e6f7a8b9c0d', subject: 'test(auth): session expiry and revoke', author: 'Claude', date: ago(70), files: 2 },
+      { sha: '4be7d19c33aa', subject: 'fix(auth): drop the cookie on logout', author: 'Claude', date: ago(41), files: 1 },
+    ],
+    commits_total: 3,
+    committed: [
+      f('internal/auth/session.go', 'modified', 84, 12), f('internal/auth/session_test.go', 'added', 120, 0),
+      f('internal/auth/logout.go', 'modified', 6, 2), f('docs/sessions.md', 'added', 31, 0, { in_scope: false }),
+      f('internal/auth/old_cookie.go', 'deleted', 0, 58),
+    ],
+    uncommitted: [f('internal/auth/store.go', 'modified', 9, 3)],
+    untracked: [f('scratch/notes.txt', 'untracked', 0, 0, { size: 412, in_scope: false }), f('internal/auth/fixture.bin', 'untracked', 0, 0, { binary: true, size: 20480 })],
+    out_of_scope: 2,
+  }
+  if (!file) return base
+  return { ...base, file, patch: [
+    `diff --git a/${file} b/${file}`, 'index 3f2a1c4..9d8e7b6 100644', `--- a/${file}`, `+++ b/${file}`,
+    '@@ -41,9 +41,14 @@ func (s *Store) Open(ctx context.Context, id string) (*Session, error) {',
+    ' \tif id == "" {', ' \t\treturn nil, ErrNoSession', ' \t}',
+    '-\tsess, err := s.cookies.Get(id)', '+\tsess, err := s.rows.Get(ctx, id)',
+    ' \tif err != nil {', '+\t\tif errors.Is(err, sql.ErrNoRows) {', '+\t\t\treturn nil, ErrExpired', '+\t\t}',
+    ' \t\treturn nil, err', ' \t}',
+  ].join('\n') + '\n' }
+}
+
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x'), p = u.pathname
   if (p === '/v1/desk/stream') return deskStream(req, res, u)
@@ -362,6 +394,9 @@ http.createServer((req, res) => {
   if (p === '/v1/status') return json(res, status(u.searchParams.get('detail') === '1'))
   if (p === '/v1/web/session') return json(res, { role: 'operator', csrf: 'shots', allow_settings: false })
   if (p === '/v1/lanes') return json(res, lanes())
+  if (p === '/v1/config') return json(res, { effective: { web: { editor_url: 'vscode://file/{path}' } } })
+  const diff = /^\/v1\/lanes\/(\d+)\/diff$/.exec(p)
+  if (diff) return json(res, laneDiff(Number(diff[1]), u.searchParams.get('file')))
   if (p === '/v1/runs') {
     const lane = Number(u.searchParams.get('lane_id') || 0)
     const limit = Number(u.searchParams.get('limit') || 200)

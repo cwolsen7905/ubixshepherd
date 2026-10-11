@@ -434,3 +434,27 @@ func TestNoRetiredKeysShipped(t *testing.T) {
 		t.Errorf("RetiredKeys = %v", RetiredKeys)
 	}
 }
+
+func TestWebEditorURL(t *testing.T) {
+	if got := Default().Web.EditorTemplate(); got != "vscode://file/{path}" {
+		t.Errorf("default = %q", got)
+	}
+	if c, err := Parse([]byte("")); err != nil || c.Web.EditorURL == nil || *c.Web.EditorURL != DefaultEditorURL {
+		t.Errorf("unset: %+v, %v", c.Web, err)
+	}
+	for _, tpl := range []string{"cursor://file/{path}", "idea://open?file={path}&line={line}", "vscode://file/{path}:{line}", ""} {
+		c, err := Parse([]byte("web:\n  editor_url: \"" + tpl + "\"\n"))
+		if err != nil {
+			t.Errorf("%q: %v", tpl, err)
+		} else if got := c.Web.EditorTemplate(); got != tpl {
+			t.Errorf("%q came back as %q", tpl, got)
+		}
+	}
+	for _, tpl := range []string{"javascript:alert({path})", "data:text/html,{path}", "file://{path}", "/just/{path}",
+		"vscode://file/", "vscode://file/{file}", "vscode://file/{path", "vscode://file/{path}}", "://{path}", "my app://{path}"} {
+		_, err := Parse([]byte("web:\n  editor_url: \"" + tpl + "\"\n"))
+		if err == nil || !strings.Contains(err.Error(), "web.editor_url") {
+			t.Errorf("%q: %v", tpl, err)
+		}
+	}
+}

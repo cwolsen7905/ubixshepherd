@@ -10,6 +10,8 @@ const ALL_PAGES = [
   ['chat', '#/chat'],
   ['board', '#/'],
   ['lane', '#/lanes/4'],
+  // A third element names a tab to open and a file to expand on that page.
+  ['lane-changes', '#/lanes/4', { tab: 'Changes', file: 'internal/auth/session.go' }],
   ['run-log', '#/runs/17/log'],
   ['decisions', '#/decisions'],
   ['timeline', '#/timeline'],
@@ -53,7 +55,7 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
   ws.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }))
 })
 
-async function shot(name, route, theme) {
+async function shot(name, route, theme, steps) {
   const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
   const s = (m, p) => send(m, p, sessionId)
@@ -73,6 +75,13 @@ async function shot(name, route, theme) {
     await sleep(250)
   }
   await sleep(1500) // the stub's streamed events arrive over about two seconds
+  if (steps) {
+    const click = (text, role) => s('Runtime.evaluate', { expression: `(() => { const el = [...document.querySelectorAll('${role}')].find((e) => e.textContent.includes(${JSON.stringify(text)})); el?.click(); return !!el })()`, returnByValue: true })
+    await click(steps.tab, '[role=tab]')
+    await sleep(800)
+    if (steps.file) await click(steps.file, '.change-toggle')
+    await sleep(800)
+  }
   const { data } = await s('Page.captureScreenshot', { format: 'png' })
   const file = path.join(SHOTS_OUT, `${name}-${theme}.png`)
   fs.writeFileSync(file, Buffer.from(data, 'base64'))
@@ -83,7 +92,7 @@ async function shot(name, route, theme) {
 let failed = false
 try {
   for (const theme of SHOTS_THEMES.split(/\s+/).filter(Boolean)) {
-    for (const [name, route] of PAGES) await shot(name, route, theme)
+    for (const [name, route, steps] of PAGES) await shot(name, route, theme, steps)
   }
 } catch (e) {
   console.error(`shots: ${e.message}`)

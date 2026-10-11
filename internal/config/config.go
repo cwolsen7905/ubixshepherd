@@ -27,9 +27,11 @@ import (
 
 // Config is the whole file.
 type Config struct {
-	Daemon   Daemon             `yaml:"daemon" json:"daemon"`
-	Desk     Desk               `yaml:"desk" json:"desk"`
-	Chat     Chat               `yaml:"chat" json:"chat"`
+	Daemon Daemon `yaml:"daemon" json:"daemon"`
+	Desk   Desk   `yaml:"desk" json:"desk"`
+	Chat   Chat   `yaml:"chat" json:"chat"`
+	// Web holds the browser UI's settings; the page reads them from GET /v1/config.
+	Web      Web                `yaml:"web" json:"web"`
 	OpenCode OpenCode           `yaml:"opencode" json:"opencode,omitempty"`
 	Defaults Profile            `yaml:"defaults" json:"defaults"`
 	Repos    map[string]Profile `yaml:"repos" json:"repos,omitempty"`
@@ -188,6 +190,68 @@ func (c Chat) HyperlinksMode() string {
 		return HyperlinksAuto
 	}
 	return c.Hyperlinks
+}
+
+// DefaultEditorURL is Web.EditorURL when the file does not set it.
+const DefaultEditorURL = "vscode://file/{path}"
+
+// Web holds the browser UI's settings.
+type Web struct {
+	// EditorURL is the template of the "open in editor" links on the lane page: {path} is
+	// the absolute path, URL-escaped, and {line} an optional line number. nil (a hand-built
+	// Config) is DefaultEditorURL; Default() sets it so the config API shows the value in
+	// force; "" hides the links.
+	EditorURL *string `yaml:"editor_url,omitempty" json:"editor_url,omitempty"`
+}
+
+// EditorTemplate is the template in force: the default when unset, "" when links are off.
+func (w Web) EditorTemplate() string {
+	if w.EditorURL == nil {
+		return DefaultEditorURL
+	}
+	return *w.EditorURL
+}
+
+var editorPlaceholder = regexp.MustCompile(`\{[^{}]*\}`)
+
+// validate checks the editor template: only {path} and {line}, {path} present, and a
+// scheme that opens an application rather than running script or showing content.
+func (w Web) validate() []error {
+	t := w.EditorTemplate()
+	if t == "" {
+		return nil
+	}
+	var errs []error
+	bad := func(format string, a ...any) {
+		errs = append(errs, fmt.Errorf("web.editor_url: "+format, a...))
+	}
+	for _, ph := range editorPlaceholder.FindAllString(t, -1) {
+		if ph != "{path}" && ph != "{line}" {
+			bad("%s is not a placeholder; use {path} or {line}", ph)
+		}
+	}
+	if strings.Count(t, "{") != strings.Count(t, "}") || strings.Count(t, "{") != len(editorPlaceholder.FindAllString(t, -1)) {
+		bad("%q has an unmatched brace", t)
+	}
+	if !strings.Contains(t, "{path}") {
+		bad("%q has no {path}", t)
+	}
+	i := strings.Index(t, ":")
+	if i <= 0 {
+		bad("%q has no scheme (vscode://file/{path})", t)
+		return errs
+	}
+	scheme := strings.ToLower(t[:i])
+	for _, r := range scheme {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '+' || r == '-' || r == '.') {
+			bad("%q has no valid scheme", t)
+			return errs
+		}
+	}
+	if slices.Contains([]string{"javascript", "data", "vbscript", "file", "blob", "about"}, scheme) {
+		bad("the scheme %q is not allowed", scheme)
+	}
+	return errs
 }
 
 // Desk holds the front desk's settings: the daemon's, and shepherd chat's own.
@@ -475,7 +539,9 @@ type Autonomy struct {
 // Default is the configuration with no file.
 func Default() Config {
 	yes := true
+	editor := DefaultEditorURL
 	return Config{
+		Web:    Web{EditorURL: &editor},
 		Daemon: Daemon{Listen: "127.0.0.1:0", MaxRuns: 4, Poll: "60s", Budget: ptr(20.0), CreditUSD: ptr(0.04), LogLevel: "info"},
 		Defaults: Profile{
 			BaseBranch:       "main",
@@ -557,6 +623,9 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	}
 	c.Desk = file.Desk
 	c.Chat = file.Chat
+	if file.Web.EditorURL != nil {
+		c.Web = file.Web
+	}
 	c.OpenCode = file.OpenCode
 	c.Defaults = merge(c.Defaults, file.Defaults)
 	c.Repos = file.Repos
@@ -599,6 +668,7 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("desk.model: %q is not a model name", c.Desk.Model))
 	}
 	errs = append(errs, c.Desk.validate()...)
+	errs = append(errs, c.Web.validate()...)
 	if !slices.Contains(Caps, c.Daemon.BudgetCapMode()) {
 		errs = append(errs, fmt.Errorf("daemon.budget_cap: %q is not %s", c.Daemon.BudgetCap, strings.Join(Caps, " or ")))
 	}
