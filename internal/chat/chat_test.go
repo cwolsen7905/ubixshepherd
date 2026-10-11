@@ -341,6 +341,25 @@ func TestDeskCostIsRecordedNotShown(t *testing.T) {
 	}
 }
 
+// Claude Code's cost line is the session's running total: each turn records what it added.
+func TestDeskCostRecordsTheTurnNotTheRunningTotal(t *testing.T) {
+	m, _, a := newTestModel()
+	for _, total := range []string{"1.00", "1.25", "1.75"} {
+		_, cmd := m.Update(deskLineMsg{Kind: KindCost, Text: total})
+		drive(t, m, cmd)
+	}
+	if a.spent != 1.75 {
+		t.Errorf("spent %v after totals 1.00, 1.25, 1.75; want 1.75", a.spent)
+	}
+	// /new starts a session from zero: its first total counts whole.
+	typeLine(t, m, "/new")
+	_, cmd := m.Update(deskLineMsg{Kind: KindCost, Text: "0.50"})
+	drive(t, m, cmd)
+	if a.spent != 2.25 {
+		t.Errorf("spent %v after a new session's 0.50; want 2.25", a.spent)
+	}
+}
+
 func TestConversationsInTheChat(t *testing.T) {
 	m, d, a := newTestModel()
 	drive(t, m, m.pollPanel(true))

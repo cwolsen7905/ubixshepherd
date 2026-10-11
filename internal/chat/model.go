@@ -15,6 +15,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -44,6 +45,9 @@ type Redialer interface {
 // Settings the chat keeps in the daemon.
 const (
 	settingSession = "desk.session"
+	// settingCost is "<session> <total>": the last session total this chat recorded, so a
+	// restarted chat adds only what a resumed session costs from there.
+	settingCost = "desk.cost"
 	// settingModel is the desk's model set with /model, over desk.model in config.yaml.
 	settingModel = "desk.model"
 )
@@ -102,6 +106,7 @@ type Model struct {
 	println   func(...any) tea.Cmd
 
 	session   string
+	lastCost  float64 // the session's total as of the last turn recorded; its cost line is a running total
 	busy      bool
 	busySince time.Time
 	partial   string // the desk's reply so far, while it streams
@@ -613,8 +618,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case deskLineMsg:
 		switch msg.Kind {
 		case KindCost:
-			usd, _ := strconv.ParseFloat(msg.Text, 64)
-			cmds = append(cmds, func() tea.Msg { m.api.AddSpend(m.ctx, store.Spend{Source: "desk", USD: usd}); return nil })
+			// Claude Code reports the session's total each turn: record what this turn added.
+			total, _ := strconv.ParseFloat(msg.Text, 64)
+			usd := dispatch.SessionDelta(total, m.lastCost)
+			m.lastCost = total
+			if usd > 0 {
+				cmds = append(cmds, func() tea.Msg { m.api.AddSpend(m.ctx, store.Spend{Source: "desk", USD: usd}); return nil })
+			}
 		case KindPartial:
 			m.partial += msg.Text
 		default:
@@ -760,7 +770,7 @@ func (m *Model) handle(text string) tea.Cmd {
 	case "/quit", "/exit":
 		return m.quit()
 	case "/new":
-		m.session = ""
+		m.session, m.lastCost = "", 0
 		m.add(Line{Kind: KindInfo, Text: "The next message starts a new conversation with the desk."})
 		return func() tea.Msg { m.api.SetSetting(m.ctx, settingSession, ""); return nil }
 	case "/model":
@@ -985,6 +995,10 @@ func (m *Model) onDeskDone(msg deskDoneMsg) tea.Cmd {
 		m.session = msg.session
 		s := msg.session
 		cmds = append(cmds, func() tea.Msg { m.api.SetSetting(m.ctx, settingSession, s); return nil })
+	}
+	if m.session != "" && m.lastCost > 0 {
+		v := m.session + " " + strconv.FormatFloat(m.lastCost, 'f', -1, 64)
+		cmds = append(cmds, func() tea.Msg { m.api.SetSetting(m.ctx, settingCost, v); return nil })
 	}
 	switch {
 	case len(m.queue) > 0:
