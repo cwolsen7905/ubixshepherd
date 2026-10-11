@@ -1,6 +1,7 @@
 # Next up: work that is planned but not being acted on
 
-Status: **proposed**, awaiting the maintainer's approval. Plan only: nothing here is built.
+Status: **approved as written** by the maintainer (2026-10-11). Plan only: nothing here is
+built. Implementation is three merge requests, each its own lane (section 6).
 
 ## The problem
 
@@ -19,7 +20,7 @@ The rail itself is unchanged and nothing already in it is dropped.
 
 ## Decisions to make
 
-One decision for the person: approve the design below, or change a numbered choice.
+Approved with the recommendations below.
 
 | # | Choice | Options | Recommendation |
 |---|---|---|---|
