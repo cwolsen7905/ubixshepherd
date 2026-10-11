@@ -293,15 +293,21 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 		if p, m, ok := strings.Cut(o.Model, "/"); ok {
 			provider, model = p, m
 		}
+		// false is OpenCode's no-limit value. Zero is not: it aborts at once.
+		timeout := any(s.Request().Milliseconds())
+		if s.Request() == 0 {
+			timeout = false
+		}
 		prov := obj{
 			{"npm", "@ai-sdk/openai-compatible"},
 			{"name", provider},
 			{"options", obj{
 				{"baseURL", s.Endpoint},
 				// A model host that stops answering ends the request instead of
-				// leaving the run waiting.
-				{"timeout", 900000},
-				{"chunkTimeout", 120000},
+				// leaving the run waiting. chunkTimeout is the gap between
+				// streamed chunks; OpenCode accepts only a positive number.
+				{"timeout", timeout},
+				{"chunkTimeout", s.Chunk().Milliseconds()},
 			}},
 		}
 		if model != "" {

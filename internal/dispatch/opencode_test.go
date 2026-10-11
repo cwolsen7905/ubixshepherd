@@ -520,3 +520,41 @@ func TestOpenCodeConfigLimits(t *testing.T) {
 		t.Errorf("configured limits = %s", got)
 	}
 }
+
+func TestOpenCodeConfigTimeouts(t *testing.T) {
+	type provider struct {
+		Options struct {
+			Timeout      any   `json:"timeout"`
+			ChunkTimeout int64 `json:"chunkTimeout"`
+		} `json:"options"`
+	}
+	got := func(s config.OpenCode) (timeout any, chunk int64, has bool) {
+		var cfg struct {
+			Provider map[string]provider `json:"provider"`
+		}
+		out := openCodeConfig(Opts{Model: "local/m"}, s)
+		if err := json.Unmarshal([]byte(out), &cfg); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, out)
+		}
+		p, ok := cfg.Provider["local"]
+		if !ok {
+			return nil, 0, false
+		}
+		return p.Options.Timeout, p.Options.ChunkTimeout, true
+	}
+	timeout, chunk, has := got(config.OpenCode{Endpoint: "http://h/v1"})
+	if !has || timeout != float64(900000) || chunk != 120000 {
+		t.Errorf("default timeouts = %v / %d (present %v), want 900000 / 120000", timeout, chunk, has)
+	}
+	timeout, chunk, has = got(config.OpenCode{Endpoint: "http://h/v1", RequestTimeout: "30m", ChunkTimeout: "30s"})
+	if !has || timeout != float64(1800000) || chunk != 30000 {
+		t.Errorf("configured timeouts = %v / %d, want 1800000 / 30000", timeout, chunk)
+	}
+	timeout, chunk, has = got(config.OpenCode{Endpoint: "http://h/v1", RequestTimeout: "off", ChunkTimeout: "10s"})
+	if !has || timeout != false || chunk != 10000 {
+		t.Errorf("off request timeout = %v / %d, want false / 10000", timeout, chunk)
+	}
+	if _, _, has = got(config.OpenCode{}); has {
+		t.Error("no endpoint should write no provider")
+	}
+}

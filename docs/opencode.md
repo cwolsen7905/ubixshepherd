@@ -21,6 +21,8 @@ that needs judgment.
      # bin: /opt/opencode/bin/opencode
      endpoint: http://localhost:11434/v1   # any OpenAI-compatible host
      # idle_timeout: 10m                   # stop a run that prints nothing this long
+     # request_timeout: 15m                # one provider request; at least 1m, or off
+     # chunk_timeout: 2m                   # gap between streamed chunks; at least 10s
      # context: 32768                      # tokens; when OpenCode compacts
      # output: 8192                        # tokens; must be less than context
    defaults:
@@ -32,6 +34,14 @@ that needs judgment.
    `provider/model`; a model with no provider runs under the provider `local`. With no
    `endpoint`, the provider comes from your own OpenCode configuration and
    `agent.model.opencode` names a model in it.
+   `request_timeout` (default 15 minutes, at least 1 minute, or `off`) is how long
+   one request to that host may take. `off` writes `timeout: false`, which OpenCode
+   treats as no limit. `chunk_timeout` (default 2 minutes, at least 10 seconds) is
+   how long the stream may go without a chunk. Leaving either key out keeps these
+   defaults. OpenCode accepts only a positive number of milliseconds for the chunk
+   limit: a missing or false value in its own config becomes 5 minutes, so there is
+   no `off`. These bound one request. `idle_timeout` bounds a whole run that prints
+   nothing, and raising it does not raise these.
    `context` and `output` (default 32768 and 8192) are the limits Shepherd tells
    OpenCode about the model under `endpoint`; `output` must be less than `context`.
    They only tell OpenCode when to compact. The model server must load at least that
@@ -92,7 +102,15 @@ These come from the model and from OpenCode, and Shepherd does not hide them:
 - **Hangs.** The model sometimes calls a tool that does not exist, and the run can stall.
   A run that prints nothing for `opencode.idle_timeout` (default 10 minutes, at least
   1 minute, or `off`) is stopped and recorded `failed` ("hung: printed nothing for ...").
-  Any output resets the clock. The provider also has a request and a stream timeout.
+  Any output resets the clock. That clock is the run going quiet. When `endpoint` is
+  set, each request to the model host is also limited by `opencode.request_timeout`
+  (default 15 minutes, at least 1 minute, or `off`) and the gap between streamed chunks
+  by `opencode.chunk_timeout` (default 2 minutes, at least 10 seconds). A slow model
+  can fail with a provider timeout while the run is still printing, or before it has
+  been quiet for `idle_timeout`. Raising `idle_timeout` does not raise these.
+  `request_timeout: off` disables the request limit. `chunk_timeout` cannot be turned
+  off: OpenCode only accepts a positive number, and a missing or false value in its
+  own config becomes a 5 minute default, so Shepherd always writes a number.
 - **Tool names.** Shepherd's worker tools reach the model as `shepherd_ask_human`,
   `shepherd_ask_shepherd` and `shepherd_report`; a small model sometimes calls them by
   the short names in the brief and is told the tool is unavailable.

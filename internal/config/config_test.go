@@ -230,6 +230,45 @@ func TestOpenCodeIdleTimeout(t *testing.T) {
 	}
 }
 
+func TestOpenCodeProviderTimeouts(t *testing.T) {
+	c, err := Parse([]byte("opencode: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OpenCode.Request() != DefaultOpenCodeRequest || c.OpenCode.Chunk() != DefaultOpenCodeChunk {
+		t.Errorf("defaults = %v / %v", c.OpenCode.Request(), c.OpenCode.Chunk())
+	}
+	for _, tc := range []struct {
+		in         string
+		req, chunk time.Duration
+	}{
+		{"request_timeout: \"off\"\n  chunk_timeout: 30s", 0, 30 * time.Second},
+		{"request_timeout: 30m\n  chunk_timeout: 5m", 30 * time.Minute, 5 * time.Minute},
+		{"request_timeout: 1m\n  chunk_timeout: 10s", time.Minute, 10 * time.Second},
+	} {
+		c, err := Parse([]byte("opencode:\n  " + tc.in + "\n"))
+		if err != nil {
+			t.Fatalf("%q: %v", tc.in, err)
+		}
+		if c.OpenCode.Request() != tc.req || c.OpenCode.Chunk() != tc.chunk {
+			t.Errorf("%q = %v / %v, want %v / %v", tc.in, c.OpenCode.Request(), c.OpenCode.Chunk(), tc.req, tc.chunk)
+		}
+	}
+	for _, in := range []string{
+		"request_timeout: 10s",
+		"request_timeout: soon",
+		"request_timeout: -5m",
+		"chunk_timeout: off",
+		"chunk_timeout: 5s",
+		"chunk_timeout: soon",
+		"chunk_timeout: -1m",
+	} {
+		if _, err := Parse([]byte("opencode:\n  " + in + "\n")); err == nil {
+			t.Errorf("%q accepted", in)
+		}
+	}
+}
+
 func TestDeskRotation(t *testing.T) {
 	d := Default().Desk
 	if d.RotateAt() != DefaultRotateTokens || d.RotateUSD() != 0 || d.SummaryCap() != DefaultSummaryChars ||

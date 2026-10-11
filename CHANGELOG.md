@@ -11,6 +11,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **OpenCode provider timeouts.** `opencode.request_timeout` (default 15 minutes, at
+  least 1 minute, or `off`) and `opencode.chunk_timeout` (default 2 minutes, at least
+  10 seconds) set the per-request and stream-chunk limits Shepherd writes when
+  `opencode.endpoint` is set. `off` disables the request limit. The chunk limit cannot
+  be turned off. See `docs/opencode.md`.
 - **Scoped tokens.** Besides the operator token in `daemon.json`, the daemon mints a
   worker token for each agent run, passed to the agent as `SHEPHERD_TOKEN` with the API
   address in `SHEPHERD_URL`, and revoked when the run ends or the daemon restarts. A
@@ -49,6 +54,8 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Interface changes
 
+- New optional config keys `opencode.request_timeout` and `opencode.chunk_timeout`.
+  Absent keys keep the previous 15 minute request limit and 2 minute chunk limit.
 - The HTTP API answers 403 to a scoped token calling an endpoint its role does not
   allow. The operator token is unchanged and may call every endpoint.
 - `shepherd worker` commands and `shepherd mcp`, when started with `SHEPHERD_TOKEN`

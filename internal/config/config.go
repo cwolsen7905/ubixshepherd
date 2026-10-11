@@ -75,6 +75,15 @@ type OpenCode struct {
 	// records it failed as hung: a duration of at least a minute, or "off". "" is
 	// DefaultOpenCodeIdle. Any output resets it.
 	IdleTimeout string `yaml:"idle_timeout" json:"idle_timeout,omitempty"`
+	// RequestTimeout is how long one provider request may take when Endpoint is set:
+	// a duration of at least a minute, or "off" (no limit). "" is
+	// DefaultOpenCodeRequest. It bounds the request, not a quiet run (that is
+	// IdleTimeout).
+	RequestTimeout string `yaml:"request_timeout" json:"request_timeout,omitempty"`
+	// ChunkTimeout is how long a stream may go without a chunk before that request
+	// ends: a duration of at least 10 seconds. "" is DefaultOpenCodeChunk. OpenCode
+	// accepts only a positive number of milliseconds here, so there is no "off".
+	ChunkTimeout string `yaml:"chunk_timeout" json:"chunk_timeout,omitempty"`
 	// Context and Output are the token limits told to OpenCode for the model run under
 	// Endpoint; they decide when OpenCode compacts, and do not size the model host's
 	// own context. 0 means DefaultOpenCodeContext and DefaultOpenCodeOutput.
@@ -115,6 +124,40 @@ func (o OpenCode) Idle() time.Duration {
 	d, err := time.ParseDuration(o.IdleTimeout)
 	if err != nil || d < time.Minute {
 		return DefaultOpenCodeIdle
+	}
+	return d
+}
+
+// DefaultOpenCodeRequest is the per-request provider timeout when none is configured.
+const DefaultOpenCodeRequest = 15 * time.Minute
+
+// DefaultOpenCodeChunk is the gap allowed between streamed chunks when none is configured.
+const DefaultOpenCodeChunk = 2 * time.Minute
+
+// Request is RequestTimeout as a duration; 0 means no limit ("off").
+func (o OpenCode) Request() time.Duration {
+	switch o.RequestTimeout {
+	case "":
+		return DefaultOpenCodeRequest
+	case "off":
+		return 0
+	}
+	d, err := time.ParseDuration(o.RequestTimeout)
+	if err != nil || d < time.Minute {
+		return DefaultOpenCodeRequest
+	}
+	return d
+}
+
+// Chunk is ChunkTimeout as a duration. It is always at least 10 seconds: OpenCode
+// has no way to disable the chunk limit.
+func (o OpenCode) Chunk() time.Duration {
+	if o.ChunkTimeout == "" {
+		return DefaultOpenCodeChunk
+	}
+	d, err := time.ParseDuration(o.ChunkTimeout)
+	if err != nil || d < 10*time.Second {
+		return DefaultOpenCodeChunk
 	}
 	return d
 }
@@ -551,6 +594,16 @@ func (c Config) Validate() error {
 	if t := c.OpenCode.IdleTimeout; t != "" && t != "off" {
 		if d, err := time.ParseDuration(t); err != nil || d < time.Minute {
 			errs = append(errs, fmt.Errorf("opencode.idle_timeout: %q; a duration of at least 1m, or off", t))
+		}
+	}
+	if t := c.OpenCode.RequestTimeout; t != "" && t != "off" {
+		if d, err := time.ParseDuration(t); err != nil || d < time.Minute {
+			errs = append(errs, fmt.Errorf("opencode.request_timeout: %q; a duration of at least 1m, or off", t))
+		}
+	}
+	if t := c.OpenCode.ChunkTimeout; t != "" {
+		if d, err := time.ParseDuration(t); err != nil || d < 10*time.Second {
+			errs = append(errs, fmt.Errorf("opencode.chunk_timeout: %q; a duration of at least 10s", t))
 		}
 	}
 	if c.OpenCode.Context < 0 {
