@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { boardItems, counts, dismissedCount, countsText, GROUP_NAMES, GROUPS } from './model/board'
 import { usd } from './format'
+import { faviconHref } from './favicon'
 import { useKeys } from './hooks'
 import { go, href, useRoute } from './router'
 import { useSnapshot } from './state/context'
@@ -34,6 +35,12 @@ export function App() {
     const c = countsText(n)
     document.title = c ? `${c} · Shepherd` : 'Shepherd'
   }, [n])
+
+  // And the icon takes a lantern dot while something waits on the person.
+  const waiting = n.needs > 0
+  useEffect(() => {
+    document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.setAttribute('href', faviconHref(waiting))
+  }, [waiting])
 
   useKeys(
     {
