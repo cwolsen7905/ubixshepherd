@@ -1,7 +1,9 @@
 # Web chat: acting on the backlog
 
-**Status: proposed.** Nothing here is built. It extends the backlog rail described in
-[web-chat.md](web-chat.md) and needs the maintainer's approval before any code is written.
+**Status: approved by the maintainer, not built.** Phases 1, 2 and 3 below are approved as
+written, with the defaults in "Choices, with recommendations". Each phase is its own merge
+request; phase 3 needs scope in the daemon packages. It extends the backlog rail described in
+[web-chat.md](web-chat.md).
 
 ## The problem
 
