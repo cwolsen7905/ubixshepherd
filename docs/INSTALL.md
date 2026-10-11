@@ -113,10 +113,24 @@ shepherd web                    # or: the browser UI, signed in with a one-use l
   (on Windows use `shepherd daemon restart`).
 - Defaults are cautious: agents commit and **you** push, a human merges, and no agent can
   approve its own work. `autonomy.push` and `autonomy.merge` in a repo's profile opt in.
-- `shepherd chat` needs Claude Code (`claude`) logged in: the front desk is a Claude Code
-  session. Without it, the CLI (`shepherd lane open`, `shepherd lane run --agent ...`) still works.
 - The daemon's log is `~/.shepherd/daemon.log`. If a repo is not picked up, `shepherd where`
   says what Shepherd sees from the current directory.
+
+## The front desk
+
+The front desk is a Claude Code session Shepherd runs headless at the workspace root. It
+backs both `shepherd chat` and the chat pane of the web UI. It needs `claude` installed and
+logged in on the machine the daemon runs on, as the same user. `desk.model` in `config.yaml`
+picks which Claude model it uses; there is no setting for another agent as the desk.
+
+Without Claude Code, everything else works: the CLI (`shepherd lane open`,
+`shepherd lane run --agent copilot|cursor|opencode ...`, `shepherd decision answer`,
+`shepherd request route`), the web UI's board and lane pages, and the MCP tools.
+
+`shepherd mcp` serves the operator tools over MCP on stdio, and any MCP client that can
+start a stdio server can use them. A Cursor, Copilot or OpenCode user can register
+`shepherd mcp` in their own agent and ask it in plain words, as an informal front desk.
+See each tool's MCP documentation for how to register a stdio server.
 
 The README has the full tour: lanes, scope leases, tags, agent runs and decisions.
 
