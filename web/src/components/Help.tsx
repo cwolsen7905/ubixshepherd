@@ -6,6 +6,7 @@ const KEYS: [string, string][] = [
   ['Enter', 'Open the lane or decision'],
   ['g b', 'Go to the board'],
   ['g d', 'Go to decisions'],
+  ['g n', 'Go to next up'],
   ['c', 'Mark everything done as seen'],
   ['/', 'Search a run log'],
   ['f', 'Follow a run log as it grows'],

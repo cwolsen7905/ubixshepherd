@@ -1,0 +1,123 @@
+// The next-up list: work that is planned but not being acted on (docs/backlog-next.md).
+// The daemon orders it and derives started and done from the lane; this holds how the
+// page groups it, which moves are possible, and the words the page prefills for the desk.
+import type { NextChosen, NextItem, NextList, NextState, Workspace } from '../api/types'
+import type { Tone } from './marks'
+
+/** The sections of the page, in order; done and dropped sit behind a toggle. */
+export const NEXT_SECTIONS: readonly NextChosen[] = ['approved', 'planned', 'deferred', 'done', 'dropped']
+
+export const NEXT_SECTION_NAMES: Record<NextChosen, string> = {
+  approved: 'Approved',
+  planned: 'Planned',
+  deferred: 'Deferred',
+  done: 'Done',
+  dropped: 'Dropped',
+}
+
+/** What each state says about the item, in words and a glyph that carries it without colour. */
+export const NEXT_MARKS: Record<NextState, { glyph: string; tone: Tone; label: string }> = {
+  approved: { glyph: '◇', tone: 'accent', label: 'approved' },
+  planned: { glyph: '○', tone: 'muted', label: 'planned, not yet approved' },
+  deferred: { glyph: '⏸', tone: 'muted', label: 'deferred' },
+  started: { glyph: '●', tone: 'accent', label: 'started' },
+  done: { glyph: '✓', tone: 'ok', label: 'done' },
+  dropped: { glyph: '✗', tone: 'muted', label: 'dropped' },
+}
+
+/** The marker on the first approved item with no lane: what the list says to do next. */
+export const NEXT_MARKER = { glyph: '▶', tone: 'accent' as Tone, label: 'next up' }
+
+/** How many items the rail's Next up view shows. */
+export const NEXT_RAIL_ROWS = 5
+
+/** The section an item sits in: its chosen state, so a started item stays among the approved. */
+export const sectionOf = (it: NextItem): NextChosen => it.stored_state
+
+/** The list as sections in page order; closed ones only when `closed` is set. */
+export function nextSections(items: NextItem[], closed: boolean): { state: NextChosen; items: NextItem[] }[] {
+  return NEXT_SECTIONS.filter((s) => closed || (s !== 'done' && s !== 'dropped')).map((state) => ({
+    state,
+    items: items.filter((it) => sectionOf(it) === state),
+  }))
+}
+
+/** How many done or dropped items the page holds back. */
+export function closedCount(items: NextItem[]): number {
+  return items.filter((it) => it.stored_state === 'done' || it.stored_state === 'dropped').length
+}
+
+/** Whether an item can move up or down: within its section, so the first cannot go up. */
+export function canMove(items: NextItem[], it: NextItem, dir: 'up' | 'down'): boolean {
+  const peers = items.filter((x) => sectionOf(x) === sectionOf(it))
+  const at = peers.findIndex((x) => x.id === it.id)
+  return dir === 'up' ? at > 0 : at >= 0 && at < peers.length - 1
+}
+
+/** The person's moves of an item between states, as the buttons the page shows. */
+export function stateActions(it: NextItem): { label: string; state: NextChosen }[] {
+  switch (it.stored_state) {
+    case 'planned':
+      return [{ label: 'Approve', state: 'approved' }, { label: 'Defer', state: 'deferred' }, { label: 'Drop', state: 'dropped' }]
+    case 'approved':
+      return [{ label: 'Defer', state: 'deferred' }, { label: 'Drop', state: 'dropped' }]
+    case 'deferred':
+      return [{ label: 'Approve', state: 'approved' }, { label: 'Drop', state: 'dropped' }]
+    case 'dropped':
+      return [{ label: 'Restore', state: 'planned' }]
+    default:
+      return []
+  }
+}
+
+/** The approved items still to start, in order, for the rail: no lane and not finished. */
+export function railItems(list: NextList): NextItem[] {
+  return list.items.filter((it) => it.stored_state === 'approved' && it.state === 'approved').slice(0, NEXT_RAIL_ROWS)
+}
+
+/** How many approved items have no lane yet. */
+export function waitingCount(list: NextList): number {
+  return list.items.filter((it) => it.stored_state === 'approved' && it.state === 'approved').length
+}
+
+/** The words Start puts in the chat draft: the person sends them, the desk opens the lane. */
+export function startText(it: Pick<NextItem, 'id' | 'title'>): string {
+  return `Open a lane for next-up item ${it.id}: ${it.title}`
+}
+
+/** Whether Start applies: approved or planned work that no lane has taken. */
+export function canStart(it: NextItem): boolean {
+  return it.state === 'approved'
+}
+
+/** The workspace the chat page shows when the person has not picked one (see ChatPage). */
+export function deskWorkspace(workspaces: Workspace[]): number {
+  return workspaces.length > 1 ? (workspaces[0]?.id ?? 0) : 0
+}
+
+const VIEW_KEY = 'shepherd.chat.rail'
+
+export type RailView = 'now' | 'next'
+
+/** The rail's stored view; Now when none was chosen. */
+export function readRailView(store: Pick<Storage, 'getItem'>): RailView {
+  try {
+    return store.getItem(VIEW_KEY) === 'next' ? 'next' : 'now'
+  } catch {
+    return 'now'
+  }
+}
+
+export function writeRailView(store: Pick<Storage, 'setItem'>, view: RailView) {
+  try {
+    store.setItem(VIEW_KEY, view)
+  } catch {
+    // no storage: the choice lasts until the page reloads
+  }
+}
+
+/** The plan doc's name for the row: its path, shortened to the last two parts. */
+export function planLabel(plan: string): string {
+  const parts = plan.split('/').filter(Boolean)
+  return parts.slice(-2).join('/')
+}

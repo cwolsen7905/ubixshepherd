@@ -36,3 +36,16 @@ export function clearDraft(store: Pick<Storage, 'removeItem'> | undefined, key: 
     // As writeDraft.
   }
 }
+
+/** Fired on `window` when words are put in a draft from outside the composer. */
+export const DRAFT_EVENT = 'shepherd:draft'
+
+/**
+ * Adds `text` to the draft under `key` (after what is there, on its own paragraph) and says
+ * so, so an open composer shows it. Nothing is sent: the person reads it and presses Send.
+ */
+export function prefillDraft(store: (Reader & Writer) | undefined, key: string, text: string) {
+  const had = readDraft(store, key)
+  writeDraft(store, key, had.trim() === '' ? text : `${had.replace(/\s+$/, '')}\n\n${text}`)
+  window.dispatchEvent(new CustomEvent(DRAFT_EVENT, { detail: key }))
+}

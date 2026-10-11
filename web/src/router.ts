@@ -16,6 +16,7 @@ export type Route =
   | { page: 'decisions'; focus?: number }
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
   | { page: 'timeline'; range?: TimelineRange; agent?: string }
+  | { page: 'next' }
   | { page: 'projects' }
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
@@ -72,6 +73,7 @@ export function parse(hash: string): Route {
       return { page: 'missing', path }
     }
   }
+  if (path === '/next') return { page: 'next' }
   if (path === '/chat') return { page: 'chat' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
   m = /^\/lanes\/(\d+)$/.exec(path)
@@ -109,6 +111,7 @@ export const href = {
   projects: () => '#/projects',
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,
   unassigned: () => '#/unassigned',
+  next: () => '#/next',
   chat: () => '#/chat',
   settings: (scope?: string) => (scope ? `#/settings?scope=${encodeURIComponent(scope)}` : '#/settings'),
   lane: (id: number) => `#/lanes/${id}`,

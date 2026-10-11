@@ -2,8 +2,9 @@
 
 Status: **approved as written** by the maintainer (2026-10-11). Merge request 1 (the core)
 is built: the table, API, `shepherd next`, `lane open --item` and the `next_*` desk tools.
-The web page and rail toggle (2) and the matrix read-through and `plan` feed kind (3) are
-not. Implementation is three merge requests, each its own lane (section 6).
+Merge request 2 (the web page and rail toggle) is built too. The matrix read-through and
+`plan` feed kind (3) are not. Implementation is three merge requests, each its own lane
+(section 6).
 
 What the core did differently from section 6, and why:
 
@@ -19,6 +20,19 @@ What the core did differently from section 6, and why:
   include it. Agents still use `ask_shepherd` to suggest an item.
 - **A state or move from the desk outside a turn the person started is refused**, the rule
   `decision_answer` follows; adding an item as `planned` and editing text are open to it.
+
+What the web page did differently from section 3, and why:
+
+- **The rail's Next up view lists approved items with no lane**, not planned ones, so
+  it answers "what do we start". The page lists everything in order.
+- **Start prefills the chat draft and goes to the chat page**; on the chat page itself
+  the rail's Start fills the open composer. It starts no run.
+- **The rail's view is stored as `shepherd.chat.rail`** (`now` or `next`), beside
+  `shepherd.chat.backlog`, and the toggle shows the count of approved items.
+- **Link to lane** is a menu of the open lanes in the item's repo, shown on items with no
+  lane. `docs/web-chat.md` is not updated here: the lane's scope did not include it.
+- **The page reads the list every 20 seconds** and again after each action; it does not
+  use the feed, which has no `plan` kind until merge request 3.
 
 ## The problem
 

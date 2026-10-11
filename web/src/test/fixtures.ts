@@ -12,7 +12,8 @@ import type {
   RunState,
   DecisionState,
   DeskEvent,
-  ProjectSummary
+  ProjectSummary,
+  NextItem,
 } from '../api/types';
 
 export function lane(o?: Partial<LaneView>): LaneView {
@@ -207,4 +208,20 @@ export function project(o?: Partial<ProjectSummary>): ProjectSummary {
 
 export function unassigned(o?: Partial<ProjectSummary>): ProjectSummary {
   return project({ name: '', unassigned: true, repos: ['docs'], lanes: 1, spend_today: 0, budget: undefined, ...o });
+}
+
+export function nextItem(o?: Partial<NextItem>): NextItem {
+  const base: NextItem = {
+    id: 1,
+    title: 'Lane diff step 3',
+    repo: 'acme-api',
+    plan: 'docs/lane-diff.md',
+    state: 'approved',
+    stored_state: 'approved',
+    rank: 1,
+    source: 'person',
+    created: '2026-10-08T09:00:00Z',
+    updated: '2026-10-08T09:00:00Z',
+  };
+  return { ...base, ...o };
 }
