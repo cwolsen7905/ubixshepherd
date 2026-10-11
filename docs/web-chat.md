@@ -42,7 +42,9 @@ choice is kept in the browser's storage (`shepherd.chat.backlog`); without one, 
 open on a wide screen and closed on a narrow one.
 
 The rail's header also carries today's spend against the budget (warning colour from
-80%) and a notice for any agent held for quota, read from the daemon's detailed status.
+80%), the forge poll's health (when it last polled, or its error, which means MR badges
+may be stale) and a notice for any agent held for quota. The last two are read from the
+daemon's detailed status every 30 seconds.
 The window title already carries the board's counts, so a background tab shows that
 something waits.
 
@@ -55,3 +57,20 @@ something waits.
   (the newest 1000 items) and in the loaded thread.
 
 True lane activity and forge timestamps would be a separate daemon change.
+
+## Review list
+
+Every element considered for the rail, and where it stands.
+
+| Item | What it is | Status |
+|---|---|---|
+| Backlog list | needs you, broken, idle, working and to review, with links and "in thread" jumps | shipped in !107 |
+| a. Spend vs budget | today's spend against the daily budget in the rail header, warning from 80% | shipped in !107 |
+| b. Quota-hold notice | which agent is held for quota and until when, so an idle lane is explained | shipped in !107 |
+| c. Forge poll health | when the forge was last polled, or its error, so stale MR badges are known | shipped in !107 |
+| d. Attention count in the tab title | the board's counts in `document.title` for a background tab | already existed (`web/src/App.tsx`) |
+| e. Run progress bar | a bar on running rows; the progress line already shows as text | deferred for review |
+| f. Per-project grouping | group the rail by project with a toggle; urgency order stays the default | deferred for review |
+| True idle-since | needs a lane-activity time from the daemon; idle uses the last run's end meanwhile | deferred: backend lane |
+| MR and pipeline timestamps | needs forge times on the lane view; lane age stands in meanwhile | deferred: backend lane |
+| Per-lane spend | the lane view carries none; per-run cost could be summed in the client | deferred for review |

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { daemonInfo } from '../api/client'
-import type { SpendToday, Status } from '../api/types'
+import type { SpendToday, Status, StatusDetail } from '../api/types'
 import { clockTime, since, usd } from '../format'
 import {
   BACKLOG_MARKS, BACKLOG_NAMES, RAIL_ROWS, backlogCounts, backlogText, readRailOpen, writeRailOpen, type BacklogItem,
@@ -27,14 +27,14 @@ function startsOpen(): boolean {
 
 const QUOTA_POLL = 30_000
 
-/** Agents held for quota, from the daemon's detailed status; none when it does not say. */
-function useQuotaHolds(load: () => Promise<Status>) {
-  const [holds, setHolds] = useState<{ agent: string; until: string }[]>([])
+/** The daemon's detailed status, re-read slowly: quota holds and the forge poll's health. */
+function useDetail(load: () => Promise<Status>) {
+  const [detail, setDetail] = useState<StatusDetail | undefined>()
   useEffect(() => {
     let live = true
     const read = () =>
       load().then(
-        (s) => live && setHolds(s.detail?.quota_holds ?? []),
+        (s) => live && setDetail(s.detail),
         () => {},
       )
     void read()
@@ -44,7 +44,7 @@ function useQuotaHolds(load: () => Promise<Status>) {
       window.clearInterval(id)
     }
   }, [load])
-  return holds
+  return detail
 }
 
 /**
@@ -62,7 +62,9 @@ export function Backlog({
 }) {
   const [open, setOpen] = useState(startsOpen)
   const [all, setAll] = useState(false)
-  const holds = useQuotaHolds(loadStatus)
+  const detail = useDetail(loadStatus)
+  const holds = detail?.quota_holds ?? []
+  const forge = detail?.forge
   const text = backlogText(backlogCounts(items))
   const shown = all ? items : items.slice(0, RAIL_ROWS)
   const use = spend && spend.budget > 0 ? budgetUse({ amount: spend.budget, spent: spend.usd, cap: '', period: 'day', since: spend.day }) : null
@@ -105,6 +107,16 @@ export function Backlog({
               {use ? ` of ${usd(spend.budget)}` : ''} today
               {use && use.tone !== 'ok' && <span className={`tone-${use.tone}`}>{use.fraction >= 1 ? ' · over budget' : ' · near budget'}</span>}
             </span>
+          </p>
+        )}
+        {forge && (
+          <p className={`backlog-forge ${forge.error ? 'tone-bad' : 'faint'}`} role="status">
+            <Glyph glyph={forge.error ? '✗' : '●'} tone={forge.error ? 'bad' : 'ok'} label={forge.error ? 'forge poll failing' : 'forge polled'} />{' '}
+            {forge.error
+              ? `Forge poll failing: ${forge.error}; MR badges may be stale`
+              : forge.last_poll
+                ? `Forge polled ${since(forge.last_poll, now) || 'just now'} ago`
+                : 'Forge not polled yet'}
           </p>
         )}
         {holds.map((h) => (

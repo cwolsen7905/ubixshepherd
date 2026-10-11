@@ -388,6 +388,7 @@ describe('backlog rail', () => {
 
   it('lists what waits, most urgent first, with counts and links to its page', async () => {
     await show(withHistory, liveWith(quiet, undefined, { lanes: async () => [lane({ id: 1 }), lane({ id: 2, name: 'docs/readme' })], runs: async () => [run({ id: 11, lane_id: 2, ended: '2026-10-08T10:04:00Z' })], decisions: async (st) => (st === 'open' ? [decision({ id: 3 }) as DecisionView] : []) }))
+    await screen.findByText('what is up?')
     const rail = await screen.findByRole('complementary', { name: 'Backlog' })
     expect(within(rail).getByRole('button', { name: 'Backlog 2 needs you · 1 idle' })).toBeInTheDocument()
     const rows = within(rail).getAllByRole('listitem')
@@ -401,6 +402,7 @@ describe('backlog rail', () => {
     const scrollIntoView = vi.fn()
     Element.prototype.scrollIntoView = scrollIntoView
     await show(withHistory, liveWith(quiet, undefined, { ...lists, decisions: async () => [], requests: async () => [] }))
+    await screen.findByText('what is up?')
     const rail = await screen.findByRole('complementary', { name: 'Backlog' })
     await user.click(await within(rail).findByRole('button', { name: 'in thread' }))
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
@@ -412,6 +414,7 @@ describe('backlog rail', () => {
   it('remembers it was closed', async () => {
     const user = userEvent.setup()
     await show(withHistory, liveWith(quiet, undefined, lists))
+    await screen.findByText('what is up?')
     const toggle = await screen.findByRole('button', { name: /Backlog/ })
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     await user.click(toggle)
@@ -421,14 +424,26 @@ describe('backlog rail', () => {
 
   it('says when nothing waits, and shows today\u2019s spend against the budget and a quota hold', async () => {
     vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
-      status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, quota_holds: [{ agent: 'claude', until: '2026-10-08T14:05:00Z' }] } }),
+      status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, quota_holds: [{ agent: 'claude', until: '2026-10-08T14:05:00Z' }], forge: { last_poll: '2026-10-08T10:03:00Z' } } }),
     )
     await show(withHistory, liveWith([], undefined, { decisions: async () => [], requests: async () => [] }))
+    await screen.findByText('what is up?')
     const rail = await screen.findByRole('complementary', { name: 'Backlog' })
     expect(within(rail).getByText('nothing waiting')).toBeInTheDocument()
     expect(within(rail).getByText(/Nothing is waiting on you/)).toBeInTheDocument()
     expect(within(rail).getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '4.1')
     expect(await within(rail).findByText(/claude is out of quota until/)).toBeInTheDocument()
+    expect(within(rail).getByText(/Forge polled .+ ago/)).toBeInTheDocument()
+  })
+
+  it('says when the forge poll is failing, so merge badges are known to be stale', async () => {
+    vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
+      status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, forge: { error: 'glab: 401' } } }),
+    )
+    await show(withHistory, liveWith(quiet, undefined, lists))
+    await screen.findByText('what is up?')
+    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
+    expect(await within(rail).findByText(/Forge poll failing: glab: 401/)).toBeInTheDocument()
   })
 })
 
