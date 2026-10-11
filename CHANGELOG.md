@@ -9,6 +9,16 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenCode no longer redirects a hosted provider to the local endpoint.** With
+  `opencode.endpoint` set, a model such as `openrouter/qwen/qwen3-coder` used to make
+  Shepherd define an `openrouter` provider at the local host. Now only a bare model name
+  or `local/<model>` runs on the endpoint; any other `provider/model` is passed to
+  OpenCode as written and uses its own provider and login. A prefix other than `local/`
+  no longer names a local provider. The run's closing log line reports a priced
+  provider's cost instead of always saying no cost. See `docs/opencode.md`.
+
 ### Added
 
 - **OpenCode provider timeouts.** `opencode.request_timeout` (default 60 minutes, at

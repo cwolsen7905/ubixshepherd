@@ -97,7 +97,7 @@ func TestOpenCodeRunEndToEnd(t *testing.T) {
 	t.Cleanup(func() { openCodeSettings = old })
 	f := openCodeFixture(t, "ok")
 	const task = "rename the zebra-quokka helper"
-	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Model: "bench/qwen3-coder:30b", Prompt: task})
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Model: "local/qwen3-coder:30b", Prompt: task})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestOpenCodeRunEndToEnd(t *testing.T) {
 		t.Errorf("cost = %v: a local model is not billed", done.CostUSD)
 	}
 	log := logOf(t, done)
-	if a := argsOf(t, done); strings.Contains(a, "zebra-quokka") || !strings.Contains(a, "run --format json --pure -m bench/qwen3-coder:30b") {
+	if a := argsOf(t, done); strings.Contains(a, "zebra-quokka") || !strings.Contains(a, "run --format json --pure -m local/qwen3-coder:30b") {
 		t.Errorf("args: %s", a)
 	}
 	if in := stdinOf(t, done); !strings.Contains(in, task) || !strings.Contains(in, "Work only inside") {
@@ -247,7 +247,7 @@ func TestOpenCodeConfigPermissions(t *testing.T) {
 			Command []string `json:"command"`
 		} `json:"mcp"`
 	}
-	s := openCodeConfig(Opts{Gate: "make check", Model: "bench/qwen3-coder:30b", Worker: "/bin/shepherd"},
+	s := openCodeConfig(Opts{Gate: "make check", Model: "local/qwen3-coder:30b", Worker: "/bin/shepherd"},
 		config.OpenCode{Endpoint: "http://localhost:11434/v1"})
 	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, s)
@@ -274,7 +274,7 @@ func TestOpenCodeConfigPermissions(t *testing.T) {
 	if !strings.Contains(bash, `"git rebase -i*":"deny"`) || !strings.Contains(bash, `"git rebase --interactive*":"deny"`) {
 		t.Errorf("bash rules missing explicit deny for interactive rebase: %s", bash)
 	}
-	p := cfg.Provider["bench"]
+	p := cfg.Provider["local"]
 	if p.NPM != "@ai-sdk/openai-compatible" || p.Options.BaseURL != "http://localhost:11434/v1" || p.Models["qwen3-coder:30b"] == nil {
 		t.Errorf("provider: %+v", cfg.Provider)
 	}
@@ -292,6 +292,86 @@ func TestOpenCodeConfigPermissions(t *testing.T) {
 	}
 }
 
+// providerNames returns the provider keys of a run's config.
+func providerNames(t *testing.T, s string) map[string]json.RawMessage {
+	t.Helper()
+	var cfg struct {
+		Provider map[string]json.RawMessage `json:"provider"`
+	}
+	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, s)
+	}
+	return cfg.Provider
+}
+
+func TestOpenCodeConfigProviderRouting(t *testing.T) {
+	host := config.OpenCode{Endpoint: "http://localhost:11434/v1"}
+	for _, c := range []struct {
+		name, model, s string
+		local          bool   // a local provider block is defined
+		modelID        string // its model entry, "" for none
+		flag           string // the -m value
+	}{
+		{"bare", "qwen3-coder:30b", "host", true, "qwen3-coder:30b", "local/qwen3-coder:30b"},
+		{"local prefix", "local/qwen3-coder:30b", "host", true, "qwen3-coder:30b", "local/qwen3-coder:30b"},
+		{"local prefix keeps slashes", "local/org/model", "host", true, "org/model", "local/org/model"},
+		{"openrouter", "openrouter/qwen/qwen3-coder", "host", false, "", "openrouter/qwen/qwen3-coder"},
+		{"other prefix", "mybox/qwen", "host", false, "", "mybox/qwen"},
+		{"no endpoint, bare", "qwen3-coder:30b", "none", false, "", "qwen3-coder:30b"},
+		{"no endpoint, local prefix", "local/m", "none", false, "", "local/m"},
+		{"no endpoint, openrouter", "openrouter/anthropic/x", "none", false, "", "openrouter/anthropic/x"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s := config.OpenCode{}
+			if c.s == "host" {
+				s = host
+			}
+			old := openCodeSettings
+			openCodeSettings = func() config.OpenCode { return s }
+			t.Cleanup(func() { openCodeSettings = old })
+			prov := providerNames(t, openCodeConfig(Opts{Model: c.model}, s))
+			if !c.local {
+				if len(prov) != 0 {
+					t.Errorf("provider block defined for %q: %v", c.model, prov)
+				}
+			} else {
+				var p struct {
+					Options struct {
+						BaseURL string `json:"baseURL"`
+					} `json:"options"`
+					Models map[string]json.RawMessage `json:"models"`
+				}
+				raw, ok := prov["local"]
+				if !ok || len(prov) != 1 {
+					t.Fatalf("providers = %v, want only local", prov)
+				}
+				if err := json.Unmarshal(raw, &p); err != nil {
+					t.Fatal(err)
+				}
+				if p.Options.BaseURL != host.Endpoint || len(p.Models) != 1 || p.Models[c.modelID] == nil {
+					t.Errorf("local provider: %s", raw)
+				}
+			}
+			args := strings.Join(openCodeArgs(Opts{Model: c.model}), " ")
+			if !strings.Contains(args, " -m "+c.flag) || strings.Contains(args, c.flag+"/") {
+				t.Errorf("args %q lack -m %s", args, c.flag)
+			}
+		})
+	}
+}
+
+func TestOpenCodeBilledCostIsLogged(t *testing.T) {
+	const session = "ses_cost"
+	first := openCodeOutput(`{"type":"step_finish","sessionID":"ses_cost","part":{"type":"step-finish","reason":"tool-calls","cost":0.0125,"tokens":{"input":10,"output":2}}}`)
+	if first.USD != 0.0125 {
+		t.Errorf("USD = %v", first.USD)
+	}
+	o := openCodeOutput(`{"type":"step_finish","sessionID":"` + session + `","part":{"type":"step-finish","reason":"stop","cost":0.0075,"tokens":{"input":5,"output":1}}}`)
+	if o.USD != 0.0075 || !strings.Contains(o.Show, "cost $0.0200") || strings.Contains(o.Show, "no billed cost") {
+		t.Errorf("output: %+v", o)
+	}
+}
+
 func TestOpenCodeModelNaming(t *testing.T) {
 	for _, c := range []struct {
 		model string
@@ -301,6 +381,7 @@ func TestOpenCodeModelNaming(t *testing.T) {
 		{"", true, ""},
 		{"qwen3-coder:30b", true, "local/qwen3-coder:30b"},
 		{"bench/qwen3-coder:30b", true, "bench/qwen3-coder:30b"},
+		{"openrouter/qwen/qwen3-coder", true, "openrouter/qwen/qwen3-coder"},
 		{"qwen3-coder:30b", false, "qwen3-coder:30b"},
 	} {
 		if got := openCodeModel(c.model, c.host); got != c.want {

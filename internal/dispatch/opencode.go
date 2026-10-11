@@ -186,6 +186,16 @@ func openCodeModel(model string, haveEndpoint bool) string {
 	return model
 }
 
+// openCodeLocalModel says whether a model runs on the local endpoint, and its id there:
+// a bare name, or the name after "local/". The id is kept whole, so a model whose own
+// name has a slash is not cut again. An empty model is local, with no id.
+func openCodeLocalModel(model string) (string, bool) {
+	if rest, ok := strings.CutPrefix(model, openCodeLocal+"/"); ok {
+		return rest, true
+	}
+	return model, !strings.Contains(model, "/")
+}
+
 // openCodeRunEnv is the run's environment: its config, in OPENCODE_CONFIG_CONTENT.
 func openCodeRunEnv(o Opts) []string {
 	return []string{openCodeEnvVar + "=" + openCodeConfig(o, openCodeSettings())}
@@ -288,11 +298,11 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 		{"share", "disabled"},
 		{"permission", perm},
 	}
-	if s.Endpoint != "" {
-		provider, model := openCodeLocal, o.Model
-		if p, m, ok := strings.Cut(o.Model, "/"); ok {
-			provider, model = p, m
-		}
+	// Shepherd defines the local provider only for a model meant for it: a bare name, or
+	// one under "local/". Any other provider/model (openrouter/vendor/model, say) is left
+	// to OpenCode, which uses its own provider of that name and its own login.
+	if model, ok := openCodeLocalModel(o.Model); ok && s.Endpoint != "" {
+		provider := openCodeLocal
 		// false is OpenCode's no-limit value. Zero is not: it aborts at once.
 		timeout := any(s.Request().Milliseconds())
 		if s.Request() == 0 {
@@ -368,6 +378,7 @@ type openCodeRun struct {
 	changed bool // a completed edit, write or commit
 	printed bool // the model wrote a tool call as text
 	in, out int
+	cost    float64 // summed over the run's steps
 }
 
 var (
@@ -384,7 +395,8 @@ var printedToolCall = regexp.MustCompile(`<tool_call>|<function=|"name"\s*:\s*"(
 
 // openCodeOutput turns one line of the run's output into the run log's line and cost.
 // Cost is 0 on a local model: OpenCode prices a model it has no rates for at 0, and
-// the runner records that rather than inventing one. A final step with no edit or
+// the runner records that rather than inventing one. A priced provider's per-step cost
+// is passed on, and the runner sums it per run and records it as opencode's spend. A final step with no edit or
 // commit in the run is called out in the log, since the process exits 0 either way.
 func openCodeOutput(line string) Output {
 	var e openCodeEvent
@@ -413,6 +425,7 @@ func openCodeOutput(line string) Output {
 		run := openRunFor(e.SessionID)
 		run.in += e.Part.Tokens.Input
 		run.out += e.Part.Tokens.Output
+		run.cost += e.Part.Cost
 		o := Output{USD: e.Part.Cost}
 		if e.Part.Reason == "tool-calls" {
 			return o
@@ -440,7 +453,11 @@ func openCodeEnd(session string, run *openCodeRun, reason string) string {
 			ver = ", opencode " + v
 		}
 	}
-	s := fmt.Sprintf("# opencode ended (%s): %d tokens in, %d out, no billed cost (a local model has no rates)%s", reason, run.in, run.out, ver)
+	billed := "no billed cost (a local model has no rates)"
+	if run.cost > 0 {
+		billed = fmt.Sprintf("cost $%.4f", run.cost)
+	}
+	s := fmt.Sprintf("# opencode ended (%s): %d tokens in, %d out, %s%s", reason, run.in, run.out, billed, ver)
 	switch {
 	case run.printed && !run.changed:
 		s += "\n# shepherd: WARNING the model printed a tool call as text and changed nothing; exit 0 here is not a success"
