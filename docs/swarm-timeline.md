@@ -1,6 +1,8 @@
 # Swarm timeline
 
-Status: **proposal**, for the maintainer to approve or change. No code was written for it.
+Status: **approved** by the maintainer (decision 48) with all recommendations. Phase 1 is
+in scope; phase 2 (the daemon endpoint) is widened separately once phase 1 is done. No
+code has been written yet.
 
 One view of the whole day's work at once: a horizontal track per lane, grouped by repo,
 time running left to right, each run a bar coloured by its agent. The point is to make
