@@ -30,10 +30,12 @@ that needs judgment.
        model: {opencode: "local/qwen3-coder:30b"}
    ```
 
-   With an `endpoint`, Shepherd defines the provider for each run itself. The model is
-   `provider/model`; a model with no provider runs under the provider `local`. With no
-   `endpoint`, the provider comes from your own OpenCode configuration and
-   `agent.model.opencode` names a model in it.
+   With an `endpoint`, Shepherd defines a provider named `local` for the run when the
+   model is meant for it: a bare name (`qwen3-coder:30b`) or `local/<model>`. Any other
+   `provider/model` is passed to OpenCode untouched, with no provider block, so it uses
+   its own provider of that name and its own login (see "Using OpenRouter alongside a
+   local host"). With no `endpoint`, every model comes from your own OpenCode
+   configuration and `agent.model.opencode` names a model in it.
    `request_timeout` (default 60 minutes, at least 1 minute, or `off`) is how long
    one request to that host may take. `off` writes `timeout: false`, which OpenCode
    treats as no limit. `chunk_timeout` (default 10 minutes, at least 10 seconds) is
@@ -51,6 +53,40 @@ that needs judgment.
    the session in OpenCode's own interface (`opencode -s <session>`).
 
 A config change applies to the next run; no daemon restart is needed.
+
+## Using OpenRouter alongside a local host
+
+The model name picks the provider for each run, so a local host and a hosted provider
+can both be in use without one taking over the other:
+
+| Model | Runs on |
+| --- | --- |
+| `qwen3-coder:30b` or `local/qwen3-coder:30b` | the `opencode.endpoint` host |
+| `openrouter/qwen/qwen3-coder` | OpenRouter, through OpenCode's own `openrouter` provider |
+| `anthropic/claude-sonnet-4-5` and any other `provider/model` | that provider, as OpenCode itself has it |
+
+Everything after the first `/` of a hosted model is its id, so OpenRouter's
+`vendor/model` ids work as written: `openrouter/anthropic/claude-sonnet-4-5`. Only
+`local/` is Shepherd's. A prefix such as `mybox/` used to define a provider at the local
+endpoint; it no longer does, so write `local/<model>`.
+
+1. Log in once, as the user the daemon runs as: `opencode auth login`, choose
+   OpenRouter and paste the key. OpenCode keeps it in its own data directory, and
+   Shepherd never reads it.
+2. Choose the model for one run: `shepherd lane run <lane> --agent opencode --model
+   openrouter/qwen/qwen3-coder "task"`. Or per repo, in its profile:
+   `agent: {model: {opencode: "openrouter/qwen/qwen3-coder"}}`. The run's flag wins
+   over the profile.
+3. A hosted model is billed. OpenCode reports a cost with each step; Shepherd sums it
+   per run, shows it in the run log's closing line, and records it as `opencode`'s spend,
+   so it counts in the daily total and in budgets. A local model has no rates and
+   records 0.
+
+`--pure` only disables external plugins, and `OPENCODE_CONFIG_CONTENT` is inline
+config layered over your files; neither is documented as changing where OpenCode reads
+its logins, and Shepherd does not set a variable that moves OpenCode's data directory.
+Run a hosted model once to confirm the login is found: a run that answers, rather
+than failing with an authentication error, shows it is.
 
 ## What a run does
 
@@ -76,8 +112,9 @@ A config change applies to the next run; no daemon restart is needed.
   per command, so `touch` is refused.
 - **Sessions**: every JSON event carries the session id, which Shepherd records; the next
   run of the lane resumes it with `-s`.
-- **Cost**: tokens are logged. Cost is recorded as 0 because OpenCode has no rates for a
-  local model; if a configured provider does report a cost, it is recorded.
+- **Cost**: tokens are logged. Cost is recorded as 0 for a local model, which OpenCode
+  has no rates for. A priced provider's per-step cost is summed per run, logged at the end
+  and recorded as `opencode`'s spend.
 - **Output** is read from `--format json` and goes through the same redaction as every
   other agent's.
 
