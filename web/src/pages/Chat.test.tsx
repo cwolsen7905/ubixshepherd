@@ -1,17 +1,22 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
-import type { Decision } from '../api/types'
+import type { Decision, DecisionView } from '../api/types'
+import * as client from '../api/client'
 import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { DeskThread } from '../state/desk'
-import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, request, spend, status } from '../test/fixtures'
+import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, lane, request, run, spend, status } from '../test/fixtures'
 import type { DeskApi } from '../api/desk'
 import { ChatPage, Markdown } from './Chat'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
-function liveWith(feed = [feedItem({ id: 1, kind: 'decision', ref: 5, text: 'decision 5 asked', created: '2026-10-08T10:01:00Z' })], answer?: Api['answer']) {
+function liveWith(
+  feed = [feedItem({ id: 1, kind: 'decision', ref: 5, text: 'decision 5 asked', created: '2026-10-08T10:01:00Z' })],
+  answer?: Api['answer'],
+  lists: Partial<Api> = {},
+) {
   const api: Api = {
     status: async () => status(),
     lanes: async () => [],
@@ -27,6 +32,7 @@ function liveWith(feed = [feedItem({ id: 1, kind: 'decision', ref: 5, text: 'dec
     dismissRun: async () => { throw new Error('unused') },
     undismissRun: async () => { throw new Error('unused') },
     answer: answer ?? vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words })),
+    ...lists,
   }
   return new Live(api, still)
 }
@@ -369,6 +375,60 @@ describe('following the bottom', () => {
     expect(last()).toEqual({ top: 2000 })
     grow(2200)
     expect(last()).toEqual({ top: 2200 })
+  })
+})
+
+describe('backlog rail', () => {
+  beforeEach(() => localStorage.clear())
+  afterEach(() => vi.restoreAllMocks())
+
+  const quiet = [feedItem({ id: 1, kind: 'run_passed', ref: 10, text: 'run 10 passed in feat/login', created: '2026-10-08T10:04:00Z' })]
+  const lists = { lanes: async () => [lane({ id: 1 })], runs: async () => [run({ id: 10, lane_id: 1, ended: '2026-10-08T10:04:00Z' })] }
+  const withHistory = fakeDeskApi({ history: async () => ({ events: history, more: false }) })
+
+  it('lists what waits, most urgent first, with counts and links to its page', async () => {
+    await show(withHistory, liveWith(quiet, undefined, { lanes: async () => [lane({ id: 1 }), lane({ id: 2, name: 'docs/readme' })], runs: async () => [run({ id: 11, lane_id: 2, ended: '2026-10-08T10:04:00Z' })], decisions: async (st) => (st === 'open' ? [decision({ id: 3 }) as DecisionView] : []) }))
+    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
+    expect(within(rail).getByRole('button', { name: 'Backlog 2 needs you · 1 idle' })).toBeInTheDocument()
+    const rows = within(rail).getAllByRole('listitem')
+    expect(rows[0]).toHaveTextContent('decision 3')
+    expect(rows[rows.length - 1]).toHaveTextContent('last run 11 succeeded')
+    expect(within(rows[rows.length - 1] as HTMLElement).getByRole('link', { name: 'docs/readme' })).toHaveAttribute('href', '#/lanes/2')
+  })
+
+  it('jumps to the thread row where an idle lane went quiet', async () => {
+    const user = userEvent.setup()
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    await show(withHistory, liveWith(quiet, undefined, { ...lists, decisions: async () => [], requests: async () => [] }))
+    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
+    await user.click(await within(rail).findByRole('button', { name: 'in thread' }))
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    const row = scrollIntoView.mock.contexts[0] as HTMLElement
+    expect(row.id).toBe('thread-f1')
+    expect(row).toHaveClass('is-flash')
+  })
+
+  it('remembers it was closed', async () => {
+    const user = userEvent.setup()
+    await show(withHistory, liveWith(quiet, undefined, lists))
+    const toggle = await screen.findByRole('button', { name: /Backlog/ })
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(localStorage.getItem('shepherd.chat.backlog')).toBe('closed')
+  })
+
+  it('says when nothing waits, and shows today\u2019s spend against the budget and a quota hold', async () => {
+    vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
+      status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, quota_holds: [{ agent: 'claude', until: '2026-10-08T14:05:00Z' }] } }),
+    )
+    await show(withHistory, liveWith([], undefined, { decisions: async () => [], requests: async () => [] }))
+    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
+    expect(within(rail).getByText('nothing waiting')).toBeInTheDocument()
+    expect(within(rail).getByText(/Nothing is waiting on you/)).toBeInTheDocument()
+    expect(within(rail).getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '4.1')
+    expect(await within(rail).findByText(/claude is out of quota until/)).toBeInTheDocument()
   })
 })
 

@@ -1,9 +1,11 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { DecisionView, DeskEvent } from '../api/types'
+import { Backlog } from '../components/Backlog'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { useNow } from '../hooks'
 import { answerKey, clearDraft, draftKey, readDraft, writeDraft } from '../model/chatDraft'
+import { backlogItems, threadId } from '../model/backlog'
 import { MARKS } from '../model/marks'
 import { href } from '../router'
 import { useLive, useSnapshot } from '../state/context'
@@ -259,6 +261,20 @@ function ChatThread({
   const shown = new Set(items.flatMap((it) => (it.type === 'feed' && it.f.event === 'decision_asked' ? [it.f.ref ?? 0] : [])))
   const unplaced = live.decisions.filter((x) => !shown.has(x.id))
 
+  // The rail's "in thread" links name rows the thread shows; one that is not loaded has none.
+  const backlog = useMemo(() => {
+    const shownFeed = new Set(items.flatMap((it) => (it.type === 'feed' ? [it.f.id] : [])))
+    return backlogItems({ ...live, shown: shownFeed })
+  }, [items, live])
+  const [flash, setFlash] = useState('')
+  const jump = useCallback((anchor: string) => {
+    const el = document.getElementById(threadId(anchor))
+    if (!el) return
+    el.scrollIntoView?.({ block: 'center' })
+    setFlash(anchor)
+    window.setTimeout(() => setFlash((f) => (f === anchor ? '' : f)), 2500)
+  }, [])
+
   const follow = useFollowBottom(root, [d.loaded, items.length, d.partial, unplaced.length])
   useEffect(() => {
     if (confirming) confirmButton.current?.focus()
@@ -339,40 +355,45 @@ function ChatThread({
         </p>
       )}
 
-      {d.more && (
-        <p className="chat-earlier">
-          <button type="button" className="link-button" onClick={() => void thread.loadEarlier()}>
-            Load earlier messages
-          </button>
-        </p>
-      )}
+      <div className="chat-layout">
+        <Backlog items={backlog} now={now} spend={live.spend} onJump={jump} />
+        <div className="chat-main">
+        {d.more && (
+          <p className="chat-earlier">
+            <button type="button" className="link-button" onClick={() => void thread.loadEarlier()}>
+              Load earlier messages
+            </button>
+          </p>
+        )}
 
-      <div className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded}>
-        {d.loaded && items.length === 0 && d.partial === '' && unplaced.length === 0 && (
-          <p className="faint thread-empty">Nothing said yet. Ask the front desk what the flock is doing.</p>
-        )}
-        {items.map((it) =>
-          it.type === 'desk' ? (
-            <DeskRow key={it.key} e={it.e} now={now} />
-          ) : (
-            <FeedRow key={it.key} item={it.f} now={now} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
-          ),
-        )}
-        {unplaced.map((x) => (
-          <div key={`d${x.id}`} className="trow trow-decision">
-            <Glyph glyph={MARKS.decision_asked.glyph} tone="warn" label="decision waiting" />
-            <InlineDecision d={x} />
-          </div>
-        ))}
-        {d.partial !== '' && (
-          <div className="msg msg-assistant is-partial">
-            <span className="msg-who">Front desk</span>
-            <Markdown text={d.partial} />
-          </div>
-        )}
+        <div className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded}>
+          {d.loaded && items.length === 0 && d.partial === '' && unplaced.length === 0 && (
+            <p className="faint thread-empty">Nothing said yet. Ask the front desk what the flock is doing.</p>
+          )}
+          {items.map((it) =>
+            it.type === 'desk' ? (
+              <DeskRow key={it.key} e={it.e} now={now} />
+            ) : (
+              <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
+            ),
+          )}
+          {unplaced.map((x) => (
+            <div key={`d${x.id}`} id={threadId(`d${x.id}`)} className={`trow trow-decision${flash === `d${x.id}` ? ' is-flash' : ''}`}>
+              <Glyph glyph={MARKS.decision_asked.glyph} tone="warn" label="decision waiting" />
+              <InlineDecision d={x} />
+            </div>
+          ))}
+          {d.partial !== '' && (
+            <div className="msg msg-assistant is-partial">
+              <span className="msg-who">Front desk</span>
+              <Markdown text={d.partial} />
+            </div>
+          )}
+        </div>
+
+        <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} onSend={follow.jump} />
+        </div>
       </div>
-
-      <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} onSend={follow.jump} />
     </div>
   )
 }
@@ -543,10 +564,17 @@ function DeskRow({ e, now }: { e: DeskEvent; now: number }) {
 
 const RUN_KINDS = new Set(['run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota'])
 
-function FeedRow({ item, now, decision }: { item: { event: string; text: string; ref?: number; created: string }; now: number; decision?: DecisionView }) {
+function FeedRow({
+  item, now, decision, flash = false,
+}: {
+  item: { id?: number; event: string; text: string; ref?: number; created: string }
+  now: number
+  decision?: DecisionView
+  flash?: boolean
+}) {
   const age = since(item.created, now)
   return (
-    <div className={`trow${decision ? ' trow-decision' : ''}`}>
+    <div id={item.id ? threadId(`f${item.id}`) : undefined} className={`trow${decision ? ' trow-decision' : ''}${flash ? ' is-flash' : ''}`}>
       <EventGlyph event={item.event} />
       <div className="trow-body">
         <p className="trow-line">
