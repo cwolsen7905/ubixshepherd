@@ -54,6 +54,7 @@ type Server struct {
 	sessLocks map[string]*sync.Mutex
 	live      atomic.Pointer[config.Config]
 	reloadMu  sync.Mutex
+	commits   fold.CommitClock // lane commit times, for last activity
 	// DeskAgent runs the front desk's turns; nil is Claude Code. DeskGrace is how long
 	// the desk still wakes after its last client leaves; 0 is the default.
 	DeskAgent desk.Agent
@@ -507,13 +508,25 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+		active, err := s.Store.LaneActivity(ctx, rp.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		commits := s.commits.Times(ctx, rp.Path, lanes)
 		for _, l := range lanes {
 			v := api.LaneView{Lane: l, Repo: rp.Name}
 			// The store holds the last the forge said, so an unreachable forge keeps it.
-			if lf, err := s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 {
+			lf, err := s.Store.LaneForge(ctx, l.ID)
+			if err == nil && lf.MR != 0 {
 				v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
 				v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
+				v.MRCreated, v.MRUpdated = timePtr(lf.MRCreated), timePtr(lf.MRUpdated)
+				v.PipelineStarted, v.PipelineFinished = timePtr(lf.PipelineStarted), timePtr(lf.PipelineFinished)
+			} else {
+				lf = store.LaneForge{}
 			}
+			v.LastActivity, v.LastActivityBy = laneActivity(l, active[l.ID], commits[l.ID], lf)
 			out = append(out, v)
 		}
 	}

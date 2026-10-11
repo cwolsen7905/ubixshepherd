@@ -330,3 +330,44 @@ func TestStatusRecordsLastPollAndError(t *testing.T) {
 		t.Fatalf("status after recovery = %+v", s)
 	}
 }
+
+func TestForgeTimesAreStoredAndKept(t *testing.T) {
+	f := newFixture(t)
+	head := headOf(t, f.lane.Worktree)
+	at := time.Date(2026, 10, 11, 8, 0, 0, 0, time.UTC)
+	f.f.mr = &forge.MR{IID: 7, State: "opened", SHA: head, Created: at, Updated: at.Add(time.Hour),
+		Pipeline: &forge.Pipeline{ID: 9, Status: "running", SHA: head, Started: at.Add(time.Minute)}}
+	f.w.Check(f.ctx)
+	got, err := f.st.LaneForge(f.ctx, f.lane.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.MRCreated.Equal(at) || !got.MRUpdated.Equal(at.Add(time.Hour)) ||
+		!got.PipelineStarted.Equal(at.Add(time.Minute)) || !got.PipelineFinished.IsZero() {
+		t.Fatalf("stored = %+v", got)
+	}
+
+	// Only a time moved: no status changed, and the new times are still written.
+	f.f.mr.Updated = at.Add(2 * time.Hour)
+	f.f.mr.Pipeline.Status = "success"
+	f.f.mr.Pipeline.Finished = at.Add(10 * time.Minute)
+	f.w.Check(f.ctx)
+	got, _ = f.st.LaneForge(f.ctx, f.lane.ID)
+	if !got.MRUpdated.Equal(at.Add(2*time.Hour)) || !got.PipelineFinished.Equal(at.Add(10*time.Minute)) {
+		t.Errorf("after update = %+v", got)
+	}
+	f.f.mr.Updated = at.Add(3 * time.Hour)
+	f.w.Check(f.ctx)
+	got, _ = f.st.LaneForge(f.ctx, f.lane.ID)
+	if !got.MRUpdated.Equal(at.Add(3 * time.Hour)) {
+		t.Errorf("a time-only change was not saved: %+v", got)
+	}
+
+	// An unreachable forge keeps the last seen.
+	f.f.err = errors.New("dial tcp: no route to host")
+	f.w.Check(f.ctx)
+	again, _ := f.st.LaneForge(f.ctx, f.lane.ID)
+	if again != got {
+		t.Errorf("forge error changed %+v to %+v", got, again)
+	}
+}

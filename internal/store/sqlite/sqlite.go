@@ -302,6 +302,12 @@ var migrations = []string{
 	// A failed or stopped run the person has dismissed from the board: when, or '' for
 	// one not dismissed. The run, its log and its record stay.
 	`ALTER TABLE runs ADD COLUMN dismissed TEXT NOT NULL DEFAULT '';`,
+	// When the forge says the merge request was created and last updated, and its head
+	// pipeline started and finished: '' for not known.
+	`ALTER TABLE lane_forge ADD COLUMN mr_created TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lane_forge ADD COLUMN mr_updated TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lane_forge ADD COLUMN pipeline_started TEXT NOT NULL DEFAULT '';
+	ALTER TABLE lane_forge ADD COLUMN pipeline_finished TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -936,22 +942,40 @@ func (s *DB) SetSetting(ctx context.Context, key, value string) error {
 
 func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, error) {
 	f := store.LaneForge{LaneID: laneID}
-	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha FROM lane_forge WHERE lane_id = ?`, laneID).
-		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries, &f.MergeSHA)
+	var created, updated, started, finished string
+	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
+		mr_created, mr_updated, pipeline_started, pipeline_finished FROM lane_forge WHERE lane_id = ?`, laneID).
+		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries, &f.MergeSHA,
+			&created, &updated, &started, &finished)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
+	f.MRCreated, f.MRUpdated = parseTime(created), parseTime(updated)
+	f.PipelineStarted, f.PipelineFinished = parseTime(started), parseTime(finished)
 	return f, err
+}
+
+// timeText is a time as stored: UTC, or ” for the zero time.
+func timeText(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
+			mr_created, mr_updated, pipeline_started, pipeline_finished, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (lane_id) DO UPDATE SET mr = excluded.mr, mr_state = excluded.mr_state, mr_url = excluded.mr_url,
 			pipeline = excluded.pipeline, pipeline_status = excluded.pipeline_status, fix_tries = excluded.fix_tries,
-			gate_tries = excluded.gate_tries, merge_sha = excluded.merge_sha, updated = excluded.updated`,
-		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, f.MergeSHA, now())
+			gate_tries = excluded.gate_tries, merge_sha = excluded.merge_sha,
+			mr_created = excluded.mr_created, mr_updated = excluded.mr_updated,
+			pipeline_started = excluded.pipeline_started, pipeline_finished = excluded.pipeline_finished,
+			updated = excluded.updated`,
+		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, f.MergeSHA,
+		timeText(f.MRCreated), timeText(f.MRUpdated), timeText(f.PipelineStarted), timeText(f.PipelineFinished), now())
 	return err
 }
 

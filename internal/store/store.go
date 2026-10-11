@@ -554,6 +554,27 @@ type LaneForge struct {
 	GateTries int `json:"gate_tries,omitempty"`
 	// MergeSHA is the commit that landed the lane, once the forge reports it merged.
 	MergeSHA string `json:"merge_sha,omitempty"`
+	// What the forge last said about when: the request's creation and last update, and
+	// the head pipeline's start and finish. Zero is not known (not yet seen, or still
+	// running for PipelineFinished). Kept in UTC so a LaneForge compares with ==.
+	MRCreated        time.Time `json:"mr_created,omitzero"`
+	MRUpdated        time.Time `json:"mr_updated,omitzero"`
+	PipelineStarted  time.Time `json:"pipeline_started,omitzero"`
+	PipelineFinished time.Time `json:"pipeline_finished,omitzero"`
+}
+
+// Activity sources: what LaneActivity can say a lane's latest activity was.
+const (
+	ActivityRun      = "run"      // a run started or ended
+	ActivityDecision = "decision" // a decision was asked or answered
+	ActivityRequest  = "request"  // a request to or from the lane's runs
+)
+
+// Activity is the latest moment one of a lane's runs, decisions or requests moved, and
+// which of them it was.
+type Activity struct {
+	At time.Time `json:"at"`
+	By string    `json:"by"`
 }
 
 // Reservation states.
@@ -897,6 +918,11 @@ type Store interface {
 	// LaneForge returns a zero value (with LaneID set) for a lane the forge never saw.
 	LaneForge(ctx context.Context, laneID int64) (LaneForge, error)
 	PutLaneForge(ctx context.Context, f LaneForge) error
+	// LaneActivity returns, for each open lane of a repo that has any, the latest time
+	// one of its runs started or ended, one of its runs' decisions was asked or answered,
+	// or a request to or from one of its runs was made or updated. Forge and git times
+	// are not here: they are not the store's.
+	LaneActivity(ctx context.Context, repoID int64) (map[int64]Activity, error)
 	// Driver names the backing database, for status.
 	Driver() string
 	Close() error

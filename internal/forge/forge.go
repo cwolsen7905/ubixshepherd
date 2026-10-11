@@ -16,6 +16,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 )
 
 // MR is a merge (or pull) request.
@@ -27,6 +28,9 @@ type MR struct {
 	MergeSHA string    `json:"merge_sha,omitempty"`
 	URL      string    `json:"url"`
 	Pipeline *Pipeline `json:"pipeline,omitempty"`
+	// Created and Updated are when the forge made the request and last changed it
+	// (comments and pushes count); zero when the forge did not say.
+	Created, Updated time.Time
 }
 
 // Pipeline is a request's head pipeline.
@@ -35,6 +39,9 @@ type Pipeline struct {
 	Status string `json:"status"` // running, pending, success, failed, canceled, skipped, ...
 	SHA    string `json:"sha"`
 	URL    string `json:"url"`
+	// Started is when a runner picked the pipeline up, Finished when it ended; zero
+	// while not begun or still running.
+	Started, Finished time.Time
 }
 
 // Job is one failed job of a pipeline.
@@ -148,18 +155,38 @@ func glab(ctx context.Context, args ...string) ([]byte, error) {
 func (g *GitLab) project() string { return "projects/" + url.PathEscape(g.Project) }
 
 type glMR struct {
-	IID          int    `json:"iid"`
-	State        string `json:"state"`
-	SHA          string `json:"sha"`
-	MergeCommit  string `json:"merge_commit_sha"`
-	SquashCommit string `json:"squash_commit_sha"`
-	WebURL       string `json:"web_url"`
-	HeadPipeline *struct {
-		ID     int64  `json:"id"`
-		Status string `json:"status"`
-		SHA    string `json:"sha"`
-		WebURL string `json:"web_url"`
-	} `json:"head_pipeline"`
+	IID          int         `json:"iid"`
+	State        string      `json:"state"`
+	SHA          string      `json:"sha"`
+	MergeCommit  string      `json:"merge_commit_sha"`
+	SquashCommit string      `json:"squash_commit_sha"`
+	WebURL       string      `json:"web_url"`
+	CreatedAt    string      `json:"created_at"`
+	UpdatedAt    string      `json:"updated_at"`
+	HeadPipeline *glPipeline `json:"head_pipeline"`
+}
+
+type glPipeline struct {
+	ID         int64  `json:"id"`
+	Status     string `json:"status"`
+	SHA        string `json:"sha"`
+	WebURL     string `json:"web_url"`
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+}
+
+func (p glPipeline) pipeline() *Pipeline {
+	return &Pipeline{ID: p.ID, Status: p.Status, SHA: p.SHA, URL: p.WebURL,
+		Started: glTime(p.StartedAt), Finished: glTime(p.FinishedAt)}
+}
+
+// glTime reads one of GitLab's timestamps, in UTC; zero for null, empty or unreadable.
+func glTime(v string) time.Time {
+	t, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		return time.Time{}
+	}
+	return t.UTC()
 }
 
 func (g *GitLab) MRForBranch(ctx context.Context, branch string) (*MR, error) {
@@ -176,12 +203,13 @@ func (g *GitLab) MRForBranch(ctx context.Context, branch string) (*MR, error) {
 	if err := g.api(ctx, fmt.Sprintf("%s/merge_requests/%d", g.project(), list[0].IID), &one); err != nil {
 		return nil, err
 	}
-	mr := &MR{IID: one.IID, State: one.State, SHA: one.SHA, URL: one.WebURL, MergeSHA: one.SquashCommit}
+	mr := &MR{IID: one.IID, State: one.State, SHA: one.SHA, URL: one.WebURL, MergeSHA: one.SquashCommit,
+		Created: glTime(one.CreatedAt), Updated: glTime(one.UpdatedAt)}
 	if one.MergeCommit != "" {
 		mr.MergeSHA = one.MergeCommit
 	}
 	if p := one.HeadPipeline; p != nil {
-		mr.Pipeline = &Pipeline{ID: p.ID, Status: p.Status, SHA: p.SHA, URL: p.WebURL}
+		mr.Pipeline = p.pipeline()
 	}
 	return mr, nil
 }
@@ -206,20 +234,14 @@ func (g *GitLab) CreateMR(ctx context.Context, source, target, title, descriptio
 }
 
 func (g *GitLab) RefPipeline(ctx context.Context, ref string) (*Pipeline, error) {
-	var list []struct {
-		ID     int64  `json:"id"`
-		Status string `json:"status"`
-		SHA    string `json:"sha"`
-		WebURL string `json:"web_url"`
-	}
+	var list []glPipeline
 	if err := g.api(ctx, fmt.Sprintf("%s/pipelines?ref=%s&order_by=id&sort=desc&per_page=1", g.project(), url.QueryEscape(ref)), &list); err != nil {
 		return nil, err
 	}
 	if len(list) == 0 {
 		return nil, nil
 	}
-	p := list[0]
-	return &Pipeline{ID: p.ID, Status: p.Status, SHA: p.SHA, URL: p.WebURL}, nil
+	return list[0].pipeline(), nil
 }
 
 func (g *GitLab) FailedJobs(ctx context.Context, pipeline int64) ([]Job, error) {
