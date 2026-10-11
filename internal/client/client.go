@@ -466,6 +466,19 @@ func (c *Client) StopRun(ctx context.Context, id int64) error {
 	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)
 }
 
+// DismissRun hides a failed or stopped run from the attention lists. The daemon refuses a
+// running or succeeded run.
+func (c *Client) DismissRun(ctx context.Context, id int64) (api.RunView, error) {
+	var out api.RunView
+	return out, c.do(ctx, http.MethodPost, api.PathRun(id)+"/dismiss", nil, &out)
+}
+
+// UndismissRun brings a dismissed run back into the attention lists.
+func (c *Client) UndismissRun(ctx context.Context, id int64) (api.RunView, error) {
+	var out api.RunView
+	return out, c.do(ctx, http.MethodPost, api.PathRun(id)+"/undismiss", nil, &out)
+}
+
 func (c *Client) Workspaces(ctx context.Context) ([]api.WorkspaceDetail, error) {
 	var out []api.WorkspaceDetail
 	return out, c.do(ctx, http.MethodGet, api.PathWorkspaces, nil, &out)

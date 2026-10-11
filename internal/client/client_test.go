@@ -133,3 +133,23 @@ func TestBriefCallsMatchTheRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestDismissAndUndismissRun(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.URL.Path)
+		w.Write([]byte(`{"id":7,"lane":"l"}`))
+	}))
+	defer srv.Close()
+	c := &Client{base: srv.URL, http: srv.Client()}
+	if _, err := c.DismissRun(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	v, err := c.UndismissRun(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.ID != 7 || len(got) != 2 || got[0] != "POST /v1/runs/7/dismiss" || got[1] != "POST /v1/runs/7/undismiss" {
+		t.Errorf("view %+v, calls %v", v, got)
+	}
+}
