@@ -5,14 +5,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const { CHROME, SHOTS_BASE, SHOTS_OUT, SHOTS_W, SHOTS_H, SHOTS_SCALE, SHOTS_THEMES } = process.env
-const PAGES = [
+const { CHROME, SHOTS_BASE, SHOTS_OUT, SHOTS_W, SHOTS_H, SHOTS_SCALE, SHOTS_THEMES, SHOTS_PAGES } = process.env
+const ALL_PAGES = [
   ['chat', '#/chat'],
   ['board', '#/'],
   ['lane', '#/lanes/4'],
   ['run-log', '#/runs/17/log'],
   ['decisions', '#/decisions'],
+  ['timeline', '#/timeline'],
 ]
+// SHOTS_PAGES names the pages to take ("timeline board"); by default, all of them.
+const only = (SHOTS_PAGES ?? '').split(/\s+/).filter(Boolean)
+const PAGES = only.length ? ALL_PAGES.filter(([name]) => only.includes(name)) : ALL_PAGES
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'shots-chrome-'))
@@ -54,7 +58,11 @@ async function shot(name, route, theme) {
   const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true })
   const s = (m, p) => send(m, p, sessionId)
   await s('Emulation.setDeviceMetricsOverride', { width: +SHOTS_W, height: +SHOTS_H, deviceScaleFactor: +SHOTS_SCALE, mobile: false })
-  await s('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
+  // The pulse and the breathing are frozen, so a shot repeats: the timeline's static markers
+  // are drawn for that.
+  await s('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-color-scheme', value: theme }, { name: 'prefers-reduced-motion', value: 'reduce' }],
+  })
   await s('Page.navigate', { url: `${SHOTS_BASE}/${route}` })
   // Ready when the lists and the thread have loaded; a page that never settles is taken as it is.
   const settled = 'document.body.innerText.length > 80 && !/Connecting|Loading|not ready/i.test(document.body.innerText)'

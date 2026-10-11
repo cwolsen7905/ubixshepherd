@@ -9,6 +9,22 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Added
+
+- **A timeline in the web UI.** `#/timeline` (key `g t`, and a Timeline entry in the nav)
+  shows the day's work at once: a track per lane grouped by repo, a bar per run coloured
+  by its agent, running bars that grow with the clock and end in a pulsing cap, a lantern
+  on every decision or request waiting on you, a tick for each merge, a notch on each
+  failure, and a spend band against the daily budget. It has Today, Last 24 hours and Last
+  7 days, an agent filter in the legend, hover and keyboard-focus details, click-through to
+  the run, lane or decision, and a table view of the same runs. It is built from the live
+  snapshot and the existing history endpoints, with no daemon change; the agent colours
+  were checked with the dataviz validator, and the page follows the dark theme, reduced
+  motion, forced colors and the narrow layout. The design is `docs/swarm-timeline.md`.
+- The web stub for screenshots (`web/shots`) serves `BUSY=1`, a heavy day, answers its
+  history endpoints with its runs, and takes `SHOTS_PAGES` to choose pages. Shots now
+  emulate reduced motion.
+
 ## [0.2.0-beta.1] - 2026-10-11
 
 A beta of uBixShepherd with a web UI served by the daemon, projects, standards packs,

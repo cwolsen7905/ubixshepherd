@@ -71,6 +71,55 @@ The endpoint answers totals per group, not per record, so the chart shows each g
 largest peak and how many of its records went over 200k, not one mark per run. Copilot and
 Cursor runs carry cost only and are left out of the chart.
 
+## Timeline
+
+The **Timeline** page (`#/timeline`, key `g t`) shows the day's work at once: a track per
+lane, grouped by repo, time running left to right, each run a bar coloured by its agent.
+It is the picture of what Shepherd's parallelism looks like. The design is
+[docs/swarm-timeline.md](../docs/swarm-timeline.md); this is the first phase of it, built
+from the live snapshot and the history endpoints above, with no daemon change.
+
+- **Marks.** A run is a bar; a running one fades into a pulsing cap and grows with the
+  clock. A failed run has a notch cut into its right end. A decision or request waiting on
+  you is a lantern on its lane, which is lit along its rail; an answered decision leaves a
+  dim `?`. A merge is a tick with a diamond, at the forge's last report of the merge. Runs
+  too narrow to see (under 2 px) merge into one density tick.
+- **Spend.** A band under the tracks shows the day's spend as it stepped, from each run's
+  cost at the moment it ended, against the daily budget line. What the runs do not account
+  for (the front desk's turns) is placed at now. It falls back to nothing at each midnight,
+  and past the budget the part above the line turns red and says "over budget". A running
+  run adds its cost when it ends.
+- **Ranges.** **Today** (the default, from local midnight), **Last 24 hours** and **Last 7
+  days**, in the address (`#/timeline?range=24h&agent=claude`). The agent in the legend
+  filters: the others are dimmed to a quarter, not removed. A repo's tracks collapse, and
+  "Show idle lanes" adds the open lanes that did nothing in the range.
+- **Hover, focus and click.** Every mark takes keyboard focus and shows the same tooltip as
+  hover. A bar opens the run's log, a lane's name opens the lane, a lantern opens the
+  decision, a merge opens the lane. **View as table** below the chart lists the same runs,
+  sortable, so nothing is reachable only by hovering.
+- **Colour.** The four agents have fixed colours (light and dark) that were checked with
+  the dataviz palette validator, all pairs, against each mode's surface. The agent's name
+  is printed on a bar wide enough for it, and in the legend and table, because the
+  colour-blind pairs are only in the validator's WARN band. An agent the page does not
+  know gets a neutral slate. In forced-colors mode each agent takes a hatch angle. The
+  tokens are in `src/timeline/timeline.css`, scoped to the page.
+- **Motion.** Three things move unasked: the cap's pulse, the lantern's breathing and the
+  now line. Under `prefers-reduced-motion: reduce` they stop and static markers take their
+  place (a solid cap with a ring, a solid halo). One timer, once a second and not while
+  the tab is hidden, sets the running bars' and the now line's attributes directly; React
+  re-renders on a 15 second tick and when the lists or history change.
+
+What it reads: the snapshot's lanes, runs (with progress), open decisions, requests that
+need routing and spend, plus `GET /v1/history/runs` (newest 1000 per workspace, from
+midnight of the range's first day or six hours before it, whichever is earlier, so a run
+that began before the range is mostly there), `GET /v1/history/lanes` for lanes closed in
+it, and `GET /v1/decisions?state=answered` for the dim `?` marks, which the daemon cannot
+yet bound by time. The history is read again when the feed moves, at most once every 5
+seconds. Until the daemon has a timeline endpoint (the plan's second phase), the picture
+misses a run that began before the history window, has no tokens in the tooltip and draws
+no arcs between lanes; the merge tick sits at the forge's last report, which can be a
+minute or two after the merge.
+
 ## Build and develop it
 
 You need Node 22 or later. `make build` at the repo root builds the app and embeds it in
@@ -155,11 +204,13 @@ hidden). A server-sent event stream will replace the feed poll.
 | `src/state/live.ts` | The one live view of the daemon: lists, the feed window, polling, what you have seen |
 | `src/model/` | Pure logic: the board's grouping (`board.ts`, the dock's rules), event marks, feed refs, the log parser |
 | `src/state/desk.ts` | The front desk thread: history, the event stream, resume, sends |
-| `src/pages/` | Board, Lane, Decisions, Log, Chat |
+| `src/pages/` | Board, Lane, Decisions, Log, Chat, Timeline |
+| `src/timeline/` | The timeline's stylesheet (agent colours, marks, motion, narrow layout) and its history reads |
 | `src/styles/` | `theme.css` (tokens, light and dark) and `app.css` |
 
 ## Keys
 
-`j`/`k` move on the board, `Enter` opens, `g b` and `g d` go to the board and decisions,
+`j`/`k` move on the board, `Enter` opens, `g b`, `g d` and `g t` go to the board, decisions
+and timeline,
 `c` marks everything done as seen, `/` searches a run log (`Enter`, `n`, `N` step through
 matches), `t` expands tool calls, `f` follows the log, `?` lists the keys.
