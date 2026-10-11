@@ -54,7 +54,9 @@ type Server struct {
 	sessLocks map[string]*sync.Mutex
 	live      atomic.Pointer[config.Config]
 	reloadMu  sync.Mutex
-	commits   fold.CommitClock // lane commit times, for last activity
+	// repoMu serialises adding and unmanaging repos.
+	repoMu  sync.Mutex
+	commits fold.CommitClock // lane commit times, for last activity
 	// DeskAgent runs the front desk's turns; nil is Claude Code. DeskGrace is how long
 	// the desk still wakes after its last client leaves; 0 is the default.
 	DeskAgent desk.Agent
@@ -139,6 +141,11 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathStatus, desk|worker, s.status)
 	handle("GET "+api.PathWorkspaces, desk, s.listWorkspaces)
 	handle("POST "+api.PathWorkspaces, operatorOnly, s.saveWorkspace)
+	// Managing a repo is the person's call inside their own workspace: the desk may do
+	// it for them, a worker never (an agent must not widen its own reach).
+	handle("GET "+api.PathRepos, desk, s.listRepos)
+	handle("POST "+api.PathRepos, desk, s.acted(s.describeAddRepos, s.addRepos))
+	handle("POST "+api.PathRepos+"/{id}/unmanage", desk, s.acted(s.describeUnmanage, s.unmanageRepo))
 	handle("GET "+api.PathResolve, desk|worker, s.resolve)
 	handle("POST "+api.PathShutdown, operatorOnly, s.shutdown)
 	handle("GET "+api.PathLanes, desk, s.listLanes)

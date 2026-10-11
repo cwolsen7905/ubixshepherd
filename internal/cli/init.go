@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/workspace"
 )
@@ -19,7 +21,8 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	name := fs.String("name", "", "workspace name (default: the directory's name)")
 	yes := fs.Bool("yes", false, "accept the suggested repos without asking")
 	all := fs.Bool("all", false, "manage every repo found")
-	only := fs.String("only", "", "manage exactly these repos (comma-separated names)")
+	only := fs.String("only", "", "manage these repos (comma-separated names), adding to those already managed")
+	prune := fs.Bool("prune", false, "stop managing the repos in this workspace that were not picked")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -27,6 +30,8 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	if len(pos) > 1 || countTrue(*yes, *all, *only != "") > 1 {
 		return errUsage
 	}
+	in := bufio.NewScanner(env.Stdin)
+	interactive := false
 	dir := "."
 	if len(pos) == 1 {
 		dir = pos[0]
@@ -45,6 +50,7 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	}
 	// Repos already managed stay ticked when init runs again.
 	managed := map[string]bool{}
+	byPath := map[string]store.Repo{} // this workspace's managed repos
 	existing, err := c.Workspaces(ctx)
 	if err != nil {
 		return err
@@ -52,6 +58,9 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	for _, ws := range existing {
 		for _, r := range ws.Repos {
 			managed[r.Path] = true
+			if ws.Path == root {
+				byPath[r.Path] = r
+			}
 		}
 	}
 
@@ -80,15 +89,43 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	case !env.Interactive:
 		return errors.New("stdin is not a terminal: pass --yes, --all or --only to choose repos")
 	default:
-		if picked, err = prompt(env, found, picked, managed); err != nil {
+		if picked, err = prompt(env, in, found, picked, managed); err != nil {
 			return err
 		}
+		// Unticking a managed repo stops managing it, once the person has said so.
+		interactive = true
 	}
 
 	req := api.SaveWorkspace{Name: *name, Path: root}
+	pickedPath := map[string]bool{}
 	for i, f := range found {
 		if picked[i] {
+			pickedPath[f.Path] = true
 			req.Repos = append(req.Repos, store.Repo{Name: f.Name, Path: f.Path, Remote: f.Remote, Stacks: f.Stacks})
+		}
+	}
+	var unlisted []store.Repo
+	for p, r := range byPath {
+		if !pickedPath[p] {
+			unlisted = append(unlisted, r)
+		}
+	}
+	slices.SortFunc(unlisted, func(a, b store.Repo) int { return strings.Compare(a.Name, b.Name) })
+	drop := unlisted
+	if !*prune && !interactive {
+		drop = nil
+	}
+	if len(drop) > 0 {
+		// Check before saving anything, so a refusal leaves the workspace as it was.
+		if err := checkNoOpenLanes(ctx, c, drop); err != nil {
+			return err
+		}
+		if interactive && !*yes {
+			names := repoNames(drop)
+			fmt.Fprintf(env.Stdout, "This stops managing %s: %s. Their history is kept. Continue? [y/N] ", plural(len(drop), "repo", "repos"), strings.Join(names, ", "))
+			if !in.Scan() || !strings.EqualFold(strings.TrimSpace(in.Text()), "y") {
+				return errors.New("not confirmed; nothing registered")
+			}
 		}
 	}
 	got, err := c.SaveWorkspace(ctx, req)
@@ -98,6 +135,49 @@ func runInit(ctx context.Context, env Env, args []string) error {
 	fmt.Fprintf(env.Stdout, "Workspace %s at %s: %s managed.\n", got.Name, got.Path, plural(len(got.Repos), "repo", "repos"))
 	for _, r := range got.Repos {
 		fmt.Fprintf(env.Stdout, "  %s\n", r.Name)
+	}
+	for _, r := range drop {
+		if _, err := c.UnmanageRepo(ctx, r.ID, "init --prune"); err != nil {
+			return fmt.Errorf("stop managing %s: %w", r.Name, err)
+		}
+		fmt.Fprintf(env.Stdout, "Stopped managing %s (its history is kept).\n", r.Name)
+	}
+	if len(drop) == 0 && len(unlisted) > 0 {
+		fmt.Fprintf(env.Stdout, "Also still managed, not listed: %s\n", strings.Join(repoNames(unlisted), ", "))
+		fmt.Fprintln(env.Stdout, "To stop managing one: shepherd repo remove <name>   (or run init again with --prune)")
+	}
+	fmt.Fprintln(env.Stdout, "To add another repo later: shepherd repo add <name>")
+	return nil
+}
+
+func repoNames(repos []store.Repo) []string {
+	names := make([]string, len(repos))
+	for i, r := range repos {
+		names[i] = r.Name
+	}
+	return names
+}
+
+// checkNoOpenLanes refuses to stop managing a repo that has open lanes, naming them.
+func checkNoOpenLanes(ctx context.Context, c *client.Client, repos []store.Repo) error {
+	var busy []string
+	for _, r := range repos {
+		lanes, err := c.Lanes(ctx, r.WorkspaceID, r.ID)
+		if err != nil {
+			return err
+		}
+		var open []string
+		for _, l := range lanes {
+			if l.State != store.LaneClosed {
+				open = append(open, l.Name)
+			}
+		}
+		if len(open) > 0 {
+			busy = append(busy, fmt.Sprintf("%s has %s: %s", r.Name, plural(len(open), "open lane", "open lanes"), strings.Join(open, ", ")))
+		}
+	}
+	if len(busy) > 0 {
+		return fmt.Errorf("cannot stop managing: %s; close them first (nothing was changed)", strings.Join(busy, "; "))
 	}
 	return nil
 }
@@ -130,8 +210,7 @@ func pickNamed(found []workspace.Found, list string) ([]bool, error) {
 }
 
 // prompt shows the found repos and lets the person toggle them until they accept.
-func prompt(env Env, found []workspace.Found, picked []bool, managed map[string]bool) ([]bool, error) {
-	in := bufio.NewScanner(env.Stdin)
+func prompt(env Env, in *bufio.Scanner, found []workspace.Found, picked []bool, managed map[string]bool) ([]bool, error) {
 	w := env.Stdout
 	for {
 		fmt.Fprintln(w, "Repos found ([x] = Shepherd will manage it):")

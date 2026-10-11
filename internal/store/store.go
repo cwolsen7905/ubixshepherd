@@ -50,6 +50,9 @@ type Repo struct {
 	// a pack is chosen.
 	Stacks  []string  `json:"stacks,omitempty"`
 	Created time.Time `json:"created"`
+	// Removed is when the repo was unmanaged; nil for a managed one. A removed repo
+	// keeps its row, lanes, runs and history, and Repos does not list it.
+	Removed *time.Time `json:"removed,omitempty"`
 }
 
 // Lane is one stream of work in a repo, on its own branch and worktree.
@@ -789,11 +792,19 @@ type WebSession struct {
 // Store is Shepherd's state.
 type Store interface {
 	// SaveWorkspace creates the workspace at ws.Path, or renames the one already there,
-	// and adds or updates each repo by path. Repos not listed are left as they are.
+	// and adds or updates each repo by path, managing it again if it was removed. Repos
+	// not listed are left as they are.
 	SaveWorkspace(ctx context.Context, ws Workspace, repos []Repo) (Workspace, error)
 	Workspaces(ctx context.Context) ([]Workspace, error)
+	// Repos returns a workspace's managed repos: those not removed.
 	Repos(ctx context.Context, workspaceID int64) ([]Repo, error)
+	// AllRepos also returns the removed ones, with Removed set.
+	AllRepos(ctx context.Context, workspaceID int64) ([]Repo, error)
+	// Repo returns a repo by id, removed or not, so history stays readable.
 	Repo(ctx context.Context, id int64) (Repo, error)
+	// SetRepoRemoved marks a repo unmanaged at the time, or with nil manages it again.
+	// ErrNotFound for no such repo. It never touches lanes, runs or history.
+	SetRepoRemoved(ctx context.Context, id int64, at *time.Time) error
 	// Lanes returns a repo's lanes that are not closed.
 	Lanes(ctx context.Context, repoID int64) ([]Lane, error)
 	Lane(ctx context.Context, id int64) (Lane, error)

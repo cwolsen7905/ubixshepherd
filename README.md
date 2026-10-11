@@ -62,6 +62,7 @@ Shepherd needs **git 2.31 or newer**, and the CLIs of the agents you want it to 
 
 ```sh
 shepherd init ~/git        # finds the repos below ~/git; you choose which Shepherd manages
+shepherd repo add <name>   # add a repo later, no restart; shepherd repo scan shows what was found
 shepherd daemon install    # optional: start at login (macOS and Linux; on Windows, shepherd daemon start)
 shepherd chat              # from ~/git: one conversation with the front desk
 shepherd web               # or the browser UI, signed in with a one-use link
