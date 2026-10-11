@@ -216,6 +216,12 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathProjects+"/{name}/brief", desk, s.getBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/draft", desk, s.draftBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/approve", desk, s.personsApproval(s.approveBrief))
+	// The next-up list: work planned but not being acted on. The desk reads and adds;
+	// choosing a state or the order is the person's (personsNext). No worker route.
+	handle("GET "+api.PathNext, desk, s.listNext)
+	handle("POST "+api.PathNext, desk, s.addNext)
+	handle("GET "+api.PathNext+"/{id}", desk, s.getNext)
+	handle("PATCH "+api.PathNext+"/{id}", desk, s.patchNext)
 	handle("GET "+api.PathRequests, desk, s.listRequests)
 	handle("POST "+api.PathRequests+"/{id}/route", desk, s.acted(s.describeRoute, s.withRunner(s.routeRequest)))
 	handle("POST "+api.PathRequests+"/{id}/close", desk, s.acted(s.describeCloseRequest, s.withRunner(s.closeRequest)))
@@ -548,15 +554,30 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
-	var req fold.OpenRequest
-	if !decode(w, r, &req) {
+	var body api.OpenLaneBody
+	if !decode(w, r, &body) {
 		return
+	}
+	req := body.OpenRequest
+	if body.Item != 0 {
+		if err := s.checkLaneItem(r.Context(), body.Item); err != nil {
+			s.nextError(w, err)
+			return
+		}
 	}
 	req.Origin = s.fillOrigin(r, req.Origin)
 	lane, err := s.Fold.Open(r.Context(), req)
 	if err != nil {
 		s.foldError(w, err)
 		return
+	}
+	if repo, err := s.Store.Repo(r.Context(), lane.RepoID); err == nil {
+		note, err := s.linkLaneItem(r.Context(), lane.Lane, repo.Name, body.Item)
+		if err != nil {
+			s.Log.Warn("link a next item to its lane", "lane", lane.Name, "err", err)
+		} else if note != "" {
+			lane.Notes = append(lane.Notes, note)
+		}
 	}
 	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree, "origin", lane.Origin.String())
 	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened via %s (scope %s)", lane.Name, lane.Origin.Surface(), strings.Join(lane.Scope, ", ")), lane.ID)

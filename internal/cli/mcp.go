@@ -110,6 +110,7 @@ func mcpTools() []mcpTool {
 				"name":   map[string]any{"type": "string", "description": "Lane and branch name: lowercase, at most one slash (feat/login, fix-crash)."},
 				"scope":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "description": "Globs relative to the repo the work stays inside: \"src/auth/**\", \"docs/*.md\", \"README.md\"."},
 				"branch": map[string]any{"type": "string", "description": "Branch name if it should differ from the lane name."},
+				"item":   map[string]any{"type": "integer", "description": "The next-up item (next_list) this lane is for; it links the item to the lane."},
 			}, "repo", "name", "scope"),
 			args: func(a map[string]any) ([]string, error) {
 				scope, err := strs(a, "scope")
@@ -122,6 +123,9 @@ func mcpTools() []mcpTool {
 				}
 				if b := str(a, "branch"); b != "" {
 					out = append(out, "--branch", b)
+				}
+				if n, ok := a["item"].(float64); ok && n > 0 {
+					out = append(out, "--item", fmt.Sprint(int64(n)))
 				}
 				return out, nil
 			},
@@ -365,6 +369,77 @@ func mcpTools() []mcpTool {
 				return out, nil
 			},
 			more: "Read one file's patch with file=<path>; the stat lists the paths.",
+		},
+		{
+			Name: "next_list",
+			Description: "The next-up list: work that is planned but not being acted on, in the person's order (approved, then planned, then deferred), each with its plan doc and, once a lane is open for it, the lane and MR. " +
+				"The item marked next is the first approved one with no lane. Use it to say what is next up; items marked proposed are not approved.",
+			InputSchema: obj(map[string]any{"all": map[string]any{"type": "boolean", "description": "Include done and dropped items."}}),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"next", "list"}
+				if all, _ := a["all"].(bool); all {
+					out = append(out, "--all")
+				}
+				return out, nil
+			},
+		},
+		{
+			Name:        "next_add",
+			Description: "Put an item on the next-up list when the person asks (\"put X on the list\"). It starts planned. Approval is the person's: pass approved only when the person's own words in this turn approve it, never your guess.",
+			InputSchema: obj(map[string]any{
+				"title":    map[string]any{"type": "string", "description": "One line naming the work: one merge request's worth."},
+				"repo":     map[string]any{"type": "string", "description": "The repo it is for, by its name in the workspace."},
+				"plan":     map[string]any{"type": "string", "description": "The plan doc, a path under the repo (docs/lane-diff.md)."},
+				"lane":     map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
+				"note":     map[string]any{"type": "string"},
+				"approved": map[string]any{"type": "boolean", "description": "Only when the person approved it in their own words in this turn."},
+			}, "title"),
+			args: func(a map[string]any) ([]string, error) {
+				if str(a, "title") == "" {
+					return nil, fmt.Errorf("title is required")
+				}
+				out := []string{"next", "add", str(a, "title")}
+				for _, k := range []string{"repo", "plan", "lane", "note"} {
+					if v := str(a, k); v != "" {
+						out = append(out, "--"+k, v)
+					}
+				}
+				if ok, _ := a["approved"].(bool); ok {
+					out = append(out, "--approved")
+				}
+				return out, nil
+			},
+		},
+		{
+			Name: "next_update",
+			Description: "Change a next-up item: its title, note, plan, repo or lane hint, and, only in a turn the person started and with their own words, its state or place. " +
+				"Shepherd refuses a state or move outside such a turn: propose it to the person instead. started and done are derived from the item's lane, not set.",
+			InputSchema: obj(map[string]any{
+				"id":    map[string]any{"type": "integer"},
+				"title": map[string]any{"type": "string"},
+				"note":  map[string]any{"type": "string"},
+				"plan":  map[string]any{"type": "string"},
+				"repo":  map[string]any{"type": "string"},
+				"lane":  map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
+				"state": map[string]any{"type": "string", "enum": []string{"planned", "approved", "deferred", "dropped", "done"}, "description": "The person's call."},
+				"move":  map[string]any{"type": "string", "enum": []string{"top", "up", "down"}, "description": "The person's call: the order is the priority."},
+			}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				out := []string{"next", "update", fmt.Sprint(int64(id))}
+				for _, k := range []string{"title", "note", "plan", "repo", "lane", "state", "move"} {
+					if _, ok := a[k]; ok {
+						out = append(out, "--"+k, str(a, k))
+					}
+				}
+				if len(out) == 3 {
+					return nil, fmt.Errorf("say what to change")
+				}
+				return out, nil
+			},
 		},
 		{
 			Name:        "session_list",

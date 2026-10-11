@@ -54,9 +54,12 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 	if err := db.PutLaneForge(ctx, store.LaneForge{LaneID: lane, MR: 3, MRState: "opened"}); err != nil {
 		t.Fatal(err)
 	}
-	// Step the schema back over the forge-times migration, which is the second to last
-	// (the last adds repos.removed), as a daemon one release old left it.
-	last := len(migrations) - 2
+	// Step the schema back over the forge-times migration, which is the third to last
+	// (then repos.removed and next_items), as a daemon one release old left it.
+	last := len(migrations) - 3
+	if _, err := db.db.ExecContext(ctx, `DROP TABLE next_items`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
