@@ -90,6 +90,8 @@ type Project struct {
 	// Intake is checked in order for a request from another project; first match wins,
 	// and no match holds.
 	Intake []IntakeRule `yaml:"intake,omitempty" json:"intake,omitempty"`
+	// Models narrows the models the project's repos may run, by agent (see ModelRules).
+	Models ModelRules `yaml:"models,omitempty" json:"models,omitempty"`
 }
 
 // ProjectBudget is a project's spend limit.

@@ -899,3 +899,86 @@ func TestRunWithoutProjectBriefIsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// The model policy: an explicit model the rules remove is refused with the rule named;
+// a default that a rule removes falls back; effort reaches Claude Code as --effort, and
+// an agent without one says so in the log and runs.
+func TestModelPolicyAndEffort(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	cfg := config.Default()
+	cfg.Models = map[string]config.AgentModels{
+		"claude": {Default: "sonnet", Catalogue: map[string]config.ModelEntry{
+			"sonnet": {Use: "everyday", Efforts: []string{"low", "high"}},
+			"opus":   {Use: "design", Efforts: []string{"low", "high"}},
+			"haiku":  {Use: "mechanical"},
+		}},
+	}
+	cfg.Repos = map[string]config.Profile{"app": {Agent: config.AgentOpts{
+		Model:  map[string]string{"claude": "opus"},
+		Effort: map[string]string{"claude": "low"},
+		Models: config.ModelRules{Deny: map[string][]string{"claude": {"opus"}}},
+	}}}
+	f.runner.SetConfig(cfg)
+	start := func(req StartRequest) (store.Run, error) {
+		t.Helper()
+		req.LaneID, req.Prompt, req.NewSession = f.lane.ID, "x", true
+		run, err := f.runner.Start(ctx, req)
+		if err != nil {
+			return run, err
+		}
+		return f.wait(t, run.ID), nil
+	}
+	_, err := start(StartRequest{Agent: "claude", Model: "opus"})
+	if err == nil || !strings.Contains(err.Error(), "repos.app.agent.models.deny.claude") || !strings.Contains(err.Error(), "permitted: haiku, sonnet") {
+		t.Fatalf("an explicit denied model: %v", err)
+	}
+	// The repo's default is denied: the workspace default runs, and the repo's low effort applies.
+	run, err := start(StartRequest{Agent: "claude"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := argsOf(t, run)
+	if run.Model != "sonnet" || !strings.Contains(a, "--model sonnet") || !strings.Contains(a, "--effort low") {
+		t.Errorf("fallback: model %q args %s", run.Model, a)
+	}
+	if !strings.Contains(logOf(t, run), "# policy: model sonnet used: ") {
+		t.Errorf("the log lacks the fallback note:\n%s", logOf(t, run))
+	}
+	run, err = start(StartRequest{Agent: "claude", Model: "sonnet", Effort: "high"})
+	if err != nil || !strings.Contains(argsOf(t, run), "--effort high") {
+		t.Fatalf("asked effort: %v %s", err, argsOf(t, run))
+	}
+	if _, err := start(StartRequest{Agent: "claude", Model: "sonnet", Effort: "max"}); err == nil || !strings.Contains(err.Error(), "low, high") {
+		t.Errorf("an effort the model does not list: %v", err)
+	}
+	run, err = start(StartRequest{Agent: "claude", Model: "haiku", Effort: "high"})
+	if err != nil || strings.Contains(argsOf(t, run), "--effort") || !strings.Contains(logOf(t, run), "effort high not applied: haiku takes none") {
+		t.Errorf("a model with no effort: %v %s", err, argsOf(t, run))
+	}
+	run, err = start(StartRequest{Agent: "copilot", Effort: "high"})
+	if err != nil || !strings.Contains(logOf(t, run), "effort high not applied: copilot has no effort setting") {
+		t.Errorf("copilot: %v\n%s", err, logOf(t, run))
+	}
+	// An automatic run (a fix) whose model is denied falls back instead of failing.
+	run, err = start(StartRequest{Agent: "claude", Model: "opus", Auto: true})
+	if err != nil || run.Model != "sonnet" {
+		t.Errorf("auto: %v %q", err, run.Model)
+	}
+}
+
+func TestCursorModelCarriesEffort(t *testing.T) {
+	for _, tc := range [][3]string{
+		{"gpt-5", "", "gpt-5"},
+		{"gpt-5", "high", "gpt-5[effort=high]"},
+		{"claude-opus[context=1m]", "high", "claude-opus[context=1m,effort=high]"},
+	} {
+		if got := cursorModel(tc[0], tc[1]); got != tc[2] {
+			t.Errorf("cursorModel(%q, %q) = %q, want %q", tc[0], tc[1], got, tc[2])
+		}
+	}
+	args := adapters["cursor"].Args(Opts{Model: "gpt-5", Effort: "low", Worktree: "/w"})
+	if !strings.Contains(strings.Join(args, " "), "--model gpt-5[effort=low]") {
+		t.Errorf("args: %v", args)
+	}
+}

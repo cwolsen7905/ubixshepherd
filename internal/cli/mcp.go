@@ -163,7 +163,8 @@ func mcpTools() []mcpTool {
 				"lane":        map[string]any{"type": "string", "description": "The lane's name; open it first with lane_open."},
 				"agent":       map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor", "opencode"}},
 				"task":        map[string]any{"type": "string", "description": "What the agent should do, as you would brief a colleague. Shepherd adds the lane, scope and rules."},
-				"model":       map[string]any{"type": "string", "description": "Model, if not the repo's default for this agent (agent.model in its profile) or the agent's own."},
+				"model":       map[string]any{"type": "string", "description": "Model, if not the repo's default for this agent. Choose it from models_list for the repo; a model the policy does not permit is refused."},
+				"effort":      map[string]any{"type": "string", "description": "Effort, in the agent's own words (Claude Code: low, medium, high, xhigh, max), from models_list. Omit for the repo's default. Not every agent or model takes one; then it is not applied and the run's log says so."},
 				"new_session": map[string]any{"type": "boolean", "description": "Start a new conversation. By default the lane keeps its conversation: the run continues the lane's last session with this agent."},
 			}, "repo", "lane", "agent", "task"),
 			args: func(a map[string]any) ([]string, error) {
@@ -171,8 +172,26 @@ func mcpTools() []mcpTool {
 				if m := str(a, "model"); m != "" {
 					out = append(out, "--model", m)
 				}
+				if e := str(a, "effort"); e != "" {
+					out = append(out, "--effort", e)
+				}
 				if n, _ := a["new_session"].(bool); n {
 					out = append(out, "--new")
+				}
+				return out, nil
+			},
+		},
+		{
+			Name:        "models_list",
+			Description: "The models each agent may run in a repo, what each is for, and the default model and effort, under the person's policy in config.yaml. Call it before lane_run and choose model and effort per task from it; a model not listed is refused.",
+			InputSchema: obj(map[string]any{
+				"repo":  propRepo,
+				"agent": map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor", "opencode"}, "description": "Only this agent. Default: all."},
+			}, "repo"),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"models", "--repo", str(a, "repo")}
+				if ag := str(a, "agent"); ag != "" {
+					out = append(out, "--agent", ag)
 				}
 				return out, nil
 			},
@@ -183,13 +202,22 @@ func mcpTools() []mcpTool {
 			InputSchema: obj(map[string]any{
 				"id":      map[string]any{"type": "integer", "description": "The run whose conversation to continue."},
 				"message": map[string]any{"type": "string", "description": "What to tell the agent next."},
+				"model":   map[string]any{"type": "string", "description": "A different model for the follow-up, from models_list. Omit to keep the run's."},
+				"effort":  map[string]any{"type": "string", "description": "Effort for the follow-up, from models_list. Omit for the repo's default."},
 			}, "id", "message"),
 			args: func(a map[string]any) ([]string, error) {
 				id, ok := a["id"].(float64)
 				if !ok {
 					return nil, fmt.Errorf("id must be a number")
 				}
-				return []string{"run", "continue", fmt.Sprint(int64(id)), str(a, "message"), "--detach"}, nil
+				out := []string{"run", "continue", fmt.Sprint(int64(id)), str(a, "message"), "--detach"}
+				if m := str(a, "model"); m != "" {
+					out = append(out, "--model", m)
+				}
+				if e := str(a, "effort"); e != "" {
+					out = append(out, "--effort", e)
+				}
+				return out, nil
 			},
 		},
 		{

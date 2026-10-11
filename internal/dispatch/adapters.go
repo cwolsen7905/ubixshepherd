@@ -30,6 +30,19 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 )
 
+// EffortMode is how an agent CLI takes a per-run effort.
+type EffortMode string
+
+const (
+	// EffortNone: the CLI has no effort setting; an effort asked of it is not applied.
+	EffortNone EffortMode = ""
+	// EffortFlag: a flag of its own, with any value the CLI accepts.
+	EffortFlag EffortMode = "flag"
+	// EffortCatalogued: a parameter of the model id, passed only for a model listed
+	// with efforts in models.<agent>.catalogue (which says the model takes one).
+	EffortCatalogued EffortMode = "catalogued"
+)
+
 // Adapter describes one agent CLI.
 type Adapter struct {
 	Name string
@@ -59,6 +72,8 @@ type Adapter struct {
 	// Idle is how long a run may print nothing before it is stopped and recorded failed
 	// as hung; nil, or 0, for no limit.
 	Idle func() time.Duration
+	// Effort says how the CLI takes an effort (see EffortMode).
+	Effort EffortMode
 	// Note is added to the brief: what this CLI's permissions need the agent to know.
 	Note string
 	// Read turns a line of the agent's output into the run log's line and any cost.
@@ -143,6 +158,9 @@ func claudeLimit(line string) (Limit, bool) {
 // goes on standard input.
 type Opts struct {
 	Model, Gate, Worktree string
+	// Effort is the run's effort, already checked against the policy and the adapter's
+	// Effort mode; "" means the CLI's own.
+	Effort string
 	// Session is the agent's conversation id; Resume says whether it already exists
 	// (continue it) or is new (start it under that id, where the CLI allows choosing).
 	Session string
@@ -230,8 +248,12 @@ var adapters = map[string]Adapter{
 			if o.Model != "" {
 				a = append(a, "--model", o.Model)
 			}
+			if o.Effort != "" {
+				a = append(a, "--effort", o.Effort)
+			}
 			return a
 		},
+		Effort:      EffortFlag,
 		WorkerReady: always,
 		// Claude Code takes a session id chosen up front.
 		NewSession: func(context.Context, string, string) (string, error) { return newUUID() },
@@ -337,10 +359,11 @@ var adapters = map[string]Adapter{
 				a = append(a, "--approve-mcps")
 			}
 			if o.Model != "" {
-				a = append(a, "--model", o.Model)
+				a = append(a, "--model", cursorModel(o.Model, o.Effort))
 			}
 			return a
 		},
+		Effort:      EffortCatalogued,
 		WorkerReady: CursorWorkerReady,
 		Read:        plainOutput,
 		// It prints "ActionRequiredError: You've hit your usage limit" and exits at once.
@@ -363,6 +386,18 @@ var adapters = map[string]Adapter{
 			return []string{"--resume", session, "--workspace", worktree}
 		},
 	},
+}
+
+// cursorModel is the --model value: Cursor takes an effort as a parameter of the model
+// id, "name[effort=high]", added to the parameters the id already has.
+func cursorModel(model, effort string) string {
+	if effort == "" {
+		return model
+	}
+	if base, params, ok := strings.Cut(model, "["); ok && strings.HasSuffix(params, "]") {
+		return base + "[" + strings.TrimSuffix(params, "]") + ",effort=" + effort + "]"
+	}
+	return model + "[effort=" + effort + "]"
 }
 
 // newUUID returns a random (version 4) UUID.

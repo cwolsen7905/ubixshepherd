@@ -82,6 +82,32 @@
 #   context: 32768
 #   output: 8192
 
+## Which models each agent may run, and what each is for (see docs/models.md). The
+## front desk reads this (models_list) and chooses a model and effort per task. With no
+## entry for an agent there is no catalogue: any model name is accepted. Once an agent
+## has a catalogue, a model outside it is refused.
+# models:
+#   claude:
+#     ## Used when a run names no model and the repo's agent.model names none.
+#     default: sonnet
+#     ## Used when a run names no effort and nothing narrower sets one.
+#     effort: medium
+#     catalogue:
+#       haiku:
+#         use: mechanical edits, renames, docs and typo fixes
+#       sonnet:
+#         use: everyday feature work and tests
+#         ## The effort values the model takes, in the agent's own words (Claude Code:
+#         ## low, medium, high, xhigh, max). Left out, the model takes none.
+#         efforts: [low, medium, high]
+#       opus:
+#         use: design-heavy or cross-cutting change, hard debugging
+#         efforts: [low, medium, high, xhigh, max]
+#         ## This model's own default effort.
+#         effort: high
+#     ## Removed for every repo; names or * globs.
+#     deny: []
+
 ## The profile every repo starts from.
 # defaults:
 #   base_branch: main
@@ -133,6 +159,14 @@
 #     ## copilot, cursor, opencode); an agent left out uses its CLI's own default. A repo's
 #     ## entries replace these for the same agent. A model given to lane run wins.
 #     model: {claude: sonnet}
+#     ## The effort each agent runs at when lane run names none, by agent, in the agent's
+#     ## own words. An agent or model that takes none ignores it.
+#     effort: {claude: medium}
+#     ## Narrow the models the repo's agents may run, by agent (names or * globs).
+#     ## allow: only these. deny: not these, and it wins. A level can only narrow what the
+#     ## workspace catalogue and the project left; it cannot allow a model back.
+#     models:
+#       deny: {claude: ["opus*"]}
 #   ## What agents may do unasked: human or agent.
 #   autonomy:
 #     ## agent: an agent may arm merge-when-pipeline-succeeds on its own lane's merge
@@ -186,6 +220,10 @@
 #     repos: [framework]
 #     ## Past this age an approved brief shows as stale; nothing is blocked. 30d if unset.
 #     brief_max_age: 30d
+#     ## Narrow the models the project's repos may run, by agent: allow keeps only those
+#     ## named, deny removes them (it wins). A repo's own rules narrow it further.
+#     models:
+#       allow: {opencode: ["local/*"]}
 #     ## Dollars per period; unset takes daemon.budget. The workspace budget holds first
 #     ## when the projects sum above it. period: day (the default) or month. cap: soft or
 #     ## hard (the default), as for daemon.budget_cap.

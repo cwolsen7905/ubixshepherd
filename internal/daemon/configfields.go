@@ -51,6 +51,9 @@ var profileMeta = map[string]fieldMeta{
 	"autonomy.plan_first":   {label: "Plan first", help: "An agent proposes a plan and waits before changing anything.", group: "Autonomy", risk: true},
 	"agent.permission_mode": {label: "Permission mode", help: "auto: the person's own Claude Code settings decide. acceptEdits and default allow a short list of commands. bypassPermissions skips every check.", group: "Agents", choices: config.PermissionModes, risk: true},
 	"agent.model":           {label: "Model per agent", help: "By agent: claude, copilot, cursor, opencode. An agent left out uses its CLI's own default.", group: "Agents"},
+	"agent.effort":          {label: "Effort per agent", help: "By agent, in the agent's own words (Claude Code: low, medium, high, xhigh, max). An agent or model that takes none ignores it.", group: "Agents"},
+	"agent.models.allow":    {label: "Models allowed", help: "By agent: only these models (names or * globs) may run in the repo. Narrows the workspace catalogue and the project.", group: "Agents", risk: true},
+	"agent.models.deny":     {label: "Models denied", help: "By agent: these models (names or * globs) may not run in the repo. Wins over allow.", group: "Agents", risk: true},
 	"follows":               {label: "Follows", help: "Repos this one depends on: a release of one opens a lane here.", group: "Releases"},
 }
 
@@ -98,6 +101,8 @@ var projectMeta = map[string]fieldMeta{
 	"budget.period": {label: "Budget period", choices: []string{config.PeriodDay, config.PeriodMonth}},
 	"budget.cap":    {label: "Budget cap", choices: config.Caps},
 	"caches":        {label: "Caches", help: "Local build caches that are not repos."},
+	"models.allow":  {label: "Models allowed", help: "By agent: only these models (names or * globs) may run in the project's repos. Narrows the workspace catalogue.", group: "Models", risk: true},
+	"models.deny":   {label: "Models denied", help: "By agent: these models (names or * globs) may not run in the project's repos. Wins over allow.", group: "Models", risk: true},
 	"intake":        {label: "Intake rules", help: "Checked in order for a request from another project; first match wins."},
 }
 
