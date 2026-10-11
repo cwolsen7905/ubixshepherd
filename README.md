@@ -5,9 +5,9 @@
 **One voice to direct a whole swarm of AI agents.**
 
 uBixShepherd is a master control agent: a single point of communication between one human
-and many AI agents (Claude, Gemini, and whatever comes next). You talk to Shepherd; Shepherd
-hands out the work, keeps the agents from stepping on each other, holds the decisions that
-are yours for you, and reports back in one thread.
+and many AI agents (Claude Code, Copilot, Cursor and OpenCode today, and whatever comes next).
+You talk to Shepherd; Shepherd hands out the work, keeps the agents from stepping on each
+other, holds the decisions that are yours for you, and reports back in one thread.
 
 > Status: **beta**. The first release is `v0.1.0-beta.1`. Shepherd's interfaces (the CLI,
 > the config file, the HTTP API, the MCP tools and the hook protocol) may still change
@@ -520,9 +520,9 @@ tags to GitHub, so GitHub is the public home but not where work lands.
 ## The pitch
 
 > **uBixShepherd** is one place to run all my AI agents. Instead of juggling separate
-> sessions of Claude, Gemini and whatever else, I talk to Shepherd, and it hands out the
-> work, keeps the agents from stepping on each other, and reports back in one thread. It's
-> mission control for an AI swarm: I give the direction, it keeps the flock together.
+> sessions of Claude Code, Copilot, Cursor and OpenCode, I talk to Shepherd, and it hands
+> out the work, keeps the agents from stepping on each other, and reports back in one
+> thread. It's mission control for an AI swarm: I give the direction, it keeps the flock together.
 
 More versions (one-liner, technical) are in [docs/pitch.md](docs/pitch.md).
 
