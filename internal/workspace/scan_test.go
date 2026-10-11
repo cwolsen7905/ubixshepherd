@@ -103,15 +103,15 @@ func TestResolve(t *testing.T) {
 		t.Skip("git not installed")
 	}
 	root := t.TempDir()
-	gitInit(t, filepath.Join(root, "kitg"), "https://example.com/team/kitg.git")
+	gitInit(t, filepath.Join(root, "my-service"), "https://example.com/team/my-service.git")
 	gitInit(t, filepath.Join(root, "group", "lib"), "https://example.com/group/lib.git")
 	gitInit(t, filepath.Join(root, "other", "lib"), "https://example.com/other/lib.git")
 	gitInit(t, filepath.Join(root, "a", "b", "c", "deep"), "https://example.com/deep.git")
 	os.MkdirAll(filepath.Join(root, "plain"), 0o755)
 	ctx := context.Background()
 
-	if f, err := Resolve(ctx, root, "kitg"); err != nil || f.Name != "kitg" || f.Path != filepath.Join(root, "kitg") {
-		t.Errorf("kitg = %+v, %v", f, err)
+	if f, err := Resolve(ctx, root, "my-service"); err != nil || f.Name != "my-service" || f.Path != filepath.Join(root, "my-service") {
+		t.Errorf("my-service = %+v, %v", f, err)
 	}
 	if f, err := Resolve(ctx, root, "group/lib"); err != nil || f.Name != "group/lib" {
 		t.Errorf("group/lib = %+v, %v", f, err)

@@ -41,7 +41,7 @@ func repoWorkspace(t *testing.T) (*Server, *httptest.Server, string, store.Repo)
 	s, ts := newServer(t)
 	root, _ := paths.Canonical(t.TempDir())
 	gitRepo(t, filepath.Join(root, "app"), "https://example.com/t/app.git")
-	gitRepo(t, filepath.Join(root, "kitg"), "https://example.com/t/kitg.git")
+	gitRepo(t, filepath.Join(root, "my-service"), "https://example.com/t/my-service.git")
 	gitRepo(t, filepath.Join(root, "g1", "lib"), "https://example.com/g1/lib.git")
 	gitRepo(t, filepath.Join(root, "g2", "lib"), "https://example.com/g2/lib.git")
 	gitRepo(t, filepath.Join(root, "scratch"), "")
@@ -70,23 +70,23 @@ func managedNames(t *testing.T, s *Server) []string {
 func TestAddRepoByNameAndPath(t *testing.T) {
 	s, ts, root, _ := repoWorkspace(t)
 	var out api.AddedRepos
-	code := call(t, ts, s.Token, "POST", api.PathRepos, api.AddRepos{Repos: []string{"kitg", filepath.Join(root, "scratch")}}, &out)
+	code := call(t, ts, s.Token, "POST", api.PathRepos, api.AddRepos{Repos: []string{"my-service", filepath.Join(root, "scratch")}}, &out)
 	if code != http.StatusOK || len(out.Repos) != 2 {
 		t.Fatalf("add: %d %+v", code, out)
 	}
-	if out.Repos[0].Name != "kitg" || out.Repos[0].Outcome != api.RepoAdded || out.Repos[0].Profile || out.Repos[0].ID == 0 {
-		t.Errorf("kitg = %+v", out.Repos[0])
+	if out.Repos[0].Name != "my-service" || out.Repos[0].Outcome != api.RepoAdded || out.Repos[0].Profile || out.Repos[0].ID == 0 {
+		t.Errorf("my-service = %+v", out.Repos[0])
 	}
 	if r := out.Repos[1]; r.Name != "scratch" || r.Reason != "no origin remote" {
 		t.Errorf("scratch = %+v", r)
 	}
-	if got := strings.Join(managedNames(t, s), ","); got != "app,kitg,scratch" {
+	if got := strings.Join(managedNames(t, s), ","); got != "app,my-service,scratch" {
 		t.Errorf("managed = %s", got)
 	}
 
 	// Idempotent.
 	out = api.AddedRepos{}
-	code = call(t, ts, s.Token, "POST", api.PathRepos, api.AddRepos{Repos: []string{"kitg"}}, &out)
+	code = call(t, ts, s.Token, "POST", api.PathRepos, api.AddRepos{Repos: []string{"my-service"}}, &out)
 	if code != http.StatusOK || len(out.Repos) != 1 || out.Repos[0].Outcome != api.RepoAlreadyOn {
 		t.Errorf("again: %d %+v", code, out)
 	}
@@ -106,7 +106,7 @@ func TestAddRepoRefusals(t *testing.T) {
 		"outside":           {[]string{filepath.Join(outside, "elsewhere")}, "shepherd init"},
 		"not a repo":        {[]string{filepath.Join(root, "plain")}, "not a git repo"},
 		"unknown":           {[]string{"nope"}, "no git repo"},
-		"one bad adds none": {[]string{"kitg", "nope"}, "no git repo"},
+		"one bad adds none": {[]string{"my-service", "nope"}, "no git repo"},
 	}
 	for name, c := range cases {
 		var e api.Error
@@ -192,7 +192,7 @@ func TestUnmanageRepo(t *testing.T) {
 func TestListReposStates(t *testing.T) {
 	s, ts, root, _ := repoWorkspace(t)
 	cfg := config.Default()
-	cfg.Repos = map[string]config.Profile{"kitg": {}, "ghost": {}}
+	cfg.Repos = map[string]config.Profile{"my-service": {}, "ghost": {}}
 	cfg.Projects = map[string]config.Project{"p": {Repos: []string{"scratch", "phantom"}}}
 	s.Config = cfg
 	os.RemoveAll(filepath.Join(root, "app", ".git"))
@@ -206,7 +206,7 @@ func TestListReposStates(t *testing.T) {
 		state[v.Name] = v.State
 	}
 	want := map[string]string{
-		"app": api.RepoMissing, "kitg": api.RepoProfileOnly, "ghost": api.RepoProfileOnly,
+		"app": api.RepoMissing, "my-service": api.RepoProfileOnly, "ghost": api.RepoProfileOnly,
 		"scratch": api.RepoProjectOnly, "phantom": api.RepoProjectOnly, "g1/lib": api.RepoFound,
 	}
 	for n, w := range want {
@@ -224,7 +224,7 @@ func TestReposRoles(t *testing.T) {
 		{"POST", api.PathRepos},
 		{"POST", api.PathRepos + "/" + itoa(app.ID) + "/unmanage"},
 	} {
-		if code := call(t, ts, worker, c.method, c.path, api.AddRepos{Repos: []string{"kitg"}}, nil); code != http.StatusForbidden {
+		if code := call(t, ts, worker, c.method, c.path, api.AddRepos{Repos: []string{"my-service"}}, nil); code != http.StatusForbidden {
 			t.Errorf("worker %s %s: %d", c.method, c.path, code)
 		}
 	}
@@ -232,7 +232,7 @@ func TestReposRoles(t *testing.T) {
 		t.Error("a worker changed the repos")
 	}
 	deskTok, _ := s.MintDesk(true, "s")
-	if code := call(t, ts, deskTok, "POST", api.PathRepos, api.AddRepos{Repos: []string{"kitg"}}, nil); code != 200 {
+	if code := call(t, ts, deskTok, "POST", api.PathRepos, api.AddRepos{Repos: []string{"my-service"}}, nil); code != 200 {
 		t.Errorf("desk add: %d", code)
 	}
 }
