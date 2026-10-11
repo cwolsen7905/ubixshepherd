@@ -22,6 +22,11 @@
   --broken-wash: #f8e1de;
   --ok: #2f7349;         /* passed, merged */
   --brand: #0f62fe;      /* the uBix mark and name: 4.7:1 on the bar */
+  --focus: var(--lichen); /* focus ring and halo; one colour, so a theme changes it in one place */
+
+  /* Elevation, for what floats: dialogs and popovers. Everything else stays flat. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.14);
+  --shadow-2: 0 8px 28px rgb(0 0 0 / 0.28);
 
   --font-ui: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", system-ui, sans-serif;
   --font-mono: "Berkeley Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -51,7 +56,8 @@
   --gutter: 2rem;        /* the glyph rail */
   --pad: 1rem;
   --bar-h: 2.75rem;
-  --radius: 3px;
+  --radius: 0.375rem;    /* controls, rows, small panels */
+  --radius-lg: 0.625rem; /* dialogs and popovers */
 
   /* The shell: the bar, the banner and every page share one centred box. The widths of
      what sits in it are tokens too: change one here and every page follows. */
@@ -115,7 +121,7 @@ a { color: inherit; text-decoration-color: var(--control-border); text-underline
 a:hover { text-decoration-color: currentColor; }
 
 :focus-visible {
-  outline: 2px solid var(--lichen);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
   border-radius: var(--radius);
 }
