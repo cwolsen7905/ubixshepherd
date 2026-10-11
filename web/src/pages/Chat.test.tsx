@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
 import type { Decision } from '../api/types'
@@ -56,6 +56,8 @@ const history = [
 ]
 
 describe('ChatPage', () => {
+  beforeEach(() => localStorage.clear())
+
   it('loads the thread from history and shows the connection', async () => {
     await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     expect(await screen.findByText('what is up?')).toBeInTheDocument()
@@ -130,6 +132,54 @@ describe('ChatPage', () => {
     await user.type(box, 'hello{Enter}')
     expect(await screen.findByRole('alert')).toHaveTextContent(/as many messages waiting/)
     expect(box).toHaveValue('hello')
+  })
+
+  it('keeps a half-typed message across leaving the page and coming back', async () => {
+    const user = userEvent.setup()
+    await show(fakeDeskApi())
+    await user.type(screen.getByLabelText('Message to the front desk'), 'half a thou')
+    cleanup()
+    await show(fakeDeskApi())
+    expect(screen.getByLabelText('Message to the front desk')).toHaveValue('half a thou')
+  })
+
+  it('clears the draft once a send succeeds, so it does not come back', async () => {
+    const user = userEvent.setup()
+    const turn = vi.fn(async () => ({ workspace_id: 1, turn: 9, ahead: 1 }))
+    await show(fakeDeskApi({ turn }))
+    const box = screen.getByLabelText('Message to the front desk')
+    await user.type(box, 'ship it{Enter}')
+    await waitFor(() => expect(box).toHaveValue(''))
+    cleanup()
+    await show(fakeDeskApi({ turn }))
+    expect(screen.getByLabelText('Message to the front desk')).toHaveValue('')
+  })
+
+  it('keeps the draft when a send fails', async () => {
+    const user = userEvent.setup()
+    const turn = vi.fn().mockRejectedValue(new ApiError(429, 'the desk has 8 turns waiting'))
+    await show(fakeDeskApi({ turn }))
+    await user.type(screen.getByLabelText('Message to the front desk'), 'hello{Enter}')
+    await screen.findByRole('alert')
+    cleanup()
+    await show(fakeDeskApi({ turn }))
+    expect(screen.getByLabelText('Message to the front desk')).toHaveValue('hello')
+  })
+
+  it('keeps a half-written decision answer, and clears it once answered', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    const api = () => fakeDeskApi({ history: async () => ({ events: history, more: false }) })
+    const label = `Or write your own answer to decision ${decision().id}`
+    await show(api(), liveWith(undefined, answer))
+    await user.type(await screen.findByLabelText(label), 'let me thi')
+    cleanup()
+    await show(api(), liveWith(undefined, answer))
+    const box = await screen.findByLabelText(label)
+    expect(box).toHaveValue('let me thi')
+    await user.click(screen.getByRole('button', { name: 'Answer' }))
+    expect(await screen.findByText(/^Answered “let me thi”/)).toBeInTheDocument()
+    expect(localStorage.getItem(`shepherd.chat.answer.${decision().id}`)).toBeNull()
   })
 
   it('tells a signed-out browser how to sign in', async () => {
