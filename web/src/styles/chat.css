@@ -66,8 +66,9 @@
   .trow-system .msg-text { padding-left: 0; }
 }
 
-/* The backlog rail: beside the thread on a wide screen, above it on a narrow one. */
-.chat-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 30%); gap: 0 20px; flex: 1; }
+/* The backlog rail: beside the thread on a wide screen (about 65/35, the rail 18 to 30rem),
+   above it on a narrow one. */
+.chat-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(18rem, 35%, 30rem); gap: 0 20px; flex: 1; }
 .chat-main { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
 .backlog { grid-column: 2; grid-row: 1; align-self: start; position: sticky; top: calc(var(--bar-h) + 8px); max-height: calc(100vh - var(--bar-h) - 24px); overflow-y: auto; font-size: var(--t-sm); border-left: 1px solid var(--rule); padding-left: 12px; }
 .backlog-head { margin: 0 0 6px; font-size: inherit; }
