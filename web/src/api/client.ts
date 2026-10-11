@@ -142,9 +142,13 @@ export const history = {
   lanes: (workspaceId: number, since: string, state: 'closed' | 'open' | 'all' = 'closed') =>
     get<LaneRecord[]>(`/v1/history/lanes?${qs({ workspace_id: workspaceId, state, since })}`),
   lane: (laneId: number) => get<LaneRecord[]>(`/v1/history/lanes?${qs({ lane_id: laneId })}`),
-  runs: (workspaceId: number, since: string, agent = '', laneId = 0) =>
+  /** `limit` is how many runs are listed (the daemon's default is 500, its most 1000); the totals cover them all. */
+  runs: (workspaceId: number, since: string, agent = '', laneId = 0, limit = 0) =>
     get<RunHistory>(
-      `/v1/history/runs?${qs({ workspace_id: workspaceId, since, ...(agent ? { agent } : {}), ...(laneId ? { lane_id: laneId } : {}) })}`,
+      `/v1/history/runs?${qs({
+        workspace_id: workspaceId, since, ...(agent ? { agent } : {}), ...(laneId ? { lane_id: laneId } : {}),
+        ...(limit ? { limit } : {}),
+      })}`,
     ),
 }
 
