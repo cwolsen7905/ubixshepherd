@@ -11,6 +11,14 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **`shepherd lane diff` and the `lane_diff` tool.** One read of what a lane holds against
+  its base: the commits, the committed changes, uncommitted changes in the worktree and
+  untracked files, each file marked inside or outside the lane's scope. `--stat` is the
+  default, `--files` adds hunk headers, `--file <path>` reads one patch, `--json` prints the
+  answer the daemon serves at `GET /v1/lanes/{id}/diff`. It is bounded (30 commits, 200
+  files, 64 KiB per file, 256 KiB in all), redacted before it is cut, and open to the
+  desk and browser sessions but not to an agent's worker token. The web Changes tab, the
+  gate badge and the run view are later steps of `docs/lane-diff.md`.
 - **A timeline in the web UI.** `#/timeline` (key `g t`, and a Timeline entry in the nav)
   shows the day's work at once: a track per lane grouped by repo, a bar per run coloured
   by its agent, running bars that grow with the clock and end in a pulsing cap, a lantern

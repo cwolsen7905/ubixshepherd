@@ -156,6 +156,9 @@ func (s *Server) Handler() http.Handler {
 	// A transcript holds full tool input and output: the person's alone, never the desk's
 	// or an agent's.
 	handle("GET "+api.PathLanes+"/{id}/conversation", web, api.LaneConversation(s.Store, convo.Source{}))
+	// What a lane holds against its base: a read of the worktree, redacted and bounded.
+	// Not for a worker: an agent reads its own tree itself.
+	handle("GET "+api.PathLanes+"/{id}/diff", desk|web, api.LaneDiff(s.Fold))
 	handle("GET "+api.PathFoldGC, desk, s.foldGC)
 	handle("POST "+api.PathPrePush, worker, s.prePush)
 	handle("POST /v1/repos/{id}/hook", operatorOnly, s.repoHook)
