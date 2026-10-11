@@ -3,6 +3,7 @@ import type { DecisionView, DeskEvent } from '../api/types'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { useNow } from '../hooks'
+import { answerKey, clearDraft, draftKey, readDraft, writeDraft } from '../model/chatDraft'
 import { MARKS } from '../model/marks'
 import { href } from '../router'
 import { useLive, useSnapshot } from '../state/context'
@@ -371,21 +372,28 @@ function ChatThread({
         )}
       </div>
 
-      <Composer thread={thread} d={d} disabled={stopped} following={follow.following} onSend={follow.jump} />
+      <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} onSend={follow.jump} />
     </div>
   )
 }
 
 function Composer({
-  thread, d, disabled, following, onSend,
+  thread, workspaceId, d, disabled, following, onSend,
 }: {
   thread: DeskThread
+  workspaceId: number
   d: DeskSnapshot
   disabled: boolean
   following: boolean
   onSend: () => void
 }) {
-  const [text, setText] = useState('')
+  const key = draftKey(workspaceId)
+  // The words are kept as they are typed, so leaving the page and coming back loses nothing.
+  const [text, setText] = useState(() => readDraft(window.localStorage, key))
+  const edit = (v: string) => {
+    setText(v)
+    writeDraft(window.localStorage, key, v)
+  }
   const box = useRef<HTMLTextAreaElement>(null)
   const sending = d.sending
 
@@ -393,7 +401,10 @@ function Composer({
     if (sending || disabled || !text.trim()) return
     // The text stays until the daemon has taken it, so a refusal loses nothing.
     onSend()
-    if (await thread.send(text)) setText('')
+    if (await thread.send(text)) {
+      setText('')
+      clearDraft(window.localStorage, key)
+    }
     box.current?.focus()
   }
 
@@ -431,7 +442,7 @@ function Composer({
         readOnly={sending}
         disabled={disabled}
         placeholder="Message the front desk. Enter sends, Shift+Enter adds a line."
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => edit(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
@@ -557,7 +568,12 @@ function InlineDecision({ d }: { d: DecisionView }) {
   const live = useLive()
   const options = d.options ?? []
   const [choice, setChoice] = useState('')
-  const [own, setOwn] = useState('')
+  const draft = answerKey(d.id)
+  const [own, setOwnText] = useState(() => readDraft(window.localStorage, draft))
+  const setOwn = (v: string) => {
+    setOwnText(v)
+    writeDraft(window.localStorage, draft, v)
+  }
   const [state, setState] = useState<{ s: 'idle' | 'sending' | 'done' } | { s: 'error'; msg: string }>({ s: 'idle' })
   const words = own.trim() || choice
   const id = `chat-decision-${d.id}`
@@ -574,6 +590,7 @@ function InlineDecision({ d }: { d: DecisionView }) {
     setState({ s: 'sending' })
     try {
       await live.answer(d.id, words)
+      clearDraft(window.localStorage, draft)
       setState({ s: 'done' })
     } catch (e) {
       setState({ s: 'error', msg: e instanceof Error ? e.message : String(e) })
