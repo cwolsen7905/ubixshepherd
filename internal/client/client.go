@@ -489,6 +489,27 @@ func (c *Client) SaveWorkspace(ctx context.Context, req api.SaveWorkspace) (api.
 	return out, c.do(ctx, http.MethodPost, api.PathWorkspaces, req, &out)
 }
 
+// Repos lists every repo the daemon knows: managed, found on disk, and named by the
+// config. It rescans the workspace roots.
+func (c *Client) Repos(ctx context.Context) ([]api.RepoView, error) {
+	var out api.RepoList
+	return out.Repos, c.do(ctx, http.MethodGet, api.PathRepos+"?rescan=1", nil, &out)
+}
+
+// AddRepos starts managing repos, each an absolute path or a name in the workspace; all
+// are checked first, so one bad one adds none.
+func (c *Client) AddRepos(ctx context.Context, req api.AddRepos) ([]api.AddedRepo, error) {
+	var out api.AddedRepos
+	return out.Repos, c.do(ctx, http.MethodPost, api.PathRepos, req, &out)
+}
+
+// UnmanageRepo stops managing a repo and keeps its history. The daemon refuses it while
+// the repo has open lanes or an active run.
+func (c *Client) UnmanageRepo(ctx context.Context, id int64, why string) (store.Repo, error) {
+	var out store.Repo
+	return out, c.do(ctx, http.MethodPost, fmt.Sprintf("%s/%d/unmanage", api.PathRepos, id), api.UnmanageRepo{Why: why}, &out)
+}
+
 func (c *Client) Resolve(ctx context.Context, path string) (api.Resolution, error) {
 	var out api.Resolution
 	if path == RemoteCwd {

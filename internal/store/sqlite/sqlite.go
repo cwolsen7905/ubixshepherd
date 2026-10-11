@@ -308,6 +308,9 @@ var migrations = []string{
 	ALTER TABLE lane_forge ADD COLUMN mr_updated TEXT NOT NULL DEFAULT '';
 	ALTER TABLE lane_forge ADD COLUMN pipeline_started TEXT NOT NULL DEFAULT '';
 	ALTER TABLE lane_forge ADD COLUMN pipeline_finished TEXT NOT NULL DEFAULT '';`,
+	// A repo the person stopped managing: when, or '' for a managed one. The row and
+	// its lanes, runs and history stay; Repos hides it.
+	`ALTER TABLE repos ADD COLUMN removed TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -404,7 +407,7 @@ func (s *DB) SaveWorkspace(ctx context.Context, ws store.Workspace, repos []stor
 			INSERT INTO repos (workspace_id, name, path, remote, stacks, created) VALUES (?, ?, ?, ?, ?, ?)
 			ON CONFLICT (path) DO UPDATE SET
 				workspace_id = excluded.workspace_id, name = excluded.name,
-				remote = excluded.remote, stacks = excluded.stacks`,
+				remote = excluded.remote, stacks = excluded.stacks, removed = ''`,
 			out.ID, r.Name, r.Path, r.Remote, string(stacks), now())
 		if err != nil {
 			return store.Workspace{}, fmt.Errorf("save repo %q: %w", r.Name, err)
@@ -432,28 +435,65 @@ func (s *DB) Workspaces(ctx context.Context) ([]store.Workspace, error) {
 	return out, rows.Err()
 }
 
+// Repos returns the workspace's managed repos.
 func (s *DB) Repos(ctx context.Context, workspaceID int64) ([]store.Repo, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, workspace_id, name, path, remote, stacks, created
-		FROM repos WHERE workspace_id = ? ORDER BY name`, workspaceID)
+	return s.repos(ctx, workspaceID, `AND removed = ''`)
+}
+
+// AllRepos returns the workspace's repos, removed ones included.
+func (s *DB) AllRepos(ctx context.Context, workspaceID int64) ([]store.Repo, error) {
+	return s.repos(ctx, workspaceID, ``)
+}
+
+const repoCols = `id, workspace_id, name, path, remote, stacks, created, removed`
+
+func scanRepo(sc interface{ Scan(...any) error }) (store.Repo, error) {
+	var r store.Repo
+	var stacks, created, removed string
+	if err := sc.Scan(&r.ID, &r.WorkspaceID, &r.Name, &r.Path, &r.Remote, &stacks, &created, &removed); err != nil {
+		return r, err
+	}
+	if err := json.Unmarshal([]byte(stacks), &r.Stacks); err != nil {
+		return r, fmt.Errorf("repo %q stacks: %w", r.Name, err)
+	}
+	r.Created = parseTime(created)
+	if removed != "" {
+		t := parseTime(removed)
+		r.Removed = &t
+	}
+	return r, nil
+}
+
+func (s *DB) repos(ctx context.Context, workspaceID int64, where string) ([]store.Repo, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+repoCols+` FROM repos WHERE workspace_id = ? `+where+` ORDER BY name`, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []store.Repo
 	for rows.Next() {
-		var r store.Repo
-		var stacks, created string
-		if err := rows.Scan(&r.ID, &r.WorkspaceID, &r.Name, &r.Path, &r.Remote, &stacks, &created); err != nil {
+		r, err := scanRepo(rows)
+		if err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal([]byte(stacks), &r.Stacks); err != nil {
-			return nil, fmt.Errorf("repo %q stacks: %w", r.Name, err)
-		}
-		r.Created = parseTime(created)
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *DB) SetRepoRemoved(ctx context.Context, id int64, at *time.Time) error {
+	v := ""
+	if at != nil {
+		v = at.UTC().Format(time.RFC3339Nano)
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE repos SET removed = ? WHERE id = ?`, v, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
 }
 
 const laneCols = `id, repo_id, name, branch, base, worktree, scope, state, created, closed,
@@ -559,19 +599,11 @@ func (s *DB) DeleteLane(ctx context.Context, id int64) error {
 }
 
 func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
-	var r store.Repo
-	var stacks, created string
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id, workspace_id, name, path, remote, stacks, created FROM repos WHERE id = ?`, id).
-		Scan(&r.ID, &r.WorkspaceID, &r.Name, &r.Path, &r.Remote, &stacks, &created)
+	r, err := scanRepo(s.db.QueryRowContext(ctx, `SELECT `+repoCols+` FROM repos WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, store.ErrNotFound
 	}
-	if err != nil {
-		return r, err
-	}
-	r.Created = parseTime(created)
-	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
+	return r, err
 }
 
 const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits, dismissed`

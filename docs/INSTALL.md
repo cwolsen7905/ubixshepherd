@@ -99,6 +99,7 @@ came from this repository's release workflow.
 
 ```sh
 shepherd init ~/git             # finds the repos below ~/git; you choose which Shepherd manages
+shepherd repo add <name>        # add a repo later, no restart; shepherd repo scan shows what was found
 shepherd status                 # the daemon, its workspaces, and where you are
 shepherd daemon install         # optional: start at login (macOS launchd, Linux systemd)
 shepherd chat                   # from ~/git: the one conversation with the front desk

@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,5 +95,39 @@ func TestNormalizeRemote(t *testing.T) {
 	}
 	if NormalizeRemote("") != "" {
 		t.Error("empty remote should normalise to empty")
+	}
+}
+
+func TestResolve(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	root := t.TempDir()
+	gitInit(t, filepath.Join(root, "my-service"), "https://example.com/team/my-service.git")
+	gitInit(t, filepath.Join(root, "group", "lib"), "https://example.com/group/lib.git")
+	gitInit(t, filepath.Join(root, "other", "lib"), "https://example.com/other/lib.git")
+	gitInit(t, filepath.Join(root, "a", "b", "c", "deep"), "https://example.com/deep.git")
+	os.MkdirAll(filepath.Join(root, "plain"), 0o755)
+	ctx := context.Background()
+
+	if f, err := Resolve(ctx, root, "my-service"); err != nil || f.Name != "my-service" || f.Path != filepath.Join(root, "my-service") {
+		t.Errorf("my-service = %+v, %v", f, err)
+	}
+	if f, err := Resolve(ctx, root, "group/lib"); err != nil || f.Name != "group/lib" {
+		t.Errorf("group/lib = %+v, %v", f, err)
+	}
+	_, err := Resolve(ctx, root, "lib")
+	var amb *AmbiguousError
+	if !errors.As(err, &amb) || len(amb.Candidates) != 2 {
+		t.Errorf("lib: want ambiguity of two, got %v", err)
+	}
+	// Below the scan's depth, an exact path still resolves.
+	if f, err := Resolve(ctx, root, "a/b/c/deep"); err != nil || f.Name != "a/b/c/deep" {
+		t.Errorf("deep = %+v, %v", f, err)
+	}
+	for _, n := range []string{"plain", "missing", "..", "../x", ""} {
+		if _, err := Resolve(ctx, root, n); !errors.Is(err, ErrNoRepo) {
+			t.Errorf("%q: want ErrNoRepo, got %v", n, err)
+		}
 	}
 }

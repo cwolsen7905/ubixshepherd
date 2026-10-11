@@ -18,6 +18,7 @@ const ClientHeader = "X-Shepherd-Client"
 const (
 	PathStatus     = "/v1/status"
 	PathWorkspaces = "/v1/workspaces"
+	PathRepos      = "/v1/repos"
 	PathResolve    = "/v1/resolve"
 	PathShutdown   = "/v1/shutdown"
 	PathLanes      = "/v1/lanes"
@@ -378,6 +379,75 @@ type SaveWorkspace struct {
 type WorkspaceDetail struct {
 	store.Workspace
 	Repos []store.Repo `json:"repos"`
+}
+
+// Repo states, as RepoView.State says them.
+const (
+	// RepoManaged: in the store, and its directory is there.
+	RepoManaged = "managed"
+	// RepoMissing: managed, but its directory is gone.
+	RepoMissing = "missing"
+	// RepoFound: a git repo on disk under a workspace root that is not managed.
+	RepoFound = "found"
+	// RepoProfileOnly: named in config.yaml's repos, not managed.
+	RepoProfileOnly = "profile only"
+	// RepoProjectOnly: named by a project's repos, with no profile, not managed.
+	RepoProjectOnly = "project only"
+)
+
+// RepoView is one repo as GET /v1/repos shows it: managed or not, with what the config
+// and the disk say about it. A name only the config knows has just its Name, and no ID
+// or Path.
+type RepoView struct {
+	store.Repo
+	Workspace string `json:"workspace,omitempty"`
+	State     string `json:"state"`
+	// OpenLanes counts a managed repo's lanes that are not closed.
+	OpenLanes int `json:"open_lanes"`
+	// Profile says config.yaml has a profile for the repo's name.
+	Profile bool `json:"profile"`
+	// Reason is why the scan did not suggest a repo found on disk.
+	Reason string `json:"reason,omitempty"`
+}
+
+// RepoList answers GET /v1/repos.
+type RepoList struct {
+	Repos []RepoView `json:"repos"`
+}
+
+// AddRepos is the body of POST /v1/repos: repos to manage, each an absolute path or a
+// name in the workspace. Workspace, by name, narrows where a name is looked up.
+type AddRepos struct {
+	Workspace string   `json:"workspace,omitempty"`
+	Repos     []string `json:"repos"`
+}
+
+// Outcomes of adding a repo.
+const (
+	RepoAdded     = "added"
+	RepoRestored  = "restored"
+	RepoAlreadyOn = "already managed"
+)
+
+// AddedRepo is what became of one repo named in AddRepos.
+type AddedRepo struct {
+	store.Repo
+	Workspace string `json:"workspace"`
+	Outcome   string `json:"outcome"`
+	// Profile says config.yaml has a profile for it; without one, defaults apply.
+	Profile bool `json:"profile"`
+	// Reason is why a repo that is not a clean first-time candidate was added anyway.
+	Reason string `json:"reason,omitempty"`
+}
+
+// AddedRepos answers POST /v1/repos.
+type AddedRepos struct {
+	Repos []AddedRepo `json:"repos"`
+}
+
+// UnmanageRepo is the body of POST /v1/repos/{id}/unmanage.
+type UnmanageRepo struct {
+	Why string `json:"why,omitempty"`
 }
 
 // Resolution answers GET /v1/resolve?path=..., saying what a directory belongs to.
