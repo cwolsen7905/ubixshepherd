@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -214,10 +215,14 @@ type Desk struct {
 	gen int
 	// pending are the swarm's events waiting for the desk; dropped counts the oldest
 	// let go once there were DigestMax.
-	pending    []string
-	dropped    int
-	subs       map[*Sub]bool
-	lastDetach time.Time
+	pending []string
+	dropped int
+	// acted are what the person did from a browser since the desk's last turn, for the
+	// head of its next; actedDropped counts the oldest let go past DigestMax.
+	acted        []string
+	actedDropped int
+	subs         map[*Sub]bool
+	lastDetach   time.Time
 	// changed is closed, and replaced, whenever an event is stored.
 	changed chan struct{}
 	kick    chan struct{}
@@ -299,6 +304,7 @@ func (d *Desk) New(ctx context.Context) error {
 	}
 	d.queue = nil
 	d.pending, d.dropped = nil, 0
+	d.acted, d.actedDropped = nil, 0
 	d.carry = ""
 	d.gen++
 	if err := d.m.o.Store.SetSetting(ctx, settingSession(d.ws.ID), ""); err != nil {
@@ -359,6 +365,52 @@ func (d *Desk) note(texts []string) {
 		d.dropped += over
 	}
 	d.wakeLocked()
+}
+
+// Acted records something the person did from a browser as an action event, which shows
+// in the thread, the history and every client's stream. It starts no turn and costs
+// nothing: the desk holds the text and puts it at the head of its next turn.
+func (d *Desk) Acted(ctx context.Context, text string) error {
+	text = strings.TrimSpace(redact.String(text))
+	if text == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.m.ctx.Err() != nil {
+		return ErrClosed
+	}
+	if _, err := d.appendLocked(ctx, store.DeskEvent{Kind: store.DeskAction, Text: text, Origin: store.DeskByHuman}); err != nil {
+		return err
+	}
+	d.acted = append(d.acted, text)
+	if over := len(d.acted) - d.m.o.DigestMax; over > 0 {
+		d.acted = d.acted[over:]
+		d.actedDropped += over
+	}
+	return nil
+}
+
+// takeActed returns the held actions as the prefix of a turn's message, and forgets them.
+func (d *Desk) takeActed() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	items, dropped := d.acted, d.actedDropped
+	d.acted, d.actedDropped = nil, 0
+	return actedPrefix(items, dropped)
+}
+
+// actedPrefix is what the person did from the web page, told to the desk ahead of its
+// next message. It asks for nothing: these are done, not requests.
+func actedPrefix(items []string, dropped int) string {
+	if len(items) == 0 {
+		return ""
+	}
+	msg := "[Shepherd] Since your last turn the person did this from the web page:\n- " + strings.Join(items, "\n- ")
+	if dropped > 0 {
+		msg += fmt.Sprintf("\n(and %d earlier action(s), left out)", dropped)
+	}
+	return msg + "\nThese are done; do not repeat them. The person's message, if any, follows.\n\n"
 }
 
 // mayWakeLocked says whether desk.wake lets the desk take a turn on its own now.
@@ -527,6 +579,7 @@ func (d *Desk) run(t turn) {
 	}
 	d.carry = ""
 	d.mu.Unlock()
+	message = d.takeActed() + message
 	err = o.Agent.Turn(ctx, Spec{Session: session, New: fresh, Message: message, Dir: d.ws.Path, Model: model,
 		Env: []string{dispatch.EnvToken + "=" + tok, dispatch.EnvURL + "=" + o.Tokens.URL()}, Seed: seed, ToolChars: cfg.ToolOutputCap()}, emit)
 	if rest := strings.TrimSpace(partial.String()); rest != "" {
@@ -603,8 +656,10 @@ func (d *Desk) rotate(ctx context.Context, gen int, session, why string) {
 // seed is the summary a new session starts from, or "" when the conversation has no
 // earlier turn to continue.
 func (d *Desk) seed(ctx context.Context, turn int64) (string, error) {
-	earlier, err := d.m.o.Store.DeskHistory(ctx, d.ws.ID, turn, 1)
-	if err != nil || len(earlier) == 0 {
+	// What the person did from the page is not an earlier turn: a first session after
+	// only those has nothing to be summarised from.
+	earlier, err := d.m.o.Store.DeskHistory(ctx, d.ws.ID, turn, 50)
+	if err != nil || !slices.ContainsFunc(earlier, func(e store.DeskEvent) bool { return e.Kind != store.DeskAction }) {
 		return "", err
 	}
 	in, err := d.gather(ctx, turn)

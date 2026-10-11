@@ -520,6 +520,10 @@ const (
 	DeskError     = "error"      // the turn failed, or something around it did
 	DeskTurnEnd   = "turn_end"   // a turn ended; Text says how when not done
 	DeskNew       = "new"        // the person started a new conversation
+	// DeskAction is something the person did from a browser (answered a decision,
+	// stopped a run). It belongs to no turn and starts none; the desk is told of it at
+	// the head of its next turn.
+	DeskAction = "action"
 )
 
 // Desk event origins: who started the turn an event belongs to.

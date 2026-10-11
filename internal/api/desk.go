@@ -23,7 +23,10 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //
 // where kind is one of store's Desk* kinds: user, system, turn_start, assistant, tool,
 // cost (the turn's own cost in dollars, as text), error, turn_end (text: done, failed,
-// interrupted...), new. A turn's id is the seq of the user or system message that
+// interrupted...), new, action. An action is something the person did from a browser
+// (answered a decision, stopped a run, closed a lane, routed or closed a request,
+// continued or dismissed a run): the daemon records it, it has no turn and starts none,
+// and the desk is told of it at the head of its next turn. A turn's id is the seq of the user or system message that
 // started it, and every event of the turn carries it with the turn's origin, human or
 // system. Partial replies come as "event: partial" with no id: they are never stored,
 // and the whole reply follows as an assistant event, so a client that resumes misses
