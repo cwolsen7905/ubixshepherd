@@ -21,6 +21,7 @@ func laneRun(ctx context.Context, env Env, args []string) error {
 	fs := flags("lane run", env)
 	agent := fs.String("agent", "", "agent to start: "+strings.Join(dispatch.AgentNames(), ", "))
 	model := fs.String("model", "", "model (default: the repo's agent.model for this agent, else the agent's own)")
+	effort := fs.String("effort", "", "effort, in the agent's own words (default: the repo's agent.effort, else the model's, else the CLI's own)")
 	repo := fs.String("repo", "", "repo, by its name in the workspace")
 	detach := fs.Bool("detach", false, "start it and return; follow later with shepherd run logs -f")
 	fresh := fs.Bool("new", false, "start a new conversation instead of continuing the lane's last one with this agent")
@@ -53,7 +54,7 @@ func laneRun(ctx context.Context, env Env, args []string) error {
 		}
 		laneID = h.Lane.ID
 	}
-	run, err := c.StartRun(ctx, dispatch.StartRequest{LaneID: laneID, Agent: *agent, Model: *model, Prompt: task, NewSession: *fresh})
+	run, err := c.StartRun(ctx, dispatch.StartRequest{LaneID: laneID, Agent: *agent, Model: *model, Effort: *effort, Prompt: task, NewSession: *fresh})
 	if err != nil {
 		return err
 	}
@@ -240,6 +241,7 @@ func runRun(ctx context.Context, env Env, args []string) error {
 	all := fs.Bool("all", false, "every lane's runs, not only this lane's")
 	withLog := fs.Bool("with-log", false, "show: also print the run's log")
 	model := fs.String("model", "", "continue: model, if not the one the run used; fix retry_other: the model to retry with")
+	effort := fs.String("effort", "", "continue: effort, in the agent's own words (default: the repo's)")
 	fixAgent := fs.String("agent", "", "fix retry_other: the agent to retry with")
 	fixPrompt := fs.String("prompt", "", "fix continue: the follow-up to send instead of the suggested one")
 	detach := fs.Bool("detach", false, "continue: start it and return")
@@ -283,7 +285,7 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		if err != nil {
 			return fmt.Errorf("run id %q is not a number", pos[0])
 		}
-		run, err := c.StartRun(ctx, dispatch.StartRequest{Continue: id, Prompt: pos[1], Model: *model})
+		run, err := c.StartRun(ctx, dispatch.StartRequest{Continue: id, Prompt: pos[1], Model: *model, Effort: *effort})
 		if err != nil {
 			return err
 		}
