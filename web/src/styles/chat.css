@@ -2,6 +2,8 @@
    pinned under it. Styles come from this file only (the daemon's CSP allows no inline). */
 
 .page.chat { max-width: var(--measure-chat); }
+/* Messages fill the thread column here; conversation.css keeps its readable cap on the lane and run pages. */
+.page.chat .cv-msg, .page.chat .cv-tool { max-width: none; }
 .chat { display: flex; flex-direction: column; min-height: calc(100vh - var(--bar-h) - 60px); }
 .chat-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
 .chat-conn { margin: 0; font-size: var(--t-sm); }
