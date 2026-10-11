@@ -153,3 +153,26 @@ func TestDismissAndUndismissRun(t *testing.T) {
 		t.Errorf("view %+v, calls %v", v, got)
 	}
 }
+
+func TestProjectWorkCallsMatchTheRoutes(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		w.Write([]byte(`{"project":"p","repos":[{"repo":"app","found":true,"rows":[{"id":"W1","status":"doing","repo":"app"}],"warnings":[]}],"drift":[]}`))
+	}))
+	defer srv.Close()
+	c := &Client{base: srv.URL, http: srv.Client()}
+	got, err := c.ProjectWork(context.Background(), "shop one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Repos) != 1 || got.Repos[0].Rows[0].ID != "W1" {
+		t.Errorf("%+v", got)
+	}
+	if _, err := c.ProjectWork(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[0] != "GET "+api.PathProjectWork("shop one") || paths[1] != "GET "+api.PathUnassignedWork {
+		t.Errorf("paths: %v", paths)
+	}
+}

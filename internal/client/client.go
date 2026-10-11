@@ -611,6 +611,17 @@ func (e *refused) Error() string {
 }
 func (e *refused) Is(target error) bool { return target == ErrNoDaemon }
 
+// ProjectWork reads a project's work matrices (each repo's docs/WORK.md as of its base
+// branch's last fetch) with warnings and drift. An empty project is the Unassigned group.
+func (c *Client) ProjectWork(ctx context.Context, project string) (api.ProjectWork, error) {
+	path := api.PathUnassignedWork
+	if project != "" {
+		path = api.PathProjectWork(project)
+	}
+	var out api.ProjectWork
+	return out, c.do(ctx, http.MethodGet, path, nil, &out)
+}
+
 // ProjectBrief reads a project's approved brief with its age and stale flag, and its
 // open draft.
 func (c *Client) ProjectBrief(ctx context.Context, project string) (api.BriefView, error) {
