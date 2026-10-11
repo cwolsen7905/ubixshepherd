@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -369,6 +370,50 @@ func TestOpenCodeBilledCostIsLogged(t *testing.T) {
 	o := openCodeOutput(`{"type":"step_finish","sessionID":"` + session + `","part":{"type":"step-finish","reason":"stop","cost":0.0075,"tokens":{"input":5,"output":1}}}`)
 	if o.USD != 0.0075 || !strings.Contains(o.Show, "cost $0.0200") || strings.Contains(o.Show, "no billed cost") {
 		t.Errorf("output: %+v", o)
+	}
+}
+
+func TestOpenCodeHostedCostIsLabelledAnEstimate(t *testing.T) {
+	step := func(session, reason string, cost float64) string {
+		return fmt.Sprintf(`{"type":"step_finish","sessionID":%q,"part":{"type":"step-finish","reason":%q,"cost":%v,"tokens":{"input":10,"output":2}}}`, session, reason, cost)
+	}
+	hosted := openCodeReader("openrouter/moonshotai/kimi-k2")
+	if o := hosted(step("or1", "tool-calls", 0.02)); o.USD != 0.02 {
+		t.Errorf("USD = %v", o.USD)
+	}
+	o := hosted(step("or1", "stop", 0.0297))
+	if !strings.Contains(o.Show, "cost $0.0497 (estimate") || strings.Contains(o.Show, "no billed cost") {
+		t.Errorf("hosted with cost: %q", o.Show)
+	}
+	o = hosted(step("or2", "stop", 0))
+	if !strings.Contains(o.Show, "cost unknown") || strings.Contains(o.Show, "no billed cost") {
+		t.Errorf("hosted with no cost: %q", o.Show)
+	}
+	local := openCodeReader("qwen3-coder:30b")
+	if o := local(step("loc", "stop", 0)); !strings.Contains(o.Show, "no billed cost (a local model") {
+		t.Errorf("local: %q", o.Show)
+	}
+	if !openCodeHosted("openrouter/a/b") || openCodeHosted("local/x") || openCodeHosted("x") || openCodeHosted("") {
+		t.Error("openCodeHosted")
+	}
+}
+
+// The window in the config is the local endpoint's; a hosted model's is left unknown.
+func TestOpenCodeUsageWindowIsLocalOnly(t *testing.T) {
+	old := openCodeSettings
+	openCodeSettings = func() config.OpenCode {
+		return config.OpenCode{Bin: "/fake/opencode", Endpoint: "http://localhost:11434/v1"}
+	}
+	t.Cleanup(func() { openCodeSettings = old })
+	want, _ := openCodeSettings().Limits()
+	ad := adapters["opencode"]
+	line := `{"type":"step_finish","sessionID":"w","part":{"tokens":{"input":30000,"output":5,"cache":{}}}}`
+	for model, window := range map[string]int{"qwen3-coder:30b": want, "local/x": want, "openrouter/moonshotai/kimi-k2": 0} {
+		r := ad.Usage(Opts{Model: model})
+		r.Feed(line)
+		if got := r.Usage().ContextWindow; got != window {
+			t.Errorf("%s: window = %d, want %d", model, got, window)
+		}
 	}
 }
 

@@ -80,7 +80,40 @@ endpoint; it no longer does, so write `local/<model>`.
 3. A hosted model is billed. OpenCode reports a cost with each step; Shepherd sums it
    per run, shows it in the run log's closing line, and records it as `opencode`'s spend,
    so it counts in the daily total and in budgets. A local model has no rates and
-   records 0.
+   records 0. For a hosted model the figure is **OpenCode's estimate** from its own
+   price table, and the closing line says so: OpenCode's events carry no generation id
+   or billed cost, so Shepherd cannot read the provider's invoice. When OpenCode reports
+   no cost for a hosted model, the line says "cost unknown" and the run records 0.
+   Check the provider's own dashboard for the real figure.
+
+`--pure` only disables external plugins, and `OPENCODE_CONFIG_CONTENT` is inline
+config layered over your files; neither is documented as changing where OpenCode reads
+its logins, and Shepherd does not set a variable that moves OpenCode's data directory.
+Run a hosted model once to confirm the login is found: a run that answers, rather
+than failing with an authentication error, shows it is.
+
+The usage line's context window is the local endpoint's configured window for a local
+model. For a hosted model it is left unknown rather than guessed.
+
+### Choosing OpenRouter models for agent work
+
+Agent runs are mostly cache reads: every step resends the whole conversation, so most
+of a run's tokens are the same prompt read again. What the provider charges for those
+reads decides the bill.
+
+- A provider that does not discount cache reads bills them at the full input rate. One
+  such run (a Kimi K2 model, 76,544 input tokens of which about 300k were cache reads
+  in the usage line) was estimated by OpenCode at $0.05 and billed $0.22 by OpenRouter,
+  about four times more.
+- Pin a provider that discounts cache reads, using OpenRouter's provider routing (in
+  OpenRouter's account settings, or the provider order and `allow_fallbacks` request
+  options), so a fallback cannot move the run to one that does not.
+- Look at the model's page on openrouter.ai for the cache read price next to the input
+  price. A model with no cache read price is billed at the input rate.
+- DeepSeek V4-Pro (`openrouter/deepseek/deepseek-v4-pro`) and V4-Flash
+  (`openrouter/deepseek/deepseek-v4-flash`) list cheap cache reads and a very large
+  context window. Check the ids and prices on openrouter.ai before relying on them:
+  prices and provider offers change, and so do the model versions.
 
 `--pure` only disables external plugins, and `OPENCODE_CONFIG_CONTENT` is inline
 config layered over your files; neither is documented as changing where OpenCode reads
@@ -113,8 +146,8 @@ than failing with an authentication error, shows it is.
 - **Sessions**: every JSON event carries the session id, which Shepherd records; the next
   run of the lane resumes it with `-s`.
 - **Cost**: tokens are logged. Cost is recorded as 0 for a local model, which OpenCode
-  has no rates for. A priced provider's per-step cost is summed per run, logged at the end
-  and recorded as `opencode`'s spend.
+  has no rates for. A hosted provider's per-step cost is OpenCode's estimate: it is
+  summed per run, logged at the end as an estimate and recorded as `opencode`'s spend.
 - **Output** is read from `--format json` and goes through the same redaction as every
   other agent's.
 

@@ -393,12 +393,30 @@ var editTools = map[string]bool{"edit": true, "write": true, "patch": true, "mul
 // instead of making it.
 var printedToolCall = regexp.MustCompile(`<tool_call>|<function=|"name"\s*:\s*"(edit|write|bash|read)"\s*,\s*"arguments"`)
 
-// openCodeOutput turns one line of the run's output into the run log's line and cost.
+// openCodeOutput reads a line for a run whose model is not known: the local case.
+func openCodeOutput(line string) Output { return openCodeReader("")(line) }
+
+// openCodeHosted says a run's model is served by a hosted provider (openrouter/...,
+// say) rather than the local endpoint.
+func openCodeHosted(model string) bool {
+	_, local := openCodeLocalModel(model)
+	return !local
+}
+
+// openCodeReader is the adapter's Read for a run on model.
+func openCodeReader(model string) func(string) Output {
+	hosted := openCodeHosted(model)
+	return func(line string) Output { return openCodeRead(line, hosted) }
+}
+
+// openCodeRead turns one line of the run's output into the run log's line and cost.
 // Cost is 0 on a local model: OpenCode prices a model it has no rates for at 0, and
-// the runner records that rather than inventing one. A priced provider's per-step cost
-// is passed on, and the runner sums it per run and records it as opencode's spend. A final step with no edit or
-// commit in the run is called out in the log, since the process exits 0 either way.
-func openCodeOutput(line string) Output {
+// the runner records that rather than inventing one. A hosted provider's per-step cost
+// is OpenCode's own estimate from its price table, not the provider's invoice (its
+// events carry no billed cost or generation id): it is passed on, summed per run and
+// labelled as an estimate. A final step with no edit or commit in the run is called out
+// in the log, since the process exits 0 either way.
+func openCodeRead(line string, hosted bool) Output {
 	var e openCodeEvent
 	if json.Unmarshal([]byte(line), &e) != nil || e.Type == "" {
 		return Output{Show: line}
@@ -430,7 +448,7 @@ func openCodeOutput(line string) Output {
 		if e.Part.Reason == "tool-calls" {
 			return o
 		}
-		o.Show = openCodeEnd(e.SessionID, run, e.Part.Reason)
+		o.Show = openCodeEnd(e.SessionID, run, e.Part.Reason, hosted)
 		return o
 	case "error":
 		msg := e.Error.Data.Message
@@ -443,7 +461,7 @@ func openCodeOutput(line string) Output {
 }
 
 // openCodeEnd closes a session's run in the log and forgets its state.
-func openCodeEnd(session string, run *openCodeRun, reason string) string {
+func openCodeEnd(session string, run *openCodeRun, reason string, hosted bool) string {
 	runsMu.Lock()
 	delete(openRuns, session)
 	runsMu.Unlock()
@@ -454,7 +472,12 @@ func openCodeEnd(session string, run *openCodeRun, reason string) string {
 		}
 	}
 	billed := "no billed cost (a local model has no rates)"
-	if run.cost > 0 {
+	switch {
+	case hosted && run.cost > 0:
+		billed = fmt.Sprintf("cost $%.4f (estimate from OpenCode's price table, not the provider's invoice: it can be several times low when cache reads are billed at the full input rate)", run.cost)
+	case hosted:
+		billed = "cost unknown (hosted model: OpenCode reported none, and its events carry no provider cost)"
+	case run.cost > 0:
 		billed = fmt.Sprintf("cost $%.4f", run.cost)
 	}
 	s := fmt.Sprintf("# opencode ended (%s): %d tokens in, %d out, %s%s", reason, run.in, run.out, billed, ver)
