@@ -87,7 +87,7 @@ Shepherd renders it into whatever each provider reads: `CLAUDE.md`, `AGENTS.md`,
 **inherits** the pack and adds its own section; it does not copy and edit. A gate check
 fails when a rendered file differs from its source, so the copies cannot drift.
 
-This alone gives a Gemini or Codex session the same rules a Claude session has, from the
+This alone gives a Copilot, Cursor or OpenCode session the same rules a Claude session has, from the
 first message.
 
 ### 3.3 Typed work orders
@@ -112,7 +112,7 @@ reserved:              # stop and ask instead of deciding
 done_when: merged      # opened | merged | deployed:<env>
 ```
 
-The same order goes to Claude, Gemini or a local model; each provider adapter turns it
+The same order goes to Claude Code, Copilot, Cursor, OpenCode or a local model; each provider adapter turns it
 into that provider's prompt plus the rendered standards.
 
 The prompt never goes on an agent's command line. Anyone on the machine can read a
@@ -258,7 +258,7 @@ rules:
     route: claude:standard
     escalate: [claude:strongest]       # after the gate fails twice
   - match: { kind: docs }
-    route: gemini:fast
+    route: opencode:fast
     escalate: [claude:standard]
   - match: { kind: review }
     route: { not_provider_of: author, min_tier: author } # another provider, at least as strong
@@ -378,7 +378,7 @@ or an organisation's: the same concept, with members and logins.
 An agent CLI like Claude Code already orchestrates its own subagents: the human holds one
 conversation, the CLI spawns helpers the human never sees, and only their results come
 back. Shepherd is that, **one level up**: the one conversation sits above whole agent
-systems (Claude Code, Cursor, Copilot, OpenCode, Gemini), each working in its own lane, and they
+systems (Claude Code, Copilot, Cursor and OpenCode today, and whatever comes next), each working in its own lane, and they
 talk to each other **through Shepherd**. Only what needs the human reaches the human.
 
 - **The voice is an agent; the control plane is not.** The conversation the human holds is
@@ -629,7 +629,7 @@ Each phase is useful alone, and the first two need no LLM inside Shepherd at all
    right away; the human view replaces `AGENTS-COORD.md`.
 3. **Events and the one thread**: GitLab webhooks via uBixOps, proof checks, the human
    thread, the decision queue.
-4. **Dispatch**: Shepherd starts agents (Claude Code headless, Gemini CLI, others) from
+4. **Dispatch**: Shepherd starts agents (Claude Code headless, Copilot, Cursor, OpenCode, others) from
    work orders, in worktrees it creates, with credentials leased from uBixVault.
 5. **Playbooks and the learning loop.**
 
@@ -644,7 +644,7 @@ These feed [open-questions.md](open-questions.md):
   build and a path to a GUI. Webhook intake stays in uBixOps. See [v1.md](v1.md).
 - **Agent adapters.** Driving each provider's CLI headless is the uniform path; provider
   SDKs give richer control but differ per provider. v1 drives the CLIs, and the adapters
-  built so far are Claude Code, Copilot, Cursor and OpenCode; Gemini CLI, first proposed here, has
+  built so far are Claude Code, Copilot, Cursor and OpenCode; others, such as Gemini CLI, have
   none yet.
 - **Pack format.** Markdown with structured front matter, or a schema-first format that
   renders to Markdown.
