@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -143,6 +144,7 @@ func feedLine(it store.FeedItem, event string, live bool) Line {
 
 type historyMsg struct {
 	session string
+	cost    float64 // the session's total as of its last recorded turn
 	entries []Entry
 	last    int64 // the feed's newest id, to poll after
 	deskErr error
@@ -162,6 +164,11 @@ func (m *Model) loadHistory() tea.Cmd {
 			return errorMsg{err}
 		}
 		h := historyMsg{session: session, last: f.Last}
+		if c, err := m.api.Setting(m.ctx, settingCost); err == nil {
+			if s, v, ok := strings.Cut(c, " "); ok && s == session && session != "" {
+				h.cost, _ = strconv.ParseFloat(v, 64)
+			}
+		}
 		if n <= 0 {
 			return h
 		}
@@ -199,7 +206,7 @@ func (m *Model) loadHistory() tea.Cmd {
 
 func (m *Model) onHistory(h historyMsg) {
 	m.loadingHistory = false
-	m.session = h.session
+	m.session, m.lastCost = h.session, h.cost
 	m.lastFeed = h.last
 	if len(h.entries) > 0 {
 		m.add(Line{Kind: KindInfo, Text: fmt.Sprintf("Earlier: the last %d entries, from %s. Ctrl-O for the whole transcript.", len(h.entries), when(h.entries[0].At))})
