@@ -81,6 +81,8 @@ async function liveReady() {
     spend: async () => spend(),
     feedLatest: async () => ({ items: [], events: [], last: 0 }),
     feed: async (after) => ({ items: [], events: [], last: after }),
+    dismissRun: async () => { throw new Error('unused') },
+    undismissRun: async () => { throw new Error('unused') },
     answer: async () => { throw new Error('unused') },
   }
   const live = new Live(api, still)

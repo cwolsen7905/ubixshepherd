@@ -216,6 +216,13 @@ func PathRun(id int64) string     { return fmt.Sprintf("%s/%d", PathRuns, id) }
 func PathRunLog(id int64) string  { return fmt.Sprintf("%s/%d/log", PathRuns, id) }
 func PathRunStop(id int64) string { return fmt.Sprintf("%s/%d/stop", PathRuns, id) }
 
+// PathRunDismiss is POST /v1/runs/{id}/dismiss: clear a failed, stopped or interrupted
+// run from the board's attention group, keeping the run and its log. It answers the
+// run's view, and a repeat keeps the first time. PathRunUndismiss is the reverse. A run
+// that is running or succeeded answers 409.
+func PathRunDismiss(id int64) string   { return fmt.Sprintf("%s/%d/dismiss", PathRuns, id) }
+func PathRunUndismiss(id int64) string { return fmt.Sprintf("%s/%d/undismiss", PathRuns, id) }
+
 // PathRunDiagnoses is GET /v1/runs/{id}/diagnoses: why the run, or the push of its work,
 // went wrong, newest first, with each one's evidence and suggested fixes.
 func PathRunDiagnoses(id int64) string { return fmt.Sprintf("%s/%d/diagnoses", PathRuns, id) }

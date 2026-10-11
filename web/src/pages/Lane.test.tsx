@@ -47,6 +47,8 @@ function liveWith(lanes = [lane()]) {
     spend: async () => spend(),
     feedLatest: async () => ({ items: [], events: [], last: 1 }),
     feed: async (after) => ({ items: after === 0 ? [feedItem({ id: 1 })] : [], events: ['run_passed'], last: 1 }),
+    dismissRun: async () => { throw new Error('unused') },
+    undismissRun: async () => { throw new Error('unused') },
     answer: async () => { throw new Error('unused') },
   }
   return new Live(api, still)

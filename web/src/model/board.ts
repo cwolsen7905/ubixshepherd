@@ -48,6 +48,8 @@ export interface BoardInput {
   decisions: DecisionView[]
   requests: RequestView[]
   seen: Seen
+  /** Also list runs the person dismissed, marked as such; off by default. */
+  showDismissed?: boolean
 }
 
 const t = (s: string) => Date.parse(s)
@@ -78,11 +80,49 @@ export function latestRuns(runs: RunView[]): Map<number, RunView> {
   return latest
 }
 
+const SHOW_DISMISSED_KEY = 'shepherd.showDismissed'
+
+export function readShowDismissed(store: Pick<Storage, 'getItem'>): boolean {
+  try {
+    return store.getItem(SHOW_DISMISSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function writeShowDismissed(store: Pick<Storage, 'setItem' | 'removeItem'>, on: boolean) {
+  try {
+    if (on) store.setItem(SHOW_DISMISSED_KEY, '1')
+    else store.removeItem(SHOW_DISMISSED_KEY)
+  } catch {
+    // no storage: the choice lasts until the page reloads
+  }
+}
+
+/** A run that ended without succeeding: the ones the person may dismiss. */
+export function endedBadly(r: RunView | undefined): r is RunView {
+  return r?.state === 'failed' || r?.state === 'interrupted' || r?.state === 'stopped'
+}
+
+/** How many open lanes' latest runs are dismissed, hidden unless `showDismissed`. */
+export function dismissedCount(lanes: LaneView[], runs: RunView[]): number {
+  const latest = latestRuns(runs)
+  return lanes.filter((l) => {
+    const r = latest.get(l.id)
+    return l.state !== 'closed' && endedBadly(r) && !!r.dismissed
+  }).length
+}
+
+/** Whether the board offers Dismiss on this item: its latest run failed or was stopped, and is not yet dismissed. */
+export function canDismiss(it: BoardItem): boolean {
+  return it.group !== 'working' && endedBadly(it.run) && !it.run.dismissed
+}
+
 export function mrOpen(l: LaneView): boolean {
   return !!l.mr && l.mr_state !== 'merged' && l.mr_state !== 'closed'
 }
 
-export function boardItems({ lanes, runs, decisions, requests, seen }: BoardInput): BoardItem[] {
+export function boardItems({ lanes, runs, decisions, requests, seen, showDismissed = false }: BoardInput): BoardItem[] {
   const clash = laneClashes(lanes)
   const name = (repo: string, lane: string) => (clash.has(lane) && repo ? `${repo}:${lane}` : lane)
   const laneByName = (repo: string, lane: string) => lanes.find((l) => l.name === lane && l.repo === repo)
@@ -107,21 +147,24 @@ export function boardItems({ lanes, runs, decisions, requests, seen }: BoardInpu
     const run = latest.get(l.id)
     const base = { key: `lane:${l.id}`, name: name(l.repo, l.name), laneId: l.id, repo: l.repo, agent: run?.agent, lane: l, run }
     const running = run?.state === 'running'
-    const failedRun = run?.state === 'failed' || run?.state === 'interrupted'
+    // A dismissed run leaves the board with its lane's attention; the lane's next run is
+    // another run and shows as usual.
+    const dismissed = endedBadly(run) && !!run.dismissed
+    const failedRun = (run?.state === 'failed' || run?.state === 'interrupted') && (!dismissed || showDismissed)
     const failedPipeline = mrOpen(l) && l.pipeline_status === 'failed'
 
     if (l.state === 'closed') {
       if (l.mr_state !== 'merged' || !l.closed || !unseen(seen, `lane:${l.id}`, l.closed)) continue
       items.push({ ...base, group: 'done', at: l.closed, detail: 'merged' })
     } else if (failedRun || failedPipeline) {
-      let detail = failedRun ? `run ${run.id} ${run.state}` : 'pipeline failed'
+      let detail = failedRun ? `run ${run.id} ${run.state}${dismissed ? ', dismissed' : ''}` : 'pipeline failed'
       if (running) detail += ', fixing'
       items.push({ ...base, group: 'broken', at: failedRun ? endedAt(run) : l.created, detail })
     } else if (running) {
       items.push({ ...base, group: 'working', at: run.started, detail: run.progress?.line ?? `run ${run.id}` })
     } else if (mrOpen(l) && l.pipeline_status === 'passed') {
       items.push({ ...base, group: 'review', at: l.created, detail: 'waiting for a merge' })
-    } else if (run?.ended && unseen(seen, `run:${run.id}`, run.ended)) {
+    } else if (run?.ended && !dismissed && unseen(seen, `run:${run.id}`, run.ended)) {
       items.push({ ...base, group: 'done', at: run.ended, detail: `run ${run.id} ${run.state}` })
     }
   }

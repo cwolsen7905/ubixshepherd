@@ -218,6 +218,13 @@ export class Live {
     this.set({ seen })
   }
 
+  /** Dismisses a failed or stopped run from the board, then reloads; undismiss reverses it. */
+  async dismiss(id: number, dismissed = true) {
+    const run = await (dismissed ? this.api.dismissRun(id) : this.api.undismissRun(id))
+    await this.refresh()
+    return run
+  }
+
   /** Everything finished so far is seen. */
   clearDone() {
     const seen = { until: new Date(this.clock.now()).toISOString(), keys: new Set<string>() }

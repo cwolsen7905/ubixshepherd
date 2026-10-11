@@ -5,7 +5,7 @@ import { RangeFilter } from '../components/RangeFilter'
 import { DEFAULT_RANGE, ending, finished, RANGE_PHRASE, rangeStart } from '../model/history'
 import { useHistory } from '../state/history'
 import type { Range } from '../router'
-import { GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
+import { canDismiss, GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
 import {
   collapseKey, groupByProject, readCollapsed, readView, summaryText, writeCollapsed, writeView, type BoardView,
 } from '../model/projects'
@@ -29,7 +29,16 @@ function target(it: BoardItem): string | null {
   return null
 }
 
-export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]; range?: Range }) {
+/** Dismissed runs: how many are hidden, whether they show, and the toggle. */
+export interface DismissedControl {
+  count: number
+  show: boolean
+  onShow: (on: boolean) => void
+}
+
+export function BoardPage({
+  items, range = DEFAULT_RANGE, dismissed,
+}: { items: BoardItem[]; range?: Range; dismissed?: DismissedControl }) {
   const snap = useSnapshot()
   const live = useLive()
   const now = useNow()
@@ -56,6 +65,12 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
     setView(v)
     writeView(window.localStorage, v)
   }
+  const [dismissError, setDismissError] = useState<string | null>(null)
+  const dismiss = (runId: number, undo = false) =>
+    live.dismiss(runId, !undo).then(
+      () => setDismissError(null),
+      (e) => setDismissError(e instanceof Error ? e.message : String(e)),
+    )
   const toggle = (key: string) => {
     const next = new Set(collapsed)
     if (!next.delete(key)) next.add(key)
@@ -107,6 +122,7 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
               const i = ++index
               const to = target(it)
               const mark = GROUP_MARKS[it.group]
+              const dr = it.run
               const body = (
                 <>
                   <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={GROUP_NAMES[it.group]} />
@@ -150,6 +166,24 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
                       {body}
                     </div>
                   )}
+                  {dr && (canDismiss(it) || (dismissed?.show && dr.dismissed)) && (
+                    <p className="row-actions">
+                      {dr.dismissed ? (
+                        <button type="button" className="link-button" onClick={() => void dismiss(dr.id, true)}>
+                          Undismiss run {dr.id}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="link-button"
+                          title="Clear this run from the board. Its log and record stay in history."
+                          onClick={() => void dismiss(dr.id)}
+                        >
+                          Dismiss run {dr.id}
+                        </button>
+                      )}
+                    </p>
+                  )}
                   {it.group === 'broken' && it.run?.diagnosis && (
                     <RunFailure run={it.run} compact onFixed={() => void live.refresh()} />
                   )}
@@ -174,6 +208,15 @@ export function BoardPage({ items, range = DEFAULT_RANGE }: { items: BoardItem[]
           </button>
         </p>
       )}
+      {dismissed && (dismissed.count > 0 || dismissed.show) && (
+        <p className="board-tools">
+          <button type="button" className="link-button" aria-pressed={dismissed.show} onClick={() => dismissed.onShow(!dismissed.show)}>
+            {dismissed.show ? 'Hide dismissed' : 'Show dismissed'}
+            {dismissed.count > 0 ? ` (${dismissed.count})` : ''}
+          </button>
+        </p>
+      )}
+      {dismissError && <p className="group-note tone-bad">Could not change the run: {dismissError}</p>}
       {items.length === 0 && !grouped && (
         <div className="empty">
           <p>Nothing needs you, nothing is running, and nothing finished since you last looked.</p>

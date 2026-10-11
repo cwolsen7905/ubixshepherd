@@ -120,6 +120,8 @@ export interface Run {
   credits?: number
   session_usd?: number
   session_credits?: number
+  /** When the person dismissed this failed or stopped run from the board; the run stays in history. */
+  dismissed?: string
 }
 
 /** One suggested action of a diagnosis: a button a client may offer. */

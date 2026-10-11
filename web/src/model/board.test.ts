@@ -1,4 +1,4 @@
-import { boardItems, counts, countsText, laneClashes, noteOutcome, type BoardInput, type Seen } from './board'
+import { boardItems, canDismiss, counts, dismissedCount, readShowDismissed, writeShowDismissed, countsText, laneClashes, noteOutcome, type BoardInput, type Seen } from './board'
 import { decision, lane, request, run } from '../test/fixtures'
 
 // The person last cleared the board at 09:00; the fixtures' runs end at 10:04.
@@ -112,5 +112,66 @@ describe('noteOutcome', () => {
     expect(noteOutcome(running, 'run_passed', 99, 'x')).toBe(running)
     expect(noteOutcome(running, 'run_failed', 11, 'x')).toBe(running)
     expect(noteOutcome(running, 'run_passed', undefined, 'x')).toBe(running)
+  })
+})
+
+describe('dismissed runs', () => {
+  const dismissed = { dismissed: '2026-10-08T10:30:00Z' }
+
+  it('takes a dismissed failed run off the board', () => {
+    for (const state of ['failed', 'interrupted', 'stopped'] as const) {
+      expect(items({ lanes: [lane()], runs: [run({ state, ...dismissed })] })).toEqual([])
+    }
+  })
+
+  it('shows a lane\'s next run as usual, because dismissal belongs to one run', () => {
+    const runs = [run({ id: 10, state: 'failed', ...dismissed }), run({ id: 11, state: 'running', ended: undefined })]
+    expect(only({ lanes: [lane()], runs })).toMatchObject({ group: 'working', detail: 'run 11' })
+    const again = [run({ id: 10, state: 'failed', ...dismissed }), run({ id: 11, state: 'failed', ended: '2026-10-08T11:00:00Z' })]
+    expect(only({ lanes: [lane()], runs: again })).toMatchObject({ group: 'broken', detail: 'run 11 failed' })
+  })
+
+  it('still flags a failed pipeline, whatever happened to the run', () => {
+    expect(only({ lanes: [lane(openMR('failed'))], runs: [run({ state: 'failed', ...dismissed })] })).toMatchObject({
+      group: 'broken',
+      detail: 'pipeline failed',
+    })
+  })
+
+  it('lists dismissed runs, marked, when asked', () => {
+    const runs = [run({ state: 'failed', ...dismissed })]
+    expect(only({ lanes: [lane()], runs, showDismissed: true })).toMatchObject({ group: 'broken', detail: 'run 10 failed, dismissed' })
+  })
+
+  it('counts the lanes whose latest run is dismissed', () => {
+    const lanes = [lane(), lane({ id: 2, name: 'other' }), lane({ id: 3, name: 'closed', state: 'closed' })]
+    const runs = [
+      run({ id: 10, lane_id: 1, state: 'failed', ...dismissed }),
+      run({ id: 11, lane_id: 2, state: 'failed' }),
+      run({ id: 12, lane_id: 3, state: 'failed', ...dismissed }),
+    ]
+    expect(dismissedCount(lanes, runs)).toBe(1)
+  })
+
+  it('offers Dismiss on a failed run not yet dismissed, and not otherwise', () => {
+    const can = (o: Partial<BoardInput>) => items(o).filter(canDismiss).length === 1
+    expect(can({ lanes: [lane()], runs: [run({ state: 'failed' })] })).toBe(true)
+    expect(can({ lanes: [lane()], runs: [run({ state: 'failed', ...dismissed })], showDismissed: true })).toBe(false)
+    expect(can({ lanes: [lane()], runs: [run()] })).toBe(false)
+    expect(can({ lanes: [lane()], runs: [run({ state: 'running', ended: undefined })] })).toBe(false)
+  })
+
+  it('remembers whether the person shows them', () => {
+    const mem = new Map<string, string>()
+    const store = {
+      getItem: (k: string) => mem.get(k) ?? null,
+      setItem: (k: string, v: string) => void mem.set(k, v),
+      removeItem: (k: string) => void mem.delete(k),
+    }
+    expect(readShowDismissed(store)).toBe(false)
+    writeShowDismissed(store, true)
+    expect(readShowDismissed(store)).toBe(true)
+    writeShowDismissed(store, false)
+    expect(readShowDismissed(store)).toBe(false)
   })
 })

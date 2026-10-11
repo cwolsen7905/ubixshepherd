@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -337,5 +338,83 @@ func TestRunHistory(t *testing.T) {
 	h, _ = db.RunHistory(ctx, store.RunHistoryFilter{WorkspaceID: ws.ID, Since: time.Now().Add(-7 * 24 * time.Hour)})
 	if h.Count != 2 || h.CostUSD != 2 || len(h.Lanes) != 2 {
 		t.Errorf("since = count %d usd %v lanes %+v", h.Count, h.CostUSD, h.Lanes)
+	}
+}
+
+func TestDismissRun(t *testing.T) {
+	ctx := context.Background()
+	db, path := open(t)
+	ws, err := db.SaveWorkspace(ctx, store.Workspace{Name: "w", Path: "/w"}, []store.Repo{{Name: "alpha", Path: "/w/alpha"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := db.Repos(ctx, ws.ID)
+	lane, err := db.CreateLane(ctx, store.Lane{RepoID: repos[0].ID, Name: "l", Branch: "l", Worktree: "/w/l", State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(state string) store.Run {
+		r, err := db.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", Prompt: "p " + state, State: store.RunRunning, Log: "/log"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.State = state
+		if err := db.UpdateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	running, ok, failed := mk(store.RunRunning), mk(store.RunSucceeded), mk(store.RunFailed)
+	stopped := mk(store.RunStopped)
+	if failed.Dismissed != nil {
+		t.Fatalf("a new run is dismissed: %v", failed.Dismissed)
+	}
+	now := time.Now()
+	for _, r := range []store.Run{running, ok} {
+		if err := db.DismissRun(ctx, r.ID, &now); !errors.Is(err, store.ErrConflict) {
+			t.Errorf("dismiss a %s run: %v, want ErrConflict", r.State, err)
+		}
+	}
+	if err := db.DismissRun(ctx, 9999, &now); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("dismiss no run: %v, want ErrNotFound", err)
+	}
+	at := now.UTC().Truncate(time.Millisecond)
+	for _, r := range []store.Run{failed, stopped} {
+		if err := db.DismissRun(ctx, r.ID, &at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// It survives a reopen, and the run's other fields are as they were.
+	db.Close()
+	db2, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	got, err := db2.Run(ctx, failed.ID)
+	if err != nil || got.Dismissed == nil || !got.Dismissed.Equal(at) {
+		t.Fatalf("after reopen: %+v, %v", got.Dismissed, err)
+	}
+	if got.Prompt != failed.Prompt || got.State != failed.State || got.Log != failed.Log {
+		t.Errorf("dismiss changed the run: %+v vs %+v", got, failed)
+	}
+	// Updating the run does not clear it; a new run of the lane is not dismissed;
+	// undismissing clears the mark.
+	got.Error = "boom"
+	if err := db2.UpdateRun(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := db2.Run(ctx, failed.ID); again.Dismissed == nil {
+		t.Error("UpdateRun cleared the dismissal")
+	}
+	n, err := db2.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunRunning, Log: "/l"})
+	if err != nil || n.Dismissed != nil {
+		t.Errorf("new run: %+v, %v", n.Dismissed, err)
+	}
+	if err := db2.DismissRun(ctx, failed.ID, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db2.Run(ctx, failed.ID); got.Dismissed != nil {
+		t.Errorf("undismissed run: %v", got.Dismissed)
 	}
 }

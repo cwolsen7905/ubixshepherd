@@ -163,6 +163,8 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathRuns+"/{id}/diagnoses", desk, s.listDiagnoses)
 	handle("POST "+api.PathRuns+"/{id}/fix", desk, s.withRunner(s.fixRun))
 	handle("POST "+api.PathRuns+"/{id}/stop", desk, s.withRunner(s.stopRun))
+	handle("POST "+api.PathRuns+"/{id}/dismiss", desk, s.dismissRun(true))
+	handle("POST "+api.PathRuns+"/{id}/undismiss", desk, s.dismissRun(false))
 	handle("POST "+api.PathRuns+"/{id}/events", own, s.withRunner(s.addEvent))
 	handle("GET "+api.PathRuns+"/{id}/events", desk|own, s.runEvents)
 	handle("POST "+api.PathRuns+"/{id}/decisions", own, s.withRunner(s.addDecision))
@@ -799,6 +801,43 @@ func (s *Server) stopRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, struct{}{})
+}
+
+// dismissRun marks a run dismissed from the board, or clears the mark. It changes no
+// part of the run's record, and a run already in the asked state keeps its time.
+func (s *Server) dismissRun(dismiss bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		run, ok := s.pathRun(w, r)
+		if !ok {
+			return
+		}
+		if (run.Dismissed != nil) != dismiss {
+			var at *time.Time
+			if dismiss {
+				now := time.Now().UTC()
+				at = &now
+			}
+			if err := s.Store.DismissRun(r.Context(), run.ID, at); err != nil {
+				if errors.Is(err, store.ErrConflict) {
+					writeError(w, http.StatusConflict, err)
+					return
+				}
+				s.foldError(w, err)
+				return
+			}
+			var err error
+			if run, err = s.Store.Run(r.Context(), run.ID); err != nil {
+				s.foldError(w, err)
+				return
+			}
+		}
+		v, err := s.runView(r.Context(), run)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, v)
+	}
 }
 
 func (s *Server) addEvent(w http.ResponseWriter, r *http.Request) {
