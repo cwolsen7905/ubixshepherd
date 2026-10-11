@@ -247,6 +247,30 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "run_dismiss",
+			Description: "Dismiss a failed or stopped run from the board, when the person asks to clear it. Nothing is deleted: the run, its log and its record stay, and a later run in the lane still shows. Refused for a run that is running or succeeded.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"run", "dismiss", fmt.Sprint(int64(id))}, nil
+			},
+		},
+		{
+			Name:        "run_undismiss",
+			Description: "Bring a dismissed run back onto the board.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"run", "undismiss", fmt.Sprint(int64(id))}, nil
+			},
+		},
+		{
 			Name:        "run_why",
 			Description: "Say why a run failed, or why Shepherd could not push what it produced: the reason in one line, the output that shows it (already redacted) and the fixes on offer.",
 			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),

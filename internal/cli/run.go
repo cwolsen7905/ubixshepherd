@@ -349,6 +349,18 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		}
 		fmt.Fprintf(env.Stdout, "asked run %d to stop\n", id)
 		return nil
+	case "dismiss":
+		if _, err := c.DismissRun(ctx, id); err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "dismissed run %d from the board; its log and record stay (shepherd run undismiss %d brings it back)\n", id, id)
+		return nil
+	case "undismiss":
+		if _, err := c.UndismissRun(ctx, id); err != nil {
+			return err
+		}
+		fmt.Fprintf(env.Stdout, "run %d is back on the board\n", id)
+		return nil
 	}
 	return errUsage
 }

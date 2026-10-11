@@ -102,3 +102,51 @@ func TestRunWhyAndFixTools(t *testing.T) {
 		t.Error("run_why with a string id was accepted")
 	}
 }
+
+func TestRunDismissAndTools(t *testing.T) {
+	h := newHarness(t, "", false)
+	id := seedFailedRun(t, h)
+	ctx := context.Background()
+	dismissed := func() bool {
+		r, err := h.srv.Store.Run(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Dismissed != nil
+	}
+
+	if code := h.run("run", "dismiss", fmt.Sprint(id)); code != 0 || !strings.Contains(h.out.String(), "log and record stay") {
+		t.Fatalf("run dismiss: %d %s %s", code, h.out, h.err)
+	}
+	if !dismissed() {
+		t.Error("run dismiss did not dismiss the run")
+	}
+	h.out.Reset()
+	if code := h.run("run", "undismiss", fmt.Sprint(id)); code != 0 || !strings.Contains(h.out.String(), "back on the board") {
+		t.Fatalf("run undismiss: %d %s %s", code, h.out, h.err)
+	}
+	if dismissed() {
+		t.Error("run undismiss left the run dismissed")
+	}
+	if code := h.run("run", "dismiss", "x"); code == 0 {
+		t.Error("run dismiss with a non-number was accepted")
+	}
+
+	resps := mcpExchange(t, h.env,
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_dismiss","arguments":{"id":%d}}}`, id),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_undismiss","arguments":{"id":%d}}}`, id),
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"run_dismiss","arguments":{"id":"x"}}}`,
+	)
+	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "dismissed run") {
+		t.Errorf("run_dismiss: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[1]); isErr || !strings.Contains(text, "back on the board") {
+		t.Errorf("run_undismiss: %v %s", isErr, text)
+	}
+	if _, isErr := toolText(t, resps[2]); !isErr {
+		t.Error("run_dismiss with a string id was accepted")
+	}
+	if dismissed() {
+		t.Error("the tools left the run dismissed")
+	}
+}
