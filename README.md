@@ -155,6 +155,8 @@ cd ~/git
 shepherd chat
 ```
 
+`shepherd chat` needs Claude Code installed and logged in: see [The front desk](docs/INSTALL.md#the-front-desk).
+
 You talk to Shepherd's **front desk**: a Claude Code session Shepherd runs at the
 workspace root, resumed turn by turn, with Shepherd's operator tools and read access to
 files but no way to edit them. It delegates: it opens lanes, starts Claude Code, Copilot,
@@ -429,7 +431,7 @@ shepherd request route 4 --lane docs/api --agent cursor   # route one Shepherd c
 shepherd request close 5 --why "no longer needed"          # close a stale one, keeping the reason
 ```
 
-### From Claude Code (MCP)
+### From your own agent (MCP)
 
 `shepherd mcp` serves Shepherd's operator tools over MCP on stdio: `shepherd_status`,
 `shepherd_where`, `lane_list`, `lane_open`, `lane_close`, `lane_ship`, `lane_run`, `run_list`,
@@ -443,7 +445,9 @@ claude mcp add --scope user shepherd -- ~/.local/bin/shepherd mcp   # or whereve
 cd ~/git && claude
 ```
 
-Any MCP client that can start a stdio server works the same way.
+Other MCP clients, such as Cursor, Copilot or OpenCode, register the same command
+(`shepherd mcp`) in their own MCP configuration. See each tool's MCP documentation for
+how to register a stdio server.
 
 ### The daemon
 
