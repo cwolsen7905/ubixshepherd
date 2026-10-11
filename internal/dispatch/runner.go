@@ -56,9 +56,12 @@ const noPush = "shepherd-run-blocks-push://"
 // with the same agent. NewSession starts a fresh one; Continue names the run whose
 // session to continue (and so the lane and agent).
 type StartRequest struct {
-	LaneID     int64  `json:"lane_id,omitempty"`
-	Agent      string `json:"agent,omitempty"`
-	Model      string `json:"model,omitempty"`
+	LaneID int64  `json:"lane_id,omitempty"`
+	Agent  string `json:"agent,omitempty"`
+	Model  string `json:"model,omitempty"`
+	// Effort is how hard the model should think, in the agent's own words (see
+	// config.ModelEntry). "" takes the repo's, then the model's, then the workspace's.
+	Effort     string `json:"effort,omitempty"`
 	Prompt     string `json:"prompt"`
 	NewSession bool   `json:"new_session,omitempty"`
 	Continue   int64  `json:"continue,omitempty"`
@@ -258,6 +261,9 @@ func (r *Runner) Recover(ctx context.Context) error {
 func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error) {
 	cfg := r.Conf()
 	var parent store.Run
+	// inherited is the model a continued run carries from its parent: unlike one asked
+	// for, the policy falls back from it when it is no longer permitted.
+	var inherited string
 	if req.Continue != 0 {
 		p, err := r.Store.Run(ctx, req.Continue)
 		if err != nil {
@@ -273,7 +279,7 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		}
 		parent, req.LaneID, req.Agent = p, p.LaneID, p.Agent
 		if req.Model == "" {
-			req.Model = p.Model
+			inherited = p.Model
 		}
 	}
 	ad, err := AdapterFor(req.Agent)
@@ -306,9 +312,48 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		return store.Run{}, err
 	}
 	// The model: the one asked for, else the continued run's, else the repo's
-	// agent.model for this agent, else the agent's own default.
-	if req.Model == "" {
-		req.Model = cfg.Profile(repo.Name).Agent.Model[ad.Name]
+	// agent.model for this agent, else models.<agent>.default, else the agent's own
+	// default. The policy refuses a model it does not permit, naming the rule. A run
+	// Shepherd starts on its own (a fix, a follow) never fails on a model that is no
+	// longer permitted: it falls back like an inherited one.
+	pol := cfg.ModelPolicy(repo.Name, ad.Name)
+	if req.Auto && req.Model != "" {
+		inherited, req.Model = req.Model, ""
+	}
+	model, notes, err := pol.Resolve(req.Model, inherited)
+	if err != nil {
+		return store.Run{}, refuse("%v", err)
+	}
+	req.Model = model
+	var note []string
+	if notes != "" {
+		note = append(note, notes)
+	}
+	effort, enote, err := pol.ResolveEffort(model, req.Effort)
+	if err != nil {
+		return store.Run{}, refuse("%v", err)
+	}
+	if enote != "" {
+		note = append(note, enote)
+	}
+	if effort != "" {
+		switch {
+		case ad.Effort == EffortNone:
+			effort = ""
+			if req.Effort != "" {
+				note = append(note, fmt.Sprintf("effort %s not applied: %s has no effort setting", req.Effort, ad.Name))
+			}
+		case ad.Effort == EffortCatalogued:
+			if _, ok := pol.Entry(model); !ok {
+				effort = ""
+				if req.Effort != "" {
+					note = append(note, fmt.Sprintf("effort %s not applied: %s takes it only for a model listed with efforts in models.%s.catalogue", req.Effort, ad.Name, ad.Name))
+				}
+			}
+		}
+	}
+	for _, n := range note {
+		r.Log.Info("run policy", "repo", repo.Name, "agent", ad.Name, "note", n)
 	}
 
 	r.mu.Lock()
@@ -409,7 +454,7 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, may, worker != "", note, r.standardsDigest(ctx, prof, lane))
 	}
 	agentPushes := may.Push == config.Agent
-	opts := Opts{Model: req.Model, Gate: gate, Worktree: lane.Worktree,
+	opts := Opts{Model: req.Model, Effort: effort, Gate: gate, Worktree: lane.Worktree,
 		Session: session, Resume: resume, Worker: worker,
 		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge}
 	cmd := exec.Command(bin, ad.Args(opts)...)
@@ -447,8 +492,15 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	if resume {
 		how = fmt.Sprintf("continues run %d", parent.ID)
 	}
-	fmt.Fprintf(logf, "# shepherd run %d: %s in lane %s (%s), %s, started %s\n# task: %s\n\n",
+	fmt.Fprintf(logf, "# shepherd run %d: %s in lane %s (%s), %s, started %s\n# task: %s\n",
 		run.ID, ad.Name, lane.Name, repo.Name, how, time.Now().Format(time.RFC3339), redact.String(firstLine(req.Prompt)))
+	if req.Model != "" || effort != "" {
+		fmt.Fprintf(logf, "# model: %s, effort: %s\n", orDefault(req.Model), orDefault(effort))
+	}
+	for _, n := range note {
+		fmt.Fprintf(logf, "# policy: %s\n", n)
+	}
+	fmt.Fprintln(logf)
 	if err := cmd.Start(); err != nil {
 		revoke()
 		logf.Close()
@@ -998,6 +1050,13 @@ func latestSubject(ctx context.Context, dir string) string {
 	s, err := git.Run(ctx, dir, "log", "-1", "--format=%s")
 	if err != nil {
 		return ""
+	}
+	return s
+}
+
+func orDefault(s string) string {
+	if s == "" {
+		return "the agent's default"
 	}
 	return s
 }

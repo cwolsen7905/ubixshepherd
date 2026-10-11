@@ -36,6 +36,9 @@ type Config struct {
 	// Projects are named groups of repos with a brief, a budget and intake rules. A repo
 	// in no project behaves as it did before projects.
 	Projects map[string]Project `yaml:"projects,omitempty" json:"projects,omitempty"`
+	// Models is the model policy by agent: the catalogue the front desk chooses from,
+	// and the defaults. Projects and repos narrow it (see docs/models.md).
+	Models map[string]AgentModels `yaml:"models,omitempty" json:"models,omitempty"`
 }
 
 // Daemon holds the daemon's own settings.
@@ -440,6 +443,13 @@ type AgentOpts struct {
 	// (claude, copilot, cursor, opencode); an agent left out uses its CLI's own default. A repo's
 	// entries replace the defaults' for the same agent.
 	Model map[string]string `yaml:"model,omitempty" json:"model,omitempty"`
+	// Effort is the effort each agent runs at when lane run names none, by agent, in
+	// that agent's own words. An agent left out uses models.<agent>.effort, else its
+	// CLI's own default. A repo's entries replace the defaults' for the same agent.
+	Effort map[string]string `yaml:"effort,omitempty" json:"effort,omitempty"`
+	// Models narrows the models the repo's agents may run (see ModelRules). The
+	// defaults' rules and the repo's both apply.
+	Models ModelRules `yaml:"models,omitempty" json:"models,omitempty"`
 }
 
 // badModel says a model name is not one: blank around it, or with spaces inside.
@@ -551,7 +561,11 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	c.Defaults = merge(c.Defaults, file.Defaults)
 	c.Repos = file.Repos
 	c.Projects = file.Projects
-	return c, warns, c.Validate()
+	c.Models = file.Models
+	if err := c.Validate(); err != nil {
+		return c, warns, err
+	}
+	return c, append(warns, c.ModelWarnings()...), nil
 }
 
 // Validate checks every value against its closed set.
@@ -630,6 +644,7 @@ func (c Config) Validate() error {
 		errs = append(errs, c.Profile(name).validate("repos."+name)...)
 	}
 	errs = append(errs, c.validateProjects()...)
+	errs = append(errs, c.validateModels()...)
 	return errors.Join(errs...)
 }
 
@@ -849,6 +864,15 @@ func merge(base, over Profile) Profile {
 		maps.Copy(m, over.Agent.Model)
 		out.Agent.Model = m
 	}
+	if len(over.Agent.Effort) > 0 {
+		m := maps.Clone(base.Agent.Effort)
+		if m == nil {
+			m = map[string]string{}
+		}
+		maps.Copy(m, over.Agent.Effort)
+		out.Agent.Effort = m
+	}
+	out.Agent.Models = mergeRules(base.Agent.Models, over.Agent.Models)
 	if over.Follows != nil {
 		out.Follows = over.Follows
 	}
