@@ -9,18 +9,83 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
-### Fixed
+## [0.2.0-beta.1] - 2026-10-11
 
-- **OpenCode no longer redirects a hosted provider to the local endpoint.** With
-  `opencode.endpoint` set, a model such as `openrouter/qwen/qwen3-coder` used to make
-  Shepherd define an `openrouter` provider at the local host. Now only a bare model name
-  or `local/<model>` runs on the endpoint; any other `provider/model` is passed to
-  OpenCode as written and uses its own provider and login. A prefix other than `local/`
-  no longer names a local provider. The run's closing log line reports a priced
-  provider's cost instead of always saying no cost. See `docs/opencode.md`.
+A beta of uBixShepherd with a web UI served by the daemon, projects, standards packs,
+usage stats, run diagnoses, an OpenCode agent and a front desk the daemon runs. This is
+the first release published to GitHub. The `0.1.0-beta.1` section below was prepared but
+never tagged, so everything it lists is part of this release too.
 
 ### Added
 
+- **Projects.** `projects:` in `config.yaml` groups repos (a repo is in at most one
+  project) with a daily or monthly budget marked `soft` or `hard`, local build caches
+  and intake rules. Shepherd rolls spend up per project, holds or warns at the caps,
+  and layers a project's approved brief and its caches into the text agents are given.
+  A project's brief is drafted and then approved by the person. The daemon serves them
+  at `/v1/projects`. A repo may be named in a project without its own `repos:` entry.
+  See `docs/projects.md`.
+- **The web UI grows pages.** The chat page follows the front desk with a composer,
+  typed rows and decisions answered inline, and keeps a half-typed message across page
+  changes. Beside it, a backlog rail lists what waits on the person or has gone quiet,
+  most urgent first: needs you, broken, idle, working and to review, with today's spend
+  against the budget, the forge poll's health and any quota hold in its header. Rows
+  carry their age and MR and pipeline badge, dated from the lane's last activity and the
+  forge's own times, and an "in thread" jump. The other pages are a Projects view (and
+  a Board grouped by project, with a Work section from `docs/WORK.md`), Runs and
+  history, a Usage page, a lane's whole Conversation, a Settings tab and a daemon status
+  popover on the connection dot. See `docs/web-chat.md`, `docs/web-projects.md`,
+  `docs/web-settings.md` and `docs/web-daemon-status.md`.
+- **Settings in the web UI.** The Settings tab reads and edits `config.yaml` in place:
+  per-repo overrides against the defaults, projects (add, edit, delete), a diff before
+  every save, validation beside the field, a `config.yaml.bak.<time>` backup (the last
+  10) and a reload of the daemon on save. It refuses to save over a file that changed
+  on disk, and risky changes ask to be confirmed. A browser session may save only when
+  `shepherd web --allow-settings` signed it in; otherwise the tab is read-only. See
+  `docs/web-settings.md`.
+- **Standards packs.** A pack is a folder of markdown rules, each with a level
+  (`must` or `should`), an optional check command, `applies_to` globs and `when` tags.
+  The rules that apply to a lane go into the one brief every agent gets, `plan_first`
+  is part of it, and a `must` rule's check runs before a push. A repo's own standards
+  win. Repo profiles gain `standards`, `standards_docs`, `standards_pack_dir` and
+  `standards_when`; `shepherd standards list`, `show` and `init` inspect them, and an
+  example house pack is written on first start. See `docs/standards-packs.md`.
+- **Usage stats.** Each run and each front desk turn records its tokens, its largest
+  context and how often the CLI compacted. `shepherd stats` (`--days`, `--from`, `--to`,
+  `--json`), `GET /v1/usage`, the `usage_stats` tool, the web Usage page and a usage
+  line in `shepherd run show` answer whether a larger context window is worth it.
+  Claude Code and OpenCode report them; Copilot and Cursor record cost only. See
+  `docs/usage-stats.md`.
+- **Run diagnoses and suggested fixes.** A run that ends badly, or whose work cannot be
+  pushed (gate, standards or commit rules failed, out of scope, push or merge refused,
+  out of quota, hung, no change), gets a deterministic one-line diagnosis with its
+  evidence and suggested fixes, shown in the feed, the CLI and the web UI. A fix runs
+  an existing operation; the ones that widen what an agent may do are left to the
+  person. The web UI and chat show what a running run is doing now. See
+  `docs/run-failures.md`.
+- **Dismiss a failed run.** `shepherd run dismiss` and `run undismiss` (and the
+  `run_dismiss` and `run_undismiss` tools) take a failed or stopped run off the board
+  without hiding it from history.
+- **The OpenCode agent.** `shepherd lane run --agent opencode` runs OpenCode headless
+  for small mechanical edits on a local model. `opencode.bin`, `opencode.endpoint`,
+  `opencode.idle_timeout`, `opencode.context` and `opencode.output` configure it; a run
+  that changes nothing or hangs fails with a diagnosis. Not for tests in a typed
+  codebase. See `docs/opencode.md`.
+- **Front desk session rotation.** The daemon's front desk ends its session past
+  `desk.rotate_tokens` (default 150000) or `desk.rotate_cost`, and starts the next
+  seeded with a summary Shepherd builds from its own records (`desk.summary_model`,
+  `desk.summary_chars`, `desk.summary_turns`). What each tool returns to the desk is
+  capped at `desk.tool_output_chars` (default 4000). A `desk_rotated` item appears in the
+  feed. See `docs/desk.md`.
+- **A daemon on another machine.** A named host in `~/.shepherd/hosts.yaml` is reached
+  over an SSH tunnel with `--host NAME` (or `SHEPHERD_HOST`), with `--workspace` and
+  `--repo` to choose what to act on; `shepherd host list` and `host check` list and
+  test the hosts. The daemon stays loopback-only.
+- **Chat conveniences.** Links in `shepherd chat` are clickable OSC 8 hyperlinks
+  (`chat.hyperlinks`, also in Settings), and `!command` runs a shell command in the chat
+  client, never by the front desk.
+- **A minimum git.** The daemon refuses to start on git older than 2.31 and says so, and
+  CI runs the tests on Ubuntu 22.04 (git 2.34).
 - **OpenCode provider timeouts.** `opencode.request_timeout` (default 60 minutes, at
   least 1 minute, or `off`) and `opencode.chunk_timeout` (default 10 minutes, at least
   10 seconds) set the per-request and stream-chunk limits Shepherd writes when
@@ -52,7 +117,8 @@ protocol) is listed under **Interface changes** in the release that makes it.
   signs a browser in: it asks the daemon for a link that works once, for a minute, and
   opens it (`--print` prints it instead; `--sign-out-all` ends every browser session).
   Opening the link sets a session cookie (HttpOnly, SameSite=Strict, for `/v1` only,
-  12 hours, held in the daemon's memory), so the browser never sees the operator token.
+  12 hours, kept in the store so a daemon restart does not sign you out), so the
+  browser never sees the operator token.
   A browser session has a new `web` role: the front desk's routes, the front desk
   conversation and answering decisions, but not the daemon's setup or minting links.
   Remote use is an SSH tunnel to the daemon's loopback port. See `web/README.md`.
@@ -72,16 +138,27 @@ protocol) is listed under **Interface changes** in the release that makes it.
   release workflow that pins Node 22 and refuses to publish without the embedded web UI
   or any of the six archives.
 
-### Fixed
-
-- `shepherd daemon reload` no longer shuts the daemon down: the daemon treats SIGHUP only
-  as a config reload, so a reload no longer interrupts runs or triggers a service restart.
-- Agents no longer inherit `SHEPHERD_CLIENT` from the daemon. A daemon started from
-  the front desk's tools passed `desk` on to every agent, so lanes an agent opened were
-  recorded as opened by the desk.
-
 ### Interface changes
 
+- New endpoints for projects (`GET /v1/projects`, `GET /v1/projects/{name}`, `GET
+  /v1/unassigned`, a brief's draft and approve routes), config (`GET`/`PUT /v1/config`
+  and `POST /v1/config/preview`), history (`GET /v1/history/lanes` and
+  `/v1/history/runs`), `GET /v1/lanes/{id}/conversation`, `GET /v1/usage`, a run's
+  diagnoses and fix (`/v1/runs/{id}/diagnoses`, `/v1/runs/{id}/fix`) and dismissal
+  (`/v1/runs/{id}/dismiss`, `/undismiss`), and `GET /v1/feed/stream`.
+  `GET /v1/status?detail=1` adds a `detail` object; lane views gain last activity and
+  forge MR and pipeline times; the feed has new kinds (`desk_rotated`, run diagnoses).
+- New commands: `shepherd standards`, `shepherd stats`, `shepherd host`, `shepherd
+  models`, `run dismiss` and `run undismiss`, and the global `--host`, `--workspace`
+  and `--repo`; `shepherd web` gains `--allow-settings`. New MCP tools: `usage_stats`,
+  `models_list`, `run_dismiss`, `run_undismiss`.
+- New config keys: `projects`, `standards`, `standards_docs`, `standards_pack_dir`,
+  `standards_when`, `desk.rotate_tokens`, `desk.rotate_cost`, `desk.summary_model`,
+  `desk.summary_chars`, `desk.summary_turns`, `desk.tool_output_chars`, `desk.wake`,
+  `chat.hyperlinks`, and the `opencode` block (`bin`, `endpoint`, `idle_timeout`,
+  `context`, `output`, `request_timeout`, `chunk_timeout`), with the model policy
+  keys. Absent keys keep their defaults. The daemon refuses to start on git older than
+  2.31.
 - New endpoints `GET /v1/projects/{name}/work` and `GET /v1/unassigned/work`, and the
   client call `ProjectWork`.
 - New optional config keys `opencode.request_timeout` and `opencode.chunk_timeout`.
@@ -113,8 +190,46 @@ protocol) is listed under **Interface changes** in the release that makes it.
 - A request with no token and no session is answered 401 with "not signed in: run
   shepherd web for a sign-in link".
 
+### Fixed
+
+- **A rebased lane's push is judged on its own changes.** Scope was checked against the
+  remote's old tip, so after a rebase and force push the base's own files were reported
+  as outside the lane's scope; it is now checked from the merge base with the base
+  branch.
+- **A daemon start from inside an agent run is refused** (`--force-from-run` overrides),
+  and per-run and push-block variables are scrubbed from the environment the daemon
+  starts with, so a daemon started by an agent no longer carries that run's settings.
+- **`daemon restart` and `install` check the config first,** so a broken file replaces
+  nothing; a retired key loads with a warning instead of failing.
+- **Chat records each turn's own cost,** not the session's running total.
+- **The web UI shows a lost daemon connection and reconnects by itself.**
+- **OpenCode no longer redirects a hosted provider to the local endpoint.** With
+  `opencode.endpoint` set, a model such as `openrouter/qwen/qwen3-coder` used to make
+  Shepherd define an `openrouter` provider at the local host. Now only a bare model name
+  or `local/<model>` runs on the endpoint; any other `provider/model` is passed to
+  OpenCode as written and uses its own provider and login. A prefix other than `local/`
+  no longer names a local provider. The run's closing log line reports a priced
+  provider's cost instead of always saying no cost. See `docs/opencode.md`.
+- `shepherd daemon reload` no longer shuts the daemon down: the daemon treats SIGHUP only
+  as a config reload, so a reload no longer interrupts runs or triggers a service restart.
+- Agents no longer inherit `SHEPHERD_CLIENT` from the daemon. A daemon started from
+  the front desk's tools passed `desk` on to every agent, so lanes an agent opened were
+  recorded as opened by the desk.
+
 ### Known limits
 
+- **GitLab is the only forge for lanes.** Merge request polling, merge closure, pipeline
+  handoffs and merge arming use GitLab through `glab`. GitHub is the release mirror and
+  publishing home; GitHub mirror and publication proofs are not built.
+- **macOS and Linux are tested; Windows is untested and experimental.** It builds in CI
+  and its archives are published, but it has no service-manager integration and does
+  not support SIGHUP reload.
+- **Not built yet:** workspace-wide leases (scopes are per repository), typed and
+  cross-repo work orders, triage and `verified-on:<env>` proofs. See
+  https://github.com/ubixsys/ubixshepherd/blob/main/docs/roadmap.md.
+- **A beta.** Public interfaces may change between releases, and there has been no
+  independent security review. See
+  https://github.com/ubixsys/ubixshepherd/blob/main/docs/VERSIONING.md.
 - **Scoped tokens are not isolation.** They stop accidents and tool misuse, but an
   agent running as the same OS user as the daemon can read `daemon.json` and obtain
   the operator token. Real isolation needs agents under a separate account or an OS
