@@ -32,6 +32,22 @@ import (
 // serviceFor finds the OS service manager; tests replace it.
 var serviceFor = service.For
 
+// isDaemonRun says whether args, a whole command line, run the daemon in the foreground:
+// `shepherd daemon` or `shepherd daemon run`, as launchd, systemd or a person starts it.
+func isDaemonRun(args []string) bool {
+	_, rest, err := splitGlobals(args)
+	if err != nil || len(rest) == 0 || rest[0] != "daemon" {
+		return false
+	}
+	var pos []string
+	for _, a := range rest[1:] {
+		if !strings.HasPrefix(a, "-") {
+			pos = append(pos, a)
+		}
+	}
+	return len(pos) == 0 || (len(pos) == 1 && pos[0] == "run")
+}
+
 func runDaemon(ctx context.Context, env Env, args []string) error {
 	fs := flags("daemon", env)
 	force := fs.Bool("force-from-run", false, "allow start, restart or install from inside an agent run")

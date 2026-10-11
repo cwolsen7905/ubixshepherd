@@ -120,11 +120,21 @@ func Main(args []string) int {
 	if exe, err := os.Executable(); err == nil {
 		env.Exe = exe
 	}
-	// A closed terminal (SIGHUP) must end the command the way Ctrl-C does, so that Run's
-	// deferred cleanup closes any ssh tunnel instead of leaving it behind.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	ctx, stop := notifyContext(context.Background(), args)
 	defer stop()
 	return Run(ctx, env, args)
+}
+
+// notifyContext ends ctx on the signals that end the command line args. A closed
+// terminal (SIGHUP) ends a command the way Ctrl-C does, so that Run's deferred cleanup
+// closes any ssh tunnel instead of leaving it behind. The daemon is the exception:
+// SIGHUP asks it to reload its config (see daemon.Server.ReloadConfig), never to stop.
+func notifyContext(parent context.Context, args []string) (context.Context, context.CancelFunc) {
+	sigs := []os.Signal{os.Interrupt, syscall.SIGTERM}
+	if !isDaemonRun(args) {
+		sigs = append(sigs, syscall.SIGHUP)
+	}
+	return signal.NotifyContext(parent, sigs...)
 }
 
 // Run dispatches args to a command.
