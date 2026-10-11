@@ -25,13 +25,27 @@ Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
 
 ## Install
 
-**From a release (recommended).** Download the archive for your OS and architecture from
-[GitHub Releases](https://github.com/ubixsys/ubixshepherd/releases), with `SHA256SUMS` and
-`SHA256SUMS.sigstore.json`, verify it ([docs/RELEASING.md](docs/RELEASING.md#verifying-a-download)
-has the commands), unpack it and put `shepherd` on your PATH, for example in
-`~/.local/bin`.
+Prebuilt binaries for macOS, Linux and Windows (amd64 and arm64) are on
+[GitHub Releases](https://github.com/ubixsys/ubixshepherd/releases). They are not
+code-signed; each release publishes `SHA256SUMS` and a cosign signature for it. The full
+steps per OS, upgrading and uninstalling are in **[docs/INSTALL.md](docs/INSTALL.md)**.
 
-**With Go** (see `go.mod` for the version):
+**macOS and Linux**, with the install script (it checks the download against
+`SHA256SUMS` and installs to `~/.local/bin`; [read it first](bin/install.sh)):
+
+```sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/ubixsys/ubixshepherd/main/bin/install.sh
+sh install.sh
+shepherd version
+```
+
+On macOS, a binary downloaded in a browser is quarantined: clear it once with
+`xattr -d com.apple.quarantine ~/.local/bin/shepherd`. **Windows:** unzip the release
+`.zip`, put `shepherd.exe` on your `PATH`, and see the PowerShell steps in
+[docs/INSTALL.md](docs/INSTALL.md#windows).
+
+**With Go** (see `go.mod` for the version; this build has no web UI, because only `make`
+embeds it):
 
 ```sh
 go install github.com/ubixsys/ubixshepherd/cmd/shepherd@v0.1.0-beta.1
@@ -42,7 +56,38 @@ A `go install` build reports the module version Go recorded (`v0.1.0-beta.1` abo
 **From source:** clone the repo and run `make install` (below).
 
 Shepherd needs **git 2.31 or newer**, and the CLIs of the agents you want it to start (`claude`, `copilot`,
-`cursor-agent`, `opencode`) and of your forge (`glab`), each logged in on this machine.
+`cursor-agent`, `opencode`) and of your forge (`glab`, for GitLab), each logged in on this machine.
+
+### First run
+
+```sh
+shepherd init ~/git        # finds the repos below ~/git; you choose which Shepherd manages
+shepherd daemon install    # optional: start at login (macOS and Linux; on Windows, shepherd daemon start)
+shepherd chat              # from ~/git: one conversation with the front desk
+shepherd web               # or the browser UI, signed in with a one-use link
+```
+
+The first start writes `~/.shepherd/config.yaml` (`%USERPROFILE%\.shepherd` on Windows) with
+every setting commented out; [docs/config.md](docs/config.md) is the reference. To upgrade,
+install the new release and run `shepherd daemon restart`; to remove Shepherd, see
+[docs/INSTALL.md](docs/INSTALL.md#uninstall).
+
+### Beta: what works, and known limits
+
+| Works today | Not yet |
+|---|---|
+| Lanes with per-repo scope leases and the pre-push hook | Workspace-wide leases across repos |
+| Claude Code, Copilot, Cursor and OpenCode runs, decisions, routed requests | GitHub as a forge for lanes (it is the release home only) |
+| GitLab polling, merge closure and failed-pipeline hand-offs | Typed cross-repo work orders and triage |
+| `shepherd chat`, the MCP tools, the web UI (`shepherd web`) | A login service and config reload on Windows |
+| macOS and Linux, both tested in CI | Windows: builds, but untested |
+
+Scoped tokens and the pre-push hook stop accidents, not a hostile agent: an agent runs as
+your OS user. Interfaces may change between betas, and each change is listed in
+[CHANGELOG.md](CHANGELOG.md). **Found a problem?** Open an issue at
+<https://github.com/ubixsys/ubixshepherd/issues> with `shepherd version`, your OS and what
+you ran; [docs/INSTALL.md](docs/INSTALL.md#reporting-a-problem) says what to include and
+what not to paste.
 
 **Why 2.31.** Shepherd blocks an agent's pushes by handing git rewrite rules through
 `GIT_CONFIG_COUNT` and `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n`, and git before 2.31
@@ -54,7 +99,7 @@ Ubuntu 20.04 (git 2.25) and Debian 11 (git 2.30) are not, so install a newer git
 
 ## Build and run
 
-Needs Go (see `go.mod` for the version) and git 2.31 or newer.
+To build from a checkout. Needs Go (see `go.mod` for the version) and git 2.31 or newer.
 
 ```sh
 make build                  # bin/shepherd for this machine
@@ -485,6 +530,7 @@ More versions (one-liner, technical) are in [docs/pitch.md](docs/pitch.md).
 
 | Doc | What it holds |
 |---|---|
+| [docs/INSTALL.md](docs/INSTALL.md) | Install, first run, upgrade and uninstall on macOS, Linux and Windows, and how to report a problem |
 | [docs/vision.md](docs/vision.md) | What Shepherd is for, what it does, what it deliberately is not |
 | [docs/design.md](docs/design.md) | **The core design**: how Shepherd applies uBixCore's typed-boundary philosophy to make multi-provider agent work deterministic |
 | [docs/v1.md](docs/v1.md) | **What v1 builds**: decided scope and stack, the Fold and dispatch around uBixCore, milestones |

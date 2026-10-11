@@ -15,7 +15,7 @@ GO_PKGS := ./cmd/... ./internal/...
 # The built web UI is embedded from here (internal/webui). Only its .gitignore is tracked.
 WEBUI_DIR := internal/webui/app
 
-.PHONY: build web install test check core-boundary cross dist release-notes clean
+.PHONY: build web install test check core-boundary script-check cross dist release-notes clean
 
 # Build the web UI (web/) into the binary. It needs Node 22 or later; without npm, or
 # with NO_WEB=1, the binary builds without a fresh UI and serves whatever is in
@@ -54,10 +54,14 @@ install: build
 test:
 	go test $(GO_PKGS)
 
-check: core-boundary
+check: core-boundary script-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
 	go test $(GO_PKGS)
+
+# The install script is not Go: parse it, so it cannot rot unseen.
+script-check:
+	@sh -n bin/install.sh && echo "install.sh parses."
 
 core-boundary:
 	@if grep -rniE '$(PRODUCT_PATTERN)' $(CORE_DIRS); then \
