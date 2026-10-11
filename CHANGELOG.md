@@ -125,10 +125,6 @@ protocol) is listed under **Interface changes** in the release that makes it.
   with the operator token can mint a link. The daemon speaks plain HTTP on loopback, so
   the session cookie is not marked Secure; TLS for direct remote access is later work.
 
-## [0.0.0-test.1] - 2026-10-11
-
-Placeholder for a throwaway release dry run. Not a real release.
-
 ## [0.1.0-beta.1] - 2026-10-09
 
 The first public beta of uBixShepherd: one local daemon coordinates agent work across a
