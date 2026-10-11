@@ -69,6 +69,12 @@
 #   ## A run that prints nothing for this long is stopped and recorded failed (at
 #   ## least 1m, or off). Any output resets it.
 #   idle_timeout: 10m
+#   ## How long one provider request may take (at least 1m, or off). off is no
+#   ## limit. This is one request, not a quiet run (that is idle_timeout).
+#   request_timeout: 60m
+#   ## How long a stream may go without a chunk (at least 10s). OpenCode accepts
+#   ## only a positive number, so this cannot be turned off.
+#   chunk_timeout: 10m
 #   ## Token limits told to OpenCode for the local model (defaults 32768 and 8192;
 #   ## output must be less than context). They only set when OpenCode compacts: the
 #   ## model host must load at least this much context itself (Ollama:

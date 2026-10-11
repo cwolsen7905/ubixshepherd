@@ -82,11 +82,13 @@ var chatMeta = map[string]fieldMeta{
 }
 
 var openCodeMeta = map[string]fieldMeta{
-	"bin":          {label: "Executable", help: "Empty looks on PATH, then in ~/.opencode/bin."},
-	"endpoint":     {label: "Endpoint", help: "Base URL of an OpenAI-compatible model host (an Ollama's http://localhost:11434/v1)."},
-	"idle_timeout": {label: "Idle timeout", help: "How long a run may print nothing before it is stopped: at least 1m, or off."},
-	"context":      {label: "Context tokens"},
-	"output":       {label: "Output tokens"},
+	"bin":             {label: "Executable", help: "Empty looks on PATH, then in ~/.opencode/bin."},
+	"endpoint":        {label: "Endpoint", help: "Base URL of an OpenAI-compatible model host (an Ollama's http://localhost:11434/v1)."},
+	"idle_timeout":    {label: "Idle timeout", help: "How long a run may print nothing before it is stopped: at least 1m, or off."},
+	"request_timeout": {label: "Request timeout", help: "How long one provider request may take when an endpoint is set: default 60m, at least 1m, or off."},
+	"chunk_timeout":   {label: "Chunk timeout", help: "How long a stream may go without a chunk before the request ends: default 10m, at least 10s. OpenCode has no way to turn this off."},
+	"context":         {label: "Context tokens"},
+	"output":          {label: "Output tokens"},
 }
 
 var projectMeta = map[string]fieldMeta{
