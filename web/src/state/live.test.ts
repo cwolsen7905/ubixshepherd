@@ -52,6 +52,8 @@ function fakeApi(over: Partial<Api> = {}) {
     spend: async () => (calls.push('spend'), { day: '2026-10-08', usd: 1, budget: 20, credit_usd: 0, by_source: null }),
     feedLatest: async () => (calls.push('latest'), { items: [], events: [], last: 5 }),
     feed: async (after) => (calls.push(`feed:${after}`), feeds.shift() ?? { items: [], events: [], last: after }),
+    dismissRun: async () => { throw new Error('unused') },
+    undismissRun: async () => { throw new Error('unused') },
     answer: async () => { throw new Error('unused') },
     ...over,
   }

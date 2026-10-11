@@ -103,6 +103,9 @@ export const api = {
   lanes: (workspaceId: number) => get<LaneView[]>(`/v1/lanes?${qs({ workspace_id: workspaceId })}`),
   runs: (laneId = 0, limit = RECENT_RUNS) => get<RunView[]>(`/v1/runs?${qs({ lane_id: laneId, limit })}`),
   run: (id: number) => get<RunView>(`/v1/runs/${id}`),
+  /** Clears a failed or stopped run from the board's attention group; nothing is deleted. */
+  dismissRun: (id: number) => post<RunView>(`/v1/runs/${id}/dismiss`, {}),
+  undismissRun: (id: number) => post<RunView>(`/v1/runs/${id}/undismiss`, {}),
   runLog: (id: number, offset: number) => get<RunLog>(`/v1/runs/${id}/log?${qs({ offset })}`),
   runEvents: (id: number) => get<RunEvents>(`/v1/runs/${id}/events`),
   /** state "" lists every decision. */

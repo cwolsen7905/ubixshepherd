@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { boardItems, counts, countsText, GROUP_NAMES, GROUPS } from './model/board'
+import { boardItems, counts, dismissedCount, countsText, GROUP_NAMES, GROUPS } from './model/board'
 import { usd } from './format'
 import { useKeys } from './hooks'
 import { go, href, useRoute } from './router'
@@ -17,11 +17,14 @@ import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
 import { Help } from './components/Help'
 import { GROUP_MARKS } from './model/groups'
+import { readShowDismissed, writeShowDismissed } from './model/board'
 
 export function App() {
   const route = useRoute()
   const snap = useSnapshot()
-  const items = useMemo(() => boardItems(snap), [snap])
+  const [showDismissed, setShowDismissed] = useState(() => readShowDismissed(window.localStorage))
+  const items = useMemo(() => boardItems({ ...snap, showDismissed }), [snap, showDismissed])
+  const hidden = useMemo(() => dismissedCount(snap.lanes, snap.runs), [snap.lanes, snap.runs])
   const n = counts(items)
   const [help, setHelp] = useState(false)
   const pending = useRef('')
@@ -124,7 +127,18 @@ export function App() {
       )}
 
       <main className="main">
-        {route.page === 'board' && <BoardPage items={items} range={route.range} />}
+        {route.page === 'board' && <BoardPage
+            items={items}
+            range={route.range}
+            dismissed={{
+              count: hidden,
+              show: showDismissed,
+              onShow: (on) => {
+                setShowDismissed(on)
+                writeShowDismissed(window.localStorage, on)
+              },
+            }}
+          />}
         {route.page === 'projects' && <ProjectsPage />}
         {route.page === 'project' && <ProjectPage key={route.name} name={route.name} />}
         {route.page === 'unassigned' && <ProjectPage key="unassigned" name={null} />}

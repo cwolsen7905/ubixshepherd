@@ -177,6 +177,15 @@ type Run struct {
 	// run's (Copilot): the next run of the session costs what it adds beyond them.
 	SessionUSD     float64 `json:"session_usd,omitempty"`
 	SessionCredits float64 `json:"session_credits,omitempty"`
+	// Dismissed is when the person cleared the run from the board's attention group; nil
+	// when they have not. The run and its log stay in history.
+	Dismissed *time.Time `json:"dismissed,omitempty"`
+}
+
+// Dismissable reports whether a run in this state can be dismissed: one that ended
+// without succeeding.
+func Dismissable(state string) bool {
+	return state == RunFailed || state == RunStopped || state == RunInterrupted
 }
 
 // Spend is money spent on one day by one source (an agent, or the desk). In totals from
@@ -776,6 +785,10 @@ type Store interface {
 	Run(ctx context.Context, id int64) (Run, error)
 	// Runs returns the newest first; laneID 0 means every lane, state "" every state.
 	Runs(ctx context.Context, laneID int64, state string, limit int) ([]Run, error)
+	// DismissRun marks a failed, stopped or interrupted run dismissed at the time, or
+	// with nil clears the mark. ErrNotFound for no such run, ErrConflict for a run that
+	// is running or succeeded. UpdateRun never touches the mark.
+	DismissRun(ctx context.Context, id int64, at *time.Time) error
 
 	AddEvent(ctx context.Context, e Event) (Event, error)
 	Events(ctx context.Context, runID int64) ([]Event, error)

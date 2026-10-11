@@ -24,6 +24,8 @@ function liveWith(feed = [feedItem({ id: 1, kind: 'decision', ref: 5, text: 'dec
     spend: async () => spend(),
     feedLatest: async () => ({ items: [], events: [], last: feed.length }),
     feed: async (after) => ({ items: after === 0 ? feed : [], events: feed.map((f) => f.kind === 'decision' ? 'decision_asked' : 'run_passed'), last: feed.length }),
+    dismissRun: async () => { throw new Error('unused') },
+    undismissRun: async () => { throw new Error('unused') },
     answer: answer ?? vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words })),
   }
   return new Live(api, still)

@@ -3,8 +3,9 @@ import { api } from '../api/client'
 import type { RunView } from '../api/types'
 import { EventGlyph } from '../components/Glyph'
 import { RunFailure } from '../components/RunFailure'
-import { duration, runCost } from '../format'
+import { duration, runCost, since } from '../format'
 import { useKeys, useNow } from '../hooks'
+import { endedBadly } from '../model/board'
 import { parseLog, type Block } from '../model/log'
 import { href } from '../router'
 import { useLive } from '../state/context'
@@ -150,6 +151,19 @@ export function LogPage({ run: id }: { run: number }) {
             <span>{duration(run.started, run.ended, now)}</span>
             {runCost(run) && <span>{runCost(run)}</span>}
             {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
+            {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
+          </p>
+        )}
+        {run && endedBadly(run) && (
+          <p className="row-actions">
+            <button
+              type="button"
+              className="link-button"
+              title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
+              onClick={() => live.dismiss(run.id, !run.dismissed).then(() => api.run(id)).then(setRun, () => {})}
+            >
+              {run.dismissed ? 'Undismiss' : 'Dismiss'}
+            </button>
           </p>
         )}
       </header>

@@ -299,6 +299,9 @@ var migrations = []string{
 		created   TEXT NOT NULL
 	);
 	CREATE INDEX run_diagnoses_run ON run_diagnoses (run_id, id);`,
+	// A failed or stopped run the person has dismissed from the board: when, or '' for
+	// one not dismissed. The run, its log and its record stay.
+	`ALTER TABLE runs ADD COLUMN dismissed TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -565,14 +568,14 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	return r, json.Unmarshal([]byte(stacks), &r.Stacks)
 }
 
-const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits`
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits, dismissed`
 
 func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	var r store.Run
-	var outside, started, ended string
+	var outside, started, ended, dismissed string
 	var exit sql.NullInt64
 	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
-		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits); err != nil {
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits, &dismissed); err != nil {
 		return r, err
 	}
 	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
@@ -586,6 +589,10 @@ func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	if ended != "" {
 		t := parseTime(ended)
 		r.Ended = &t
+	}
+	if dismissed != "" {
+		t := parseTime(dismissed)
+		r.Dismissed = &t
 	}
 	return r, nil
 }
@@ -625,6 +632,26 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 			session_usd = ?, session_credits = ? WHERE id = ?`,
 		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits,
 		r.SessionUSD, r.SessionCredits, r.ID)
+	return err
+}
+
+// DismissRun marks a run dismissed at the given time, or with nil clears the mark. It
+// touches nothing else of the run. Only a run that ended without succeeding can be
+// dismissed: ErrNotFound for no such run, ErrConflict for one that is running or
+// succeeded.
+func (s *DB) DismissRun(ctx context.Context, id int64, at *time.Time) error {
+	r, err := s.Run(ctx, id)
+	if err != nil {
+		return err
+	}
+	val := ""
+	if at != nil {
+		if !store.Dismissable(r.State) {
+			return fmt.Errorf("run %d is %s, so it is not on the board to dismiss: %w", id, r.State, store.ErrConflict)
+		}
+		val = at.UTC().Format(time.RFC3339Nano)
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE runs SET dismissed = ? WHERE id = ?`, val, id)
 	return err
 }
 

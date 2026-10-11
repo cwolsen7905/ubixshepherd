@@ -5,7 +5,7 @@ import { COLLAPSED_KEY, VIEW_KEY } from '../model/projects'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { lane, project, run, spend, status, unassigned } from '../test/fixtures'
-import { BoardPage } from './Board'
+import { BoardPage, type DismissedControl } from './Board'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
@@ -21,7 +21,7 @@ function daemon(projects = [project({ lanes: 2, spend_today: 1.5 }), unassigned(
   })
 }
 
-async function show(shown: BoardItem[] = items) {
+async function show(shown: BoardItem[] = items, over: Partial<Api> = {}, dismissed?: DismissedControl) {
   const api: Api = {
     status: async () => status(),
     lanes: async () => [],
@@ -34,14 +34,21 @@ async function show(shown: BoardItem[] = items) {
     spend: async () => spend(),
     feedLatest: async () => ({ items: [], events: [], last: 0 }),
     feed: async (after) => ({ items: [], events: [], last: after }),
+    dismissRun: async () => { throw new Error('unused') },
+    undismissRun: async () => { throw new Error('unused') },
     answer: async () => { throw new Error('unused') },
+    ...over,
   }
+  return await mount(api, shown, dismissed)
+}
+
+async function mount(api: Api, shown: BoardItem[], dismissed?: DismissedControl) {
   const live = new Live(api, still)
   await act(() => live.refresh())
   await act(async () => {
     render(
       <LiveProvider live={live}>
-        <BoardPage items={shown} />
+        <BoardPage items={shown} dismissed={dismissed} />
       </LiveProvider>,
     )
   })
@@ -113,5 +120,38 @@ describe('BoardPage by project', () => {
     await show()
     expect(screen.queryByRole('button', { name: 'Flat' })).toBeNull()
     expect(screen.getByText('feat/login')).toBeInTheDocument()
+  })
+})
+
+describe('BoardPage dismiss', () => {
+  const failed = run({ state: 'failed' })
+  const broken: BoardItem = {
+    key: 'lane:1', group: 'broken', name: 'feat/login', laneId: 1, repo: 'acme-api', lane: lane(), run: failed,
+    detail: 'run 10 failed', at: '2026-10-08T10:04:00Z',
+  }
+
+  it('dismisses a failed run from its card, then reloads the lists', async () => {
+    const dismissRun = vi.fn(async (id: number) => ({ ...failed, id, dismissed: '2026-10-08T10:06:00Z' }))
+    const runs = vi.fn(async () => [])
+    await show([broken], { dismissRun, runs })
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss run 10' }))
+    expect(dismissRun).toHaveBeenCalledWith(10)
+    expect(runs.mock.calls.length).toBeGreaterThan(1)
+  })
+
+  it('offers Undismiss on a dismissed run shown by the toggle', async () => {
+    const undismissRun = vi.fn(async (id: number) => ({ ...failed, id }))
+    const item = { ...broken, run: { ...failed, dismissed: '2026-10-08T10:06:00Z' }, detail: 'run 10 failed, dismissed' }
+    await show([item], { undismissRun }, { count: 1, show: true, onShow: () => {} })
+    expect(screen.getByRole('button', { name: 'Hide dismissed (1)' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Undismiss run 10' }))
+    expect(undismissRun).toHaveBeenCalledWith(10)
+  })
+
+  it('offers the toggle only when something is dismissed', async () => {
+    const onShow = vi.fn()
+    await show([], {}, { count: 2, show: false, onShow })
+    await userEvent.click(screen.getByRole('button', { name: 'Show dismissed (2)' }))
+    expect(onShow).toHaveBeenCalledWith(true)
   })
 })
