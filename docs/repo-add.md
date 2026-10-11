@@ -61,8 +61,8 @@ directory is gone). Unmanaged repos found on disk show as `found`.
   refused with "run `shepherd init <dir>` to create a workspace"; adding never creates
   a workspace.
 - A *name* is the repo's name in the workspace (its path relative to the root). It is
-  looked up in the last scan, then on disk below the root, so `shepherd repo add kitg`
-  works when `~/git/kitg` exists. An ambiguous name lists the candidates and refuses.
+  looked up in the last scan, then on disk below the root, so `shepherd repo add my-service`
+  works when `~/git/my-service` exists. An ambiguous name lists the candidates and refuses.
 - Several arguments are all validated before any is added: one bad one adds none.
 - Idempotent: an already-managed repo is reported "already managed", exit 0. A repo
   that was removed earlier is managed again (same row, `removed` cleared), keeping its
@@ -74,7 +74,7 @@ directory is gone). Unmanaged repos found on disk show as `found`.
 - After adding, it reports whether the repo has a profile (`config.yaml` `repos.<name>`)
   and, if not, that defaults apply. It never writes `config.yaml`.
 
-**`repo remove <name>`**: refuses with the open lanes named ("kitg has 2 open lanes:
+**`repo remove <name>`**: refuses with the open lanes named ("my-service has 2 open lanes:
 feat/a, fix/b: close them first"), also refuses while a run is active in the repo.
 Otherwise it marks the repo unmanaged. It does not touch the directory, the git
 remote, `config.yaml` or the repo's lane/run history. The profile stays, so a later
@@ -128,11 +128,11 @@ Shepherd offers; it never adds.
   `daemon.repo_scan: <duration>` (default off) if wanted.
 - **Where it shows.**
   - One feed line per *new* finding, once (the finding set is diffed against the
-    previous one so a reload does not repeat it): "kitg has a profile in config.yaml
-    but is not managed: `shepherd repo add kitg`". Kind `config` (existing), so the
+    previous one so a reload does not repeat it): "my-service has a profile in config.yaml
+    but is not managed: `shepherd repo add my-service`". Kind `config` (existing), so the
     feed's closed set of kinds does not change.
   - `shepherd status` and the web daemon status show "N repos found, not managed".
-  - The desk's brief mentions them, so the person can answer "yes, add kitg" in chat
+  - The desk's brief mentions them, so the person can answer "yes, add my-service" in chat
     and the desk calls `repo_add`.
   - `config.Load`'s existing log line stays; the finding is the user-visible
     version of it.
@@ -246,7 +246,8 @@ MR !121 (`feat/backlog-desk-events`) has merged, so `internal/store`, `internal/
 2. **Surfaces**: findings on reload and in the feed and status, the MCP tools and desk
    brief, the Settings section, the remaining docs.
 
-Part 1 alone fixes the reported case: `shepherd repo add kitg` with no restart.
+Part 1 alone fixes the reported case, a repo cloned after init:
+`shepherd repo add my-service` with no restart.
 
 ## Not in scope
 
