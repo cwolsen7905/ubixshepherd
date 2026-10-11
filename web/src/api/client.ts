@@ -4,7 +4,7 @@
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
 import type {
-  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneRecord, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneDiff, LaneRecord, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -117,6 +117,13 @@ export const api = {
   feed: (after: number) => get<Feed>(`/v1/feed?${qs({ after })}`),
   /** The person's words, sent only from their own click. */
   answer: (decisionId: number, answer: string) => post<Decision>(`/v1/decisions/${decisionId}/answer`, { answer }),
+}
+
+/** What a lane holds against its base (read-only; each read runs git in the worktree). */
+export const laneChanges = {
+  /** The file list; with `file`, that file's patch. */
+  diff: (laneId: number, file?: string) =>
+    get<LaneDiff>(`/v1/lanes/${laneId}/diff?${qs(file === undefined ? { mode: 'stat' } : { file })}`),
 }
 
 /** A failed run's diagnoses and its suggested fixes. */

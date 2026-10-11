@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, history } from '../api/client'
+import { api, config, history } from '../api/client'
 import type { LaneRecord, LaneView, RequestView, RunView } from '../api/types'
+import { Changes } from '../components/Changes'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
@@ -9,6 +10,7 @@ import { boardItems, GROUP_NAMES } from '../model/board'
 import { ending } from '../model/history'
 import { aboutLane, type Refs } from '../model/feed'
 import { GROUP_MARKS } from '../model/groups'
+import { editorHref } from '../editorLink'
 import { useNow } from '../hooks'
 import { href } from '../router'
 import { useLive, useSnapshot } from '../state/context'
@@ -35,7 +37,11 @@ interface LaneData {
 /** How often a lane with a running run reads its runs again, for the progress line. */
 export const PROGRESS_POLL = 5000
 
-type Tab = 'overview' | 'conversation'
+type Tab = 'overview' | 'conversation' | 'changes'
+
+const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', conversation: 'Conversation', changes: 'Changes' }
+
+const DAEMON_PATH_NOTE = 'The path is on the machine the daemon runs on; the editor opens it on this one.'
 
 /** `conversation` replaces the daemon's reader; tests give it a fake. */
 export function LanePage({ id, conversation }: { id: number; conversation?: (laneId: number) => ConversationSource }) {
@@ -48,6 +54,21 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
   const [error, setError] = useState<string | null>(null)
   // Bumped after a fix is taken, to read the runs again at once.
   const [reload, setReload] = useState(0)
+  // The editor link template (web.editor_url); null until read, or when it cannot be read.
+  const [editorUrl, setEditorUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let current = true
+    config.get().then(
+      (doc) => {
+        const web = (doc.effective?.web ?? {}) as { editor_url?: unknown }
+        if (current && typeof web.editor_url === 'string') setEditorUrl(web.editor_url)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [])
   // The daemon lists open lanes only; a closed lane is read from its history record, or
   // failing that (an older daemon) known from its runs.
   const listed = snap.lanes.find((l) => l.id === id)
@@ -166,7 +187,7 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
       )}
 
       <div className="lane-tabs" role="tablist" aria-label="Lane views">
-        {(['overview', 'conversation'] as const).map((t) => (
+        {(['overview', 'conversation', 'changes'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -177,7 +198,7 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
             aria-controls="lane-panel"
             onClick={() => setTab(t)}
           >
-            {t === 'overview' ? 'Overview' : 'Conversation'}
+            {TAB_NAMES[t]}
           </button>
         ))}
       </div>
@@ -186,6 +207,15 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
         <div id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-conversation">
           <Conversation source={source} refreshKey={feedLast} now={now} />
         </div>
+      )}
+
+      {tab === 'changes' && known && (
+        <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={editorUrl} refreshKey={feedLast} now={now} />
+      )}
+      {tab === 'changes' && !known && (
+        <p id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-changes" className="lane-note faint">
+          This lane is closed or not listed by the daemon, so there is no worktree to read.
+        </p>
       )}
 
       <div className="lane-grid" id={tab === 'overview' ? 'lane-panel' : undefined} role={tab === 'overview' ? 'tabpanel' : undefined} aria-labelledby={tab === 'overview' ? 'lane-tab-overview' : undefined} hidden={tab !== 'overview'}>
@@ -236,6 +266,11 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
             </dd>
             <dt>Commits</dt>
             <dd>
+              {known && (
+                <p className="lane-changes-link">
+                  <button type="button" className="link-button" onClick={() => setTab('changes')}>See the changes</button>
+                </p>
+              )}
               {runs.some((r) => r.commits > 0) ? (
                 <ul className="commits">
                   {runs.filter((r) => r.commits > 0).map((r) => (
@@ -251,6 +286,12 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
             <dt>Worktree</dt>
             <dd>
               <code className="path">{lane.worktree}</code>
+              {(() => {
+                const link = editorHref(editorUrl, lane.worktree)
+                return link && (
+                  <> <a href={link} title={`Open the worktree in your editor. ${DAEMON_PATH_NOTE}`}>open in editor</a></>
+                )
+              })()}
             </dd>
             <dt>Opened by</dt>
             <dd>{origin(lane)}</dd>

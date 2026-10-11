@@ -2,7 +2,8 @@
 
 Status: **approved as written** by the maintainer (2026-10-11). Implementation is three
 merge requests, each its own lane (sequencing below). Step 1 (the core read, `shepherd lane
-diff` and the `lane_diff` tool) is built; steps 2 and 3 are not.
+diff` and the `lane_diff` tool) and step 2 (the web Changes tab and the editor link) are
+built; step 3 is not.
 
 ## The problem
 
@@ -130,6 +131,10 @@ web:
   editor_url: "vscode://file/{path}"   # also {path}:{line} for a file's link
 ```
 
+Built: the key is `web.editor_url` in `config.yaml` (`internal/config`), validated at
+load, and the page reads the value in force from `effective.web.editor_url` of
+`GET /v1/config`, so no new endpoint was needed. It is not yet a field of the Settings
+form (the form's field list is in `internal/daemon/configfields.go`); edit the file.
 `{path}` is the worktree's absolute path (or the file's inside it, in the Changes view),
 URL-escaped. The default is `vscode://file/{path}`; setting it to `""` hides the links,
 and `cursor://file/{path}`, `idea://open?file={path}` or any other scheme works with no
@@ -138,6 +143,15 @@ and only a non-`javascript:`/`data:` scheme), and rendered client-side. The link
 informational: the browser opens the editor on the person's machine; if the daemon is
 remote the worktree path is the daemon's, which the page says in a tooltip.
 This is a link, not an in-app editor (out of scope).
+
+As built (step 2): the tab is `web/src/components/Changes.tsx`. It reads
+`GET /v1/lanes/{id}/diff` (stat) when it opens, when the lane's feed advances and on
+Refresh, and each file's patch (`?file=`) only when the file is opened. `ChangesView`
+draws a read it is given, so a later comparison can hold two. Binary files and untracked
+files are never expanded into a diff; an untracked file shows its start as plain text.
+Links are rendered in `web/src/editorLink.ts`: a leading `/` of the path is merged with
+a `/{path}` in the template (`vscode://file/Users/me/x`), a Windows drive keeps its colon,
+and a template that is empty, unreadable or has a scripting scheme gives no link.
 
 ### The gate badge
 

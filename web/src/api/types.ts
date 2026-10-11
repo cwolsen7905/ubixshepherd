@@ -618,3 +618,50 @@ export interface ProjectWork {
   repos: RepoWork[]
   drift: WorkDrift[]
 }
+
+/** One changed file in a lane diff; mirrors fold.DiffFileInfo. */
+export interface DiffFile {
+  path: string
+  old_path?: string
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange' | 'untracked' | string
+  added: number
+  removed: number
+  binary?: boolean
+  size?: number
+  in_scope: boolean
+  hunks?: string[]
+}
+
+export interface DiffCommit {
+  sha: string
+  subject: string
+  author: string
+  date: string
+  files: number
+}
+
+/** What a lane holds against its base, at one moment; GET /v1/lanes/{id}/diff. */
+export interface LaneDiff {
+  lane_id: number
+  lane: string
+  repo?: string
+  branch: string
+  base: string
+  base_ref: string
+  merge_base?: string
+  head: string
+  mode: string
+  read_at: string
+  commits: DiffCommit[]
+  commits_total: number
+  committed: DiffFile[]
+  uncommitted: DiffFile[]
+  untracked: DiffFile[]
+  files_more?: number
+  out_of_scope: number
+  file?: string
+  patch?: string
+  truncated?: boolean
+  notes?: string[]
+  redacted?: number
+}
