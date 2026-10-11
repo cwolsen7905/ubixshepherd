@@ -55,11 +55,38 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
+      # The web UI is built by `make web` and embedded in the binary; it needs Node 22 or
+      # later. Pin it, so a release never depends on what the runner image happens to ship.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Release notes from CHANGELOG.md
         run: make --no-print-directory release-notes VERSION="$TAG" > release-notes.md
 
       - name: Build the archives and SHA256SUMS
         run: make dist VERSION="$TAG"
+
+      # `make web` quietly skips the UI when npm is missing. A release must carry it.
+      - name: The web UI is built into the binaries
+        run: |
+          test -f internal/webui/app/index.html || {
+            echo "internal/webui/app/index.html is missing: the web UI was not built. Refusing to release."
+            exit 1
+          }
+
+      - name: Six archives and their checksums
+        run: |
+          for t in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            test -f "dist/shepherd-$TAG-$t.tar.gz" || { echo "missing $t archive"; exit 1; }
+          done
+          for t in windows-amd64 windows-arm64; do
+            test -f "dist/shepherd-$TAG-$t.zip" || { echo "missing $t archive"; exit 1; }
+          done
+          test "$(wc -l < dist/SHA256SUMS)" -eq 6 || { echo "SHA256SUMS should list six archives"; cat dist/SHA256SUMS; exit 1; }
+          ls -l dist
 
       - name: The binary reports the tag
         run: |

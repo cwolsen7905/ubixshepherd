@@ -53,6 +53,9 @@ creates a GitHub Release holding:
 | `SHA256SUMS` | SHA-256 of every archive |
 | `SHA256SUMS.sigstore.json` | A keyless cosign signature bundle for `SHA256SUMS` |
 
+The release job also fails, publishing nothing, if the web UI was not built into the
+binaries (the workflow pins Node 22 for it), or if any of the six archives is missing.
+
 The release notes are the tag's section of [CHANGELOG.md](../CHANGELOG.md). A tag with a
 `-` suffix (`-beta.N`, `-rc.N`) is marked as a pre-release.
 
@@ -108,6 +111,24 @@ signing uses GitHub's OIDC identity, so there is no signing key to keep.
 5. **Check the published release.** Download an archive and verify it as below, and
    confirm the release is marked pre-release if and only if the tag has a suffix.
 
+## Before the first public release
+
+The pipeline below has been exercised only by its own checks, so for the first public
+release (`v0.1.0-beta.1`), before announcing it:
+
+1. Run the [throwaway dry run](#a-throwaway-dry-run) and check what it published: six
+   archives (`.tar.gz` for Linux and macOS, `.zip` for Windows), `SHA256SUMS`, the
+   sigstore bundle, and a release marked pre-release. Download one, verify it as below,
+   and check that `shepherd web` serves the UI (a build without it says "not built").
+2. Run `bin/install.sh` against that release (`VERSION=v0.0.0-test.1 sh bin/install.sh`)
+   on macOS and on Linux, then delete the test release as described below.
+3. Make sure the `[0.1.0-beta.1]` changelog section's date is the day the tag is cut.
+4. Set the repository's About details on GitHub (description, topics, the website link to
+   ubixsys.com/shepherd), and enable private vulnerability reporting under Security, since
+   [INSTALL.md](INSTALL.md#reporting-a-problem) points people to it.
+5. Install from the published release on a clean machine by [INSTALL.md](INSTALL.md), as a
+   stranger would, before linking to it from the website.
+
 ## A throwaway dry run
 
 To exercise the pipeline without a real release, tag `main` with a throwaway version
@@ -129,6 +150,10 @@ the run wrote to the public Sigstore transparency log is permanent but harmless:
 records that the workflow signed a checksum file.
 
 ## Verifying a download
+
+People who just want to install should use `bin/install.sh` or [INSTALL.md](INSTALL.md);
+it checks the archive against `SHA256SUMS`. What follows is the stronger check, which
+also proves `SHA256SUMS` came from this repository's release workflow.
 
 Download the archive for your platform, `SHA256SUMS` and `SHA256SUMS.sigstore.json` from
 the release into one directory.
@@ -155,8 +180,12 @@ sha256sum --ignore-missing -c SHA256SUMS          # Linux
 shasum -a 256 --ignore-missing -c SHA256SUMS      # macOS
 ```
 
-On Windows, compare `Get-FileHash shepherd-<tag>-windows-amd64.zip` with its line in
-`SHA256SUMS`.
+On Windows, compare the hash with its line in `SHA256SUMS`:
+
+```powershell
+(Get-FileHash shepherd-<tag>-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
+Select-String 'windows-amd64.zip' SHA256SUMS
+```
 
 ## When a release goes wrong
 
