@@ -549,3 +549,56 @@ export interface ProjectDetail extends ProjectSummary {
   pending_requests: RequestView[]
   brief?: BriefView
 }
+
+/** A work matrix row's status: the order here is the order the page shows them in. */
+export type WorkStatus = 'doing' | 'blocked' | 'todo' | 'done' | 'dropped'
+
+export interface WorkRow {
+  id: string
+  area: string
+  item: string
+  status: WorkStatus
+  lane?: string
+  /** 0 or absent when the PR cell was `-`. */
+  pr?: number
+  notes?: string
+  repo: string
+  /** The id of the row's lane when the repo has one by that name. */
+  lane_id?: number
+  /** The forge's page for the PR or MR; absent when the remote is unknown. */
+  pr_url?: string
+}
+
+export interface WorkWarning {
+  line?: number
+  text?: string
+  reason: string
+}
+
+export interface RepoWork {
+  repo: string
+  /** False when the base ref or docs/WORK.md is not there. */
+  found: boolean
+  ref?: string
+  blob?: string
+  rows: WorkRow[]
+  warnings: WorkWarning[]
+}
+
+export type WorkDriftKind = 'lane_untracked' | 'doing_lane_closed' | 'doing_lane_unknown' | 'no_work_file'
+
+export interface WorkDrift {
+  kind: WorkDriftKind
+  repo: string
+  lane?: string
+  lane_id?: number
+  row_id?: string
+  message: string
+}
+
+/** GET /v1/projects/{name}/work. */
+export interface ProjectWork {
+  project: string
+  repos: RepoWork[]
+  drift: WorkDrift[]
+}

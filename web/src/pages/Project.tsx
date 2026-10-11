@@ -1,6 +1,7 @@
 import { BudgetMeter } from '../components/BudgetMeter'
 import { Glyph } from '../components/Glyph'
 import { MrBadge } from '../components/MrBadge'
+import { Work } from '../components/Work'
 import { age as ageOf, duration, runCost, since, usd } from '../format'
 import { useNow } from '../hooks'
 import { UNASSIGNED } from '../model/projects'
@@ -173,6 +174,8 @@ export function ProjectPage({ name }: { name: string | null }) {
           ))}
         </ul>
       </section>
+
+      <Work name={name} />
 
       {data.brief && <Brief view={data.brief} />}
     </div>

@@ -1,5 +1,5 @@
 import { act, render, screen, within } from '@testing-library/react'
-import type { ProjectDetail, ProjectList } from '../api/types'
+import type { ProjectDetail, ProjectList, ProjectWork } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { decision, lane, project, request, run, spend, status, unassigned } from '../test/fixtures'
@@ -24,11 +24,12 @@ const detail: ProjectDetail = {
   },
 }
 
-function daemon(list: ProjectList, one: ProjectDetail = detail) {
+function daemon(list: ProjectList, one: ProjectDetail = detail, work?: ProjectWork) {
   const seen: string[] = []
   vi.stubGlobal('fetch', async (path: string) => {
     seen.push(path)
     if (path === '/v1/projects') return new Response(JSON.stringify(list), { status: 200 })
+    if (work && path === '/v1/projects/shop/work') return new Response(JSON.stringify(work), { status: 200 })
     if (path === '/v1/projects/shop') return new Response(JSON.stringify(one), { status: 200 })
     if (path === '/v1/unassigned') return new Response(JSON.stringify({ ...unassigned(), open_lanes: [], runs: [], pending_decisions: [], pending_requests: [] }), { status: 200 })
     return new Response(JSON.stringify({ error: 'no' }), { status: 404 })
@@ -129,5 +130,55 @@ describe('ProjectPage', () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="nope" />)
     expect(await screen.findByText(/Could not load project nope/)).toBeInTheDocument()
+  })
+})
+
+const workFixture: ProjectWork = {
+  project: 'shop',
+  repos: [
+    {
+      repo: 'acme-api',
+      found: true,
+      rows: [
+        { id: 'W1', area: 'web', item: 'Login page', status: 'doing', lane: 'feat/login', lane_id: 7, pr: 34, pr_url: 'https://gitlab.example.com/g/r/-/merge_requests/34', repo: 'acme-api' },
+        { id: 'W2', area: 'web', item: 'Reset flow', status: 'blocked', notes: 'needs SMTP', repo: 'acme-api' },
+        { id: 'W3', area: 'core', item: 'Schema', status: 'todo', repo: 'acme-api' },
+        { id: 'W4', area: 'core', item: 'Shipped thing', status: 'done', pr: 2, repo: 'acme-api' },
+      ],
+      warnings: [{ line: 9, text: '| W5 | x |', reason: '2 columns, want 7' }],
+    },
+    { repo: 'acme-web', found: false, rows: [], warnings: [] },
+  ],
+  drift: [
+    { kind: 'lane_untracked', repo: 'acme-api', lane: 'feat/extra', lane_id: 9, message: 'lane feat/extra is open and no WORK.md row names it' },
+    { kind: 'doing_lane_closed', repo: 'acme-api', lane: 'old', row_id: 'W9', message: 'W9 is doing but lane old is closed' },
+    { kind: 'no_work_file', repo: 'acme-web', message: 'acme-web has no docs/WORK.md on origin/main' },
+  ],
+}
+
+describe('ProjectPage work section', () => {
+  it('groups rows by status with doing first, folds done, links lane and PR, and shows drift', async () => {
+    const seen = daemon({ projects: [project()] }, detail, workFixture)
+    await show(<ProjectPage name="shop" />)
+    expect(seen).toContain('/v1/projects/shop/work')
+    const section = screen.getByRole('heading', { name: /^Work/ }).closest('section') as HTMLElement
+    const heads = within(section).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)
+    expect(heads.slice(0, 3).map((t) => t?.split(' ')[0])).toEqual(['doing', 'blocked', 'todo'])
+    expect(within(section).getByRole('link', { name: 'feat/login' })).toHaveAttribute('href', '#/lanes/7')
+    expect(within(section).getByRole('link', { name: '#34' })).toHaveAttribute('href', 'https://gitlab.example.com/g/r/-/merge_requests/34')
+    const folded = within(section).getByText('Shipped thing').closest('details') as HTMLDetailsElement
+    expect(folded.open).toBe(false)
+    expect(within(section).getByRole('link', { name: /feat\/extra is open/ })).toHaveAttribute('href', '#/lanes/9')
+    expect(within(section).getByText(/W9 is doing but lane old is closed/)).toBeInTheDocument()
+    expect(within(section).getByText(/2 columns, want 7/)).toBeInTheDocument()
+    const hint = within(section).getByText(/acme-web has no docs\/WORK.md/)
+    expect(hint).toHaveClass('faint')
+    expect(hint).not.toHaveClass('tone-bad')
+  })
+
+  it('says so quietly when the work is not available', async () => {
+    daemon({ projects: [project()] })
+    await show(<ProjectPage name="shop" />)
+    expect(await screen.findByText(/Work is not available/)).toBeInTheDocument()
   })
 })

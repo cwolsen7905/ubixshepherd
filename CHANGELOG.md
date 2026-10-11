@@ -46,15 +46,34 @@ protocol) is listed under **Interface changes** in the release that makes it.
   A browser session has a new `web` role: the front desk's routes, the front desk
   conversation and answering decisions, but not the daemon's setup or minting links.
   Remote use is an SSH tunnel to the daemon's loopback port. See `web/README.md`.
+- **A Work section on the project page.** Each repo may keep `docs/WORK.md`: a `## Work`
+  heading and one table with the columns `ID | Area | Item | Status | Lane | PR | Notes`.
+  The daemon reads it from the repo's base branch as of the last fetch (`origin/<base>`,
+  not the working tree), caches it by blob hash, and serves it at
+  `GET /v1/projects/{name}/work` (and `GET /v1/unassigned/work`). The web UI groups the
+  rows by status, links each to its lane and PR or MR, and flags drift: an open lane no
+  row names, a `doing` row whose lane is closed or unknown, and a repo with no file.
+  Rows the parser cannot read are reported as warnings. See `docs/work-matrix.md`.
+- **A model policy** in `config.yaml` (per-agent catalogue with use-for notes, default
+  model and effort, project and repo deny and allow rules, shown by `shepherd models` and
+  the `models_list` tool) and a per-run effort for `lane run`, `run continue`, `lane_run`
+  and `run_continue`; the front desk chooses model and effort from the permitted list.
+- **An install script** (`bin/install.sh`), `docs/INSTALL.md` with per-OS steps, and a
+  release workflow that pins Node 22 and refuses to publish without the embedded web UI
+  or any of the six archives.
 
 ### Fixed
 
+- `shepherd daemon reload` no longer shuts the daemon down: the daemon treats SIGHUP only
+  as a config reload, so a reload no longer interrupts runs or triggers a service restart.
 - Agents no longer inherit `SHEPHERD_CLIENT` from the daemon. A daemon started from
   the front desk's tools passed `desk` on to every agent, so lanes an agent opened were
   recorded as opened by the desk.
 
 ### Interface changes
 
+- New endpoints `GET /v1/projects/{name}/work` and `GET /v1/unassigned/work`, and the
+  client call `ProjectWork`.
 - New optional config keys `opencode.request_timeout` and `opencode.chunk_timeout`.
   Absent keys use 60 minutes and 10 minutes, raising the previous hard-coded 15 minute
   request limit and 2 minute chunk limit.
