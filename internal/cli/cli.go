@@ -69,7 +69,7 @@ func commands() []command {
 			"shepherd init [dir] [--name NAME] [--yes | --all | --only a,b]", runInit},
 		{"lane", "Open, list and close lanes: a branch and worktree per stream of work",
 			"shepherd lane open <name> --scope '<globs>' [--branch B] [--repo R] | list [--all] [--json] | close [name] [--force] | scope [lane] --add G --remove G | review [--repo R] [--only V] | ship [lane] [--repo R] | run [lane] --agent claude|copilot|cursor|opencode [--model M] [--new] [--detach] \"task\"", runLane},
-		{"run", "Agent runs: list, show, follow, continue, attach to and stop them; see why one failed and fix it", "shepherd run list [--all] | show <id> | logs [-f] <id> | continue <id> \"message\" [--detach] | attach <id> | stop <id> | why <id> | fix <id> <action> [--agent A] [--model M]", runRun},
+		{"run", "Agent runs: list, show, follow, continue, attach to, stop and dismiss them; see why one failed and fix it", "shepherd run list [--all] | show <id> | logs [-f] <id> | continue <id> \"message\" [--detach] | attach <id> | stop <id> | dismiss <id> | undismiss <id> | why <id> | fix <id> <action> [--agent A] [--model M]", runRun},
 		{"stats", "Tokens, context sizes and cost over a range of days: by agent and model, by lane, and the front desk",
 			"shepherd stats [--days N | --from DAY --to DAY] [--json]", runStats},
 		{"hook", "Install or check the pre-push hook that keeps a lane's pushes in its scope",
