@@ -543,8 +543,8 @@ func TestOpenCodeConfigTimeouts(t *testing.T) {
 		return p.Options.Timeout, p.Options.ChunkTimeout, true
 	}
 	timeout, chunk, has := got(config.OpenCode{Endpoint: "http://h/v1"})
-	if !has || timeout != float64(900000) || chunk != 120000 {
-		t.Errorf("default timeouts = %v / %d (present %v), want 900000 / 120000", timeout, chunk, has)
+	if !has || timeout != float64(3600000) || chunk != 600000 {
+		t.Errorf("default timeouts = %v / %d (present %v), want 3600000 / 600000", timeout, chunk, has)
 	}
 	timeout, chunk, has = got(config.OpenCode{Endpoint: "http://h/v1", RequestTimeout: "30m", ChunkTimeout: "30s"})
 	if !has || timeout != float64(1800000) || chunk != 30000 {

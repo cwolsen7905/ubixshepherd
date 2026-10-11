@@ -129,10 +129,10 @@ func (o OpenCode) Idle() time.Duration {
 }
 
 // DefaultOpenCodeRequest is the per-request provider timeout when none is configured.
-const DefaultOpenCodeRequest = 15 * time.Minute
+const DefaultOpenCodeRequest = 60 * time.Minute
 
 // DefaultOpenCodeChunk is the gap allowed between streamed chunks when none is configured.
-const DefaultOpenCodeChunk = 2 * time.Minute
+const DefaultOpenCodeChunk = 10 * time.Minute
 
 // Request is RequestTimeout as a duration; 0 means no limit ("off").
 func (o OpenCode) Request() time.Duration {
