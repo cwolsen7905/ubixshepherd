@@ -83,6 +83,9 @@ export interface Lane {
   origin: Origin
 }
 
+/** Where a lane's last activity came from (internal/api Activity*, internal/store Activity*). */
+export type ActivityKind = 'run' | 'decision' | 'request' | 'commit' | 'mr' | 'pipeline' | 'created'
+
 /** A lane with its repo's name and the forge's last word on its branch. */
 export interface LaneView extends Lane {
   repo: string
@@ -91,6 +94,19 @@ export interface LaneView extends Lane {
   mr_url?: string
   pipeline?: number
   pipeline_status?: PipelineStatus
+  /**
+   * The latest of the lane's run, commit, decision, request, merge request and pipeline
+   * times, with its creation as the floor; last_activity_by says which. The forge's times
+   * are as of the daemon's last poll.
+   */
+  last_activity?: string
+  last_activity_by?: ActivityKind
+  /** The forge's times for the merge request and its head pipeline; each unset when unknown. */
+  mr_created?: string
+  mr_updated?: string
+  pipeline_started?: string
+  /** Unset while the pipeline runs. */
+  pipeline_finished?: string
   /** The newest diagnosis of the lane's latest run. */
   diagnosis?: Diagnosis
   /** What the lane's latest run is doing now, while it runs. */

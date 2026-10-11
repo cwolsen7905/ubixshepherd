@@ -51,6 +51,39 @@ describe('backlogItems', () => {
     expect(items[2]?.at).toBe('2026-10-08T09:30:00Z')
   })
 
+  it('dates idle from the last activity of the lane and says what it was', () => {
+    const lanes = [
+      lane({ id: 1, name: 'hand', created: '2026-10-01T00:00:00Z', last_activity: '2026-10-08T08:00:00Z', last_activity_by: 'commit' }),
+      lane({ id: 2, name: 'ran', created: '2026-10-01T00:00:00Z', last_activity: '2026-10-08T07:00:00Z', last_activity_by: 'run' }),
+    ]
+    const runs = [run({ id: 5, lane_id: 2, ended: '2026-10-08T07:00:00Z' })]
+    const items = backlogItems(input({ lanes, runs }))
+    // Longest idle first; a commit made by hand counts, though no run ended after it.
+    expect(items.map((i) => [i.name, i.at, i.detail])).toEqual([
+      ['ran', '2026-10-08T07:00:00Z', 'last: run 5 succeeded'],
+      ['hand', '2026-10-08T08:00:00Z', 'last: commit'],
+    ])
+  })
+
+  it('dates a review from the pipeline finish, else the MR update, else the lane', () => {
+    const mr = { mr: 7, mr_state: 'open' as const, pipeline_status: 'passed' as const }
+    const lanes = [
+      lane({ id: 1, name: 'a', ...mr, mr_updated: '2026-10-08T09:00:00Z', pipeline_finished: '2026-10-08T09:30:00Z' }),
+      lane({ id: 2, name: 'b', ...mr, mr_updated: '2026-10-08T09:10:00Z' }),
+      lane({ id: 3, name: 'c', ...mr }),
+    ]
+    const runs = lanes.map((l) => run({ id: 10 + l.id, lane_id: l.id }))
+    const at = Object.fromEntries(backlogItems(input({ lanes, runs })).map((i) => [i.name, i.at]))
+    expect(at).toEqual({ a: '2026-10-08T09:30:00Z', b: '2026-10-08T09:10:00Z', c: lanes[2]?.created })
+  })
+
+  it('dates a failed pipeline from when it finished', () => {
+    const lanes = [lane({ id: 1, mr: 3, mr_state: 'open', pipeline_status: 'failed', pipeline_finished: '2026-10-08T11:00:00Z' })]
+    const [it] = backlogItems(input({ lanes }))
+    expect(it?.group).toBe('broken')
+    expect(it?.at).toBe('2026-10-08T11:00:00Z')
+  })
+
   it('leaves out done work, closed lanes, lanes waiting on a pipeline, and dismissed failures', () => {
     const lanes = [
       lane({ id: 1, name: 'closed', state: 'closed', closed: '2026-10-08T10:00:00Z', mr_state: 'merged' }),
