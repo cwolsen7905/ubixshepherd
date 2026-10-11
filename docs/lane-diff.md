@@ -1,7 +1,8 @@
 # Seeing what is in a lane: `lane diff` and the lane page's changes view
 
-Status: **approved as written** by the maintainer (2026-10-11). Plan only: nothing here is
-built. Implementation is three merge requests, each its own lane (sequencing below).
+Status: **approved as written** by the maintainer (2026-10-11). Implementation is three
+merge requests, each its own lane (sequencing below). Step 1 (the core read, `shepherd lane
+diff` and the `lane_diff` tool) is built; steps 2 and 3 are not.
 
 ## The problem
 

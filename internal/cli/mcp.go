@@ -341,6 +341,32 @@ func mcpTools() []mcpTool {
 			more: "Ask the person to run shepherd lane review in a terminal for the whole report.",
 		},
 		{
+			Name: "lane_diff",
+			Description: "What is in a lane against its base, read-only: the commits, the committed changes, the uncommitted changes in the worktree and the untracked files, each file marked inside or OUT of the lane's scope. " +
+				"Default: the stat, a few hundred characters for a small lane (head and base, up to 30 commits, one line per file with +added -removed). files=true adds each file's hunk headers, no bodies (more characters, up to 200 files). " +
+				"file=<path> returns that one file's patch as the lane would ship it, or an untracked file's start, up to 64 KiB. Start with the stat, then read the files that matter one at a time. Secrets are masked in what it returns.",
+			InputSchema: obj(map[string]any{
+				"repo":  propRepo,
+				"name":  map[string]any{"type": "string", "description": "The lane's name."},
+				"files": map[string]any{"type": "boolean", "description": "Add each file's hunk headers to the stat."},
+				"file":  map[string]any{"type": "string", "description": "A path relative to the repo: return only that file's patch."},
+			}, "repo", "name"),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"lane", "diff", str(a, "name"), "--repo", str(a, "repo")}
+				files, _ := a["files"].(bool)
+				switch file := str(a, "file"); {
+				case file != "" && files:
+					return nil, fmt.Errorf("pass files or file, not both")
+				case file != "":
+					out = append(out, "--file", file)
+				case files:
+					out = append(out, "--files")
+				}
+				return out, nil
+			},
+			more: "Read one file's patch with file=<path>; the stat lists the paths.",
+		},
+		{
 			Name:        "session_list",
 			Description: "Conversations the person had with agents outside Shepherd (adopted Claude Code sessions): id, repo, title, dates, branches. Ask one with session_ask.",
 			InputSchema: obj(map[string]any{}),

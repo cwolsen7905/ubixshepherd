@@ -272,7 +272,7 @@ func toolLine(name string, input json.RawMessage) string {
 	var args map[string]any
 	json.Unmarshal(input, &args)
 	var parts []string
-	for _, k := range []string{"repo", "name", "lane", "agent", "id", "path", "pattern", "file_path"} {
+	for _, k := range []string{"repo", "name", "lane", "agent", "id", "path", "pattern", "file_path", "file"} {
 		if v, ok := args[k]; ok {
 			parts = append(parts, fmt.Sprint(v))
 		}
