@@ -1,6 +1,7 @@
 # Adding and removing repos without running init again
 
-Status: **proposal**, for the maintainer's approval. No code is written until it is approved.
+Status: **approved as written** by the maintainer (2026-10-11). Implementation is two
+merge requests, core first; each is its own lane.
 
 ## The problem
 
