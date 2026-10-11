@@ -235,6 +235,8 @@ type proc struct {
 	idled   bool
 	// usage reads the tokens the agent's output reports; nil if the CLI reports none.
 	usage UsageReader
+	// read is the adapter's ReadFor for this run, when it has one.
+	read func(string) Output
 }
 
 // Recover marks runs a previous daemon left running as interrupted. Call it once at
@@ -520,6 +522,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	if ad.Usage != nil {
 		p.usage = ad.Usage(opts)
 	}
+	if ad.ReadFor != nil {
+		p.read = ad.ReadFor(opts)
+	}
 	go r.watch(run, ad, lane, p, out, logf)
 	if p.idle > 0 {
 		go r.idleWatch(run.ID, p)
@@ -569,7 +574,9 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			p.usage.Feed(line)
 		}
 		out := Output{Show: line}
-		if ad.Read != nil {
+		if p.read != nil {
+			out = p.read(line)
+		} else if ad.Read != nil {
 			out = ad.Read(line)
 		}
 		switch {
