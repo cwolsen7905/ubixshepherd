@@ -11,6 +11,18 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **A next-up list: `shepherd next` and the `next_list`, `next_add` and `next_update`
+  tools.** Work that is planned but not being acted on now lives in the daemon's store
+  (`next_items`, an appended migration), in the person's order: approved, then planned,
+  then deferred. `shepherd next` lists, adds, shows, approves, defers, drops, finishes,
+  moves and links items, and `shepherd next seed` adds the items `docs/backlog-next.md`
+  lists. `lane open --item N` (and the `item` argument of `lane_open`) links an item to the
+  lane it opens, or a lane named as the item's hint links it when exactly one matches;
+  the item reads as started while the lane is open and done when its merge request
+  merges. Approving, deferring, dropping, finishing and reordering are the person's: the
+  daemon refuses them from the front desk outside a turn the person started, and an agent's
+  token has no route. The API is `GET/POST /v1/next` and `GET/PATCH /v1/next/{id}`. The
+  web page and the work-matrix read-through are later merge requests.
 - **`shepherd lane diff` and the `lane_diff` tool.** One read of what a lane holds against
   its base: the commits, the committed changes, uncommitted changes in the worktree and
   untracked files, each file marked inside or outside the lane's scope. `--stat` is the

@@ -78,6 +78,39 @@ in parts with its Read tool.
 MCP clients other than the desk get no cap of their own (only the general one that keeps
 the start and end of a very long log).
 
+## Reading a lane's changes
+
+`lane_diff` reads what a lane holds against its base, and changes nothing: the commits, the
+committed changes, the uncommitted changes in the worktree and the untracked files, each
+file marked inside or `OUT` of the lane's scope. By default it returns the stat, a few
+hundred characters for a small lane. `files` adds each file's hunk headers, and `file` one
+file's patch as the lane would ship it, so the desk reads the stat first and then only the
+files that matter. It is bounded (30 commits, 200 files, 64 KiB per file) and secrets are
+masked before it is cut. Use it to see whether a lane's work is inside its scope or ready
+to ship before telling the person, and to answer "what did that agent change". It is read
+only: the desk still cannot edit, and a file marked `OUT` is the person's to rescope or
+revert, not the desk's.
+
+## The next-up list
+
+`next_list`, `next_add` and `next_update` are the desk's tools for the list of work that is
+planned but not being acted on ([backlog-next.md](backlog-next.md)).
+
+| Tool | What it does | Who decides |
+|---|---|---|
+| `next_list` | Reads the list in the person's order: approved, then planned, then deferred, each with its plan doc and, once a lane is open for it, the lane and merge request. The item marked next is the first approved one with no lane. `all` adds done and dropped items. | Read only |
+| `next_add` | Adds an item as `planned` when the person says "put X on the list". | The desk may add; the item shows as proposed until approved |
+| `next_update` | Changes an item's title, note, plan, repo or lane hint; with `state` or `move`, approves, defers, drops, finishes or reorders it. | `state` and `move` are the person's |
+
+Approval follows the rule `decision_answer` does. The daemon refuses `state` and `move`
+(and `next_add` with `approved`) from the desk outside a turn the person started, so a
+`[Shepherd]` event can never be the reason an item moves, and an agent's token reaches none
+of it. `started` and `done` are not set: they follow the linked lane, which opens with
+`lane_open` and the item's `item` id (or `shepherd lane open --item N`), and the item is done
+when that lane's merge request merges. The desk should not invent items from its own
+ideas: it puts on the list what the person asked for, and says which items agents or it
+proposed.
+
 ## Settings
 
 ```yaml

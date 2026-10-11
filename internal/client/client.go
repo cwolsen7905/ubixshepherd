@@ -663,3 +663,9 @@ func (c *Client) ApproveBrief(ctx context.Context, project string, id int64, wor
 	var out store.ProjectBrief
 	return out, c.do(ctx, http.MethodPost, api.PathProjectBriefApprove(project), api.ApproveBrief{ID: id, Words: words}, &out)
 }
+
+// OpenLaneForItem opens a lane and links it to a next-up item (POST /v1/lanes with item).
+func (c *Client) OpenLaneForItem(ctx context.Context, req fold.OpenRequest, item int64) (fold.Opened, error) {
+	var out fold.Opened
+	return out, c.do(ctx, http.MethodPost, api.PathLanes, api.OpenLaneBody{OpenRequest: req, Item: item}, &out)
+}

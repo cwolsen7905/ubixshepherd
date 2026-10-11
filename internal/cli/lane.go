@@ -165,11 +165,12 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	fs.Var(&scope, "scope", "paths the lane's work stays inside, as globs relative to the repo (repeatable)")
 	branch := fs.String("branch", "", "branch name (default: the lane name)")
 	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	item := fs.Int64("item", 0, "the next-up item (shepherd next) this lane is for")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
+	if len(pos) != 1 || *item < 0 {
 		return errUsage
 	}
 	c, err := dial(ctx, env)
@@ -183,7 +184,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	lane, err := c.OpenLane(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Origin: callerOrigin(env)})
+	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Origin: callerOrigin(env)}, *item)
 	if err != nil {
 		return err
 	}

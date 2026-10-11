@@ -883,6 +883,19 @@ type Store interface {
 	// BriefHistory returns a project's briefs of every state, newest first.
 	BriefHistory(ctx context.Context, project string) ([]ProjectBrief, error)
 
+	// AddNextItem puts an item on the next-up list at the bottom of its state. Title is
+	// required; State defaults to planned and Source to person.
+	AddNextItem(ctx context.Context, it NextItem) (NextItem, error)
+	NextItem(ctx context.Context, id int64) (NextItem, error)
+	// NextItems returns every item in list order: stored state (approved, planned,
+	// deferred, dropped, done), then rank.
+	NextItems(ctx context.Context) ([]NextItem, error)
+	// UpdateNextItem applies the patch. A change of state sends the item to the bottom of
+	// its new state. ErrNotFound for an unknown id.
+	UpdateNextItem(ctx context.Context, id int64, p NextPatch) (NextItem, error)
+	// MoveNextItem moves an item "top", "up" or "down" within its stored state.
+	MoveNextItem(ctx context.Context, id int64, how string) (NextItem, error)
+
 	// SpendRollup splits the spend of the days from to to inclusive ("2006-01-02") by repo,
 	// the desk and the rest.
 	SpendRollup(ctx context.Context, from, to string) (SpendRollup, error)

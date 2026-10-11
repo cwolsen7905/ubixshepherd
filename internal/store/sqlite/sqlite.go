@@ -311,6 +311,26 @@ var migrations = []string{
 	// A repo the person stopped managing: when, or '' for a managed one. The row and
 	// its lanes, runs and history stay; Repos hides it.
 	`ALTER TABLE repos ADD COLUMN removed TEXT NOT NULL DEFAULT '';`,
+	// The next-up list: work that is planned but may have no lane. lane_id is the link
+	// to the lane opened for it (0: none); state is what was chosen, and started and done
+	// are derived from the link.
+	`CREATE TABLE next_items (
+		id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		title   TEXT NOT NULL,
+		repo    TEXT NOT NULL DEFAULT '',
+		plan    TEXT NOT NULL DEFAULT '',
+		lane    TEXT NOT NULL DEFAULT '',
+		lane_id INTEGER NOT NULL DEFAULT 0,
+		mr      TEXT NOT NULL DEFAULT '',
+		state   TEXT NOT NULL,
+		rank    INTEGER NOT NULL,
+		source  TEXT NOT NULL,
+		note    TEXT NOT NULL DEFAULT '',
+		created TEXT NOT NULL,
+		updated TEXT NOT NULL,
+		done_at TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX next_items_state ON next_items (state, rank);`,
 }
 
 // DB is a SQLite-backed store.Store.

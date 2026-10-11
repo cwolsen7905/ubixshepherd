@@ -1,7 +1,24 @@
 # Next up: work that is planned but not being acted on
 
-Status: **approved as written** by the maintainer (2026-10-11). Plan only: nothing here is
-built. Implementation is three merge requests, each its own lane (section 6).
+Status: **approved as written** by the maintainer (2026-10-11). Merge request 1 (the core)
+is built: the table, API, `shepherd next`, `lane open --item` and the `next_*` desk tools.
+The web page and rail toggle (2) and the matrix read-through and `plan` feed kind (3) are
+not. Implementation is three merge requests, each its own lane (section 6).
+
+What the core did differently from section 6, and why:
+
+- **Done is settled on read, not by a hook in `Fold.CloseMerged`.** The watcher closes the
+  lane and records the merge request as merged; the daemon derives `done` and `done_at`
+  from that when the list or an item is read, and keeps it. No second status, and no
+  change to the fold or the watcher.
+- **The link is made in the daemon's lane-open route**, not in `internal/fold`, from an
+  `item` field next to the open request.
+- **`shepherd next seed`** adds the items in section 5, skipping titles already present.
+  It is the person's step to run, not a migration.
+- **The worker tool `next_propose` is not built** (section 1): the core's list does not
+  include it. Agents still use `ask_shepherd` to suggest an item.
+- **A state or move from the desk outside a turn the person started is refused**, the rule
+  `decision_answer` follows; adding an item as `planned` and editing text are open to it.
 
 ## The problem
 
