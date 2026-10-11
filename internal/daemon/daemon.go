@@ -200,6 +200,8 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathProjects, desk, s.listProjects)
 	handle("GET "+api.PathProjects+"/{name}", desk, s.getProject)
 	handle("GET "+api.PathProjectsUnassigned, desk, s.getUnassigned)
+	handle("GET "+api.PathProjects+"/{name}/work", desk, s.getProjectWork)
+	handle("GET "+api.PathUnassignedWork, desk, s.getUnassignedWork)
 	handle("GET "+api.PathProjects+"/{name}/brief", desk, s.getBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/draft", desk, s.draftBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/approve", desk, s.personsApproval(s.approveBrief))
