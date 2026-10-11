@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, CSRF_HEADER, NetworkError, REQUEST_TIMEOUT } from './client'
+import { api, ApiError, CSRF_HEADER, history, NetworkError, REQUEST_TIMEOUT } from './client'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -50,5 +50,20 @@ describe('the API client', () => {
     await expect(api.status()).rejects.toBeInstanceOf(NetworkError)
     vi.stubGlobal('fetch', vi.fn(async () => json({ error: 'nope' }, 401)))
     await expect(api.status()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('asks the run history for as many runs as it is told to, and for the daemon’s default otherwise', async () => {
+    const paths: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+      paths.push(path)
+      return json({})
+    }))
+    await history.runs(1, '2026-10-10T00:00:00Z')
+    await history.runs(1, '2026-10-10T00:00:00Z', 'claude', 7, 1000)
+    expect(paths[0]).not.toContain('limit')
+    const url = new URL(paths[1] as string, 'http://x')
+    expect(url.searchParams.get('limit')).toBe('1000')
+    expect(url.searchParams.get('agent')).toBe('claude')
+    expect(url.searchParams.get('lane_id')).toBe('7')
   })
 })

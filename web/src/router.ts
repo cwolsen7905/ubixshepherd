@@ -7,11 +7,15 @@ export type Range = 'today' | 'week'
 /** The usage page's range: three presets and a custom pair of days. */
 export type UsageRange = 'today' | 'week' | 'month' | 'custom'
 
+/** The timeline's range: since local midnight, the last 24 hours, or the last 7 days. */
+export type TimelineRange = 'today' | '24h' | 'week'
+
 export type Route =
   | { page: 'board'; range?: Range }
   | { page: 'runs'; range?: Range; agent?: string; lane?: number }
   | { page: 'decisions'; focus?: number }
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
+  | { page: 'timeline'; range?: TimelineRange; agent?: string }
   | { page: 'projects' }
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
@@ -52,6 +56,11 @@ export function parse(hash: string): Route {
       ...(usageRange === 'custom' && day.test(to) ? { to } : {}),
     }
   }
+  if (path === '/timeline') {
+    const r = q.get('range')
+    const tr = r === 'today' || r === '24h' || r === 'week' ? r : undefined
+    return { page: 'timeline', ...(tr ? { range: tr } : {}), ...(q.get('agent') ? { agent: q.get('agent') as string } : {}) }
+  }
   let m: RegExpExecArray | null
   if (path === '/projects') return { page: 'projects' }
   if (path === '/unassigned') return { page: 'unassigned' }
@@ -90,6 +99,12 @@ export const href = {
       if (o.to) q.set('to', o.to)
     }
     return q.size ? `#/usage?${q}` : '#/usage'
+  },
+  timeline: (o: { range?: TimelineRange; agent?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (o.range) q.set('range', o.range)
+    if (o.agent) q.set('agent', o.agent)
+    return q.size ? `#/timeline?${q}` : '#/timeline'
   },
   projects: () => '#/projects',
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,

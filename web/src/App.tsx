@@ -14,6 +14,7 @@ import { ProjectPage } from './pages/Project'
 import { ProjectsPage } from './pages/Projects'
 import { RunsPage } from './pages/Runs'
 import { SettingsPage } from './pages/Settings'
+import { TimelinePage } from './pages/Timeline'
 import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
 import { Help } from './components/Help'
@@ -52,6 +53,7 @@ export function App() {
       },
       b: () => pending.current === 'g' && go(href.board()),
       d: () => pending.current === 'g' && go(href.decisions()),
+      t: () => pending.current === 'g' && go(href.timeline()),
     },
     [],
   )
@@ -90,6 +92,9 @@ export function App() {
           </a>
           <a href={href.runs()} aria-current={route.page === 'runs' ? 'page' : undefined}>
             Runs
+          </a>
+          <a href={href.timeline()} aria-current={route.page === 'timeline' ? 'page' : undefined}>
+            Timeline
           </a>
           <a href={href.usage()} aria-current={route.page === 'usage' ? 'page' : undefined}>
             Usage
@@ -150,6 +155,7 @@ export function App() {
         {route.page === 'project' && <ProjectPage key={route.name} name={route.name} />}
         {route.page === 'unassigned' && <ProjectPage key="unassigned" name={null} />}
         {route.page === 'runs' && <RunsPage range={route.range} agent={route.agent} lane={route.lane} />}
+        {route.page === 'timeline' && <TimelinePage range={route.range} agent={route.agent} />}
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'decisions' && <DecisionsPage focus={route.focus} />}
         {route.page === 'chat' && <ChatPage />}

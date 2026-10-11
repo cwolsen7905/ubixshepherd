@@ -8,6 +8,8 @@
 #   SHOTS_SIZE    CSS pixels, WxH (default 1440x900)
 #   SHOTS_SCALE   device scale factor (default 2)
 #   SHOTS_THEMES  "light dark", or one of them (default both)
+#   SHOTS_PAGES   page names to take, "timeline board" (default all)
+#   BUSY=1        the stub serves a heavy day, for the timeline
 #   SHOTS_NO_BUILD=1  use web/dist as it is
 set -euo pipefail
 
@@ -45,4 +47,4 @@ for _ in $(seq 1 50); do
 done
 
 CHROME="$chrome" SHOTS_BASE="http://127.0.0.1:$port" SHOTS_OUT="$out" SHOTS_W="$w" SHOTS_H="$h" \
-  SHOTS_SCALE="$scale" SHOTS_THEMES="$themes" node "$here/shoot.mjs"
+  SHOTS_SCALE="$scale" SHOTS_THEMES="$themes" SHOTS_PAGES="${SHOTS_PAGES:-}" node "$here/shoot.mjs"

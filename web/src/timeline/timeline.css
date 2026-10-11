@@ -1,0 +1,256 @@
+/* The swarm timeline: the pasture seen from above at night. Tracks are quiet rails, agents
+   are lit paths along them, and the only warm light on the page is a lantern at each
+   decision that waits for the person. Everything is scoped to .timeline-page so the app's
+   own stylesheets are untouched. */
+
+.timeline-page {
+  --tl-gutter: 12rem;
+
+  /* Agent colours. Fixed by the dataviz validator, all pairs, each mode against its own
+     surface (--sheet): light #f8fafb, dark #1c242b.
+       light  #2191e7 #1442be #7e3263 #e24994: every mark 3:1 or better; worst normal-vision
+              difference 21.0 and worst colour-blind pair 14.4 (floor 15 and 8): all PASS.
+       dark   #2f9ecf #2f63e1 #9649a7 #e9509a: worst normal-vision difference 16.4 and
+              worst colour-blind pair 9.6: PASS. Two deep hues are 2.85:1 and 2.99:1 on the
+              surface, which the validator reports as "relief required": the agent's name is
+              printed on the bar and the legend and table carry it too.
+     None is amber, red or green: those belong to the lantern, broken, ok and lichen. */
+  --tl-claude: #2191e7;
+  --tl-opencode: #1442be;
+  --tl-cursor: #7e3263;
+  --tl-copilot: #e24994;
+  --tl-other: #6b7782;
+  /* The ink of a bar's label: whichever of white and near-black clears 4.5:1 on the fill. */
+  --tl-claude-on: #0d1318;
+  --tl-opencode-on: #ffffff;
+  --tl-cursor-on: #ffffff;
+  --tl-copilot-on: #0d1318;
+  --tl-other-on: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  .timeline-page {
+    --tl-claude: #2f9ecf;
+    --tl-opencode: #2f63e1;
+    --tl-cursor: #9649a7;
+    --tl-copilot: #e9509a;
+    --tl-other: #8a9aa7;
+    --tl-other-on: #0d1318;
+  }
+}
+
+.tl-agent-claude { --tl-fill: var(--tl-claude); --tl-on: var(--tl-claude-on); }
+.tl-agent-opencode { --tl-fill: var(--tl-opencode); --tl-on: var(--tl-opencode-on); }
+.tl-agent-cursor { --tl-fill: var(--tl-cursor); --tl-on: var(--tl-cursor-on); }
+.tl-agent-copilot { --tl-fill: var(--tl-copilot); --tl-on: var(--tl-copilot-on); }
+.tl-agent-other { --tl-fill: var(--tl-other); --tl-on: var(--tl-other-on); }
+
+/* The page: the app's own head and filters, then the chart at the width of the shell. */
+.timeline-page { max-width: none; }
+.timeline-page.is-stale .tl { opacity: 0.55; }
+.tl-filters { row-gap: var(--s-2); }
+.tl-filters .link-button { margin-left: auto; }
+.tl-note { margin: var(--s-2) 0 0; font-size: var(--t-xs); }
+
+/* The legend: one row of bar-shaped swatches, and the agent filter. */
+.tl-legend { display: inline-flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); font-size: var(--t-sm); }
+.tl-legend a {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  padding: 0.0625rem var(--s-2); border-radius: var(--radius); color: var(--muted); text-decoration: none;
+}
+.tl-legend a:hover { background: var(--hover); color: var(--ink); }
+.tl-legend a[aria-current="true"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--lichen); border-radius: 0; }
+.tl-swatch { display: inline-block; width: 1.4rem; height: 0.6rem; border-radius: 3px; background: var(--tl-fill); }
+
+/* The frame: axis on top, tracks, spend underneath, all sharing one x axis. */
+.tl { position: relative; transition: opacity 160ms ease; }
+.tl-frame {
+  position: relative; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.tl.is-scrolling .tl-frame { max-height: calc(30 * 1.75rem + 8rem); overflow-y: auto; }
+
+.tl-axis, .tl-row, .tl-spend { display: grid; grid-template-columns: var(--tl-gutter) minmax(0, 1fr); }
+.tl-plot { min-width: 0; overflow: hidden; }
+.tl-axis {
+  position: sticky; top: var(--bar-h); z-index: 4; background: var(--sheet);
+  border-bottom: 1px solid var(--rule); border-radius: var(--radius) var(--radius) 0 0;
+}
+.tl.is-scrolling .tl-axis { top: 0; }
+.tl-spend {
+  position: sticky; bottom: 0; z-index: 4; background: var(--sheet);
+  border-top: 1px solid var(--rule); border-radius: 0 0 var(--radius) var(--radius);
+}
+.tl-axis-svg, .tl-track, .tl-spend-svg { display: block; }
+
+.tl-body { position: relative; padding-bottom: var(--s-1); }
+.tl-grid, .tl-now { position: absolute; top: 0; left: var(--tl-gutter); height: 100%; pointer-events: none; }
+.tl-grid { z-index: 0; }
+.tl-now { z-index: 3; }
+.tl-group, .tl-empty { position: relative; z-index: 1; }
+
+.tl-gridline { stroke: var(--rule); stroke-width: 1; }
+.tl-gridline.is-major { stroke: var(--control-border); opacity: 0.5; }
+.tl-now-line { stroke: var(--ink); stroke-width: 1; }
+.tl-hatch-ground { fill: Canvas; }
+.tl-hatch-line { stroke: CanvasText; }
+.tl-fade-stop { stop-color: var(--sheet); }
+
+/* The axis: mono numerals in --faint; a day boundary is named, in the UI face. */
+.tl-tick line { stroke: var(--control-border); stroke-width: 1; }
+.tl-tick text { fill: var(--faint); font: var(--t-xs) var(--font-mono); }
+.tl-tick.is-major text { fill: var(--muted); font: 600 var(--t-xs) var(--font-ui); }
+.tl-now-label { fill: var(--ink); font: 600 var(--t-xs) var(--font-mono); }
+
+/* Repo groups, as the board's group heads. */
+.tl-group-head { margin: 0; padding: var(--s-2) var(--s-3) 0; font-size: var(--t-sm); font-weight: 600; }
+.tl-group-head button {
+  display: inline-flex; align-items: baseline; gap: var(--s-2);
+  background: none; border: 0; padding: 0; cursor: pointer; color: var(--ink); font: inherit;
+}
+.tl-group-head button:hover .tl-group-name { text-decoration: underline; }
+.tl-twist { width: 1em; color: var(--faint); }
+.tl-group-count { color: var(--faint); font-weight: 500; }
+
+/* Tracks: a hairline rail, no row backgrounds, so the bars carry the picture. */
+.tl-name {
+  align-self: center; min-width: 0; padding: 0 var(--s-3) 0 var(--s-5);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t-sm); font-weight: 600; text-decoration: none; color: var(--ink);
+}
+.tl-name:hover { text-decoration: underline; }
+.tl-rail { stroke: var(--rule); stroke-width: 1; }
+.tl-row:hover .tl-rail, .tl-row:focus-within .tl-rail { stroke: var(--control-border); }
+
+.tl-run, .tl-density, .tl-ask, .tl-merge { cursor: pointer; outline: none; }
+.tl-hit { fill: transparent; }
+
+/* A run. */
+.tl-bar { fill: var(--tl-fill); transition: transform 120ms ease, filter 120ms ease; transform-box: fill-box; }
+.tl-run:hover .tl-bar, .tl-run:focus-visible .tl-bar { transform: translateY(-1px); filter: brightness(1.14); }
+.tl-run:focus-visible .tl-bar, .tl-density:focus-visible .tl-density-tick { stroke: var(--focus); stroke-width: 2; }
+.tl-bar-label { fill: var(--tl-on); font: 600 var(--t-2xs) var(--font-ui); pointer-events: none; }
+.tl-run.is-continuing .tl-bar { rx: 0; }
+.tl-notch { fill: var(--broken); stroke: var(--sheet); stroke-width: 1; }
+
+/* A running bar fades into a pulsing cap in the same colour. Only the cap moves, and only
+   its opacity and transform, so it stays on the compositor. */
+.tl-fade { fill: url(#tl-fade); pointer-events: none; }
+.tl-cap {
+  fill: var(--tl-fill); transform-box: fill-box; transform-origin: center;
+  animation: tl-pulse 2.4s ease-in-out infinite;
+}
+@keyframes tl-pulse {
+  0%, 100% { opacity: 0.55; transform: scaleY(0.86); }
+  50% { opacity: 1; transform: scaleY(1); }
+}
+
+.tl-density-tick { fill: var(--muted); }
+.tl-density.is-failed .tl-density-tick { stroke: var(--broken); stroke-width: 1.5; }
+.tl-run, .tl-density { transition: opacity 160ms ease; }
+.tl-run.is-dim, .tl-density.is-dim { opacity: 0.25; }
+
+/* A decision that waits: a lantern on the track, with a halo that breathes. */
+.tl-diamond { fill: var(--lantern); stroke: var(--sheet); stroke-width: 2; }
+.tl-ask.is-request .tl-diamond { fill: var(--sheet); stroke: var(--lantern); stroke-width: 2; }
+.tl-glow-stop { stop-color: var(--lantern); }
+.tl-halo {
+  fill: url(#tl-glow); opacity: 0.85; transform-box: fill-box; transform-origin: center;
+  animation: tl-breathe 3.5s ease-in-out infinite;
+}
+@keyframes tl-breathe {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+/* A lane that waits on the person is lit along its rail, up to its lantern. */
+.tl-row.is-waiting .tl-rail { stroke: var(--lantern); stroke-opacity: 0.7; }
+.tl-row.is-waiting .tl-name { color: var(--lantern-ink); }
+.tl-join { stroke: var(--lantern); stroke-width: 1.5; }
+.tl-ask:focus-visible .tl-diamond { stroke: var(--focus); stroke-width: 2; }
+.tl-answered {
+  fill: var(--faint); font: 700 var(--t-xs) var(--font-ui);
+  paint-order: stroke; stroke: var(--sheet); stroke-width: 3px;
+}
+
+/* A merge: a short tick in --ok, with its diamond. */
+.tl-merge-tick { stroke: var(--ok); stroke-width: 1.5; }
+.tl-merge-mark { fill: var(--ok); }
+.tl-merge:focus-visible .tl-merge-tick { stroke: var(--focus); stroke-width: 2.5; }
+
+/* Reduced motion: no pulse and no breathing, and static markers in their place: a solid
+   cap with a ring, and a solid halo. The waiting decision is still the brightest thing. */
+.tl-still .tl-cap, .tl-still .tl-halo { animation: none; }
+.tl-still .tl-cap { opacity: 1; transform: none; stroke: var(--ink); stroke-width: 1; }
+.tl-still .tl-halo { opacity: 0.85; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tl-cap { animation: none; opacity: 1; transform: none; stroke: var(--ink); stroke-width: 1; }
+  .tl-halo { animation: none; opacity: 0.85; transform: none; }
+  .tl-bar, .tl-run, .tl-density, .tl { transition: none; }
+}
+
+/* Spend: a stepped area against the daily budget line. */
+.tl-spend-name { align-self: center; padding: 0 var(--s-3) 0 var(--s-5); font-size: var(--t-xs); color: var(--faint); }
+.tl-spend-fill { fill: var(--lichen); fill-opacity: 0.25; }
+.tl-spend-line { stroke: var(--lichen); stroke-width: 2; }
+.tl-spend-over { fill: var(--broken); fill-opacity: 0.5; }
+.tl-budget { stroke: var(--ink); stroke-width: 1; stroke-dasharray: 5 4; }
+.tl-budget-label { fill: var(--muted); font: var(--t-xs) var(--font-mono); }
+.tl-spend-hit { fill: transparent; }
+.tl-cursor { stroke: var(--muted); stroke-width: 1; pointer-events: none; }
+.tl-now-spend { stroke: var(--ink); stroke-width: 1; pointer-events: none; }
+
+.tl-empty { margin: 0; padding: var(--s-5) var(--s-5) var(--s-5) var(--s-5); color: var(--muted); max-width: 64ch; }
+
+/* The tooltip: values first, labels after; the agent's colour only as a short key stroke. */
+.tl-tip {
+  position: absolute; left: 0; top: 0; z-index: 10; max-width: 24rem; pointer-events: none;
+  padding: var(--s-2) var(--s-3); background: var(--sheet); color: var(--ink);
+  border: 1px solid var(--control-border); border-radius: var(--radius); box-shadow: var(--shadow-2);
+  font-size: var(--t-xs);
+}
+.tl-tip p { margin: 0; }
+.tl-tip-head { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-1) !important; font-size: var(--t-sm); }
+.tl-key { display: inline-block; width: 3px; height: 1rem; border-radius: 2px; background: var(--tl-fill); }
+.tl-tip-model { color: var(--faint); font-family: var(--font-mono); font-size: var(--t-xs); }
+.tl-tip-row { display: flex; gap: var(--s-2); align-items: baseline; }
+.tl-tip-value { font-family: var(--font-mono); white-space: nowrap; }
+.tl-tip-label { color: var(--muted); }
+.tl-tip-line { margin-top: var(--s-1) !important; color: var(--muted); }
+.tl-tip-bad { color: var(--broken); }
+.tl-tip-task { margin: var(--s-1) 0 !important; overflow-wrap: anywhere; }
+.tl-tip-where { margin-top: var(--s-1) !important; color: var(--faint); }
+
+/* The table view. */
+.tl-table { margin: var(--s-4) 0 0; }
+.tl-table summary { cursor: pointer; color: var(--muted); font-size: var(--t-sm); padding: var(--s-1) 0; }
+.tl-table summary:hover { color: var(--ink); }
+.tl-table .runs { margin-top: var(--s-2); }
+.tl-table th.num { text-align: right; }
+.tl-sort { font: inherit; font-weight: 500; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+.tl-sort:hover { color: var(--ink); }
+.tl-table th[aria-sort] { color: var(--ink); }
+
+/* Narrow screens: lane names go onto the rail, a line above each track, instead of a left
+   gutter; the range becomes a select (the page does that); the spend band keeps its height. */
+@media (max-width: 760px) {
+  .timeline-page { --tl-gutter: 0px; }
+  .tl-axis, .tl-spend { grid-template-columns: minmax(0, 1fr); }
+  .tl-axis > .tl-gutter, .tl-spend > .tl-gutter { display: none; }
+  .tl-row { grid-template-columns: minmax(0, 1fr); }
+  .tl-name { padding: var(--s-1) var(--s-3) 0; font-size: var(--t-xs); }
+  .tl-group-head { padding-left: var(--s-3); }
+  .tl-grid, .tl-now { left: 0; }
+  .tl-filters .link-button { margin-left: 0; }
+}
+
+/* Forced colours: the agent's fill is not drawn, so each agent takes a hatch angle. */
+@media (forced-colors: active) {
+  .tl-agent-claude .tl-bar { fill: url(#tl-hatch-claude); }
+  .tl-agent-opencode .tl-bar { fill: url(#tl-hatch-opencode); }
+  .tl-agent-cursor .tl-bar { fill: url(#tl-hatch-cursor); }
+  .tl-agent-copilot .tl-bar { fill: url(#tl-hatch-copilot); }
+  .tl-agent-other .tl-bar { fill: url(#tl-hatch-other); }
+  .tl-bar { stroke: CanvasText; stroke-width: 1; }
+  .tl-bar-label { fill: CanvasText; paint-order: stroke; stroke: Canvas; stroke-width: 3px; }
+  .tl-swatch { background: Canvas; border: 1px solid CanvasText; }
+  .tl-notch { fill: CanvasText; }
+}

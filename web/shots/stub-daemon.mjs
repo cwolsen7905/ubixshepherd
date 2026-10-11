@@ -2,6 +2,10 @@
 // canned /v1 answers with made-up data (acme-* repos, git.example). It never touches a
 // real daemon or ~/.shepherd. Usage: node stub-daemon.mjs DIST_DIR [PORT]
 // NODEC=1 leaves no open decisions or requests.
+// BUSY=1 serves a heavy day for the timeline: about 25 lanes in five repos, each with 3 to 12
+// runs through the working hours so far, all four agents, two failures, a decision waiting
+// and two answered, a request that needs routing and six that were routed, three merges, a
+// running bar in five lanes and a spend curve that crosses 80% of the budget.
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -9,6 +13,169 @@ import path from 'node:path'
 const dist = path.resolve(process.argv[2] ?? 'dist')
 const port = Number(process.argv[3] || process.env.SHOTS_PORT || 5199)
 const NODEC = !!process.env.NODEC
+const BUSY = !!process.env.BUSY
+
+
+// A busy day (BUSY=1), built from the current time and a fixed seed, so a shot repeats.
+const BUSY_REPOS = [['acme-api', 7], ['acme-web', 6], ['acme-docs', 3], ['acme-infra', 5], ['acme-mobile', 3]]
+const BUSY_AGENTS = ['claude', 'opencode', 'cursor', 'copilot']
+const BUSY_MODELS = { claude: 'claude-sonnet-5-5', opencode: 'acme-large', cursor: 'cursor-auto', copilot: 'copilot-default' }
+const BUSY_TASKS = [
+  'Add pagination to the orders endpoint', 'Fix the stale cache after a price change', 'Split the queue worker into a poller and a handler',
+  'Write an install guide for Linux and macOS', 'Bump the minor versions of the dependencies', 'Export the orders table as CSV',
+  'Retry failed webhooks with a backoff', 'Move the session store behind an interface', 'Tidy the release notes script',
+  'Add a dark theme to the settings page', 'Cover the invoice rounding with tests', 'Replace the polling loop with a watch',
+]
+const seeded = (seed) => { let s = seed; return () => (s = (s * 1664525 + 1013904223) % 4294967296) / 4294967296 }
+
+function busyDay() {
+  const rnd = seeded(7)
+  const now = Date.now()
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  const midnight = d.getTime()
+  // The working hours so far: from midnight, or nine hours back when the day is young.
+  const start = Math.max(midnight, now - 9 * 3600_000)
+  const span = now - start
+  const scale = Math.min(1, span / (6 * 3600_000))
+  const MIN = 60000
+  const iso = (t) => new Date(t).toISOString()
+  const lanes = [], closedLanes = [], runs = []
+  let laneId = 0, runId = 100
+  const failedAt = new Set(['5:2', '12:1'])
+  const runningLanes = new Set([3, 9, 14, 17, 21])
+  const merged = new Set([2, 8])
+  const openMerged = 15
+  let straddleRepo = null
+
+  BUSY_REPOS.forEach(([repo, n], repoIndex) => {
+    for (let i = 0; i < n; i++) {
+      laneId++
+      const kind = ['feat', 'fix', 'chore', 'refactor', 'docs'][(laneId + repoIndex) % 5]
+      const name = `${kind}/${BUSY_TASKS[(laneId * 5) % BUSY_TASKS.length].toLowerCase().split(' ').slice(1, 4).join('-').replace(/[^a-z-]/g, '')}`
+      const created = iso(start - 3 * 3600_000 - rnd() * 2 * 3600_000)
+      const base = {
+        id: laneId, repo_id: repoIndex + 1, name, branch: name, base: 'dev', worktree: `/work/${repo}-${laneId}`,
+        scope: [`${name.split('/')[0]}/**`, 'docs/**'], state: 'open', created, origin: { via: 'cli' }, repo,
+        last_activity: iso(now - rnd() * 40 * MIN), last_activity_by: 'run',
+      }
+      const count = 3 + Math.floor(rnd() * 10)
+      const isRunning = runningLanes.has(laneId)
+      let t = start + rnd() * span * 0.25
+      const laneRuns = []
+      const add = (k, end) => {
+        runId++
+        const agent = BUSY_AGENTS[(laneId + k) % 4]
+        const running = end === undefined
+        const fails = failedAt.has(`${laneId}:${k}`)
+        laneRuns.push({
+          id: runId, lane_id: laneId, agent, model: BUSY_MODELS[agent], prompt: BUSY_TASKS[(runId * 7) % BUSY_TASKS.length],
+          state: running ? 'running' : fails ? 'failed' : 'succeeded', log: '', start_sha: 'a1b2c3d', end_sha: running ? undefined : 'e4f5a6b',
+          commits: fails ? 0 : 1 + Math.floor(rnd() * 3), started: iso(t), ended: end === undefined ? undefined : iso(end),
+          cost_usd: agent === 'copilot' ? undefined : 0.3 + rnd() * 1.1, credits: agent === 'copilot' ? 2 : undefined,
+          lane: name, repo, worktree: base.worktree,
+          ...(running ? { progress: { line: 'running make check (1 commit, 9m)', step: 'running make check', commits: 1, elapsed_seconds: Math.round((now - t) / 1000) } } : {}),
+        })
+      }
+      const finishBy = now - (isRunning ? 50 : 2) * MIN
+      for (let k = 0; k < (isRunning ? count - 1 : count); k++) {
+        const end = t + (6 + rnd() * 34) * MIN * scale
+        if (end > finishBy) break
+        add(k, end)
+        t = end + (3 + rnd() * 22) * MIN * scale
+      }
+      if (isRunning) {
+        t = Math.max(t, now - (8 + rnd() * 40) * MIN)
+        add(count - 1, undefined)
+      }
+      runs.push(...laneRuns)
+      if (merged.has(laneId)) {
+        const closedAt = start + span * (laneId === 2 ? 0.45 : 0.7)
+        closedLanes.push({
+          ...base, state: 'closed', closed: iso(closedAt), outcome: 'merged', mr: 40 + laneId, mr_state: 'merged',
+          mr_url: `https://git.example/acme/${repo}/-/merge_requests/${40 + laneId}`, mr_updated: iso(closedAt - 2 * MIN),
+          runs: laneRuns.length, cost_usd: 2.4,
+        })
+        continue
+      }
+      if (laneId === openMerged) {
+        lanes.push({ ...base, mr: 55, mr_state: 'merged', mr_url: `https://git.example/acme/${repo}/-/merge_requests/55`, ps: 'passed', pipeline: 9100 + laneId, pipeline_status: 'passed', mr_updated: iso(now - 40 * MIN) })
+        continue
+      }
+      if (laneId % 4 === 1) {
+        lanes.push({ ...base, mr: 60 + laneId, mr_state: 'open', mr_url: `https://git.example/acme/${repo}/-/merge_requests/${60 + laneId}`, pipeline: 9100 + laneId, pipeline_status: 'passed', mr_updated: iso(now - 30 * MIN) })
+        continue
+      }
+      if (repo === 'acme-web' && straddleRepo === null) straddleRepo = { id: laneId, name, repo }
+      lanes.push(base)
+    }
+  })
+
+  // Three lanes with nothing today: idle, left out of the timeline unless asked for.
+  for (const [i, name] of ['chore/old-bump', 'docs/stale-readme', 'fix/flaky-test'].entries()) {
+    laneId++
+    lanes.push({
+      id: laneId, repo_id: 1 + i, name, branch: name, base: 'dev', worktree: `/work/idle-${laneId}`, scope: ['docs/**'], state: 'open',
+      created: iso(midnight - (2 + i) * 24 * 3600_000), origin: { via: 'cli' }, repo: BUSY_REPOS[i][0],
+      last_activity: iso(midnight - (2 + i) * 24 * 3600_000), last_activity_by: 'created',
+    })
+  }
+
+  // One run that began before midnight and ended after it.
+  if (straddleRepo) {
+    runs.push({
+      id: ++runId, lane_id: straddleRepo.id, agent: 'claude', model: BUSY_MODELS.claude, prompt: 'Overnight migration dry run', state: 'succeeded',
+      log: '', start_sha: 'a1b2c3d', end_sha: 'e4f5a6b', commits: 2, started: iso(midnight - 20 * MIN), ended: iso(midnight + 10 * MIN),
+      cost_usd: 1.4, lane: straddleRepo.name, repo: straddleRepo.repo, worktree: '/work/x',
+    })
+  }
+
+  // The day's costs add up to about 85% of the budget with the front desk's turns.
+  const budget = 25
+  const total = runs.reduce((n, r) => n + (r.cost_usd ?? 0), 0)
+  const k = (budget * 0.85 - 2.6) / total
+  for (const r of runs) if (r.cost_usd !== undefined) r.cost_usd = Math.round(r.cost_usd * k * 100) / 100
+  const spentRuns = runs.reduce((n, r) => n + (r.cost_usd ?? 0), 0)
+  const spendUsd = Math.round((spentRuns + 2.6) * 100) / 100
+
+  const ended = runs.filter((r) => r.state === 'succeeded' && r.ended && Date.parse(r.ended) < now - 12 * MIN)
+    .sort((a, b) => Date.parse(b.ended) - Date.parse(a.ended))
+  const asker = ended[0]
+  const flying = runs.find((r) => r.state === 'running')
+  const decisions = [
+    {
+      id: 5, run_id: asker.id, question: 'The CSV export can stream rows or buffer the whole file first. Which should it do?', options: ['Stream', 'Buffer'],
+      recommendation: 'Stream', why: 'Orders tables reach a million rows; buffering would hold them all in memory.', state: 'open',
+      agent: asker.agent, lane: asker.lane, repo: asker.repo, created: iso(Date.parse(asker.ended) - 6 * MIN),
+    },
+    ...ended.filter((r) => r !== asker).slice(4, 6).map((r, i) => ({
+      id: 3 - i, run_id: r.id, question: i === 0 ? 'Should session tokens live server side or in a signed cookie?' : 'Keep the retry helper in internal/retry or move it?',
+      options: ['A', 'B'], recommendation: 'A', state: 'answered', answer: 'A', answered: r.ended, agent: r.agent, lane: r.lane, repo: r.repo,
+      created: iso(Date.parse(r.started) + 4 * MIN),
+    })),
+  ]
+  const requestFrom = (id, state, r, minutesAgo) => ({
+    id, from_run: r.id, kind: 'question', state, message: 'Which lane owns the shared retry helper in internal/retry?', depth: 0,
+    from_agent: r.agent, from_lane: r.lane, repo: r.repo, created: iso(now - minutesAgo * MIN), updated: iso(now - (minutesAgo - 1) * MIN),
+    ...(state === 'routed' ? { agent: 'claude', lane: 'feat/queue', target_run: r.id } : {}),
+  })
+  const requests = [
+    requestFrom(30, 'needs_routing', flying, 4),
+    ...ended.slice(1, 7).map((r, i) => requestFrom(24 + i, 'routed', r, 60 + i * 25)),
+  ]
+  return { lanes, closedLanes, runs, decisions, requests, spendUsd, budget }
+}
+
+let busyCache = null
+const busyNow = () => {
+  // Rebuilt at most once a second: a page makes several reads at once and they should agree.
+  if (!busyCache || Date.now() - busyCache.at > 1000) busyCache = { at: Date.now(), day: busyDay() }
+  return busyCache.day
+}
+const toRecord = (r) => {
+  const { prompt, log, start_sha, end_sha, worktree, progress, ...rest } = r
+  return { ...rest, lane_state: 'open', task: String(prompt).split('\n')[0] }
+}
 
 const ms = (m) => m * 60000
 const ago = (m) => new Date(Date.now() - ms(m)).toISOString()
@@ -30,7 +197,7 @@ const lane = (id, repo_id, repo, name, o = {}) => {
     ...rest,
   }
 }
-const lanes = () => [
+const lanes = () => BUSY ? busyNow().lanes : [
   // An MR whose pipeline passed: waiting for a merge.
   lane(1, 1, 'acme-api', 'feat/login-sessions', { mr: 41, mr_state: 'open', ps: 'passed', activity: 35, by: 'pipeline', mrCreated: 190, mrUpdated: 40, pStart: 48, pEnd: 35, created: 420 }),
   // A failed pipeline.
@@ -49,7 +216,7 @@ const run = (id, lane_id, ln, repo, state, endedMinAgo, o = {}) => ({
   started: ago(endedMinAgo + 9), ended: state === 'running' ? undefined : ago(endedMinAgo),
   cost_usd: Math.round((0.4 + id / 7) * 100) / 100, lane: ln, repo, worktree: `/work/${repo}-${lane_id}`, ...o,
 })
-const runs = () => [
+const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
   run(15, 1, 'feat/login-sessions', 'acme-api', 'succeeded', 48, { commits: 3, prompt: 'Store session tokens server side with a 12 hour expiry.' }),
   run(16, 2, 'fix/cache-invalidation', 'acme-api', 'succeeded', 26, { prompt: 'Invalidate the product cache when a price changes.' }),
   run(17, 4, 'feat/export-csv', 'acme-web', 'running', 0, {
@@ -64,11 +231,11 @@ const runs = () => [
   run(20, 6, 'docs/install-guide', 'acme-docs', 'succeeded', 75, { agent: 'copilot', prompt: 'Write an install guide for Linux and macOS.' }),
 ]
 
-const decisions = () => NODEC ? [] : [
+const decisions = () => NODEC ? [] : BUSY ? busyNow().decisions : [
   { id: 5, run_id: 17, question: 'The CSV export can stream rows or buffer the whole file first. Which should it do?', options: ['Stream', 'Buffer'], recommendation: 'Stream', why: 'Orders tables reach a million rows; buffering would hold them all in memory. Streaming needs a chunked response, which the gateway already allows.', state: 'open', agent: 'claude', lane: 'feat/export-csv', repo: 'acme-web', created: ago(8) },
   { id: 4, run_id: 15, question: 'Should session tokens live server side or in a signed cookie?', options: ['Server side, in the store', 'Signed cookie'], recommendation: 'Server side, in the store', why: 'Server-side sessions can be revoked at once.', state: 'answered', answer: 'Server side, in the store', answered: ago(170), agent: 'claude', lane: 'feat/login-sessions', repo: 'acme-api', created: ago(200) },
 ]
-const requests = () => NODEC ? [] : [
+const requests = () => NODEC ? [] : BUSY ? busyNow().requests : [
   { id: 3, from_run: 18, kind: 'question', state: 'needs_routing', message: 'Which lane owns the shared retry helper in internal/retry?', depth: 0, from_agent: 'opencode', from_lane: 'refactor/queue-worker', repo: 'acme-api', created: ago(5), updated: ago(5) },
 ]
 
@@ -118,7 +285,7 @@ const HISTORY_UNTIL = 10
 
 const status = (detail) => ({
   version: '0.9.0', pid: 4242, started: ago(2600), store: '~/.shepherd/shepherd.db', config: '~/.shepherd/config.yaml',
-  workspaces: [{ id: 1, name: 'acme', path: '/work', created: ago(9000), repos: 3, lanes: 6 }],
+  workspaces: [{ id: 1, name: 'acme', path: '/work', created: ago(9000), repos: BUSY ? 5 : 3, lanes: BUSY ? busyNow().lanes.length : 6 }],
   ...(detail ? {
     detail: {
       commit: '1f2e3d4', built_at: ago(4000), os: 'linux', arch: 'amd64', host: 'build-host', now: new Date().toISOString(),
@@ -128,7 +295,8 @@ const status = (detail) => ({
     },
   } : {}),
 })
-const spend = () => ({ day: new Date().toISOString().slice(0, 10), usd: 20.4, budget: 25, credit_usd: 0.4, by_source: {} })
+const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
+const spend = () => ({ day: localDay(), usd: BUSY ? busyNow().spendUsd : 20.4, budget: 25, credit_usd: 0.4, by_source: {} })
 
 const runLog = (id) => `# run ${id} · claude · feat/export-csv
 
@@ -196,7 +364,8 @@ http.createServer((req, res) => {
   if (p === '/v1/lanes') return json(res, lanes())
   if (p === '/v1/runs') {
     const lane = Number(u.searchParams.get('lane_id') || 0)
-    return json(res, runs().filter((r) => !lane || r.lane_id === lane))
+    const limit = Number(u.searchParams.get('limit') || 200)
+    return json(res, runs().filter((r) => !lane || r.lane_id === lane).slice(0, limit))
   }
   let m
   if ((m = p.match(/^\/v1\/lanes\/(\d+)\/conversation$/))) return json(res, laneThread())
@@ -208,7 +377,10 @@ http.createServer((req, res) => {
     const s = u.searchParams.get('state')
     return json(res, decisions().filter((d) => !s || d.state === s))
   }
-  if (p === '/v1/requests') return json(res, requests())
+  if (p === '/v1/requests') {
+    const states = (u.searchParams.get('state') || '').split(',').filter(Boolean)
+    return json(res, requests().filter((q) => states.length === 0 || states.includes(q.state)))
+  }
   if (p === '/v1/spend') return json(res, spend())
   if (p === '/v1/feed') {
     const items = feedItems()
@@ -219,8 +391,24 @@ http.createServer((req, res) => {
   }
   if (p === '/v1/desk/history') return json(res, { events: deskAll().filter((e) => e.seq <= HISTORY_UNTIL), more: false })
   if (p === '/v1/desk/status') return json(res, { workspace_id: 1, busy: false, queued: 0, attached: 1, session: 'shots', model: 'claude-sonnet-5-5', wake: 'attached' })
-  if (p === '/v1/history/lanes') return json(res, [])
-  if (p === '/v1/history/runs') return json(res, { runs: [], count: 0, cost_usd: 0, credits: 0, agents: [], lanes: [] })
+  if (p === '/v1/history/lanes') {
+    const since = Date.parse(u.searchParams.get('since') || '') || 0
+    const closed = BUSY ? busyNow().closedLanes : []
+    return json(res, closed.filter((l) => Date.parse(l.closed) >= since).map((l) => ({ ...l, runs: l.runs ?? 0, cost_usd: l.cost_usd ?? 0 })))
+  }
+  if (p === '/v1/history/runs') {
+    const since = Date.parse(u.searchParams.get('since') || '') || 0
+    const agent = u.searchParams.get('agent')
+    const lane = Number(u.searchParams.get('lane_id') || 0)
+    const limit = Number(u.searchParams.get('limit') || 500)
+    const all = runs().map(toRecord).filter((r) => Date.parse(r.started) >= since && (!agent || r.agent === agent) && (!lane || r.lane_id === lane))
+      .sort((a, b) => Date.parse(b.started) - Date.parse(a.started))
+    return json(res, {
+      runs: all.slice(0, limit), count: all.length, cost_usd: all.reduce((n, r) => n + (r.cost_usd ?? 0), 0),
+      credits: all.reduce((n, r) => n + (r.credits ?? 0), 0), agents: [...new Set(all.map((r) => r.agent))].sort(),
+      lanes: [...new Map(all.map((r) => [r.lane_id, { id: r.lane_id, repo: r.repo, name: r.lane }])).values()],
+    })
+  }
   if (p.startsWith('/v1/')) return json(res, {})
   const f = path.join(dist, p === '/' ? 'index.html' : p)
   if (f.startsWith(dist) && fs.existsSync(f) && fs.statSync(f).isFile()) {
