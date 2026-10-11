@@ -143,7 +143,7 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathShutdown, operatorOnly, s.shutdown)
 	handle("GET "+api.PathLanes, desk, s.listLanes)
 	handle("POST "+api.PathLanes, desk, s.openLane)
-	handle("POST "+api.PathLanes+"/{id}/close", desk, s.closeLane)
+	handle("POST "+api.PathLanes+"/{id}/close", desk, s.acted(s.describeCloseLane, s.closeLane))
 	handle("POST "+api.PathLanes+"/{id}/scope", operatorOnly, s.rescopeLane)
 	handle("POST "+api.PathLanes+"/{id}/ship", desk, s.withRunner(s.shipLane))
 	// A transcript holds full tool input and output: the person's alone, never the desk's
@@ -152,7 +152,7 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathFoldGC, desk, s.foldGC)
 	handle("POST "+api.PathPrePush, worker, s.prePush)
 	handle("POST /v1/repos/{id}/hook", operatorOnly, s.repoHook)
-	handle("POST "+api.PathRuns, desk, s.withRunner(s.startRun))
+	handle("POST "+api.PathRuns, desk, s.acted(s.describeStart, s.withRunner(s.startRun)))
 	handle("GET "+api.PathRuns, desk, s.listRuns)
 	// Read-only history: closed lanes with their outcome and cost, and every run in a range.
 	handle("GET "+api.PathHistoryLanes, desk, api.HistoryLanes(s.Store))
@@ -162,17 +162,17 @@ func (s *Server) Handler() http.Handler {
 	// A run's diagnoses are the person's and the desk's to read; no worker route, so an
 	// agent cannot take a fix on its own run. fixRun keeps the desk to desk_ok fixes.
 	handle("GET "+api.PathRuns+"/{id}/diagnoses", desk, s.listDiagnoses)
-	handle("POST "+api.PathRuns+"/{id}/fix", desk, s.withRunner(s.fixRun))
-	handle("POST "+api.PathRuns+"/{id}/stop", desk, s.withRunner(s.stopRun))
-	handle("POST "+api.PathRuns+"/{id}/dismiss", desk, s.dismissRun(true))
-	handle("POST "+api.PathRuns+"/{id}/undismiss", desk, s.dismissRun(false))
+	handle("POST "+api.PathRuns+"/{id}/fix", desk, s.acted(s.describeFix, s.withRunner(s.fixRun)))
+	handle("POST "+api.PathRuns+"/{id}/stop", desk, s.acted(s.describeStop, s.withRunner(s.stopRun)))
+	handle("POST "+api.PathRuns+"/{id}/dismiss", desk, s.acted(s.describeDismiss(true), s.dismissRun(true)))
+	handle("POST "+api.PathRuns+"/{id}/undismiss", desk, s.acted(s.describeDismiss(false), s.dismissRun(false)))
 	handle("POST "+api.PathRuns+"/{id}/events", own, s.withRunner(s.addEvent))
 	handle("GET "+api.PathRuns+"/{id}/events", desk|own, s.runEvents)
 	handle("POST "+api.PathRuns+"/{id}/decisions", own, s.withRunner(s.addDecision))
 	handle("POST "+api.PathRuns+"/{id}/requests", own, s.withRunner(s.addRequest))
 	handle("GET "+api.PathDecisions, desk, s.listDecisions)
 	// The desk may answer only in a turn the person started: answerDecision checks.
-	handle("POST "+api.PathDecisions+"/{id}/answer", desk, s.personsAnswer(s.withRunner(s.answerDecision)))
+	handle("POST "+api.PathDecisions+"/{id}/answer", desk, s.acted(s.describeAnswer, s.personsAnswer(s.withRunner(s.answerDecision))))
 	handle("GET "+api.PathFeed, desk, s.feed)
 	handle("GET "+api.PathFeedStream, desk, s.feedStream)
 	handle("POST "+api.PathFoldImport, operatorOnly, s.foldImport)
@@ -207,8 +207,8 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathProjects+"/{name}/brief/draft", desk, s.draftBrief)
 	handle("POST "+api.PathProjects+"/{name}/brief/approve", desk, s.personsApproval(s.approveBrief))
 	handle("GET "+api.PathRequests, desk, s.listRequests)
-	handle("POST "+api.PathRequests+"/{id}/route", desk, s.withRunner(s.routeRequest))
-	handle("POST "+api.PathRequests+"/{id}/close", desk, s.withRunner(s.closeRequest))
+	handle("POST "+api.PathRequests+"/{id}/route", desk, s.acted(s.describeRoute, s.withRunner(s.routeRequest)))
+	handle("POST "+api.PathRequests+"/{id}/close", desk, s.acted(s.describeCloseRequest, s.withRunner(s.closeRequest)))
 	// The daemon's front desk: the person's alone, in the terminal or a browser
 	// (api/desk.go).
 	handle("POST "+api.PathDeskTurn, web, s.deskTurn)
