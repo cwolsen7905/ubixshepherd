@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseRemote(t *testing.T) {
@@ -44,7 +45,7 @@ func TestGitLabMRForBranch(t *testing.T) {
 		case strings.Contains(path, "source_branch=feat%2Fx"):
 			return []byte(`[{"iid":7,"state":"opened"}]`), nil
 		case strings.HasSuffix(path, "merge_requests/7"):
-			return []byte(`{"iid":7,"state":"merged","sha":"abc","merge_commit_sha":"m1","squash_commit_sha":"s1","web_url":"u","head_pipeline":{"id":9,"status":"failed","sha":"abc","web_url":"p"}}`), nil
+			return []byte(`{"iid":7,"state":"merged","sha":"abc","merge_commit_sha":"m1","squash_commit_sha":"s1","web_url":"u","created_at":"2026-10-11T08:00:00.000Z","updated_at":"2026-10-11T09:30:15.250+02:00","head_pipeline":{"id":9,"status":"failed","sha":"abc","web_url":"p","started_at":"2026-10-11T08:05:00.000Z","finished_at":null}}`), nil
 		case strings.Contains(path, "source_branch="):
 			return []byte(`[]`), nil
 		}
@@ -53,6 +54,13 @@ func TestGitLabMRForBranch(t *testing.T) {
 	mr, err := g.MRForBranch(context.Background(), "feat/x")
 	if err != nil || mr == nil || mr.IID != 7 || mr.MergeSHA != "m1" || mr.Pipeline.ID != 9 || mr.Pipeline.Status != "failed" {
 		t.Fatalf("mr = %+v, %v", mr, err)
+	}
+	utc := func(h, m, s int) time.Time { return time.Date(2026, 10, 11, h, m, s, 0, time.UTC) }
+	if !mr.Created.Equal(utc(8, 0, 0)) || !mr.Updated.Equal(time.Date(2026, 10, 11, 7, 30, 15, 250e6, time.UTC)) {
+		t.Errorf("mr times = %v, %v", mr.Created, mr.Updated)
+	}
+	if !mr.Pipeline.Started.Equal(utc(8, 5, 0)) || !mr.Pipeline.Finished.IsZero() {
+		t.Errorf("pipeline times = %v, %v", mr.Pipeline.Started, mr.Pipeline.Finished)
 	}
 	if !strings.HasPrefix(calls[0], "projects/group%2Fapp/") {
 		t.Errorf("project not escaped: %s", calls[0])

@@ -184,6 +184,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 	}
 	next := prev
 	next.MR, next.MRState, next.MRURL = mr.IID, mr.State, mr.URL
+	next.MRCreated, next.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
 	if mr.IID != prev.MR {
 		next.FixTries, next.Pipeline, next.PipelineStatus = 0, 0, ""
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d %s for lane %s: %s", mr.IID, mr.State, lane.Name, mr.URL)
@@ -199,6 +200,13 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 		case "canceled":
 			w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d was canceled for !%d (lane %s)", p.ID, mr.IID, lane.Name)
 		}
+	}
+
+	// The pipeline times are the recorded pipeline's own: the forge's head pipeline when it
+	// is the one stored, else none, so they never belong to another pipeline.
+	next.PipelineStarted, next.PipelineFinished = time.Time{}, time.Time{}
+	if p := mr.Pipeline; p != nil && p.ID == next.Pipeline {
+		next.PipelineStarted, next.PipelineFinished = p.Started.UTC(), p.Finished.UTC()
 	}
 
 	// Act only on a merge seen happening. A request already merged the first time

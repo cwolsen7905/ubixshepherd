@@ -408,11 +408,33 @@ type LaneView struct {
 	MRURL          string `json:"mr_url,omitempty"`
 	Pipeline       int64  `json:"pipeline,omitempty"`
 	PipelineStatus string `json:"pipeline_status,omitempty"`
+	// LastActivity is the latest of the lane's run start or end, commit beyond its base,
+	// decision asked or answered, request made or updated, merge request update and
+	// pipeline start or finish, with the lane's creation as the floor; LastActivityBy
+	// names which (Activity*). The forge's times are as of the last poll.
+	LastActivity   *time.Time `json:"last_activity,omitempty"`
+	LastActivityBy string     `json:"last_activity_by,omitempty"`
+	// MRCreated and MRUpdated are the forge's times for the merge request (an update
+	// includes comments and pushes); PipelineStarted and PipelineFinished the head
+	// pipeline's, the latter unset while it runs. Each is unset when not known.
+	MRCreated        *time.Time `json:"mr_created,omitempty"`
+	MRUpdated        *time.Time `json:"mr_updated,omitempty"`
+	PipelineStarted  *time.Time `json:"pipeline_started,omitempty"`
+	PipelineFinished *time.Time `json:"pipeline_finished,omitempty"`
 	// Diagnosis is the newest diagnosis of the lane's latest run; it is not set for a
 	// lane that has run nothing. Progress is what that run is doing now while it goes.
 	Diagnosis *Diagnosis `json:"diagnosis,omitempty"`
 	Progress  *Progress  `json:"progress,omitempty"`
 }
+
+// Where a lane's last activity came from (LaneView.LastActivityBy): the store's three
+// (store.Activity*), then the two a git or forge read gives, then the lane's creation.
+const (
+	ActivityCommit   = "commit"
+	ActivityMR       = "mr"
+	ActivityPipeline = "pipeline"
+	ActivityCreated  = "created"
+)
 
 // PathLaneShip is POST /v1/lanes/{id}/ship: push the lane's committed work and open or
 // update its merge request, after Shepherd's own checks.
