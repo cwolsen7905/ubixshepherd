@@ -157,7 +157,7 @@ func TestDismissAndUndismissRun(t *testing.T) {
 func TestProjectWorkCallsMatchTheRoutes(t *testing.T) {
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.Method+" "+r.URL.Path)
+		paths = append(paths, r.Method+" "+r.URL.EscapedPath())
 		w.Write([]byte(`{"project":"p","repos":[{"repo":"app","found":true,"rows":[{"id":"W1","status":"doing","repo":"app"}],"warnings":[]}],"drift":[]}`))
 	}))
 	defer srv.Close()

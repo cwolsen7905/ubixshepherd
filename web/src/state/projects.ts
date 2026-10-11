@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { projects } from '../api/client'
-import type { ProjectDetail, ProjectList } from '../api/types'
+import type { ProjectDetail, ProjectList, ProjectWork } from '../api/types'
 import { useSnapshot } from './context'
 import type { Loaded } from './history'
 
@@ -45,3 +45,7 @@ export const useProjectList = (): Loaded<ProjectList> => useProjectLoad('list', 
 /** One project's detail; name null is the Unassigned group. */
 export const useProject = (name: string | null): Loaded<ProjectDetail> =>
   useProjectLoad(name === null ? 'unassigned' : `project:${name}`, () => (name === null ? projects.unassigned() : projects.one(name)))
+
+/** One project's work matrices and drift; name null is the Unassigned group. */
+export const useProjectWork = (name: string | null): Loaded<ProjectWork> =>
+  useProjectLoad(name === null ? 'work:unassigned' : `work:${name}`, () => projects.work(name))

@@ -51,3 +51,15 @@
 .project-group-body { display: flex; flex-direction: column; gap: var(--s-4); padding-top: var(--s-3); }
 .project-group-empty { margin: 0; padding: 0 var(--pad); }
 .row-actions { margin: 0; padding: 0 var(--pad) var(--s-1); font-size: var(--t-sm); }
+
+/* Work: the matrix grouped by status, with drift and unreadable rows beneath. */
+.work-group { margin: 0 0 var(--s-3); }
+.work-group h3, .work-drift h3, .work-warnings h3 { margin: 0 0 var(--s-1); font-size: var(--t-sm); font-weight: 600; text-transform: capitalize; }
+.work-group summary { cursor: pointer; font-size: var(--t-sm); font-weight: 600; text-transform: capitalize; }
+.work-row { display: flex; gap: var(--s-3); align-items: baseline; padding: var(--s-1) 0; }
+.work-id { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 3.5em; }
+.work-item { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.work-area, .work-lane, .work-pr { font-size: var(--t-sm); }
+.work-drift, .work-warnings { margin: 0 0 var(--s-3); }
+.work-drift ul, .work-warnings ul { margin: 0; padding-left: var(--s-4); }
+.work-hint { margin: var(--s-1) 0; }
