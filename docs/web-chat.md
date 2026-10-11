@@ -14,10 +14,10 @@ first, and within a group the longest-waiting first:
 | Group | What it holds | Age is |
 |---|---|---|
 | needs you | open decisions, then requests needing routing | since asked |
-| broken | a failed or interrupted run, or an open MR whose pipeline failed | since the run ended |
-| idle | an open lane with no run in flight and nothing to wait for | since its last run ended, else since the lane was created |
+| broken | a failed or interrupted run, or an open MR whose pipeline failed | since the run ended, or the pipeline finished |
+| idle | an open lane with no run in flight and nothing to wait for | since the lane's last activity (a run, commit, decision, request, MR update or pipeline), which the row names: "last: commit" |
 | working | a run in flight, with its progress line | since it started |
-| to review | an open MR whose pipeline passed | lane age |
+| to review | an open MR whose pipeline passed | since the pipeline finished, else since the MR last changed, else lane age |
 
 Left out: finished work (the board's "done unseen" is history), closed lanes, a lane
 waiting on a running pipeline (that is waiting, not idle), a lane the person has already
@@ -48,15 +48,14 @@ daemon's detailed status every 30 seconds.
 The window title already carries the board's counts, so a background tab shows that
 something waits.
 
-## What it cannot know yet
+## What it cannot know
 
-- **Idle is approximate.** The daemon has no lane-activity time, so idle runs from the
-  last run's end, else the lane's creation. A lane edited by hand looks idle.
-- **MR age.** The lane view has no MR or pipeline timestamps; the lane's age stands in.
+- **Forge times are as of the last poll.** `last_activity` and the MR and pipeline times come
+  from the daemon's lane view; the forge's are only as fresh as its poll (the rail header
+  shows when it last ran). Against an older daemon without these fields, idle falls back
+  to the last run's end and review to the lane's age.
 - **Anchors need the feed.** A jump needs the row to be in the feed window the page holds
   (the newest 1000 items) and in the loaded thread.
-
-True lane activity and forge timestamps would be a separate daemon change.
 
 ## Review list
 
@@ -71,6 +70,9 @@ Every element considered for the rail, and where it stands.
 | d. Attention count in the tab title | the board's counts in `document.title` for a background tab | already existed (`web/src/App.tsx`) |
 | e. Run progress bar | a bar on running rows; the progress line already shows as text | deferred for review |
 | f. Per-project grouping | group the rail by project with a toggle; urgency order stays the default | deferred for review |
-| True idle-since | needs a lane-activity time from the daemon; idle uses the last run's end meanwhile | deferred: backend lane |
-| MR and pipeline timestamps | needs forge times on the lane view; lane age stands in meanwhile | deferred: backend lane |
+| True idle-since | idle is dated from the lane's `last_activity` and names its source | shipped, from the lane view of !108 |
+| MR and pipeline timestamps | review and failed-pipeline rows use `pipeline_finished` and `mr_updated` | shipped, from the lane view of !108 |
 | Per-lane spend | the lane view carries none; per-run cost could be summed in the client | deferred for review |
+| All-pages live rail | the dock counts and last feed rows in a rail beside every page at 1800px and up (UI audit phase 5) | deferred for review: needs a shell layout change, and the person has not chosen rail or room |
+| Board feed strip | what just happened on the board, which has no feed of its own | deferred for review |
+| Density default | `compact` (today's look) is the default; whether `comfortable` should be at wide sizes | deferred for review |

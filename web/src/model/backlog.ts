@@ -7,7 +7,7 @@ import { aboutLane } from './feed'
 import {
   boardItems, laneClashes, latestRuns, endedBadly, mrOpen, type BoardItem,
 } from './board'
-import type { DecisionView, LaneView, RequestView, RunView } from '../api/types'
+import type { ActivityKind, DecisionView, LaneView, RequestView, RunView } from '../api/types'
 import type { Tone } from './marks'
 
 export type BacklogGroup = 'needs' | 'broken' | 'idle' | 'working' | 'review'
@@ -86,10 +86,14 @@ export function backlogItems(input: BacklogInput): BacklogItem[] {
     if (endedBadly(run) && run.dismissed) continue
     // Waiting on the forge is waiting, not idle: an open merge request whose pipeline runs.
     if (mrOpen(l) && l.pipeline_status !== 'failed' && l.pipeline_status !== 'passed') continue
+    // The daemon's activity time is when the lane last did anything; before it is known
+    // (an older daemon), the last run's end stands in.
+    const detail = l.last_activity
+      ? `last: ${activityLabel(l, run)}`
+      : run ? `last run ${run.id} ${run.state}` : 'no run yet'
     items.push({
       key: `idle:${l.id}`, group: 'idle', name: clash.has(l.name) && l.repo ? `${l.repo}:${l.name}` : l.name,
-      repo: l.repo, laneId: l.id, lane: l, run, at: run?.ended ?? l.created,
-      detail: run ? `last run ${run.id} ${run.state}` : 'no run yet',
+      repo: l.repo, laneId: l.id, lane: l, run, at: l.last_activity ?? run?.ended ?? l.created, detail,
     })
   }
 
@@ -107,10 +111,35 @@ export function backlogItems(input: BacklogInput): BacklogItem[] {
   return items
 }
 
+const ACTIVITY_LABELS: Record<ActivityKind, string> = {
+  run: 'run', decision: 'decision', request: 'request', commit: 'commit', mr: 'MR update', pipeline: 'pipeline',
+  created: 'created',
+}
+
+/** What a lane last did, in words: "commit", "run 5 succeeded", "MR update". */
+function activityLabel(l: LaneView, run: RunView | undefined): string {
+  const by = l.last_activity_by
+  if (by === 'run' && run) return `run ${run.id} ${run.state}`
+  return by ? ACTIVITY_LABELS[by] ?? by : 'activity'
+}
+
+/**
+ * The board's ordering time is the lane's age for a merge request and the run's end for a
+ * failure. The forge's times are exact: a failed pipeline broke when it finished, and a
+ * passed one has waited for review since it finished (else since the MR last changed).
+ */
+function forgeTime(b: BoardItem): string {
+  const l = b.lane
+  if (!l) return b.at
+  if (b.group === 'broken' && b.detail.startsWith('pipeline failed')) return l.pipeline_finished ?? b.at
+  if (b.group === 'review') return l.pipeline_finished ?? l.mr_updated ?? b.at
+  return b.at
+}
+
 function fromBoard(b: BoardItem): BacklogItem {
   return {
     key: b.key, group: b.group as BacklogGroup, glyph: b.glyph, name: b.name, repo: b.repo, laneId: b.laneId,
-    lane: b.lane, run: b.run, decision: b.decision, request: b.request, detail: b.detail, at: b.at,
+    lane: b.lane, run: b.run, decision: b.decision, request: b.request, detail: b.detail, at: forgeTime(b),
   }
 }
 
