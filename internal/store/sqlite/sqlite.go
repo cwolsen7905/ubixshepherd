@@ -394,6 +394,10 @@ var migrations = []string{
 		WHERE agent = 'opencode' AND model LIKE '%/%' AND model NOT LIKE 'local/%';
 	UPDATE usage SET cost_estimated = 1
 		WHERE agent = 'opencode' AND model LIKE '%/%' AND model NOT LIKE 'local/%';`,
+	// Whether the forge says the open merge request is approved, and the status of its
+	// head pipeline's approval job ('' for none).
+	`ALTER TABLE lane_forge ADD COLUMN approved INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE lane_forge ADD COLUMN require_approval TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -1059,9 +1063,10 @@ func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, erro
 	f := store.LaneForge{LaneID: laneID}
 	var created, updated, started, finished string
 	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
-		mr_created, mr_updated, pipeline_started, pipeline_finished FROM lane_forge WHERE lane_id = ?`, laneID).
+		mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval
+		FROM lane_forge WHERE lane_id = ?`, laneID).
 		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries, &f.MergeSHA,
-			&created, &updated, &started, &finished)
+			&created, &updated, &started, &finished, &f.Approved, &f.RequireApproval)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
@@ -1081,16 +1086,17 @@ func timeText(t time.Time) string {
 func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
-			mr_created, mr_updated, pipeline_started, pipeline_finished, updated)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, updated)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (lane_id) DO UPDATE SET mr = excluded.mr, mr_state = excluded.mr_state, mr_url = excluded.mr_url,
 			pipeline = excluded.pipeline, pipeline_status = excluded.pipeline_status, fix_tries = excluded.fix_tries,
 			gate_tries = excluded.gate_tries, merge_sha = excluded.merge_sha,
 			mr_created = excluded.mr_created, mr_updated = excluded.mr_updated,
 			pipeline_started = excluded.pipeline_started, pipeline_finished = excluded.pipeline_finished,
+			approved = excluded.approved, require_approval = excluded.require_approval,
 			updated = excluded.updated`,
 		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, f.MergeSHA,
-		timeText(f.MRCreated), timeText(f.MRUpdated), timeText(f.PipelineStarted), timeText(f.PipelineFinished), now())
+		timeText(f.MRCreated), timeText(f.MRUpdated), timeText(f.PipelineStarted), timeText(f.PipelineFinished), f.Approved, f.RequireApproval, now())
 	return err
 }
 

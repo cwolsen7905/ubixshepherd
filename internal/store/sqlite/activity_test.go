@@ -43,6 +43,19 @@ func TestLaneForgeTimesRoundTrip(t *testing.T) {
 }
 
 // A database from before the timestamps gains the columns, and its rows read as unknown.
+func TestLaneForgeApprovalRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	db, _ := open(t)
+	in := store.LaneForge{LaneID: oneLane(t, db), MR: 7, MRState: "opened", Approved: true, RequireApproval: "manual"}
+	if err := db.PutLaneForge(ctx, in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.LaneForge(ctx, in.LaneID)
+	if err != nil || got != in {
+		t.Fatalf("got %+v, %v; want %+v", got, err, in)
+	}
+}
+
 func TestLaneForgeTimesMigrate(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "s.db")
@@ -54,9 +67,14 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 	if err := db.PutLaneForge(ctx, store.LaneForge{LaneID: lane, MR: 3, MRState: "opened"}); err != nil {
 		t.Fatal(err)
 	}
-	// Step the schema back over the forge-times migration, which is the seventh to last
-	// (then repos.removed, next_items, gate_results, keep_going, topics and cost_estimated), as a daemon one release old left it.
-	last := len(migrations) - 7
+	// Step the schema back over the forge-times migration, which is the eighth to last
+	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated and the approval columns), as a daemon one release old left it.
+	last := len(migrations) - 8
+	for _, c := range []string{"approved", "require_approval"} {
+		if _, err := db.db.ExecContext(ctx, `ALTER TABLE lane_forge DROP COLUMN `+c); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, tbl := range []string{"keep_going", "keep_going_starts"} {
 		if _, err := db.db.ExecContext(ctx, `DROP TABLE `+tbl); err != nil {
 			t.Fatal(err)
