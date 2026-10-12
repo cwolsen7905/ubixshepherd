@@ -11,7 +11,7 @@ function items(o: Partial<BoardInput>) {
 function only(o: Partial<BoardInput>) {
   const all = items(o)
   expect(all).toHaveLength(1)
-  return all[0]
+  return all[0]!
 }
 
 const openMR = (status: 'passed' | 'failed' | 'running') =>
