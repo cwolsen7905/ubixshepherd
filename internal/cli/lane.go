@@ -56,6 +56,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneRun(ctx, env, args[1:])
 	case "scope":
 		return laneScope(ctx, env, args[1:])
+	case "widen":
+		return laneWiden(ctx, env, args[1:])
 	case "review":
 		return laneReview(ctx, env, args[1:])
 	case "ship":
@@ -554,6 +556,50 @@ func laneScope(ctx context.Context, env Env, args []string) error {
 		return errors.New("which lane? run this inside its worktree, or name it")
 	}
 	lane, err := c.RescopeLane(ctx, id, add, remove)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(env.Stdout, "lane %s scope: %s\n", lane.Name, strings.Join(lane.Scope, ", "))
+	return nil
+}
+
+// laneWiden adds globs to a lane's scope on the strength of an answered decision:
+// shepherd lane widen <lane> --decision N --add G. It is the desk's tool; the daemon
+// refuses it from the desk outside a turn the person started.
+func laneWiden(ctx context.Context, env Env, args []string) error {
+	fs := flags("lane widen", env)
+	var add listFlag
+	fs.Var(&add, "add", "glob to add (repeatable); refused if another lane holds it")
+	decision := fs.Int64("decision", 0, "the answered decision, from this lane's runs, in which the person approved the globs")
+	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 1 || len(add) == 0 || *decision <= 0 {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	var id int64
+	if len(pos) == 1 {
+		l, err := findLane(ctx, c, h, pos[0])
+		if err != nil {
+			return err
+		}
+		id = l.ID
+	} else if h.Lane != nil {
+		id = h.Lane.ID
+	} else {
+		return errors.New("which lane? run this inside its worktree, or name it")
+	}
+	lane, err := c.WidenLane(ctx, id, add, *decision)
 	if err != nil {
 		return err
 	}

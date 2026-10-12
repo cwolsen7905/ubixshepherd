@@ -522,6 +522,16 @@ type Rescope struct {
 	Remove []string `json:"remove,omitempty"`
 }
 
+// PathLaneWiden is the desk's way to add globs to an open lane's scope.
+func PathLaneWiden(id int64) string { return fmt.Sprintf("%s/%d/widen", PathLanes, id) }
+
+// WidenLane is the body of POST /v1/lanes/{id}/widen: globs to add, and the answered
+// decision (one of the lane's own runs) in which the person approved them.
+type WidenLane struct {
+	Add      []string `json:"add"`
+	Decision int64    `json:"decision"`
+}
+
 // CloseLane is the body of POST /v1/lanes/{id}/close.
 type CloseLane struct {
 	Force bool `json:"force"`

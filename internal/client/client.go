@@ -168,6 +168,13 @@ func (c *Client) RescopeLane(ctx context.Context, id int64, add, remove []string
 	return out, c.do(ctx, http.MethodPost, api.PathLaneScope(id), api.Rescope{Add: add, Remove: remove}, &out)
 }
 
+// WidenLane adds globs to a lane's scope on the strength of an answered decision. The
+// daemon refuses it from the front desk outside a turn the person started.
+func (c *Client) WidenLane(ctx context.Context, id int64, add []string, decision int64) (store.Lane, error) {
+	var out store.Lane
+	return out, c.do(ctx, http.MethodPost, api.PathLaneWiden(id), api.WidenLane{Add: add, Decision: decision}, &out)
+}
+
 func (c *Client) CloseLane(ctx context.Context, id int64, force bool) (fold.CloseResult, error) {
 	var out fold.CloseResult
 	return out, c.do(ctx, http.MethodPost, api.PathLaneClose(id), api.CloseLane{Force: force}, &out)

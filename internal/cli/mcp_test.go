@@ -61,7 +61,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_ship", "lane_list", "fold_gc", "shepherd_where"} {
+	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_ship", "lane_list", "fold_gc", "shepherd_where"} {
 		if !names[n] {
 			t.Errorf("tool %s missing", n)
 		}

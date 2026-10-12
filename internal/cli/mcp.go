@@ -131,6 +131,31 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "lane_widen",
+			Description: "Add globs to an open lane's scope, so an agent can touch files it asked about. Only after the person approved exactly those paths in a decision (decision_list shows it answered) and in a turn they started: Shepherd refuses it otherwise. Refused too if another open lane holds an overlapping glob (the reason names the lane), or the decision is not an answered one from this lane's runs. It only adds; the change is recorded in the feed.",
+			InputSchema: obj(map[string]any{
+				"repo":     propRepo,
+				"name":     map[string]any{"type": "string", "description": "The lane's name."},
+				"add":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "description": "Globs relative to the repo to add, only those the person approved."},
+				"decision": map[string]any{"type": "integer", "description": "The answered decision, raised by one of this lane's runs, in which the person approved them."},
+			}, "repo", "name", "add", "decision"),
+			args: func(a map[string]any) ([]string, error) {
+				add, err := strs(a, "add")
+				if err != nil {
+					return nil, err
+				}
+				d, ok := a["decision"].(float64)
+				if !ok || d <= 0 {
+					return nil, fmt.Errorf("decision must be a number")
+				}
+				out := []string{"lane", "widen", str(a, "name"), "--repo", str(a, "repo"), "--decision", fmt.Sprint(int64(d))}
+				for _, g := range add {
+					out = append(out, "--add", g)
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "lane_close",
 			Description: "Close a lane: remove its worktree and delete its branch if git sees it merged. Refuses uncommitted changes or an unmerged branch unless force is set.",
 			InputSchema: obj(map[string]any{
