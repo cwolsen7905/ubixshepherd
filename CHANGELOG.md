@@ -9,6 +9,12 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+## [0.3.0-beta.1] - 2026-10-11
+
+A beta of uBixShepherd that adds a Next up list for planned work, `lane diff` and a
+Changes tab on the lane page, a timeline page in the web UI, and `shepherd repo
+add/remove/list/scan`. No interface is removed or changed incompatibly.
+
 ### Added
 
 - **A next-up list: `shepherd next` and the `next_list`, `next_add` and `next_update`
@@ -50,9 +56,54 @@ protocol) is listed under **Interface changes** in the release that makes it.
   snapshot and the existing history endpoints, with no daemon change; the agent colours
   were checked with the dataviz validator, and the page follows the dark theme, reduced
   motion, forced colors and the narrow layout. The design is `docs/swarm-timeline.md`.
+- **`shepherd repo add`, `remove`, `list` and `scan`, and `init --prune`.** Managing a repo
+  no longer needs `init`. A removed repo is marked, not deleted, so its lanes, runs and
+  history stay readable, and adding it again restores the same row. `init --only` now says
+  it only adds and lists what it left managed; `--prune` unmanages the unlisted repos,
+  refusing while a lane is open. The daemon serves them at `GET`/`POST /v1/repos` and
+  `POST /v1/repos/{id}/unmanage`, with no restart.
+- **A Changes tab on the web lane page.** It reads `GET /v1/lanes/{id}/diff` and opens
+  each file's patch on demand. `web.editor_url` (default `vscode://file/{path}`) turns each
+  file into an editor link; an empty value hides the links.
+- **Gate results per commit.** Each Shepherd gate run (the end-of-run push and `lane ship`)
+  is recorded with its commit, command, outcome and time (`gate_results`, an appended
+  migration), and a run over uncommitted changes is skipped. Lane views and the lane diff
+  carry a gate badge: passed, failed, stale or not run. The diff read takes a run, for
+  that run's own start-to-end range (`lane diff --run`, `run diff <id>`, the `run`
+  argument of `lane_diff`).
+- **Web actions reach the front desk.** Answering a decision, stopping, continuing or
+  starting a run, closing a lane, routing or closing a request, and taking or dismissing
+  a fix from the web page append an action event. It shows in the thread, the history and
+  other tabs, starts no turn, is redacted, and heads the desk's next turn.
 - The web stub for screenshots (`web/shots`) serves `BUSY=1`, a heavy day, answers its
   history endpoints with its runs, and takes `SHOTS_PAGES` to choose pages. Shots now
   emulate reduced motion.
+
+### Interface changes
+
+- New commands: `shepherd next` (list, add, show, approve, defer, drop, finish, move,
+  link, seed), `shepherd lane diff` (`--stat`, `--files`, `--file`, `--run`, `--json`),
+  `shepherd run diff <id>`, `shepherd repo add`, `remove`, `list` and `scan`, and
+  `lane open --item N`. `init --only` only adds; `--prune` unmanages the unlisted repos.
+- New MCP tools: `next_list`, `next_add`, `next_update` and `lane_diff`; `lane_open`
+  takes an `item` argument. `lane_diff` is not open to an agent's worker token.
+- New endpoints: `GET`/`POST /v1/next`, `GET`/`PATCH /v1/next/{id}`,
+  `GET /v1/lanes/{id}/diff`, `GET`/`POST /v1/repos` and `POST /v1/repos/{id}/unmanage`.
+  Lane views gain a `gate` badge; the feed has action events.
+- New config key `web.editor_url`, validated when the config loads.
+- Two appended store migrations (`next_items`, `gate_results`); they apply when the
+  daemon starts, and a binary refuses a store migrated by a newer one.
+
+### Fixed
+
+- OpenCode's hosted-model cost is labelled as OpenCode's own estimate, and a hosted model
+  no longer gets the local endpoint's context window.
+- Chat messages in the web UI use the thread column's width, and the backlog rail takes
+  about 35% of the width, 18 to 30rem.
+
+### Changed
+
+- The docs explain the front desk and its Claude Code requirement.
 
 ## [0.2.0-beta.1] - 2026-10-11
 
