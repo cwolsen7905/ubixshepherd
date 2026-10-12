@@ -9,7 +9,6 @@
   border-block: 1px solid color-mix(in srgb, var(--lantern) 35%, transparent);
 }
 .lane-grid { display: grid; grid-template-columns: minmax(0, 1fr) var(--rail); gap: var(--s-5) 2rem; align-items: start; }
-.section-h { margin: 0 0 0.375rem; padding-left: var(--gutter); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
 .lane-main .section-h:not(:first-child) { margin-top: var(--s-5); }
 .lane-main > p { padding-left: var(--gutter); }
 

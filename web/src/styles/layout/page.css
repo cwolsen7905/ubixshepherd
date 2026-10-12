@@ -1,7 +1,51 @@
-/* Pages other than the board: a readable column on the same rail. */
+/* Page shapes. A page fills the shell: no page sets its own max-width. Prose sits in a
+   .prose box so a card or a paragraph stays readable and the table beside it is not
+   constrained. Widths come from the tokens in theme.css. */
+
+/* Fill: every table, grid and card list takes the free width. */
 .page { max-width: var(--page-max); margin-left: var(--page-margin-left); margin-right: auto; padding: 0 var(--pad); }
-.page-head { margin: var(--s-2) 0 var(--s-5); padding-left: var(--gutter); }
+
+/* Split: main plus a side column, one column below 1100px (see the breakpoints in theme.css). */
+.page-split {
+  display: grid; grid-template-columns: minmax(0, 1fr) var(--rail);
+  gap: var(--s-5); align-items: start;
+}
+.page-split-wide { grid-template-columns: minmax(0, 1fr) var(--rail-wide); }
+.page-split > * { min-width: 0; }
+
+.prose { max-width: var(--measure-prose); }
+
+/* The one page head: title, an optional sub, and an actions slot on the right for filters and
+   the primary button. */
+.page-head {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;
+  column-gap: var(--s-4);
+  margin: var(--s-2) 0 var(--s-5); padding-left: var(--gutter);
+}
+.page-head > * { grid-column: 1; }
 .page-head h1 { margin: 0; font-size: var(--t-xl); font-weight: 600; letter-spacing: -0.01em; }
-.page-sub { margin: var(--s-1) 0 0; color: var(--muted); max-width: 72ch; }
+.page-sub { margin: var(--s-1) 0 0; color: var(--muted); max-width: var(--measure-prose); }
+.page-head > .page-actions {
+  grid-column: 2; grid-row: 1 / span 2;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s-2) var(--s-3);
+}
 .page-foot { padding-left: var(--gutter); margin-top: var(--s-5); }
 
+/* One section head for Board groups, Lane sections and Project sections. Muted --t-sm is for
+   captions only. */
+.section-h {
+  display: flex; align-items: baseline; gap: var(--s-2);
+  margin: 0 0 var(--s-2); padding-left: var(--gutter);
+  font-size: var(--t-lg); font-weight: 600; color: var(--ink);
+}
+.section-h .count { color: var(--faint); font-weight: 500; font-size: var(--t-sm); }
+
+/* An empty state: a sentence and an optional next step, inline in a section or alone on a
+   page. Left-aligned on the glyph rail, never centred. */
+.empty { max-width: var(--measure-prose); margin: var(--s-4) 0; padding: 0 var(--pad) 0 var(--gutter); color: var(--muted); }
+.empty p { margin: 0; }
+.empty .empty-next { margin-top: var(--s-2); }
+
+@media (max-width: 1100px) {
+  .page-split, .page-split-wide { grid-template-columns: minmax(0, 1fr); }
+}
