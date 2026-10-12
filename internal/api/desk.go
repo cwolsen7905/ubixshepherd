@@ -50,6 +50,9 @@ const DeskPartial = "partial"
 type DeskTurn struct {
 	WorkspaceID int64  `json:"workspace_id,omitempty"`
 	Text        string `json:"text"`
+	// TopicID is the topic the person wrote from (the web thread's filter), 0 for none.
+	// Shepherd files the turn under it before the desk sees the turn.
+	TopicID int64 `json:"topic_id,omitempty"`
 }
 
 // DeskTurnAccepted answers POST /v1/desk/turn.

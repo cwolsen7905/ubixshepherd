@@ -205,3 +205,49 @@ func TestLaneTakesTopicFromItemOrRun(t *testing.T) {
 		t.Errorf("a lane's own link should win")
 	}
 }
+
+// A turn Shepherd filed by its rule is the desk's to re-file when the person clearly
+// changed the subject, in a turn the person started; one the person filed, or one of a
+// turn Shepherd started, is not.
+func TestDeskRefilesATurnShepherdFiled(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	a, _ := s.Store.AddTopic(ctx, store.Topic{Title: "login", Status: store.TopicOpen, Source: store.TopicByPerson})
+	b, _ := s.Store.AddTopic(ctx, store.Topic{Title: "release", Status: store.TopicOpen, Source: store.TopicByPerson})
+	file := func(turn int64, by string) {
+		t.Helper()
+		if _, err := s.Store.LinkTopic(ctx, store.TopicLink{TopicID: a.ID, Kind: store.TopicTurn, Ref: strconv.FormatInt(turn, 10), By: by}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	at := func(turn int64) int64 {
+		l, err := s.Store.TopicOf(ctx, store.TopicTurn, strconv.FormatInt(turn, 10))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l.TopicID
+	}
+	file(51, store.TopicLinkShepherd)
+	human, _ := s.MintDeskTurn(true, "s", 51)
+	if code := call(t, ts, human, "PATCH", api.PathTopic(b.ID), api.TopicUpdate{}, nil); code != http.StatusOK || at(51) != b.ID {
+		t.Errorf("id alone did not re-file: %d, topic %d", code, at(51))
+	}
+	file(52, store.TopicLinkShepherd)
+	human, _ = s.MintDeskTurn(true, "s", 52)
+	link := api.TopicUpdate{Link: &api.TopicRef{Kind: store.TopicTurn, Ref: "52"}}
+	if code := call(t, ts, human, "PATCH", api.PathTopic(b.ID), link, nil); code != http.StatusOK || at(52) != b.ID {
+		t.Errorf("a turn link did not re-file: %d, topic %d", code, at(52))
+	}
+	file(53, store.TopicLinkPerson)
+	human, _ = s.MintDeskTurn(true, "s", 53)
+	call(t, ts, human, "PATCH", api.PathTopic(b.ID), api.TopicUpdate{}, nil)
+	if at(53) != a.ID {
+		t.Errorf("the desk moved the person's filing: topic %d", at(53))
+	}
+	file(54, store.TopicLinkShepherd)
+	system, _ := s.MintDeskTurn(false, "s", 54)
+	call(t, ts, system, "PATCH", api.PathTopic(b.ID), api.TopicUpdate{}, nil)
+	if at(54) != a.ID {
+		t.Errorf("the desk moved an event turn: topic %d", at(54))
+	}
+}

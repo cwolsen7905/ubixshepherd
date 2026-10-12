@@ -237,6 +237,9 @@ type turn struct {
 	// desk, 0 when none; others are the further topics those events touch.
 	topic  int64
 	others []int64
+	// how is how Shepherd filed a person's turn (fileViewing, fileNamed or fileLast),
+	// empty for an event turn; what is the thing the message named, for fileNamed.
+	how, what string
 }
 
 // pendingEvent is a waiting swarm event: its line, and the topic it is already tied to
@@ -266,6 +269,13 @@ func (d *Desk) Session(ctx context.Context) string {
 
 // Send queues the person's message as a turn and returns the turn's id.
 func (d *Desk) Send(ctx context.Context, text string) (int64, int, error) {
+	return d.SendIn(ctx, text, 0)
+}
+
+// SendIn is Send for a message written from a topic (0 for none): Shepherd files the
+// turn under that topic, or else under the topic of what it names, or else under the
+// topic of the person's last turn, before the desk sees it.
+func (d *Desk) SendIn(ctx context.Context, text string, topic int64) (int64, int, error) {
 	if strings.TrimSpace(text) == "" {
 		return 0, 0, errors.New("say something")
 	}
@@ -277,11 +287,21 @@ func (d *Desk) Send(ctx context.Context, text string) (int64, int, error) {
 	if len(d.queue) >= d.m.o.QueueMax {
 		return 0, len(d.queue), ErrQueueFull
 	}
+	filed, how, what := d.chooseTopic(ctx, text, topic)
 	e, err := d.appendLocked(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman})
 	if err != nil {
 		return 0, 0, err
 	}
-	d.queue = append(d.queue, turn{id: e.Turn, origin: store.DeskByHuman, text: text})
+	t := turn{id: e.Turn, origin: store.DeskByHuman, text: text}
+	if filed != 0 {
+		l := store.TopicLink{TopicID: filed, Kind: store.TopicTurn, Ref: strconv.FormatInt(e.Turn, 10), By: store.TopicLinkShepherd}
+		if _, err := d.m.o.Store.LinkTopic(ctx, l); err != nil {
+			d.m.o.Log.Warn("desk: file a person's turn", "turn", e.Turn, "topic", filed, "err", err)
+		} else {
+			t.topic, t.how, t.what = filed, how, what
+		}
+	}
+	d.queue = append(d.queue, t)
 	ahead := len(d.queue) - 1
 	if d.cur != nil {
 		ahead++
