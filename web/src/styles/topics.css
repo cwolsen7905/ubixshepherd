@@ -42,3 +42,5 @@
 @media (max-width: 760px) {
   .topic-chip { max-width: 12rem; }
 }
+.topics-idle { margin-top: 8px; }
+.topic-chip-idle { color: var(--faint, inherit); border-style: dashed; }

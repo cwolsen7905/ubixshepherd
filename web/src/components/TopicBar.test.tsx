@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TopicView } from '../model/topic'
+import { ACTIVE_WINDOW_MS } from '../model/topic'
 import { TopicBar } from './TopicBar'
 
 const t = (over: Partial<TopicView>): TopicView => ({
@@ -43,5 +44,44 @@ describe('TopicBar', () => {
     render(<TopicBar active={null} onFilter={() => {}} load={load} />)
     await vi.waitFor(() => expect(load).toHaveBeenCalled())
     expect(screen.queryByRole('group')).toBeNull()
+  })
+
+  describe('idle topics', () => {
+    const old = new Date(Date.now() - ACTIVE_WINDOW_MS * 3).toISOString()
+    const fresh = new Date().toISOString()
+    const list = () => [
+      t({ id: 1, title: 'busy', activity: fresh }),
+      t({ id: 2, title: 'quiet', activity: old }),
+      t({ id: 3, title: 'dusty', activity: old }),
+    ]
+    beforeEach(() => window.localStorage.clear())
+
+    it('hides idle chips behind +N idle, which reveals them and is remembered', async () => {
+      const user = userEvent.setup()
+      const { unmount } = render(<TopicBar active={null} onFilter={() => {}} load={loader(list())} />)
+      expect(await screen.findByRole('button', { name: 'busy' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'quiet' })).toBeNull()
+      await user.click(screen.getByRole('button', { name: '+2 idle' }))
+      expect(screen.getByRole('button', { name: 'quiet' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'dusty' })).toBeInTheDocument()
+      unmount()
+      render(<TopicBar active={null} onFilter={() => {}} load={loader(list())} />)
+      expect(await screen.findByRole('button', { name: 'quiet' })).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Hide 2 idle' }))
+      expect(screen.queryByRole('button', { name: 'quiet' })).toBeNull()
+    })
+
+    it('keeps the selected topic visible while idle is collapsed', async () => {
+      render(<TopicBar active={2} onFilter={() => {}} load={loader(list())} />)
+      expect(await screen.findByRole('button', { name: 'quiet' })).toHaveAttribute('aria-pressed', 'true')
+      expect(screen.queryByRole('button', { name: 'dusty' })).toBeNull()
+      expect(screen.getByRole('button', { name: '+1 idle' })).toBeInTheDocument()
+    })
+
+    it('shows no idle chip when every topic is active', async () => {
+      render(<TopicBar active={null} onFilter={() => {}} load={loader([t({ activity: fresh })])} />)
+      await screen.findByRole('button', { name: /release/ })
+      expect(screen.queryByRole('button', { name: /idle/ })).toBeNull()
+    })
   })
 })

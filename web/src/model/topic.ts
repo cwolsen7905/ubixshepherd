@@ -83,9 +83,52 @@ export function inTopic(it: ThreadItem, members: Set<string>): boolean {
   return kind !== null && it.f.ref !== undefined && members.has(`${kind}:${it.f.ref}`)
 }
 
-/** The topics the bar offers: open ones, in the order the daemon gave. */
+/** The open topics, in the order the daemon gave (active and idle alike). */
 export function activeTopics(list: TopicView[]): TopicView[] {
   return list.filter((t) => t.status === 'open')
+}
+
+/** How recent a touch keeps an open topic active; older and quiet, it goes under Idle. */
+export const ACTIVE_WINDOW_MS = 2 * 60 * 60 * 1000
+
+/**
+ * Whether an open topic is active: something under it waits on the person, a run in it is
+ * running, or it was touched within the window. An undated topic counts as active, so
+ * nothing is hidden for want of a time. The window is exclusive: exactly its age is idle.
+ */
+export function isActive(t: TopicView, now: number): boolean {
+  if (t.waits > 0) return true
+  if (t.links.some((l) => l.kind === 'run' && l.state === 'running')) return true
+  const at = Date.parse(t.activity)
+  return Number.isNaN(at) || now - at < ACTIVE_WINDOW_MS
+}
+
+/**
+ * Splits the open topics, keeping the daemon's order, into active and idle. The selected
+ * topic is always active, so a filter never hides its own chip.
+ */
+export function splitTopics(list: TopicView[], now: number, selected: number | null): { active: TopicView[]; idle: TopicView[] } {
+  const active: TopicView[] = []
+  const idle: TopicView[] = []
+  for (const t of activeTopics(list)) (isActive(t, now) || t.id === selected ? active : idle).push(t)
+  return { active, idle }
+}
+
+/** A remembered open/closed flag; false when storage is missing or unreadable. */
+export function readFlag(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function writeFlag(key: string, on: boolean): void {
+  try {
+    window.localStorage.setItem(key, on ? '1' : '0')
+  } catch {
+    // Private mode or a full quota: the flag lasts only as long as the component.
+  }
 }
 
 /** The one-line state of a topic for its row. */

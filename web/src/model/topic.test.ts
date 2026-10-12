@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadItem } from '../state/desk'
-import { activeTopics, feedRefKind, inTopic, memberKeys, readTopicFilter, topicState, withTopicFilter, type TopicView } from './topic'
+import { ACTIVE_WINDOW_MS, activeTopics, isActive, splitTopics, feedRefKind, inTopic, memberKeys, readTopicFilter, topicState, withTopicFilter, type TopicView } from './topic'
 
 const topic = (over: Partial<TopicView> = {}): TopicView => ({
   id: 1, title: 'release', status: 'open', source: 'desk', created: '', updated: '', activity: '', waits: 0, links: [], ...over,
@@ -55,5 +55,48 @@ describe('activeTopics', () => {
   it('keeps open topics in order and drops cleared ones', () => {
     const list = [topic({ id: 1 }), topic({ id: 2, status: 'cleared' }), topic({ id: 3 })]
     expect(activeTopics(list).map((x) => x.id)).toEqual([1, 3])
+  })
+})
+
+describe('active and idle', () => {
+  const now = Date.parse('2026-10-11T12:00:00Z')
+  const ago = (ms: number) => new Date(now - ms).toISOString()
+
+  it('is active inside the window and idle at exactly its age', () => {
+    expect(isActive(topic({ activity: ago(ACTIVE_WINDOW_MS - 1) }), now)).toBe(true)
+    expect(isActive(topic({ activity: ago(ACTIVE_WINDOW_MS) }), now)).toBe(false)
+    expect(isActive(topic({ activity: ago(ACTIVE_WINDOW_MS + 1) }), now)).toBe(false)
+  })
+
+  it('is active when something waits, however old', () => {
+    expect(isActive(topic({ activity: ago(ACTIVE_WINDOW_MS * 10), waits: 1 }), now)).toBe(true)
+  })
+
+  it('is active with a running run, but not with a finished one', () => {
+    const old = ago(ACTIVE_WINDOW_MS * 10)
+    const run = (state: string) => [{ kind: 'run' as const, ref: '9', by: 'shepherd' as const, state, time: old }]
+    expect(isActive(topic({ activity: old, links: run('running') }), now)).toBe(true)
+    expect(isActive(topic({ activity: old, links: run('succeeded') }), now)).toBe(false)
+  })
+
+  it('treats an undated topic as active', () => {
+    expect(isActive(topic({ activity: '' }), now)).toBe(true)
+  })
+
+  it('splits open topics in order, keeps the selected idle one active, and drops cleared', () => {
+    const old = ago(ACTIVE_WINDOW_MS * 2)
+    const list = [
+      topic({ id: 1, activity: ago(1000) }),
+      topic({ id: 2, activity: old }),
+      topic({ id: 3, activity: old }),
+      topic({ id: 4, activity: ago(1000), status: 'cleared' }),
+      topic({ id: 5, activity: old, waits: 1 }),
+    ]
+    const plain = splitTopics(list, now, null)
+    expect(plain.active.map((x) => x.id)).toEqual([1, 5])
+    expect(plain.idle.map((x) => x.id)).toEqual([2, 3])
+    const sel = splitTopics(list, now, 3)
+    expect(sel.active.map((x) => x.id)).toEqual([1, 3, 5])
+    expect(sel.idle.map((x) => x.id)).toEqual([2])
   })
 })
