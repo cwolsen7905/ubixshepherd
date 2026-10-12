@@ -60,6 +60,7 @@ type summaryInput struct {
 	requests []store.Request
 	spend    map[string]store.Spend
 	turns    []quotedTurn // oldest first
+	topics   []string     // open topics, newest first
 }
 
 type laneAt struct {
@@ -78,6 +79,7 @@ func (d *Desk) gather(ctx context.Context, before int64) (summaryInput, error) {
 	st := o.Store
 	in := summaryInput{now: time.Now().UTC(), cfg: o.Config(), lanes: map[int64]laneAt{}, reports: map[int64]string{}}
 	in.model, _ = st.Setting(ctx, "desk.model")
+	in.topics = d.topicLines(ctx, topicHeadMax)
 	var err error
 	if in.repos, err = st.Repos(ctx, d.ws.ID); err != nil {
 		return in, err
@@ -244,6 +246,7 @@ func (in summaryInput) render(max int, notes string) string {
 
 	section("Waiting for the person (decisions; only the person answers them):", in.decisionLines())
 	section("Requests between lanes, not yet replied:", in.requestLines())
+	section("Open topics (the thread's vocabulary; keep these names):", in.topics)
 	section("Runs in flight:", in.runningLines())
 	section("Open lanes:", in.laneLines())
 	section("Standing rules (config.yaml and settings):", in.ruleLines())
