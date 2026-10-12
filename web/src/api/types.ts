@@ -803,3 +803,22 @@ export interface NextUpdateBody {
   lane_id?: number
   move?: 'top' | 'up' | 'down'
 }
+
+/** The daemon's cached release check, GET /v1/update (internal/api/update.go). */
+export interface UpdateStatus {
+  enabled: boolean
+  channel: string
+  /** This build's version; `current_known` is false for a dev build, which is not compared. */
+  current: string
+  current_known: boolean
+  latest?: string
+  url?: string
+  /** The release's changelog section, as published (markdown). */
+  notes?: string
+  available: boolean
+  dismissed: boolean
+  /** What the notice should do: shown when true. The daemon decides; the page uses it as is. */
+  show: boolean
+  checked_at?: string
+  error?: string
+}

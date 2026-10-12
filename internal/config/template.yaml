@@ -74,6 +74,15 @@
 #   ## on, or off. Read when the chat starts, so a restart of the chat applies a change.
 #   hyperlinks: auto
 
+## The release check (docs/update-check.md): the daemon asks GitHub about once a day
+## whether a newer release exists, and shows a notice you can dismiss. It only tells
+## you; it installs nothing. A reload applies a change.
+# update:
+#   ## false turns the check off, and the daemon never calls GitHub for it.
+#   check: true
+#   ## beta counts every release, pre-releases included; stable only full releases.
+#   channel: beta
+
 ## OpenCode, for small mechanical edits on a local model (see docs/opencode.md).
 # opencode:
 #   ## The opencode executable; empty looks on PATH, then in ~/.opencode/bin.

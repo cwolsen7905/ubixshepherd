@@ -130,6 +130,7 @@ type Model struct {
 	runs             []api.RunView // the latest, of every state
 	decisions        []api.DecisionView
 	requests         []api.RequestView // those needing routing
+	release          *api.UpdateStatus // the release check, for a one-line notice
 	lastActivity     time.Time
 	lastPanelPoll    time.Time
 	lastSessionsPoll time.Time
@@ -211,6 +212,8 @@ type panelMsg struct {
 	sessions        []api.SessionView
 	panelUpdated    bool
 	sessionsUpdated bool
+	// release is the release check, read with the sessions; nil when it was not read.
+	release *api.UpdateStatus
 }
 
 // modelMsg is the desk.model setting as read; show says to tell the person.
@@ -395,10 +398,16 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 				return errorMsg{err}
 			}
 		}
-		return panelMsg{
+		pm := panelMsg{
 			lanes: lanes, runs: runs, decisions: ds, requests: reqs, spend: sp, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions,
 		}
+		if includeSessions {
+			if st, ok := m.loadUpdate(); ok {
+				pm.release = &st
+			}
+		}
+		return pm
 	}
 }
 
@@ -615,6 +624,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.sessionsUpdated {
 			m.sessions = msg.sessions
 		}
+		if msg.release != nil {
+			m.release = msg.release
+		}
+	case updateMsg:
+		m.release = msg.st
+		m.add(Line{Kind: KindInfo, Text: "Update notice dismissed until a newer release appears."})
 	case deskLineMsg:
 		switch msg.Kind {
 		case KindCost:
@@ -762,6 +777,7 @@ func (m *Model) handle(text string) tea.Cmd {
 			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/model [<name>|reset]   the desk's model: show it, set it, or go back to config.yaml\n" +
+			"/update dismiss   hide the new-release notice until a newer release appears\n" +
 			"!<command>   run a shell command yourself, in the workspace root; !@<lane> <command> runs it in that lane's worktree (!@<repo>/<lane> if the name is in several repos). Ctrl-C stops it. The desk never runs it; it is told the result with your next message. No editors or pagers.\n" +
 			"/quit   leave (Ctrl-C too)\n" +
 			"The dock above the input: what needs you, what is broken, to review, working, and done since you last looked. Ctrl-G clears done; opening a run's log does too.\n" +
@@ -783,6 +799,11 @@ func (m *Model) handle(text string) tea.Cmd {
 			return m.setModel(f[1])
 		}
 		m.add(Line{Kind: KindError, Text: "usage: /model [<name>|reset]"})
+	case "/update":
+		if len(f) == 2 && f[1] == "dismiss" {
+			return m.dismissUpdate()
+		}
+		m.add(Line{Kind: KindError, Text: "usage: /update dismiss"})
 	case "/auto":
 		if len(f) == 2 && (f[1] == "on" || f[1] == "off") {
 			m.auto = f[1] == "on"
@@ -1120,9 +1141,17 @@ func (m *Model) View() string {
 		// The decision's options come first: the dock keeps its counts.
 		dock = dock[:1]
 	}
-	rows = append(rows, m.streaming(len(dock))...)
-	rows = append(rows, m.shellLiveRows(max(2, m.height-8-len(dock)))...)
+	notice := m.updateRow()
+	extra := 0
+	if notice != "" && m.height >= 12 {
+		extra = 1
+	}
+	rows = append(rows, m.streaming(len(dock)+extra)...)
+	rows = append(rows, m.shellLiveRows(max(2, m.height-8-len(dock)-extra))...)
 	rows = append(rows, m.statusLine())
+	if extra > 0 {
+		rows = append(rows, notice)
+	}
 	rows = append(rows, dock...)
 	if deciding {
 		rows = append(rows, m.decisionRows(d, max(3, m.height-len(rows)))...)

@@ -70,7 +70,8 @@ shepherd web               # or the browser UI, signed in with a one-use link
 
 The first start writes `~/.shepherd/config.yaml` (`%USERPROFILE%\.shepherd` on Windows) with
 every setting commented out; [docs/config.md](docs/config.md) is the reference. To upgrade,
-install the new release and run `shepherd daemon restart`; to remove Shepherd, see
+install the new release and run `shepherd daemon restart`; the daemon checks GitHub about once
+a day and tells you when one exists ([docs/update-check.md](docs/update-check.md)); to remove Shepherd, see
 [docs/INSTALL.md](docs/INSTALL.md#uninstall).
 
 ### Beta: what works, and known limits
@@ -182,6 +183,7 @@ sessions.
 | `/attach 71ffa009` | step into that conversation in Claude Code; exit it to come back |
 | `/ask 71ffa009 …` | ask that conversation a question; the answer lands in the thread |
 | `/model` | show the desk's model and where it came from; `/model opus` sets it, `/model reset` goes back to `config.yaml` |
+| `/update dismiss` | hide the new-release notice until a newer release appears |
 | `/new` | start a new conversation with the desk |
 
 **The desk in the daemon.** The daemon also runs a front desk of its own, one
@@ -538,6 +540,7 @@ More versions (one-liner, technical) are in [docs/pitch.md](docs/pitch.md).
 | Doc | What it holds |
 |---|---|
 | [docs/INSTALL.md](docs/INSTALL.md) | Install, first run, upgrade and uninstall on macOS, Linux and Windows, and how to report a problem |
+| [docs/update-check.md](docs/update-check.md) | The daily release check: what it asks, the notice, dismissing it, turning it off |
 | [docs/vision.md](docs/vision.md) | What Shepherd is for, what it does, what it deliberately is not |
 | [docs/design.md](docs/design.md) | **The core design**: how Shepherd applies uBixCore's typed-boundary philosophy to make multi-provider agent work deterministic |
 | [docs/v1.md](docs/v1.md) | **What v1 builds**: decided scope and stack, the Fold and dispatch around uBixCore, milestones |

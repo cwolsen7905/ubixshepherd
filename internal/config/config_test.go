@@ -458,3 +458,17 @@ func TestWebEditorURL(t *testing.T) {
 		}
 	}
 }
+
+func TestUpdateSettings(t *testing.T) {
+	c, err := Parse([]byte(""))
+	if err != nil || !c.Update.Enabled() || c.Update.ChannelName() != UpdateBeta {
+		t.Fatalf("defaults: %+v %v", c.Update, err)
+	}
+	c, err = Parse([]byte("update:\n  check: false\n  channel: stable\n"))
+	if err != nil || c.Update.Enabled() || c.Update.ChannelName() != UpdateStable {
+		t.Fatalf("set: %+v %v", c.Update, err)
+	}
+	if _, err := Parse([]byte("update:\n  channel: nightly\n")); err == nil || !strings.Contains(err.Error(), "update.channel") {
+		t.Errorf("a channel outside the set was accepted: %v", err)
+	}
+}

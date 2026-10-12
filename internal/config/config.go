@@ -30,6 +30,9 @@ type Config struct {
 	Daemon Daemon `yaml:"daemon" json:"daemon"`
 	Desk   Desk   `yaml:"desk" json:"desk"`
 	Chat   Chat   `yaml:"chat" json:"chat"`
+	// Update says whether the daemon checks for new releases and which it counts
+	// (docs/update-check.md).
+	Update Update `yaml:"update,omitempty" json:"update"`
 	// KeepGoing bounds keep-going mode, the switch that lets the front desk act on what
 	// is already approved (docs/keep-going.md).
 	KeepGoing KeepGoing `yaml:"keep_going,omitempty" json:"keep_going"`
@@ -193,6 +196,35 @@ func (c Chat) HyperlinksMode() string {
 		return HyperlinksAuto
 	}
 	return c.Hyperlinks
+}
+
+// Update holds the release check's settings.
+type Update struct {
+	// Check turns the daily check on or off; unset is on.
+	Check *bool `yaml:"check,omitempty" json:"check,omitempty"`
+	// Channel is which releases count: beta (every release, pre-releases included) or
+	// stable (full releases only); "" is beta, as every release so far is a beta.
+	Channel string `yaml:"channel,omitempty" json:"channel,omitempty"`
+}
+
+// update.channel's choices.
+const (
+	UpdateBeta   = "beta"
+	UpdateStable = "stable"
+)
+
+// UpdateChannels are update.channel's choices.
+var UpdateChannels = []string{UpdateBeta, UpdateStable}
+
+// Enabled is update.check, with its default (on) filled in.
+func (u Update) Enabled() bool { return u.Check == nil || *u.Check }
+
+// ChannelName is update.channel, with its default filled in.
+func (u Update) ChannelName() string {
+	if u.Channel == "" {
+		return UpdateBeta
+	}
+	return u.Channel
 }
 
 // DefaultEditorURL is Web.EditorURL when the file does not set it.
@@ -626,6 +658,7 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	}
 	c.Desk = file.Desk
 	c.Chat = file.Chat
+	c.Update = file.Update
 	c.KeepGoing = file.KeepGoing
 	if file.Web.EditorURL != nil {
 		c.Web = file.Web
@@ -667,6 +700,9 @@ func (c Config) Validate() error {
 	}
 	if !slices.Contains(HyperlinkModes, c.Chat.HyperlinksMode()) {
 		errs = append(errs, fmt.Errorf("chat.hyperlinks: %q is not %s", c.Chat.Hyperlinks, strings.Join(HyperlinkModes, ", ")))
+	}
+	if !slices.Contains(UpdateChannels, c.Update.ChannelName()) {
+		errs = append(errs, fmt.Errorf("update.channel: %q is not %s", c.Update.Channel, strings.Join(UpdateChannels, " or ")))
 	}
 	if badModel(c.Desk.Model) {
 		errs = append(errs, fmt.Errorf("desk.model: %q is not a model name", c.Desk.Model))

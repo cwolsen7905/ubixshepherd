@@ -30,6 +30,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/update"
 	"github.com/ubixsys/ubixshepherd/internal/version"
 )
 
@@ -79,6 +80,10 @@ type Server struct {
 	keepOnce sync.Once
 	keep     *KeepGoing
 	keepDone chan struct{}
+	// Updates is the release checker (update.go); nil is the default one, made on first
+	// use. Tests set it to one pointed at a fake server.
+	Updates    *update.Checker
+	updateOnce sync.Once
 	// reload is how the last config reload went (statusdetail.go).
 	reload atomic.Pointer[reloadState]
 	// QuotaHolds and ForgeWatch report what the runner and the forge watcher know, for
@@ -143,6 +148,10 @@ func (s *Server) Handler() http.Handler {
 	handle := func(pattern string, a access, h http.HandlerFunc) { mux.HandleFunc(pattern, guard(a, h)) }
 	const desk, worker, own, web = forDesk, forWorker, ownRun, forWeb
 	handle("GET "+api.PathStatus, desk|worker, s.status)
+	// The release check's cached answer, and dismissing its notice: the person's, so not
+	// the desk's and not a worker's (update.go).
+	handle("GET "+api.PathUpdate, web, s.getUpdate)
+	handle("POST "+api.PathUpdateDismiss, web, s.dismissUpdate)
 	handle("GET "+api.PathWorkspaces, desk, s.listWorkspaces)
 	handle("POST "+api.PathWorkspaces, operatorOnly, s.saveWorkspace)
 	// Managing a repo is the person's call inside their own workspace: the desk may do
@@ -1827,6 +1836,9 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 			s.Runner.Shutdown(stopCtx)
 		}()
 	}
+	updateCtx, stopUpdates := context.WithCancel(ctx)
+	defer stopUpdates()
+	s.startUpdateCheck(updateCtx)
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	defer s.Close()
 	errc := make(chan error, 1)
