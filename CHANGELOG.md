@@ -9,6 +9,16 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Changed
+
+- **The front desk files its turns under topics without being told their ids.** `topic_set`
+  with only an `id`, or a new `title`, files the turn in progress: the daemon knows the turn
+  the desk's token was minted for. The desk may file only its own turn. A turn Shepherd
+  starts for a run, decision or request already in a topic is filed under that topic, and
+  the desk is told which; a lane with no link takes the topic of its next-up item or of a
+  run tied to it. `topic_set` takes a lane by name (with `repo`) as well as by id, and `lane
+  open` and `lane list` show the lane id. No schema change.
+
 ### Added
 
 - **`lane_widen` and `shepherd lane widen`: the desk widens a lane's scope once the person

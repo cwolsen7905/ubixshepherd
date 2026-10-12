@@ -117,6 +117,38 @@ func (s *Server) topicView(ctx context.Context, t store.Topic) api.TopicView {
 			approvedIdle = true
 		}
 	}
+	// A lane with no link of its own belongs to the topic of the next-up item that opened
+	// it, or of a run tied to it: derived here, never stored, like the decisions below.
+	haveLane := map[int64]bool{}
+	var candidates []int64
+	for _, l := range links {
+		id, _ := strconv.ParseInt(l.Ref, 10, 64)
+		switch l.Kind {
+		case store.TopicLane:
+			haveLane[id] = true
+		case store.TopicNextItem:
+			if it, err := s.Store.NextItem(ctx, id); err == nil && it.LaneID != 0 {
+				candidates = append(candidates, it.LaneID)
+			}
+		case store.TopicRun:
+			if r, err := s.Store.Run(ctx, id); err == nil && r.LaneID != 0 {
+				candidates = append(candidates, r.LaneID)
+			}
+		}
+	}
+	for _, id := range candidates {
+		if haveLane[id] || store.LaneTopic(ctx, s.Store, id) != t.ID {
+			continue
+		}
+		haveLane[id] = true
+		lv, closed := s.topicLinkView(ctx, store.TopicLink{TopicID: t.ID, Kind: store.TopicLane, Ref: strconv.FormatInt(id, 10), By: store.TopicLinkShepherd})
+		links = append(links, store.TopicLink{TopicID: t.ID, Kind: store.TopicLane, Ref: lv.Ref, By: store.TopicLinkShepherd})
+		v.Links = append(v.Links, lv)
+		work++
+		if !closed {
+			open++
+		}
+	}
 	// A decision an agent holds in a run of a linked lane belongs to the topic by that
 	// link, as Shepherd tags by existing links: derived here, never stored, so it cannot
 	// disagree with the lane.
@@ -274,6 +306,10 @@ func (s *Server) linkAllowed(ctx context.Context, r *http.Request, topic int64, 
 	if err := s.checkTopicRef(ctx, ref); err != nil {
 		return http.StatusBadRequest, err
 	}
+	// The desk files the turn it is in; an earlier turn's filing is the person's.
+	if p := principalOf(ctx); ref.Kind == store.TopicTurn && p.Role == RoleDesk && p.Turn > 0 && ref.Ref != strconv.FormatInt(p.Turn, 10) {
+		return http.StatusForbidden, fmt.Errorf("the front desk files only its own turn, #%d", p.Turn)
+	}
 	if linkBy(r) != store.TopicLinkPerson {
 		if cur, err := s.Store.TopicOf(ctx, ref.Kind, ref.Ref); err == nil {
 			if t, err := s.Store.Topic(ctx, cur.TopicID); err == nil && t.ID != topic {
@@ -282,6 +318,23 @@ func (s *Server) linkAllowed(ctx context.Context, r *http.Request, topic int64, 
 		}
 	}
 	return 0, nil
+}
+
+// fileTurn files the turn the desk's token was minted for under the topic its tool just
+// named, so "topic_set id" alone files the turn in progress. A turn already in another
+// topic stays there: moving it is the person's.
+func (s *Server) fileTurn(ctx context.Context, r *http.Request, topic int64) {
+	p := principalOf(ctx)
+	if p.Role != RoleDesk || p.Turn <= 0 {
+		return
+	}
+	ref := strconv.FormatInt(p.Turn, 10)
+	if cur, err := s.Store.TopicOf(ctx, store.TopicTurn, ref); err == nil && cur.TopicID != topic {
+		return
+	}
+	if _, err := s.Store.LinkTopic(ctx, store.TopicLink{TopicID: topic, Kind: store.TopicTurn, Ref: ref, By: linkBy(r)}); err != nil {
+		s.Log.Warn("file the desk's turn", "topic", topic, "turn", p.Turn, "err", err)
+	}
 }
 
 // linkTopic ties a validated thing to a topic by the caller.
@@ -334,6 +387,9 @@ func (s *Server) addTopic(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.Link == nil || req.Link.Kind != store.TopicTurn {
+		s.fileTurn(ctx, r, t.ID)
+	}
 	s.Log.Info("topic added", "topic", t.ID, "source", src)
 	writeJSON(w, http.StatusOK, s.topicView(ctx, t))
 }
@@ -354,6 +410,10 @@ func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Status != nil && *req.Status != store.TopicOpen && *req.Status != store.TopicCleared {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("status is open or cleared, not %q", *req.Status))
+		return
+	}
+	if p := principalOf(ctx); req.Link == nil && req.Title == nil && req.Summary == nil && req.Status == nil && req.MergeInto == 0 && (p.Role != RoleDesk || p.Turn <= 0) {
+		writeError(w, http.StatusBadRequest, errors.New("say what to tie: --turn, --feed, --item, --lane, --run, --decision or --request, or --summary"))
 		return
 	}
 	if (req.Title != nil || req.Status != nil || req.MergeInto != 0) && !personsNext(r) {
@@ -389,6 +449,9 @@ func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 			s.topicError(w, err)
 			return
 		}
+	}
+	if req.Title == nil && req.Status == nil && req.MergeInto == 0 && (req.Link == nil || req.Link.Kind != store.TopicTurn) {
+		s.fileTurn(ctx, r, t.ID)
 	}
 	s.Log.Info("topic changed", "topic", t.ID, "status", t.Status)
 	writeJSON(w, http.StatusOK, s.topicView(ctx, t))

@@ -223,7 +223,7 @@ func TestLaneOpenListCloseFromCLI(t *testing.T) {
 		t.Fatalf("lane open: %d %s", code, h.err)
 	}
 	wt := filepath.Join(root, "app-worktrees", "feat-x")
-	if !strings.Contains(h.out.String(), "cd "+wt) {
+	if !strings.Contains(h.out.String(), "cd "+wt) || !strings.Contains(h.out.String(), "opened lane feat/x (id 1) in app") {
 		t.Errorf("open output:\n%s", h.out)
 	}
 	if code := h.run("lane", "open", "feat/x", "--scope", "x"); code != 1 || !strings.Contains(h.err.String(), "already") {
@@ -235,7 +235,7 @@ func TestLaneOpenListCloseFromCLI(t *testing.T) {
 
 	// From the workspace root, list covers every repo; from the worktree, where knows the lane.
 	h.env.Cwd = root
-	if code := h.run("lane", "list"); code != 0 || !strings.Contains(h.out.String(), "feat/x") || !strings.Contains(h.out.String(), "src/**, docs/*.md") {
+	if code := h.run("lane", "list"); code != 0 || !strings.Contains(h.out.String(), "feat/x") || !strings.Contains(h.out.String(), "src/**, docs/*.md") || !strings.Contains(h.out.String(), "ID") {
 		t.Errorf("list: %d\n%s%s", code, h.out, h.err)
 	}
 	h.env.Cwd = wt

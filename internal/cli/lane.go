@@ -203,7 +203,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	w := env.Stdout
-	fmt.Fprintf(w, "opened lane %s in %s\n", lane.Name, h.Repo.Name)
+	fmt.Fprintf(w, "opened lane %s (id %d) in %s\n", lane.Name, lane.ID, h.Repo.Name)
 	fmt.Fprintf(w, "  branch    %s (from %s)\n", lane.Branch, lane.Base)
 	fmt.Fprintf(w, "  worktree  %s\n", lane.Worktree)
 	fmt.Fprintf(w, "  scope     %s\n", strings.Join(lane.Scope, ", "))
@@ -278,15 +278,15 @@ func laneList(ctx context.Context, env Env, args []string) error {
 		return nil
 	}
 	w := env.Stdout
-	fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %-8s %s\n", "REPO", "LANE", "STATE", "AGE", "VIA", "SCOPE")
+	fmt.Fprintf(w, "%-6s %-20s %-24s %-8s %-6s %-8s %s\n", "ID", "REPO", "LANE", "STATE", "AGE", "VIA", "SCOPE")
 	for _, l := range lanes {
 		mark := " "
 		if h.Lane != nil && h.Lane.ID == l.ID {
 			mark = "*"
 		}
-		fmt.Fprintf(w, "%-20s %-24s %-8s %-6s %-8s %s\n", l.Repo, mark+l.Name, l.State, age(l.Created), l.Origin.Surface(), strings.Join(l.Scope, ", "))
+		fmt.Fprintf(w, "%-6d %-20s %-24s %-8s %-6s %-8s %s\n", l.ID, l.Repo, mark+l.Name, l.State, age(l.Created), l.Origin.Surface(), strings.Join(l.Scope, ", "))
 		if by := openedBy(l.Origin); by != l.Origin.Surface() {
-			fmt.Fprintf(w, "%-20s  opened by %s\n", "", by)
+			fmt.Fprintf(w, "%-6s %-20s  opened by %s\n", "", "", by)
 		}
 	}
 	return nil

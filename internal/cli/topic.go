@@ -55,7 +55,7 @@ func runTopic(ctx context.Context, env Env, args []string) error {
 				return nil, errors.New("tie one thing at a time")
 			}
 			if k == store.TopicLane {
-				if _, err := strconv.ParseInt(v, 10, 64); err != nil {
+				if n, err := strconv.ParseInt(v, 10, 64); err != nil || n <= 0 {
 					h, err := locate(ctx, env, c, *repo)
 					if err != nil {
 						return nil, err
@@ -125,9 +125,8 @@ func runTopic(ctx context.Context, env Env, args []string) error {
 		if *summary != "" {
 			req.Summary = summary
 		}
-		if r == nil && req.Summary == nil {
-			return errors.New("say what to tie: --turn, --feed, --item, --lane, --run, --decision or --request, or --summary")
-		}
+		// With nothing named the daemon files the desk's own turn under the topic, and
+		// refuses a caller that has no turn.
 		v, err := c.UpdateTopic(ctx, id, req)
 		if err != nil {
 			return err

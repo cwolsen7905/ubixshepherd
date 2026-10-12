@@ -1,6 +1,10 @@
 package store
 
-import "time"
+import (
+	"context"
+	"strconv"
+	"time"
+)
 
 // Topic states: a topic is open, or the person cleared it out of the thread.
 const (
@@ -105,4 +109,49 @@ func TopicLinkWins(by, existing string) bool {
 		return false
 	}
 	return topicRank(by) >= topicRank(existing) && existing != TopicLinkPerson
+}
+
+// LaneTopic is the topic a lane belongs to, or 0. A lane's own link wins; otherwise it
+// takes the topic of a next-up item that opened it, then of the newest run tied to a
+// topic. It is derived at read time and never stored, so it cannot drift from the item
+// or the run it came from.
+func LaneTopic(ctx context.Context, st Store, laneID int64) int64 {
+	if laneID <= 0 {
+		return 0
+	}
+	if l, err := st.TopicOf(ctx, TopicLane, strconv.FormatInt(laneID, 10)); err == nil {
+		return l.TopicID
+	}
+	if items, err := st.NextItems(ctx); err == nil {
+		for _, it := range items {
+			if it.LaneID != laneID {
+				continue
+			}
+			if l, err := st.TopicOf(ctx, TopicNextItem, strconv.FormatInt(it.ID, 10)); err == nil {
+				return l.TopicID
+			}
+		}
+	}
+	if runs, err := st.Runs(ctx, laneID, "", 50); err == nil {
+		for _, r := range runs {
+			if l, err := st.TopicOf(ctx, TopicRun, strconv.FormatInt(r.ID, 10)); err == nil {
+				return l.TopicID
+			}
+		}
+	}
+	return 0
+}
+
+// RunTopic is the topic a run belongs to, or 0: its own link, else its lane's.
+func RunTopic(ctx context.Context, st Store, runID int64) int64 {
+	if runID <= 0 {
+		return 0
+	}
+	if l, err := st.TopicOf(ctx, TopicRun, strconv.FormatInt(runID, 10)); err == nil {
+		return l.TopicID
+	}
+	if r, err := st.Run(ctx, runID); err == nil {
+		return LaneTopic(ctx, st, r.LaneID)
+	}
+	return 0
 }
