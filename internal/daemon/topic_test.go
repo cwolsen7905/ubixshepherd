@@ -118,3 +118,90 @@ func TestTopicCountsDecisionsOfLinkedLanes(t *testing.T) {
 		t.Fatalf("derived decision: %+v", v)
 	}
 }
+
+// A desk token minted for a turn files that turn under the topic the tool names, with
+// only an id or a new title; another turn is the person's to file, and a token with no
+// turn has nothing to file.
+func TestTopicSetFilesTheDesksCurrentTurn(t *testing.T) {
+	s, ts := newServer(t)
+	twoRuns(t, s)
+	turn := func(n int64) string { return strconv.FormatInt(n, 10) }
+	desk, _ := s.MintDeskTurn(true, "s", 41)
+	noTurn, _ := s.MintDesk(false, "")
+
+	var a api.TopicView
+	if code := call(t, ts, desk, "POST", api.PathTopics, api.TopicAdd{Title: "release"}, &a); code != http.StatusOK || len(a.Links) != 1 || a.Links[0].Kind != store.TopicTurn || a.Links[0].Ref != turn(41) {
+		t.Fatalf("a new title files the turn: %d %+v", code, a)
+	}
+	var b api.TopicView
+	call(t, ts, noTurn, "POST", api.PathTopics, api.TopicAdd{Title: "docs"}, &b)
+	if len(b.Links) != 0 {
+		t.Fatalf("a token with no turn linked something: %+v", b)
+	}
+	if code := call(t, ts, noTurn, "PATCH", api.PathTopic(b.ID), api.TopicUpdate{}, nil); code != http.StatusBadRequest {
+		t.Errorf("nothing to tie and no turn: %d", code)
+	}
+	// Another turn, started later, files with the id alone.
+	later, _ := s.MintDeskTurn(true, "s", 42)
+	var got api.TopicView
+	if code := call(t, ts, later, "PATCH", api.PathTopic(a.ID), api.TopicUpdate{}, &got); code != http.StatusOK || len(got.Links) != 2 {
+		t.Fatalf("id alone files the turn: %d %+v", code, got)
+	}
+	// A turn already in a topic stays: moving it is the person's, and the call is not an error.
+	if code := call(t, ts, later, "PATCH", api.PathTopic(b.ID), api.TopicUpdate{}, &got); code != http.StatusOK || len(got.Links) != 0 {
+		t.Errorf("the desk moved a filed turn: %d %+v", code, got)
+	}
+	// Naming another turn is refused for the desk, allowed for the person.
+	other := api.TopicUpdate{Link: &api.TopicRef{Kind: store.TopicTurn, Ref: turn(7)}}
+	if code := call(t, ts, later, "PATCH", api.PathTopic(b.ID), other, nil); code != http.StatusForbidden {
+		t.Errorf("the desk filed another turn: %d", code)
+	}
+	if code := call(t, ts, s.Token, "PATCH", api.PathTopic(b.ID), other, nil); code != http.StatusOK {
+		t.Errorf("the person files a turn: %d", code)
+	}
+}
+
+// A lane with no link takes the topic of the next-up item it was opened for, or of a run
+// tied to it, and shows in that topic's links.
+func TestLaneTakesTopicFromItemOrRun(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	ra, _, la, lb := twoRuns(t, s)
+	item, err := s.Store.AddNextItem(ctx, store.NextItem{Title: "login", Source: store.NextByPerson})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.UpdateNextItem(ctx, item.ID, store.NextPatch{LaneID: &la.ID}); err != nil {
+		t.Fatal(err)
+	}
+	tp, _ := s.Store.AddTopic(ctx, store.Topic{Title: "login", Status: store.TopicOpen, Source: store.TopicByDesk})
+	s.Store.LinkTopic(ctx, store.TopicLink{TopicID: tp.ID, Kind: store.TopicNextItem, Ref: strconv.FormatInt(item.ID, 10), By: store.TopicLinkDesk})
+	other, _ := s.Store.AddTopic(ctx, store.Topic{Title: "crash", Status: store.TopicOpen, Source: store.TopicByDesk})
+	rb, _ := s.Store.Runs(ctx, lb.ID, "", 1)
+	s.Store.LinkTopic(ctx, store.TopicLink{TopicID: other.ID, Kind: store.TopicRun, Ref: strconv.FormatInt(rb[0].ID, 10), By: store.TopicLinkDesk})
+	_ = ra
+
+	hasLane := func(id int64, lane store.Lane) bool {
+		var v api.TopicView
+		if code := call(t, ts, s.Token, "GET", api.PathTopic(id), nil, &v); code != http.StatusOK {
+			t.Fatalf("get topic: %d", code)
+		}
+		for _, l := range v.Links {
+			if l.Kind == store.TopicLane && l.Ref == strconv.FormatInt(lane.ID, 10) && l.Label == lane.Name {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasLane(tp.ID, la) || hasLane(other.ID, la) {
+		t.Errorf("lane a should be in the item's topic only")
+	}
+	if !hasLane(other.ID, lb) || hasLane(tp.ID, lb) {
+		t.Errorf("lane b should be in its run's topic only")
+	}
+	// A lane's own link wins over what it would take.
+	s.Store.LinkTopic(ctx, store.TopicLink{TopicID: other.ID, Kind: store.TopicLane, Ref: strconv.FormatInt(la.ID, 10), By: store.TopicLinkPerson})
+	if hasLane(tp.ID, la) || !hasLane(other.ID, la) {
+		t.Errorf("a lane's own link should win")
+	}
+}

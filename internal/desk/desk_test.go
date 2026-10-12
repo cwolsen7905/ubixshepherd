@@ -58,7 +58,7 @@ type fakeTokens struct {
 	revoked int
 }
 
-func (f *fakeTokens) MintDesk(human bool, session string) (string, error) {
+func (f *fakeTokens) MintDeskTurn(human bool, session string, turn int64) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.minted = append(f.minted, human)

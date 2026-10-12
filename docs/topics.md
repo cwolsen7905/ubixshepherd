@@ -79,8 +79,8 @@ topic so a link already pasted still works.
 
 | By | How | May |
 |---|---|---|
-| The desk | `topic_set` on a turn: an existing `id`, or a new `title`. It names the topic of the turn being answered and of the lanes, items, runs and decisions that turn touches | create, tag, and describe (`summary`). Not rename, merge, move or clear |
-| Shepherd | When an event arrives for a lane, run, decision, request or Next-up item that is already linked, the event's feed row gets the same topic. A turn's tool calls link the lane or item they open or touch to the turn's topic | tag by an existing link only; it never invents a topic and never reassigns |
+| The desk | `topic_set` with an existing `id`, or a new `title`. The daemon knows which turn the desk is in (its token is minted for that turn), so the id or title alone files the turn in progress; `lane`, `item`, `run`, `decision` or `request` tie that thing as well, a lane by name (with `repo`) or id. It names the topic of the turn being answered and of what that turn touches | create, tag, and describe (`summary`). Not rename, merge, move or clear |
+| Shepherd | When an event arrives for a lane, run, decision, request or Next-up item that is already linked, the event's feed row gets the same topic. A turn Shepherd starts for such events is filed under their topic (below). A lane with no link of its own takes the topic of the Next-up item it was opened for, or of a run tied to it, derived when read | tag by an existing link only; it never invents a topic and never reassigns |
 | The person | CLI, web and terminal: create, rename, merge two, move a message or an item, split, clear and reopen | everything |
 
 Rules the daemon enforces, not the brief:
@@ -100,6 +100,17 @@ The desk's brief gets one paragraph: name the matter of each person turn with `t
 prefer an existing topic over a new one, and use the topic list (`topic_list`) it is
 given in the head of each turn. The list in the head is the open topics only, newest
 first, capped at twelve, each a line: id, title, what waits.
+
+Turns Shepherd starts (a wake-up for a run that ended, a decision or a request) are filed
+by Shepherd, `by: shepherd`, so the desk names a topic only for the person's own
+messages. For each event in the digest the topic is that of its run, decision or request,
+or of the lane they belong to (a cleared topic does not count). One topic: the turn is
+filed under it. Several: the turn goes to the topic most events belong to (ties go to
+the most recently active), and the head names the others for the desk to mention in
+its reply. None: the turn is left unfiled and the head says so, so the desk files it
+with `topic_set`. A turn already filed is never moved by Shepherd, and the desk cannot
+move it either: that is the person's. The head also gives the turn's id, and the desk may
+file only its own turn.
 
 If the desk does not call `topic_set`, nothing breaks: the turn is in General or inherits
 from the links of what it touched.
@@ -154,7 +165,7 @@ the store.
 | `shepherd topic list [--all] [--json]` | `topic_list` | read |
 | `shepherd topic show <id>` | `topic_show` | links and what waits, read |
 | `shepherd topic new <title>` | `topic_set` with `title` | creates |
-| `shepherd topic set <id> --turn T \| --lane L \| --item N \| ...` | `topic_set` with `id` | tags |
+| `shepherd topic set <id> [--turn T \| --lane L \| --item N \| ...]` | `topic_set` with `id` | tags; from the desk, with nothing named, files its current turn |
 | `shepherd topic rename`, `merge`, `move`, `clear`, `reopen` | the same names | person's turn only |
 
 ### Feed

@@ -497,13 +497,15 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name: "topic_set",
-			Description: "Name the matter of the turn and tie work to it. Pass id to use an existing topic, or title to make one (at most one new topic per turn; a title that repeats an open topic is refused with its id). " +
-				"Pass one of lane, item, run, decision, request or turn to tie that thing to the topic. You cannot move a thing that is already in another topic: that is the person's.",
+			Description: "Name the matter of the turn and tie work to it. Pass id alone to file this turn under an existing topic, or title to make a new one and file the turn under it (at most one new topic per turn; a title that repeats an open topic is refused with its id). " +
+				"Turns Shepherd starts for a run, decision or request already in a topic arrive filed. " +
+				"Pass one of lane, item, run, decision or request to tie that thing to the topic as well; a lane by name or id. You cannot move a thing that is already in another topic: that is the person's.",
 			InputSchema: obj(map[string]any{
 				"id":       map[string]any{"type": "integer", "description": "An existing topic."},
 				"title":    map[string]any{"type": "string", "description": "A new topic's title: a few words, at most 80 characters."},
 				"summary":  map[string]any{"type": "string", "description": "One line saying what it is about."},
-				"lane":     map[string]any{"type": "integer", "description": "A lane's id."},
+				"lane":     map[string]any{"type": []string{"string", "integer"}, "description": "A lane's name (with repo when it is not obvious) or its id, as lane_list shows."},
+				"repo":     propRepo,
 				"item":     map[string]any{"type": "integer", "description": "A next-up item's id."},
 				"run":      map[string]any{"type": "integer"},
 				"decision": map[string]any{"type": "integer"},
@@ -524,9 +526,17 @@ func mcpTools() []mcpTool {
 					out = append(out, "--summary", v)
 				}
 				for _, k := range []string{"lane", "item", "run", "decision", "request", "turn"} {
-					if v, ok := a[k].(float64); ok {
+					switch v := a[k].(type) {
+					case float64:
 						out = append(out, "--"+k, fmt.Sprint(int64(v)))
+					case string:
+						if v = strings.TrimSpace(v); v != "" {
+							out = append(out, "--"+k, v)
+						}
 					}
+				}
+				if r := str(a, "repo"); r != "" {
+					out = append(out, "--repo", r)
 				}
 				return out, nil
 			},

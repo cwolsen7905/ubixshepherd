@@ -41,6 +41,9 @@ type principal struct {
 	// agent session, for the origin of what it opens.
 	Human   bool
 	Session string
+	// Turn is the desk turn a desk token was minted for: the turn the desk's topic
+	// tools file when they name a topic. 0 for a token with no turn.
+	Turn int64
 	// web is a browser's session (RoleWeb).
 	web *webSession
 }
@@ -107,7 +110,12 @@ func (s *Server) Revoke(runID int64) {
 // MintDesk returns a token for one turn of the front desk's operator tools (desk.Tokens).
 // Only a turn the person started may answer a decision.
 func (s *Server) MintDesk(human bool, session string) (string, error) {
-	return s.tokens.mint(principal{Role: RoleDesk, Human: human, Session: session})
+	return s.MintDeskTurn(human, session, 0)
+}
+
+// MintDeskTurn is MintDesk for a turn: the token's topic tools file that turn.
+func (s *Server) MintDeskTurn(human bool, session string, turn int64) (string, error) {
+	return s.tokens.mint(principal{Role: RoleDesk, Human: human, Session: session, Turn: turn})
 }
 
 // RevokeToken ends one scoped token (desk.Tokens).

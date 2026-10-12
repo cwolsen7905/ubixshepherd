@@ -129,6 +129,18 @@ operator's. Each widening is logged by the daemon and put in the feed as "lane X
 widened by desk: +globs (decision N); scope is now ...". The desk should pass only the
 paths the person's answer approved, and the person can check them against the feed.
 
+## Filing turns under topics
+
+The desk's token is minted for the turn it serves, so the daemon knows which turn is in
+progress. `topic_set` with only an `id`, or a new `title`, files that turn under the topic;
+the desk never needs the turn's number, and may file only its own turn. A turn Shepherd
+starts for a run, decision or request that is already in a topic is filed under that topic
+before the desk runs, and the head of the turn says which; when the events fall in several
+topics the turn goes to the one most of them belong to and the head names the rest, and
+when none is in a topic the head says the turn is unfiled. A person's turn is never filed
+by Shepherd. When there are no open topics the head of a turn is left out, as before. See
+[topics.md](topics.md) for the rules.
+
 ## Settings
 
 ```yaml

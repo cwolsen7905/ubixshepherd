@@ -28,9 +28,10 @@ var ErrClosed = errors.New("the daemon is stopping")
 // Tokens mint the token each turn's operator tools call the daemon with. The daemon
 // provides them.
 type Tokens interface {
-	// MintDesk returns a desk token; human says the turn was started by the person, so
-	// its tools may record their answer to a decision.
-	MintDesk(human bool, session string) (string, error)
+	// MintDeskTurn returns a desk token for the turn with the given id; human says the
+	// turn was started by the person, so its tools may record their answer to a
+	// decision. The daemon files the turn under the topic its tools name.
+	MintDeskTurn(human bool, session string, turn int64) (string, error)
 	// RevokeToken ends one token.
 	RevokeToken(token string)
 	// URL is the daemon's API base, http://host:port.
@@ -147,10 +148,10 @@ func (m *Manager) For(ws store.Workspace) (*Desk, error) {
 // Wake tells every desk about new feed items; those that need someone to act wake it
 // (see wakes), as desk.wake allows.
 func (m *Manager) Wake(items []store.FeedItem) {
-	var texts []string
+	var texts []pendingEvent
 	for _, it := range items {
 		if wakes(it.Kind) {
-			texts = append(texts, it.Text)
+			texts = append(texts, pendingEvent{text: it.Text, topic: m.eventTopic(it)})
 		}
 	}
 	if len(texts) == 0 || m.o.Wake() == config.WakeNever {
@@ -215,7 +216,7 @@ type Desk struct {
 	gen int
 	// pending are the swarm's events waiting for the desk; dropped counts the oldest
 	// let go once there were DigestMax.
-	pending []string
+	pending []pendingEvent
 	dropped int
 	// acted are what the person did from a browser since the desk's last turn, for the
 	// head of its next; actedDropped counts the oldest let go past DigestMax.
@@ -232,6 +233,17 @@ type turn struct {
 	id     int64
 	origin string
 	text   string
+	// topic is the topic Shepherd filed the turn under from the events that woke the
+	// desk, 0 when none; others are the further topics those events touch.
+	topic  int64
+	others []int64
+}
+
+// pendingEvent is a waiting swarm event: its line, and the topic it is already tied to
+// (0 for none).
+type pendingEvent struct {
+	text  string
+	topic int64
 }
 
 // Sub is a client following the desk: it counts as attached while subscribed, and
@@ -356,7 +368,7 @@ func (d *Desk) Busy() (bool, int) {
 }
 
 // note keeps the swarm's events for the desk, newest winning past DigestMax.
-func (d *Desk) note(texts []string) {
+func (d *Desk) note(texts []pendingEvent) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.pending = append(d.pending, texts...)
@@ -459,7 +471,12 @@ func (d *Desk) next() (turn, bool) {
 			return t, true
 		}
 		if len(d.pending) > 0 && d.mayWakeLocked() {
-			text := digest(d.pending, d.dropped)
+			lines := make([]string, len(d.pending))
+			topics := make([]int64, len(d.pending))
+			for i, p := range d.pending {
+				lines[i], topics[i] = p.text, p.topic
+			}
+			text := digest(lines, d.dropped)
 			d.pending, d.dropped = nil, 0
 			e, err := d.appendLocked(d.m.ctx, store.DeskEvent{Kind: store.DeskSystem, Text: text, Origin: store.DeskBySystem})
 			d.mu.Unlock()
@@ -467,7 +484,9 @@ func (d *Desk) next() (turn, bool) {
 				d.m.o.Log.Error("desk: record a wake-up", "workspace", d.ws.Name, "err", err)
 				continue
 			}
-			return turn{id: e.Turn, origin: store.DeskBySystem, text: text}, true
+			t := turn{id: e.Turn, origin: store.DeskBySystem, text: text}
+			t.topic, t.others = d.fileEventTurn(d.m.ctx, e.Turn, topics)
+			return t, true
 		}
 		d.mu.Unlock()
 		// Waiting events may become deliverable when the grace period after the last
@@ -533,7 +552,7 @@ func (d *Desk) run(t turn) {
 			o.Log.Error("desk: build the summary", "workspace", d.ws.Name, "err", err)
 		}
 	}
-	tok, err := o.Tokens.MintDesk(t.origin == store.DeskByHuman, session)
+	tok, err := o.Tokens.MintDeskTurn(t.origin == store.DeskByHuman, session, t.id)
 	if err != nil {
 		add(store.DeskError, "the desk's token: "+err.Error())
 		end("failed")
@@ -579,7 +598,7 @@ func (d *Desk) run(t turn) {
 	}
 	d.carry = ""
 	d.mu.Unlock()
-	message = d.takeActed() + d.topicHead(bg) + message
+	message = d.takeActed() + d.topicHead(bg, t) + message
 	err = o.Agent.Turn(ctx, Spec{Session: session, New: fresh, Message: message, Dir: d.ws.Path, Model: model,
 		Env: []string{dispatch.EnvToken + "=" + tok, dispatch.EnvURL + "=" + o.Tokens.URL()}, Seed: seed, ToolChars: cfg.ToolOutputCap()}, emit)
 	if rest := strings.TrimSpace(partial.String()); rest != "" {

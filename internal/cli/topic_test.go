@@ -80,3 +80,34 @@ func TestTopicCLIAndMCP(t *testing.T) {
 		t.Errorf("topic_show: %v %s", isErr, text)
 	}
 }
+
+// topic_set ties a lane by its name (with repo) or its id, and a lane id of 0 is refused
+// with a message that says so.
+func TestTopicSetLaneByName(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, app := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = app
+	if code := h.run("lane", "open", "feat/x", "--scope", "src/**"); code != 0 {
+		t.Fatalf("lane open: %s", h.err)
+	}
+	h.env.Cwd = root
+	h.run("topic", "new", "login")
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"topic_set","arguments":{"id":1,"lane":"feat/x","repo":"app"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"topic_set","arguments":{"id":1,"lane":0}}}`,
+	)
+	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "updated") {
+		t.Errorf("topic_set lane by name: %v %s", isErr, text)
+	}
+	if _, isErr := toolText(t, resps[1]); !isErr {
+		t.Error("topic_set with lane 0 accepted")
+	}
+	h.run("topic", "show", "1", "--json")
+	var v api.TopicView
+	if err := json.Unmarshal(h.out.Bytes(), &v); err != nil || len(v.Links) != 1 || v.Links[0].Kind != store.TopicLane || v.Links[0].Label != "feat/x" {
+		t.Fatalf("show: %v %+v", err, v)
+	}
+}
