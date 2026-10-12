@@ -9,6 +9,12 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+## [0.4.0-beta.1] - 2026-10-12
+
+A beta of uBixShepherd that shows each lane's gate result in the web UI, files the
+person's turns under topics, and lets the front desk widen a lane's scope once the person
+has approved it. No interface is removed or changed incompatibly.
+
 ### Changed
 
 - **The daemon files each of the person's turns under a topic before the front desk sees
@@ -46,6 +52,34 @@ protocol) is listed under **Interface changes** in the release that makes it.
    Settings form as "Editor link", a URL template where `{path}` is the file's absolute path
    and `{line}` is optional. The default is `vscode://file/{path}`. Validated at load,
    following the same scheme rules the page already enforces.
+- **A gate badge in the web UI, and a run-narrowed Changes section.** The lane page, the
+  board and a project's open lanes show the lane's gate record (passed, failed, stale or
+  not run), with its commit, time and command on hover. The run page gains a Changes
+  section narrowed to the run with `run=<id>`; it shows the worktree's uncommitted work
+  only for the lane's latest run and marks files on the run's outside list. This is the
+  web step of `docs/lane-diff.md`; the daemon already served the badge.
+- **The Help dialog lists `g t`,** the key for the timeline page.
+
+### Fixed
+
+- A lane with a running run is never judged finished. The review looked only at git state,
+  so a clean lane with nothing unlanded read as finished while an agent run, such as a
+  continuation of a stopped run, was still running in it. Such a lane is now judged live.
+- OpenCode agents can run a repo's web tests and build: `npm *` is allowed. The repo's
+  gate is allowed as written, with no wildcard, so `make check build` no longer matches
+  `make check`.
+
+### Interface changes
+
+- New MCP tool `lane_widen` and command `shepherd lane widen`, on the new route
+  `POST /v1/lanes/{id}/widen`. It is not open to an agent's worker token.
+- `POST /v1/desk/turn` takes an optional `topic_id`. `topic_set` takes a lane by name (with
+  `repo`) as well as by id, and files the turn in progress when given only an `id` or a
+  new `title`. `lane open` and `lane list` show the lane id.
+- Runs and usage records gain `cost_estimated`, and run history and usage totals gain
+  `estimated_usd`. One appended store migration, which applies when the daemon starts; a
+  binary refuses a store migrated by a newer one.
+- `web.editor_url` is unchanged; it is now editable in the Settings form.
 
 ## [0.3.0-beta.1] - 2026-10-11
 
