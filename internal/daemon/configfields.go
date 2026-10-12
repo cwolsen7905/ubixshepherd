@@ -102,6 +102,10 @@ var openCodeMeta = map[string]fieldMeta{
 	"output":          {label: "Output tokens"},
 }
 
+var webMeta = map[string]fieldMeta{
+	"editor_url": {label: "Editor link", help: "A URL template for \"open in editor\" links on the lane page: {path} is the file's absolute path (URL-escaped), {line} is optional. The default is vscode://file/{path}. Examples: cursor://file/{path}, {path}:{line}. Empty value hides the links."},
+}
+
 var projectMeta = map[string]fieldMeta{
 	"repos":         {label: "Repos", help: "Members, each a key of repos and in no other project."},
 	"brief_max_age": {label: "Brief max age", help: "How old the approved brief may be before it shows as stale: 30d or 720h."},
@@ -122,6 +126,7 @@ func configSections() []api.ConfigSection {
 		{ID: "keep_going", Label: "Keep going", Root: []string{"keep_going"}, Fields: describe(reflect.TypeFor[config.KeepGoing](), keepGoingMeta)},
 		{ID: "chat", Label: "Chat", Root: []string{"chat"}, Fields: describe(reflect.TypeFor[config.Chat](), chatMeta)},
 		{ID: "opencode", Label: "OpenCode", Root: []string{"opencode"}, Fields: describe(reflect.TypeFor[config.OpenCode](), openCodeMeta)},
+		{ID: "web", Label: "Web", Root: []string{"web"}, Fields: describe(reflect.TypeFor[config.Web](), webMeta)},
 		{ID: "defaults", Label: "Defaults", Root: []string{"defaults"}, Fields: describe(reflect.TypeFor[config.Profile](), profileMeta)},
 		{ID: "repo", Label: "Repo profile", Root: []string{"repos"}, Many: true, Inherits: "defaults", Fields: describe(reflect.TypeFor[config.Profile](), profileMeta)},
 		{ID: "project", Label: "Project", Root: []string{"projects"}, Many: true, Fields: describe(reflect.TypeFor[config.Project](), projectMeta)},
