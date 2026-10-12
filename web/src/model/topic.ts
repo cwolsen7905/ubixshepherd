@@ -83,6 +83,11 @@ export function inTopic(it: ThreadItem, members: Set<string>): boolean {
   return kind !== null && it.f.ref !== undefined && members.has(`${kind}:${it.f.ref}`)
 }
 
+/** The topics the bar offers: open ones, in the order the daemon gave. */
+export function activeTopics(list: TopicView[]): TopicView[] {
+  return list.filter((t) => t.status === 'open')
+}
+
 /** The one-line state of a topic for its row. */
 export function topicState(t: TopicView): string {
   if (t.status === 'cleared') return t.reopen ? 'cleared, something needs you' : 'cleared'

@@ -455,3 +455,44 @@ describe('Markdown', () => {
     expect(container.querySelector('i')).toBeNull()
   })
 })
+
+describe('topic bar and rail', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    window.location.hash = '#/chat'
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    window.location.hash = ''
+  })
+
+  it('share one filter: a chip sets it for the rail, the rail for the chip, and back clears it', async () => {
+    const user = userEvent.setup()
+    const topic = (id: number, title: string) => ({
+      id, title, status: 'open' as const, source: 'desk', created: '', updated: '', activity: new Date().toISOString(), waits: 0, links: [],
+    })
+    vi.spyOn(client.topics, 'list').mockResolvedValue({ topics: [topic(1, 'release'), topic(2, 'docs')] })
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
+    const bar = await screen.findByRole('group', { name: 'Filter the thread by topic' })
+    const rail = screen.getByRole('region', { name: 'Topics' })
+
+    await user.click(await within(bar).findByRole('button', { name: 'release' }))
+    expect(window.location.hash).toBe('#/chat?topic=1')
+    await waitFor(() => expect(within(rail).getByRole('button', { name: /release/ })).toHaveAttribute('aria-pressed', 'true'))
+    expect(within(bar).getByRole('button', { name: 'All' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(within(rail).getByRole('button', { name: /docs/ }))
+    expect(window.location.hash).toBe('#/chat?topic=2')
+    expect(within(bar).getByRole('button', { name: 'docs' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(bar).getByRole('button', { name: 'release' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(within(bar).getByRole('button', { name: 'All' }))
+    expect(window.location.hash).toBe('#/chat')
+    expect(within(rail).getByRole('button', { name: /docs/ })).toHaveAttribute('aria-pressed', 'false')
+
+    act(() => {
+      window.location.hash = '#/chat?topic=1'
+    })
+    await waitFor(() => expect(within(bar).getByRole('button', { name: 'release' })).toHaveAttribute('aria-pressed', 'true'))
+  })
+})
