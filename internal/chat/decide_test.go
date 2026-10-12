@@ -230,3 +230,59 @@ func equalIDs(a, b []int64) bool {
 	}
 	return true
 }
+
+const planQuestion = "Add the decision card to the chat thread\n\n## Steps\n1. Create `web/src/components/DecisionCard.tsx` and use it in the chat thread and on the Decisions page, which are both long lines that must wrap at the terminal width\n2. Render the question as **markdown**\n3. Tests\n\n- keep it short\n- keep it clear"
+
+func planDecision() api.DecisionView {
+	return api.DecisionView{
+		Decision: store.Decision{ID: 20, Question: planQuestion, Options: []string{"Go ahead", "Hold"}, Recommendation: "Go ahead", Why: "It changes what the person reads."},
+		Agent:    "claude", Lane: "fix/format", Repo: "ubixshepherd",
+	}
+}
+
+func TestThreadShowsADecisionAsWrappedMarkdown(t *testing.T) {
+	text := renderLine(Line{Kind: KindDecision, Text: decisionText(planDecision())}, 50)
+	plain := ansi.Strip(text)
+	for _, want := range []string{"decision 20 from claude in lane fix/format", "(ubixshepherd)", "Steps", "1. Create web/src/components/DecisionCard.tsx", "• keep it short", "1. Go ahead", "2. Hold", "recommends: Go ahead", "why yours: It changes", "/answer 20"} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing %q in:\n%s", want, plain)
+		}
+	}
+	for _, bad := range []string{"**", "`", "## "} {
+		if strings.Contains(plain, bad) {
+			t.Errorf("markdown marker %q left in:\n%s", bad, plain)
+		}
+	}
+	for _, l := range strings.Split(text, "\n") {
+		if w := ansi.StringWidth(l); w > 50 {
+			t.Errorf("line %q is %d wide", ansi.Strip(l), w)
+		}
+	}
+}
+
+func TestFocusedDecisionShowsTheQuestionAsMarkdownWithinTheRoom(t *testing.T) {
+	m, _, _ := decideModel()
+	m.decisions = []api.DecisionView{planDecision()}
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	press(t, m, keyTab)
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"? decision 20", "Add the decision card to the chat thread", "• keep it short", "1. Go ahead", "recommends: Go ahead"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q in:\n%s", want, v)
+		}
+	}
+
+	// A short terminal keeps the options and cuts the question, saying where the rest is.
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 10})
+	v = ansi.Strip(m.View())
+	for _, want := range []string{"Add the decision card", "more lines: /decisions", "2. Hold", "Esc back"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("short terminal: missing %q in:\n%s", want, v)
+		}
+	}
+	for _, l := range strings.Split(m.View(), "\n") {
+		if w := ansi.StringWidth(l); w > 60 {
+			t.Errorf("line %q is %d wide", ansi.Strip(l), w)
+		}
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -143,19 +144,45 @@ func decisionHeight(d api.DecisionView) int {
 	return n
 }
 
-// decisionRows is the focused decision, shown in place of the input: the question, its
-// options numbered, the recommendation, and the keys; or the confirmation it waits on.
+// decisionQuestionRows is the question as markdown, wrapped to width, cut to room rows
+// with a pointer to the full text when it is longer.
+func decisionQuestionRows(d api.DecisionView, width, room int) []string {
+	lines := strings.Split(strings.Trim(renderMarkdown(d.Question, width), "\n"), "\n")
+	room = max(1, min(room, 12))
+	if len(lines) <= room {
+		return lines
+	}
+	if room == 1 {
+		return lines[:1]
+	}
+	more := styleInfo.Render(fmt.Sprintf("… %d more lines: /decisions", len(lines)-(room-1)))
+	return append(lines[:room-1], more)
+}
+
+// decisionRows is the focused decision, shown in place of the input: the question as
+// markdown, its options numbered, the recommendation, and the keys; or the confirmation
+// it waits on. The options come first when the room is short.
 func (m *Model) decisionRows(d api.DecisionView, room int) []string {
 	rows := []string{
 		styleDecision.Render(fmt.Sprintf("? decision %d", d.ID)) + styleInfo.Render(fmt.Sprintf(" · %s · %s", d.Agent, d.Lane)),
-		"  " + oneLine(d.Question),
 	}
 	shown := len(d.Options)
-	if over := len(rows) + shown + 2 - room; over > 0 {
+	// The header, one question row, the keys, and a row for "more options" or the recommendation.
+	if over := 1 + 1 + shown + 2 - room; over > 0 {
 		shown = max(0, shown-over-1)
 	}
+	spare := room - (1 + 1 + shown + 1)
+	if shown < len(d.Options) {
+		spare--
+	}
+	if d.Recommendation != "" {
+		spare--
+	}
+	for _, l := range decisionQuestionRows(d, max(10, m.width-2), 1+max(0, spare)) {
+		rows = append(rows, "  "+l)
+	}
 	for i, o := range d.Options[:shown] {
-		rows = append(rows, fmt.Sprintf("  %s %s", styleHead.Render(fmt.Sprintf("%d.", i+1)), oneLine(o)))
+		rows = append(rows, fmt.Sprintf("  %s %s", styleHead.Render(fmt.Sprintf("%d.", i+1)), inline(oneLine(o))))
 	}
 	if shown < len(d.Options) {
 		rows = append(rows, styleInfo.Render(fmt.Sprintf("  +%d more options: /answer %d <number>", len(d.Options)-shown, d.ID)))

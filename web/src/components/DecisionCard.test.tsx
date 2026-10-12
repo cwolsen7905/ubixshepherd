@@ -1,0 +1,110 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import type { Decision } from '../api/types'
+import { LiveProvider } from '../state/context'
+import { Live, type Api, type Clock } from '../state/live'
+import { decision, spend, status } from '../test/fixtures'
+import { DecisionCard, isLong, splitQuestion } from './DecisionCard'
+
+const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
+
+function live(answer: Api['answer'] = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))) {
+  const api: Api = {
+    status: async () => status(), lanes: async () => [], runs: async () => [],
+    run: async () => { throw new Error('unused') }, runLog: async () => { throw new Error('unused') }, runEvents: async () => { throw new Error('unused') },
+    decisions: async () => [], requests: async () => [], spend: async () => spend(),
+    feedLatest: async () => ({ items: [], events: [], last: 0 }), feed: async (after) => ({ items: [], events: [], last: after }),
+    dismissRun: async () => { throw new Error('unused') }, undismissRun: async () => { throw new Error('unused') },
+    answer,
+  }
+  return new Live(api, still)
+}
+
+const PLAN = [
+  'Add the decision card to the chat thread',
+  '',
+  '## Steps',
+  '1. Create `web/src/components/DecisionCard.tsx`',
+  '2. Use it in **Chat.tsx**',
+  '',
+  '```',
+  'make check',
+  '```',
+].join('\n')
+
+function show(d = decision(), variant: 'page' | 'inline' = 'page') {
+  window.localStorage.clear()
+  render(
+    <LiveProvider live={live()}>
+      <DecisionCard d={d} variant={variant} />
+    </LiveProvider>,
+  )
+}
+
+describe('splitQuestion', () => {
+  it('takes the first line as the summary', () => {
+    expect(splitQuestion(PLAN)).toMatchObject({ head: 'Add the decision card to the chat thread' })
+    expect(splitQuestion('One line only')).toEqual({ head: 'One line only', body: '' })
+    expect(splitQuestion('# Title\nbody').head).toBe('Title')
+  })
+  it('has no summary when the first line is a list item, a fence or a wall of words', () => {
+    expect(splitQuestion('1. first\n2. second').head).toBe('')
+    expect(splitQuestion('```\ncode\n```').head).toBe('')
+    expect(splitQuestion('x'.repeat(300) + '\nmore').head).toBe('')
+  })
+  it('knows a long body', () => {
+    expect(isLong('short')).toBe(false)
+    expect(isLong('x'.repeat(800))).toBe(true)
+    expect(isLong(Array(20).fill('line').join('\n'))).toBe(true)
+  })
+})
+
+describe('DecisionCard', () => {
+  it('renders the question as markdown under its summary, inert', () => {
+    show(decision({ question: PLAN + '\n\n<script>window.x=1</script>' }))
+    expect(screen.getByRole('heading', { name: 'Add the decision card to the chat thread' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('web/src/components/DecisionCard.tsx').tagName).toBe('CODE')
+    expect(screen.getByText('Chat.tsx').tagName).toBe('STRONG')
+    expect(document.querySelectorAll('.decision-md ol li')).toHaveLength(2)
+    expect(document.querySelector('script')).toBeNull()
+  })
+
+  it('marks the recommendation and sets the reason apart', () => {
+    show(decision({ recommendation: 'Yes', why: 'It is `security` work' }))
+    const list = document.querySelector<HTMLElement>('.options') as HTMLElement
+    expect(within(list).getByText('recommended')).toBeInTheDocument()
+    const why = screen.getByLabelText('Why this is your call')
+    expect(within(why).getByText('security').tagName).toBe('CODE')
+  })
+
+  it('shows a recommendation that is not an option as its own block', () => {
+    show(decision({ recommendation: 'Do **both**, Yes first' }))
+    const rec = screen.getByLabelText('Recommendation')
+    expect(within(rec).getByText('both').tagName).toBe('STRONG')
+    expect(screen.queryByText('recommended')).toBeNull()
+  })
+
+  it('clamps a long question until "Show all"', async () => {
+    const user = userEvent.setup()
+    show(decision({ question: 'Summary\n' + Array.from({ length: 30 }, (_, i) => `- step ${i}`).join('\n') }))
+    const body = document.querySelector('.decision-md') as HTMLElement
+    expect(body).toHaveClass('is-clamped')
+    const more = screen.getByRole('button', { name: /^Show all/ })
+    expect(more).toHaveAttribute('aria-expanded', 'false')
+    await user.click(more)
+    expect(body).not.toHaveClass('is-clamped')
+    expect(screen.getByRole('button', { name: 'Show less' })).toHaveAttribute('aria-expanded', 'true')
+  })
+
+  it('does not clamp a short one', () => {
+    show()
+    expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull()
+  })
+
+  it('has an accessible name when there is no summary line, and a section when inline', () => {
+    show(decision({ question: '1. do this\n2. do that' }), 'inline')
+    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.getByRole('region', { name: `Decision ${decision().id}` }).tagName).toBe('SECTION')
+  })
+})

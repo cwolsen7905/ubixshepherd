@@ -1,0 +1,44 @@
+/* A decision card, on the Decisions page and in the chat thread. The question is
+   markdown under a one-line headline; the aside blocks set the reasons apart. */
+
+.decision-body { max-width: min(100%, 100ch); min-width: 0; }
+.decision-inline .decision-body { max-width: none; }
+.decision-q { white-space: normal; overflow-wrap: anywhere; }
+.decision-q code, .decision-md code, .option-text code, .decision-aside code {
+  font-family: var(--font-mono); font-size: 0.92em;
+}
+
+.decision-text { margin: var(--s-2) 0 var(--s-3); }
+.decision-md { overflow-wrap: anywhere; line-height: 1.5; }
+.decision-md > .cv-md > :first-child { margin-top: 0; }
+.decision-md.is-clamped {
+  max-height: 16em; overflow: hidden; position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
+  mask-image: linear-gradient(to bottom, #000 70%, transparent);
+}
+.decision-md .cv-md li + li { margin-top: 2px; }
+.decision-more { margin-top: var(--s-1); }
+
+.decision-aside {
+  margin: 0 0 var(--s-3); padding: var(--s-2) var(--s-3);
+  border-left: 3px solid var(--rule); border-radius: 0 var(--radius) var(--radius) 0;
+  background: color-mix(in srgb, var(--sheet) 70%, transparent); color: var(--ink);
+}
+.decision-rec { border-left-color: var(--lantern); background: var(--lantern-wash); }
+.decision-why { color: var(--muted); }
+.decision-aside .cv-md > :first-child { margin-top: 0; }
+.decision-aside .cv-md > :last-child { margin-bottom: 0; }
+.decision-aside-h {
+  display: block; font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.decision-rec .decision-aside-h { color: var(--lantern-ink); }
+
+.option.is-recommended { border-color: color-mix(in srgb, var(--lantern) 60%, var(--control-border)); }
+.option kbd { font-family: var(--font-mono); font-size: var(--t-xs); color: var(--faint); }
+.option-text { white-space: normal; overflow-wrap: anywhere; }
+
+@media (max-width: 40rem) {
+  .decision { grid-template-columns: 1.5rem minmax(0, 1fr); }
+  .decision-meta { gap: var(--s-1) var(--s-2); }
+  .send .button { width: 100%; }
+}
