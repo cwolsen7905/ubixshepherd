@@ -31,7 +31,7 @@ describe('the run page', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ offset: 0, data: '', size: 0, done: true }), { status: 200 }))
     render(
       <LiveProvider live={live}>
-        <LogPage id={1} />
+        <LogPage run={1} />
       </LiveProvider>,
     )
     expect(screen.getByRole('link', { name: '← Board' })).toHaveAttribute('href', '#/')
