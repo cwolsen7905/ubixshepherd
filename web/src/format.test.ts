@@ -1,4 +1,4 @@
-import { age, since, duration, usd, runCost, clockTime, shortSha, tokens } from './format'
+import { age, since, duration, usd, runCost, costNote, ESTIMATE_NOTE, clockTime, shortSha, tokens } from './format'
 
 // Test age function
 describe('age', () => {
@@ -152,6 +152,28 @@ describe('runCost', () => {
     expect(runCost({ cost_usd: 0, credits: 0 })).toBe('')
     expect(runCost({ cost_usd: 0, credits: 3 })).toBe('3 credits')
     expect(runCost({ cost_usd: 1.23, credits: 0 })).toBe('$1.23')
+  })
+
+  it('marks an estimated cost with a tilde', () => {
+    expect(runCost({ cost_usd: 0.05, cost_estimated: true, agent: 'opencode' })).toBe('~$0.05')
+    expect(runCost({ cost_usd: 0.004, cost_estimated: true })).toBe('~<$0.01')
+    expect(runCost({ cost_usd: 2, estimated_usd: 2 })).toBe('~$2.00')
+  })
+
+  it('says a total that is partly estimated', () => {
+    expect(runCost({ cost_usd: 3, estimated_usd: 0.5 })).toBe('$3.00 (~$0.50 estimated)')
+  })
+
+  it('names a hosted run with no cost unknown and a local OpenCode run free', () => {
+    expect(runCost({ cost_usd: 0, cost_estimated: true, agent: 'opencode' })).toBe('cost unknown')
+    expect(runCost({ cost_usd: 0, agent: 'opencode' })).toBe('local, no cost')
+    expect(runCost({ cost_usd: 0, agent: 'claude' })).toBe('')
+  })
+
+  it('has a note only for an estimate', () => {
+    expect(costNote({ cost_usd: 1, cost_estimated: true })).toBe(ESTIMATE_NOTE)
+    expect(costNote({ cost_usd: 1, estimated_usd: 0.1 })).toBe(ESTIMATE_NOTE)
+    expect(costNote({ cost_usd: 1 })).toBeUndefined()
   })
 })
 

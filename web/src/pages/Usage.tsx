@@ -3,7 +3,7 @@ import { usage as loadUsage } from '../api/client'
 import type { UsageGroup, UsageStats, UsageTotals } from '../api/types'
 import { ContextChart } from '../components/ContextChart'
 import { useNow } from '../hooks'
-import { runCost, tokens, usd } from '../format'
+import { costNote, runCost, tokens, usd } from '../format'
 import {
   chartSections, DEFAULT_SORT, DEFAULT_USAGE_RANGE, nextSort, sortGroups, USAGE_RANGES, usageDays,
   type Sort, type SortKey,
@@ -13,7 +13,7 @@ import { useSnapshot } from '../state/context'
 import '../styles/usage.css'
 
 /** The money of a set of records: dollars, with Copilot's credits beside them; "$0.00" for none. */
-const cost = (t: Pick<UsageTotals, 'cost_usd' | 'credits'>) => runCost(t) || usd(0)
+const cost = (t: Pick<UsageTotals, 'cost_usd' | 'credits' | 'estimated_usd'>) => runCost(t) || usd(0)
 
 const COLUMNS: { key: SortKey; label: string; title?: string; num?: boolean }[] = [
   { key: 'count', label: 'Runs', num: true, title: 'Records in the group; the ones with token counts are measured' },
@@ -83,7 +83,7 @@ function GroupTable({
                 </td>
                 <td className={`num ${g.over_200k > 0 ? 'tone-warn' : ''}`}>{g.measured ? g.over_200k : '–'}</td>
                 <td className="num">{g.measured ? g.compactions : '–'}</td>
-                <td className="num">{cost(g)}</td>
+                <td className="num" title={costNote(g)}>{cost(g)}</td>
               </tr>
             ))}
           </tbody>
@@ -112,7 +112,11 @@ function Tiles({ s }: { s: UsageStats }) {
   const share = s.total.cost_usd > 0 ? Math.round((s.desk.cost_usd / s.total.cost_usd) * 100) : 0
   return (
     <dl className="tiles">
-      <Tile label="Total cost" value={cost(s.total)} sub={`${s.total.count} records`} />
+      <Tile
+        label="Total cost"
+        value={cost(s.total)}
+        sub={`${s.total.count} records${s.total.estimated_usd ? `, of which ${usd(s.total.estimated_usd)} is an estimate` : ''}`}
+      />
       <Tile
         label="Desk vs agents"
         value={`${usd(s.desk.cost_usd)} / ${usd(s.runs.cost_usd)}`}

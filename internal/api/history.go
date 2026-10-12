@@ -60,12 +60,14 @@ type RunRecord = store.RunSummary
 // RunHistory answers GET /v1/history/runs. Count, USD and Credits cover every matching
 // run, so a total is right when Runs is cut at the limit.
 type RunHistory struct {
-	Runs    []RunRecord         `json:"runs"`
-	Count   int                 `json:"count"`
-	CostUSD float64             `json:"cost_usd"`
-	Credits float64             `json:"credits"`
-	Agents  []string            `json:"agents"`
-	Lanes   []store.HistoryLane `json:"lanes"`
+	Runs    []RunRecord `json:"runs"`
+	Count   int         `json:"count"`
+	CostUSD float64     `json:"cost_usd"`
+	Credits float64     `json:"credits"`
+	// EstimatedUSD is the part of CostUSD that is an agent's own estimate, not a bill.
+	EstimatedUSD float64             `json:"estimated_usd,omitempty"`
+	Agents       []string            `json:"agents"`
+	Lanes        []store.HistoryLane `json:"lanes"`
 }
 
 // HistoryLanes serves PathHistoryLanes from the store:
@@ -169,7 +171,7 @@ func HistoryRuns(st store.Store) http.HandlerFunc {
 			historyError(w, http.StatusInternalServerError, err)
 			return
 		}
-		out := RunHistory{Runs: h.Runs, Count: h.Count, CostUSD: h.CostUSD, Credits: h.Credits, Agents: h.Agents, Lanes: h.Lanes}
+		out := RunHistory{Runs: h.Runs, Count: h.Count, CostUSD: h.CostUSD, Credits: h.Credits, EstimatedUSD: h.EstimatedUSD, Agents: h.Agents, Lanes: h.Lanes}
 		if out.Runs == nil {
 			out.Runs = []RunRecord{}
 		}

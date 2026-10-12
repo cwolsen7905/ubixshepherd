@@ -10,14 +10,14 @@ import (
 
 const usageCols = `id, day, kind, run_id, workspace_id, turn, agent, model, context_window, requests,
 	input_tokens, cache_read_tokens, cache_creation_tokens, output_tokens, peak_context, compactions,
-	cost_usd, credits, created`
+	cost_usd, credits, cost_estimated, created`
 
 func scanUsage(sc interface{ Scan(...any) error }, extra ...any) (store.Usage, error) {
 	var u store.Usage
 	var created string
 	dst := append([]any{&u.ID, &u.Day, &u.Kind, &u.RunID, &u.WorkspaceID, &u.Turn, &u.Agent, &u.Model, &u.ContextWindow,
 		&u.Requests, &u.Input, &u.CacheRead, &u.CacheCreation, &u.Output, &u.PeakContext, &u.Compactions,
-		&u.CostUSD, &u.Credits, &created}, extra...)
+		&u.CostUSD, &u.Credits, &u.CostEstimated, &created}, extra...)
 	if err := sc.Scan(dst...); err != nil {
 		return u, err
 	}
@@ -46,11 +46,11 @@ func (s *DB) AddUsage(ctx context.Context, u store.Usage) error {
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO usage (day, kind, run_id, workspace_id, turn, agent, model, context_window, requests,
 			input_tokens, cache_read_tokens, cache_creation_tokens, output_tokens, peak_context, compactions,
-			cost_usd, credits, created)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cost_usd, credits, cost_estimated, created)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.Day, u.Kind, u.RunID, u.WorkspaceID, u.Turn, u.Agent, u.Model, u.ContextWindow, u.Requests,
 		u.Input, u.CacheRead, u.CacheCreation, u.Output, u.PeakContext, u.Compactions,
-		u.CostUSD, u.Credits, now()); err != nil {
+		u.CostUSD, u.Credits, u.CostEstimated, now()); err != nil {
 		return err
 	}
 	return tx.Commit()

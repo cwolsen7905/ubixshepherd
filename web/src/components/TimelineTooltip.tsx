@@ -42,7 +42,7 @@ function RunTip({ tip, now }: { tip: Extract<Tip, { kind: 'run' }>; now: number 
       </p>
       <Row value={runPhrase(r, now)} label={r.state === 'failed' ? '✗ failed' : 'state'} />
       <Row value={`${clockTime(iso(r.started), now)} to ${end}`} label={tip.continuing ? 'began before this range' : 'start to end'} />
-      <Row value={runCost({ cost_usd: r.costUsd, credits: r.credits }) || 'none yet'} label={r.state === 'running' ? 'cost, when it ends' : 'cost'} />
+      <Row value={runCost({ cost_usd: r.costUsd, credits: r.credits, cost_estimated: r.costEstimated, agent: r.agent }) || 'none yet'} label={r.state === 'running' ? 'cost, when it ends' : 'cost'} />
       <Row value={String(r.commits)} label={r.commits === 1 ? 'commit' : 'commits'} />
       {r.progress && <p className="tl-tip-line">{r.progress}</p>}
       {r.diagnosis && <p className="tl-tip-line tl-tip-bad">{r.diagnosis}</p>}

@@ -113,6 +113,9 @@ func TestOpenCodeRunEndToEnd(t *testing.T) {
 	if done.CostUSD != 0 {
 		t.Errorf("cost = %v: a local model is not billed", done.CostUSD)
 	}
+	if done.CostEstimated {
+		t.Errorf("a local model's cost is not an estimate: it has none")
+	}
 	log := logOf(t, done)
 	if a := argsOf(t, done); strings.Contains(a, "zebra-quokka") || !strings.Contains(a, "run --format json --pure -m local/qwen3-coder:30b") {
 		t.Errorf("args: %s", a)
@@ -760,5 +763,26 @@ func TestOpenCodeConfigTimeouts(t *testing.T) {
 	}
 	if _, _, has = got(config.OpenCode{}); has {
 		t.Error("no endpoint should write no provider")
+	}
+}
+
+func TestOpenCodeHostedRunIsMarkedEstimated(t *testing.T) {
+	old := openCodeSettings
+	openCodeSettings = func() config.OpenCode {
+		return config.OpenCode{Bin: "/fake/opencode", Endpoint: "http://localhost:11434/v1"}
+	}
+	t.Cleanup(func() { openCodeSettings = old })
+	f := openCodeFixture(t, "ok")
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Model: "openrouter/qwen/qwen3-coder", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.wait(t, run.ID)
+	if !done.CostEstimated {
+		t.Errorf("a hosted run is not marked as an estimate")
+	}
+	u, err := f.st.RunUsage(context.Background(), done.ID)
+	if err != nil || !u.CostEstimated {
+		t.Errorf("usage = %+v, %v: the record lacks the estimate mark", u, err)
 	}
 }

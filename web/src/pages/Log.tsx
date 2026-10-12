@@ -5,7 +5,7 @@ import { BackLink } from '../components/BackLink'
 import { Changes } from '../components/Changes'
 import { EventGlyph } from '../components/Glyph'
 import { RunFailure } from '../components/RunFailure'
-import { duration, runCost, since } from '../format'
+import { costNote, duration, runCost, since } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { endedBadly } from '../model/board'
 import { parseLog, type Block } from '../model/log'
@@ -152,7 +152,7 @@ export function LogPage({ run: id }: { run: number }) {
             <span>{run.agent}{run.model ? ` (${run.model})` : ''}</span>
             <span>{run.state}</span>
             <span>{duration(run.started, run.ended, now)}</span>
-            {runCost(run) && <span>{runCost(run)}</span>}
+            {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
             {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
             {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
           </p>

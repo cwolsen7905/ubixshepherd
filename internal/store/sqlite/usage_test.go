@@ -170,3 +170,98 @@ func TestDiagnoses(t *testing.T) {
 		t.Fatalf("no ids gave %+v", got)
 	}
 }
+
+func TestCostEstimatedRoundTripsAndTotals(t *testing.T) {
+	ctx := context.Background()
+	db, _ := open(t)
+	_, _, runA := fixture(t, db, "a")
+	_, _, runB := fixture(t, db, "b")
+	runA.CostEstimated, runA.CostUSD = true, 0.05
+	if err := db.UpdateRun(ctx, runA); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := db.Run(ctx, runA.ID); err != nil || !got.CostEstimated {
+		t.Fatalf("run = %+v, %v", got, err)
+	}
+	for _, u := range []store.Usage{
+		{Day: "2026-10-10", RunID: runA.ID, Agent: "opencode", Model: "openrouter/x/y", CostUSD: 0.05, CostEstimated: true},
+		{Day: "2026-10-10", RunID: runB.ID, Agent: "claude", Model: "opus", CostUSD: 2},
+	} {
+		if err := db.AddUsage(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if u, err := db.RunUsage(ctx, runA.ID); err != nil || !u.CostEstimated {
+		t.Errorf("usage = %+v, %v", u, err)
+	}
+	st, err := db.UsageStats(ctx, "2026-10-10", "2026-10-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Total.CostUSD != 2.05 || st.Total.EstimatedUSD != 0.05 {
+		t.Errorf("total = %+v: only the estimated run's cost is an estimate", st.Total)
+	}
+	h, err := db.RunHistory(ctx, store.RunHistoryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.EstimatedUSD != 0.05 {
+		t.Errorf("history estimated = %v", h.EstimatedUSD)
+	}
+	est := 0
+	for _, r := range h.Runs {
+		if r.CostEstimated {
+			est++
+		}
+	}
+	if est != 1 {
+		t.Errorf("%d runs marked estimated in the history, want 1", est)
+	}
+}
+
+func TestEstimateMigrationMarksHostedOpenCodeRuns(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "shepherd.db")
+	raw, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := 0
+	for i, m := range migrations {
+		if strings.Contains(m, "cost_estimated") {
+			last = i
+		}
+	}
+	for i := 0; i < last; i++ {
+		if _, err := raw.ExecContext(ctx, migrations[i]); err != nil {
+			t.Fatalf("migration %d: %v", i+1, err)
+		}
+	}
+	for _, q := range []string{
+		fmt.Sprintf(`PRAGMA user_version = %d`, last),
+		`INSERT INTO workspaces (name, path, created) VALUES ('w', '/w', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO repos (workspace_id, name, path, created) VALUES (1, 'a', '/w/a', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO lanes (repo_id, name, branch, worktree, state, created) VALUES (1, 'l', 'l', '/w/a-wt/l', 'open', '2026-01-01T00:00:00Z')`,
+		`INSERT INTO runs (lane_id, agent, model, prompt, state, log, started, cost_usd) VALUES
+			(1, 'opencode', 'openrouter/qwen/qwen3-coder', 'p', 'done', '', '2026-01-01T00:00:00Z', 0.05),
+			(1, 'opencode', 'local/qwen3', 'p', 'done', '', '2026-01-01T00:00:00Z', 0),
+			(1, 'opencode', '', 'p', 'done', '', '2026-01-01T00:00:00Z', 0),
+			(1, 'claude', 'opus', 'p', 'done', '', '2026-01-01T00:00:00Z', 1)`,
+	} {
+		if _, err := raw.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	raw.Close()
+	db, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for id, want := range map[int64]bool{1: true, 2: false, 3: false, 4: false} {
+		r, err := db.Run(ctx, id)
+		if err != nil || r.CostEstimated != want {
+			t.Errorf("run %d estimated = %v, %v; want %v", id, r.CostEstimated, err, want)
+		}
+	}
+}

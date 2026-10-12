@@ -63,6 +63,7 @@ export function mergeHistories(parts: RunHistory[]): RunHistory {
     count: parts.reduce((n, p) => n + p.count, 0),
     cost_usd: parts.reduce((n, p) => n + p.cost_usd, 0),
     credits: parts.reduce((n, p) => n + p.credits, 0),
+    estimated_usd: parts.reduce((n, p) => n + (p.estimated_usd ?? 0), 0),
     agents: [...new Set(parts.flatMap((p) => p.agents))].sort(),
     lanes: [...lanes.values()].sort((a, b) => a.repo.localeCompare(b.repo) || a.name.localeCompare(b.name)),
   }

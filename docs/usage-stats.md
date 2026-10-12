@@ -33,6 +33,7 @@ front desk turn (written when the turn ends).
 | `peak_context` | The largest single request's prompt: input + cache read + cache creation, taken from each request. |
 | `compactions` | Times the CLI summarised the conversation to make room (Claude Code's `compact_boundary`). |
 | `cost_usd`, `credits` | What this run or turn added, as the run and spend records have it. |
+| `cost_estimated` | `cost_usd` is the agent's own price-table estimate, not a bill: a hosted OpenCode model. Set whatever the figure, so a hosted run with 0 reads "cost unknown" and a local one "local, no cost". Totals carry `estimated_usd`, the part of their dollars that is an estimate. |
 
 What each agent reports:
 
@@ -107,7 +108,8 @@ peak and `>200K` count are the measure of whether that was worth it.
   in the terminal rather than in the daemon, records spend but no usage yet.
 - **Runs and turns before usage was kept** have no record. They show in spend, not here.
 - **Costs** are the dollars the CLI reported; a local model reports 0, and Copilot's are
-  credits.
+  credits. A hosted OpenCode model's dollars are OpenCode's estimate and are marked as
+  one (`~$0.05`); the provider may have billed several times more.
 
 ## Where it lives
 

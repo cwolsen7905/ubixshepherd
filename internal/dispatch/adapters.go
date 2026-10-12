@@ -81,6 +81,9 @@ type Adapter struct {
 	// ReadFor, when set, starts the run's own Read: for a CLI whose output reads
 	// differently by the run's model (a local one or a hosted one).
 	ReadFor func(o Opts) func(line string) Output
+	// EstimatesCost says the cost this run reports is the CLI's own estimate rather
+	// than a bill: the run is recorded with CostEstimated, and stays so at cost 0.
+	EstimatesCost func(o Opts) bool
 	// SessionCost says the cost the CLI reports is the whole session's so far, not
 	// this invocation's: the runner keeps the latest figure and records what the run
 	// added beyond the earlier runs of the session. It applies to whatever Read
@@ -333,6 +336,8 @@ var adapters = map[string]Adapter{
 		Note:    "You run on a small local model, so keep to small mechanical edits. Make one tool call at a time through the tool interface, never write a tool call out as text. Shepherd's tools are named shepherd_ask_human, shepherd_ask_shepherd and shepherd_report. Commit with `git add` then `git commit`. Do not write tests in a typed codebase: stop and say so instead.",
 		Read:    openCodeOutput,
 		ReadFor: func(o Opts) func(string) Output { return openCodeReader(o.Model) },
+		// A hosted model's cost is OpenCode's price-table figure, not the provider's bill.
+		EstimatesCost: func(o Opts) bool { return openCodeHosted(o.Model) },
 		Usage: func(o Opts) UsageReader {
 			// The configured window is the local endpoint's. A hosted model's window is
 			// not known here, and an unknown one is left 0 rather than guessed.

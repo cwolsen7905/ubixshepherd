@@ -169,6 +169,8 @@ export interface Run {
   parent?: number
   cost_usd?: number
   credits?: number
+  /** cost_usd is the agent's own estimate, not a bill (a hosted OpenCode model). */
+  cost_estimated?: boolean
   session_usd?: number
   session_credits?: number
   /** When the person dismissed this failed or stopped run from the board; the run stays in history. */
@@ -398,6 +400,7 @@ export interface RunRecord {
   commits: number
   cost_usd?: number
   credits?: number
+  cost_estimated?: boolean
   started: string
   ended?: string
   task: string
@@ -409,6 +412,8 @@ export interface RunHistory {
   count: number
   cost_usd: number
   credits: number
+  /** The part of cost_usd that is an agent's estimate, not a bill. */
+  estimated_usd?: number
   /** What the range holds before the agent and lane filters, to offer as choices. */
   agents: string[]
   lanes: { id: number; repo: string; name: string }[]
@@ -431,6 +436,8 @@ export interface UsageTotals {
   compactions: number
   cost_usd: number
   credits?: number
+  /** The part of cost_usd that is an agent's estimate, not a bill. */
+  estimated_usd?: number
 }
 
 /** One agent and model, or one lane. */
