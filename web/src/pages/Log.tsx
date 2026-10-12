@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../api/client'
 import type { RunView } from '../api/types'
+import { BackLink } from '../components/BackLink'
 import { EventGlyph } from '../components/Glyph'
 import { RunFailure } from '../components/RunFailure'
 import { duration, runCost, since } from '../format'
@@ -138,6 +139,7 @@ export function LogPage({ run: id }: { run: number }) {
 
   return (
     <div className="page log">
+      <BackLink />
       <header className="page-head log-head">
         <h1>
           {run && <EventGlyph event={RUN_EVENT[run.state]} />}

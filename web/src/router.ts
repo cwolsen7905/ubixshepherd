@@ -131,3 +131,26 @@ export function useRoute(): Route {
 export function go(to: string) {
   window.location.hash = to.replace(/^#/, '')
 }
+
+/** The page the person was on before this one, and how far down it they had scrolled. */
+export type Came = { hash: string; scroll: number }
+
+let here = typeof window === 'undefined' ? '' : window.location.hash
+let before: Came | undefined
+const scrolls = new Map<string, number>()
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('scroll', () => scrolls.set(here, window.scrollY), { passive: true })
+  window.addEventListener('hashchange', () => {
+    const now = window.location.hash
+    if (now === here) return
+    before = { hash: here, scroll: scrolls.get(here) ?? 0 }
+    here = now
+  })
+}
+
+/** The page this one was reached from within the app, or undefined when it was opened directly (or from nowhere a link can return to). */
+export function cameFrom(): Came | undefined {
+  if (!before || parse(before.hash).page === 'missing') return undefined
+  return before
+}
