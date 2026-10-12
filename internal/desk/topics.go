@@ -142,6 +142,17 @@ func (d *Desk) topicHead(ctx context.Context, t turn) string {
 	}
 	lines := d.topicLines(ctx, topicHeadMax)
 	switch {
+	case t.topic != 0 && t.how != "":
+		var why string
+		switch t.how {
+		case fileViewing:
+			why = "the one the person was viewing when they wrote"
+		case fileNamed:
+			why = fmt.Sprintf("the one %s is in, which the message names", t.what)
+		default:
+			why = "the one of the person's last turn"
+		}
+		fmt.Fprintf(&b, "[Shepherd] This turn is #%d, already filed under topic %s, %s. Do not file it again unless the person has clearly changed the subject: then topic_set with the other topic's id (or a title for a new one) re-files it.\n", t.id, title(t.topic), why)
 	case t.topic != 0:
 		fmt.Fprintf(&b, "[Shepherd] This turn is #%d, already filed under topic %s, the one its events are about.", t.id, title(t.topic))
 		if len(t.others) > 0 {

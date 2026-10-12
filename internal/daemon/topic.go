@@ -311,13 +311,22 @@ func (s *Server) linkAllowed(ctx context.Context, r *http.Request, topic int64, 
 		return http.StatusForbidden, fmt.Errorf("the front desk files only its own turn, #%d", p.Turn)
 	}
 	if linkBy(r) != store.TopicLinkPerson {
-		if cur, err := s.Store.TopicOf(ctx, ref.Kind, ref.Ref); err == nil {
+		if cur, err := s.Store.TopicOf(ctx, ref.Kind, ref.Ref); err == nil && !s.deskMayRefile(ctx, ref.Kind, cur) {
 			if t, err := s.Store.Topic(ctx, cur.TopicID); err == nil && t.ID != topic {
 				return http.StatusForbidden, errTopicNotPersons
 			}
 		}
 	}
 	return 0, nil
+}
+
+// deskMayRefile says whether the desk may move a link: its own turn, when the person
+// started the turn and Shepherd or the desk filed it, not the person. That is how the desk
+// follows a change of subject after Shepherd filed the person's turn by the filing rule.
+func (s *Server) deskMayRefile(ctx context.Context, kind string, cur store.TopicLink) bool {
+	p := principalOf(ctx)
+	return kind == store.TopicTurn && p.Role == RoleDesk && p.Human && p.Turn > 0 &&
+		cur.Ref == strconv.FormatInt(p.Turn, 10) && cur.By != store.TopicLinkPerson
 }
 
 // fileTurn files the turn the desk's token was minted for under the topic its tool just
@@ -329,7 +338,7 @@ func (s *Server) fileTurn(ctx context.Context, r *http.Request, topic int64) {
 		return
 	}
 	ref := strconv.FormatInt(p.Turn, 10)
-	if cur, err := s.Store.TopicOf(ctx, store.TopicTurn, ref); err == nil && cur.TopicID != topic {
+	if cur, err := s.Store.TopicOf(ctx, store.TopicTurn, ref); err == nil && cur.TopicID != topic && !s.deskMayRefile(ctx, store.TopicTurn, cur) {
 		return
 	}
 	if _, err := s.Store.LinkTopic(ctx, store.TopicLink{TopicID: topic, Kind: store.TopicTurn, Ref: ref, By: linkBy(r)}); err != nil {

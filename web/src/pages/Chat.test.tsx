@@ -529,4 +529,19 @@ describe('topic pill', () => {
     await waitFor(() => expect(screen.queryByText('loose answer')).not.toBeInTheDocument())
     expect(screen.getByText('tied answer')).toBeInTheDocument()
   })
+
+  it('sends the topic being viewed with the message, and none otherwise', async () => {
+    window.location.hash = '#/chat?topic=3'
+    const user = userEvent.setup()
+    vi.spyOn(client.topics, 'list').mockResolvedValue({
+      topics: [{
+        id: 3, title: 'the release of v0.3', status: 'open', source: 'desk', created: '', updated: '', activity: new Date().toISOString(),
+        waits: 0, links: [],
+      }],
+    })
+    const turn = vi.fn(async () => ({ workspace_id: 1, turn: 9, ahead: 1 }))
+    await show(fakeDeskApi({ turn }))
+    await user.type(screen.getByLabelText('Message to the front desk'), 'from here{Enter}')
+    await waitFor(() => expect(turn).toHaveBeenCalledWith(0, 'from here', 3))
+  })
 })

@@ -136,7 +136,7 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	id, ahead, err := d.Send(r.Context(), req.Text)
+	id, ahead, err := d.SendIn(r.Context(), req.Text, req.TopicID)
 	switch {
 	case errors.Is(err, desk.ErrQueueFull):
 		writeError(w, http.StatusTooManyRequests, err)

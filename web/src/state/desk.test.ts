@@ -281,6 +281,16 @@ describe('DeskThread', () => {
     expect(thread.getSnapshot()).toMatchObject({ connection: 'signed-out', problem: { kind: 'signed-out' } })
   })
 
+  it('sends the topic being viewed only when there is one', async () => {
+    const turn = vi.fn().mockResolvedValue({ workspace_id: 1, turn: 2, ahead: 0 })
+    const { thread } = make(fakeApi({ turn }))
+    thread.start()
+    await flush()
+    await thread.send('plain')
+    await thread.send('in a topic', 4)
+    expect(turn.mock.calls).toEqual([[0, 'plain'], [0, 'in a topic', 4]])
+  })
+
   it('maps API failures', () => {
     expect(problemOf(new Error('boom'))).toEqual({ kind: 'other', message: 'boom' })
     expect(problemOf(new ApiError(500, 'x')).kind).toBe('other')

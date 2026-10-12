@@ -362,3 +362,27 @@ func TestDeskRotationOverHTTP(t *testing.T) {
 		t.Errorf("history = %+v", hist.Events)
 	}
 }
+
+// A message written from a topic is filed under it before the desk sees the turn.
+func TestDeskTurnFiledUnderTheTopicWrittenFrom(t *testing.T) {
+	r := newDeskRig(t, config.WakeNever, 0)
+	ctx := context.Background()
+	tp, err := r.s.Store.AddTopic(ctx, store.Topic{Title: "login", Status: store.TopicOpen, Source: store.TopicByPerson})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch, _ := r.stream(t, api.PathDeskStream+"?after=0", nil)
+	var acc api.DeskTurnAccepted
+	if code := call(t, r.ts, r.s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "hi", TopicID: tp.ID}, &acc); code != http.StatusAccepted {
+		t.Fatalf("turn: %d", code)
+	}
+	until(t, ch, store.DeskTurnEnd)
+	l, err := r.s.Store.TopicOf(ctx, store.TopicTurn, fmt.Sprint(acc.Turn))
+	if err != nil || l.TopicID != tp.ID || l.By != store.TopicLinkShepherd {
+		t.Errorf("turn link = %+v, %v", l, err)
+	}
+	// The fake desk logs only the head of the message.
+	if !strings.Contains(r.claudeLog(), "This turn is #1, already file") {
+		t.Errorf("the desk was not told:\n%s", r.claudeLog())
+	}
+}

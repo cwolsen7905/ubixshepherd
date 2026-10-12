@@ -453,7 +453,7 @@ function ChatThread({
           )}
         </div>
 
-        <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} onSend={follow.jump} />
+        <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} topicId={topicId} onSend={follow.jump} />
         </div>
       </div>
     </div>
@@ -461,13 +461,15 @@ function ChatThread({
 }
 
 function Composer({
-  thread, workspaceId, d, disabled, following, onSend,
+  thread, workspaceId, d, disabled, following, topicId, onSend,
 }: {
   thread: DeskThread
   workspaceId: number
   d: DeskSnapshot
   disabled: boolean
   following: boolean
+  /** The topic being viewed: the turn is filed under it. */
+  topicId: number | null
   onSend: () => void
 }) {
   const key = draftKey(workspaceId)
@@ -494,7 +496,7 @@ function Composer({
     if (sending || disabled || !text.trim()) return
     // The text stays until the daemon has taken it, so a refusal loses nothing.
     onSend()
-    if (await thread.send(text)) {
+    if (await thread.send(text, topicId)) {
       setText('')
       clearDraft(window.localStorage, key)
     }

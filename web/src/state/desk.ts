@@ -311,12 +311,12 @@ export class DeskThread {
     }
   }
 
-  /** Sends the person's words; true when the daemon accepted them. */
-  async send(text: string): Promise<boolean> {
+  /** Sends the person's words, from the topic being viewed if any; true when the daemon accepted them. */
+  async send(text: string, topicId?: number | null): Promise<boolean> {
     if (this.snap.sending || !text.trim()) return false
     this.set({ sending: true, problem: null, notice: null })
     try {
-      const a = await this.deps.api.turn(this.workspaceId, text)
+      const a = topicId ? await this.deps.api.turn(this.workspaceId, text, topicId) : await this.deps.api.turn(this.workspaceId, text)
       this.set({ sending: false, busy: true, queued: Math.max(0, a.ahead) })
       return true
     } catch (e) {

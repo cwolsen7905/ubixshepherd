@@ -11,6 +11,14 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Changed
 
+- **The daemon files each of the person's turns under a topic before the front desk sees
+  it.** In order: the topic the person wrote from in the web thread (the web sends it as
+  `topic_id` on `POST /v1/desk/turn`); else the one open topic of a lane, run, decision,
+  request or merge request the message names (`run 12`, `decision 4`, `!158`, a lane's
+  name), and none when the things named are in different topics; else the topic of the
+  person's last turn. Cleared topics are never chosen. The turn's header tells the desk
+  which, and not to file it again. The desk can still re-file the turn with `topic_set`
+  when the person clearly changes the subject.
 - **A hosted OpenCode run's cost is shown as an estimate.** OpenCode prices a step from its
   own table, and OpenRouter's billed `usage.cost` never reaches its events, so the figure
   can be several times low. Runs and usage records gain `cost_estimated` (an appended
