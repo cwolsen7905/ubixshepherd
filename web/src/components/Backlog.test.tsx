@@ -4,7 +4,12 @@ import { nextItem, status } from '../test/fixtures'
 import { Backlog } from './Backlog'
 
 const list = {
-  items: [nextItem({ id: 1, title: 'First thing' }), nextItem({ id: 2, title: 'Second thing', repo: 'acme-web', plan: undefined })],
+  items: [
+    nextItem({ id: 1, title: 'First thing' }),
+    nextItem({ id: 2, title: 'Second thing', repo: 'acme-web', plan: undefined }),
+    nextItem({ id: 3, title: 'Third thing', state: 'planned', stored_state: 'planned', proposed: true }),
+    nextItem({ id: 4, title: 'Fourth thing', state: 'deferred', stored_state: 'deferred' }),
+  ],
   next_up: 1,
 }
 
@@ -37,8 +42,22 @@ describe('Backlog rail views', () => {
     expect(screen.getByText('Second thing')).toBeInTheDocument()
     expect(screen.queryByText('Nothing is waiting on you and no lane is idle.')).toBeNull()
     expect(localStorage.getItem('shepherd.chat.rail')).toBe('next')
-    expect(screen.getByRole('link', { name: 'Next up page' })).toHaveAttribute('href', '#/next')
-    expect(screen.getByText('acme-api · docs/lane-diff.md')).toBeInTheDocument()
+    expect(screen.getAllByText('acme-api · docs/lane-diff.md').length).toBeGreaterThan(0)
+  })
+
+  it('shows every open item with its state, in order', async () => {
+    localStorage.setItem('shepherd.chat.rail', 'next')
+    show()
+    await screen.findByText('First thing')
+    const rows = screen.getAllByRole('listitem').filter((li) => li.classList.contains('backlog-row'))
+    expect(rows.map((r) => r.querySelector('.backlog-name')?.textContent)).toEqual([
+      'First thing', 'Second thing', 'Third thing', 'Fourth thing',
+    ])
+    expect(rows.map((r) => r.querySelector('.backlog-state')?.textContent)).toEqual([
+      'approved', 'approved', 'proposed', 'deferred',
+    ])
+    expect(within(rows[3] as HTMLElement).queryByRole('button', { name: 'Start' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'All 4 open' })).toHaveAttribute('href', '#/next')
   })
 
   it('remembers the view and marks the first item as next', async () => {
