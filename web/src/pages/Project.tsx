@@ -1,5 +1,6 @@
 import { BudgetMeter } from '../components/BudgetMeter'
 import { Glyph } from '../components/Glyph'
+import { GateBadge } from '../components/GateBadge'
 import { MrBadge } from '../components/MrBadge'
 import { Work } from '../components/Work'
 import { age as ageOf, duration, runCost, since, usd } from '../format'
@@ -145,6 +146,7 @@ export function ProjectPage({ name }: { name: string | null }) {
                 <span className="row-repo">{l.repo}</span>
                 <span className="row-mr">
                   <MrBadge lane={l} link={false} />
+                  {l.gate && <> <GateBadge gate={l.gate} /></>}
                 </span>
                 <span className="row-age" title={l.created}>{since(l.created, now)}</span>
               </a>

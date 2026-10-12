@@ -3,6 +3,7 @@ import { laneChanges } from '../api/client'
 import type { DiffFile, LaneDiff } from '../api/types'
 import { clockTime, shortSha } from '../format'
 import { editorHref, joinPath } from '../editorLink'
+import { GateBadge } from './GateBadge'
 import '../styles/changes.css'
 
 const GROUPS = [
@@ -21,14 +22,25 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e)
 }
 
+/** A run's own view of a lane's changes: its range, and what it left outside the scope. */
+export interface RunRange {
+  id: number
+  /** The lane's newest run: only then is the worktree's uncommitted work shown, since it belongs to the lane. */
+  latest: boolean
+  /** The run's Outside list: files shown with the scope mark whatever the diff says. */
+  outside?: string[]
+}
+
 /**
  * The lane's Changes tab: what the lane holds against its base. The read is taken when the
  * tab opens, when `refreshKey` moves (the feed advanced) and on Refresh; it is not polled,
  * since each read runs git. A file's patch is read only when it is opened.
  */
-export function Changes({ laneId, worktree, editorUrl, refreshKey, now }: {
+export function Changes({ laneId, worktree, editorUrl, refreshKey, now, run }: {
   laneId: number
   worktree: string
+  /** Narrow the read to one run's range (the run page). */
+  run?: RunRange
   /** The editor link template; "" or null hides the links. */
   editorUrl: string | null
   refreshKey: number
@@ -38,13 +50,14 @@ export function Changes({ laneId, worktree, editorUrl, refreshKey, now }: {
   const [error, setError] = useState<string | null>(null)
   // The request being waited on is the one named by the lane, the feed and Refresh.
   const [manual, setManual] = useState(0)
-  const request = `${laneId}:${refreshKey}:${manual}`
+  const runId = run?.id
+  const request = `${laneId}:${runId ?? ''}:${refreshKey}:${manual}`
   const [answered, setAnswered] = useState('')
   const busy = answered !== request
 
   useEffect(() => {
     let current = true
-    laneChanges.diff(laneId).then(
+    laneChanges.diff(laneId, undefined, runId).then(
       (d) => {
         if (!current) return
         setRead(d)
@@ -55,10 +68,13 @@ export function Changes({ laneId, worktree, editorUrl, refreshKey, now }: {
     return () => {
       current = false
     }
-  }, [laneId, request])
+  }, [laneId, runId, request])
 
   return (
-    <div id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-changes" className="changes">
+    <div
+      {...(run ? { 'aria-label': `Changes in run ${run.id}` } : { id: 'lane-panel', role: 'tabpanel', 'aria-labelledby': 'lane-tab-changes' })}
+      className="changes"
+    >
       <div className="changes-bar">
         <span className="faint">
           {read ? <>Read <time dateTime={read.read_at} title={read.read_at}>{clockTime(read.read_at, now)}</time></> : busy ? 'Reading…' : ''}
@@ -68,20 +84,33 @@ export function Changes({ laneId, worktree, editorUrl, refreshKey, now }: {
         </button>
       </div>
       {error && <p className="tone-bad" role="alert">Could not read the lane's changes: {error}</p>}
-      {read && <ChangesView read={read} worktree={worktree} editorUrl={editorUrl} />}
+      {read && <ChangesView read={read} worktree={worktree} editorUrl={editorUrl} run={run} />}
     </div>
   )
 }
 
 /** A read, drawn. It holds no fetching of its own but each file's patch, so two reads can sit side by side later. */
-export function ChangesView({ read, worktree, editorUrl }: { read: LaneDiff; worktree: string; editorUrl: string | null }) {
-  const files = read.committed.length + read.uncommitted.length + read.untracked.length
+export function ChangesView({ read, worktree, editorUrl, run }: { read: LaneDiff; worktree: string; editorUrl: string | null; run?: RunRange }) {
+  // A run's Outside list marks its files whatever the read's own scope check says.
+  const outside = new Set(run?.outside ?? [])
+  const marked = (f: DiffFile): DiffFile => (outside.has(f.path) && f.in_scope ? { ...f, in_scope: false } : f)
+  // Uncommitted work belongs to the lane: only the lane's latest run shows it.
+  const groups = GROUPS.filter((g) => !run || run.latest || g.key === 'committed')
+  const lists = {
+    committed: read.committed.map(marked),
+    uncommitted: run && !run.latest ? [] : read.uncommitted.map(marked),
+    untracked: run && !run.latest ? [] : read.untracked.map(marked),
+  }
+  const files = lists.committed.length + lists.uncommitted.length + lists.untracked.length
+  const outsideCount = Object.values(lists).flat().filter((f) => !f.in_scope).length
   return (
     <>
       <p className="changes-summary">
+        {run && <>Run {run.id}: </>}
         <code>{read.branch}</code> at <code>{shortSha(read.head)}</code> against <code>{read.base_ref || read.base}</code>
         {' · '}{read.commits_total} {read.commits_total === 1 ? 'commit' : 'commits'}, {files}{read.files_more ? `+${read.files_more}` : ''} {files === 1 ? 'file' : 'files'}
-        {read.out_of_scope > 0 && <> · <span className="tone-warn">{read.out_of_scope} outside scope</span></>}
+        {outsideCount > 0 && <> · <span className="tone-warn">{outsideCount} outside scope</span></>}
+        {read.gate && <> · <GateBadge gate={read.gate} /></>}
       </p>
       {(read.truncated || (read.notes?.length ?? 0) > 0) && (
         <ul className="changes-notes faint">
@@ -110,19 +139,21 @@ export function ChangesView({ read, worktree, editorUrl }: { read: LaneDiff; wor
         </>
       )}
 
-      {GROUPS.map((g) => {
-        const list = read[g.key]
+      {groups.map((g) => {
+        const list = lists[g.key]
+        const lanes = run && g.key !== 'committed'
         return (
           <section key={g.key} aria-labelledby={`changes-${g.key}`}>
             <h2 id={`changes-${g.key}`} className="section-h">
               {g.title} <span className="group-count">{list.length}</span>
+              {lanes && <span className="faint change-lane-note"> in the lane's worktree now</span>}
             </h2>
             {list.length === 0 ? (
               <p className="faint">{g.empty}</p>
             ) : (
               <ul className="change-files">
                 {list.map((f) => (
-                  <FileRow key={`${g.key}:${f.path}`} file={f} group={g.key} read={read} worktree={worktree} editorUrl={editorUrl} />
+                  <FileRow key={`${g.key}:${f.path}`} file={f} group={g.key} read={read} worktree={worktree} editorUrl={editorUrl} runId={run?.id} />
                 ))}
               </ul>
             )}
@@ -133,7 +164,8 @@ export function ChangesView({ read, worktree, editorUrl }: { read: LaneDiff; wor
   )
 }
 
-function FileRow({ file, group, read, worktree, editorUrl }: {
+function FileRow({ file, group, read, worktree, editorUrl, runId }: {
+  runId?: number
   file: DiffFile
   group: (typeof GROUPS)[number]['key']
   read: LaneDiff
@@ -147,7 +179,7 @@ function FileRow({ file, group, read, worktree, editorUrl }: {
   const body = !file.binary
   const load = useCallback(() => {
     let current = true
-    laneChanges.diff(read.lane_id, file.path).then(
+    laneChanges.diff(read.lane_id, file.path, runId).then(
       (d) => {
         if (!current) return
         setPatch({ at: readAt, read: d })
@@ -158,7 +190,7 @@ function FileRow({ file, group, read, worktree, editorUrl }: {
     return () => {
       current = false
     }
-  }, [read.lane_id, file.path, readAt])
+  }, [read.lane_id, file.path, readAt, runId])
   // Open files are read again with each new read of the list, so they never show a stale patch.
   useEffect(() => (open && body ? load() : undefined), [open, body, load])
 

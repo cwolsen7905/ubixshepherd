@@ -3,8 +3,8 @@
 Status: **approved as written** by the maintainer (2026-10-11). Implementation is three
 merge requests, each its own lane (sequencing below). Step 1 (the core read, `shepherd lane
 diff` and the `lane_diff` tool) and step 2 (the web Changes tab and the editor link) are
-built; step 3 is built in its backend (the gate record, the badge and the run range) and
-waits only for its web parts.
+built; step 3 (the gate record, the badge and the run range) is built in its backend and
+its web parts.
 
 ## The problem
 
@@ -220,6 +220,16 @@ the daemon resolves to the run's `start_sha..end_sha`; a run with no recorded en
 from its start and includes the worktree. It refuses a run of another lane, a run with no
 start commit, and `run` together with `since` or `until`. The web's run page uses the same
 read with `run=`.
+
+As built (step 3, web): the run page has a "Changes in this run" section, closed until
+opened since each read runs git, which is `Changes` with `run=<id>` on its stat and file
+reads. For the lane's latest run (the first of `GET /v1/runs?lane_id=&limit=1`) the
+Uncommitted and Untracked groups appear, each marked "in the lane's worktree now"; for any
+earlier run they are hidden, since that work belongs to the lane. A file on the run's
+`outside` list shows the scope mark whatever the read says. The gate badge
+(`web/src/components/GateBadge.tsx`) is on the lane page's facts aside, the Changes
+summary line, the board's rows and a project's open lanes, with the commit, time and
+command on hover; "not run" is drawn neutral.
 
 ## How it fits the existing pages and docs
 

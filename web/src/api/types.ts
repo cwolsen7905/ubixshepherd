@@ -86,9 +86,24 @@ export interface Lane {
 /** Where a lane's last activity came from (internal/api Activity*, internal/store Activity*). */
 export type ActivityKind = 'run' | 'decision' | 'request' | 'commit' | 'mr' | 'pipeline' | 'created'
 
+export type GateState = 'passed' | 'failed' | 'stale' | 'not_run'
+
+/** Whether Shepherd's own gate ran on a commit; mirrors store.GateBadge. */
+export interface GateBadge {
+  state: GateState
+  /** The commit the newest record is for. */
+  sha?: string
+  at?: string
+  command?: string
+  /** `ship`: Shepherd's own run before a push. */
+  source?: string
+}
+
 /** A lane with its repo's name and the forge's last word on its branch. */
 export interface LaneView extends Lane {
   repo: string
+  /** The gate record against the branch tip; unset from a daemon that predates it. */
+  gate?: GateBadge
   mr?: number
   mr_state?: MRState
   mr_url?: string
@@ -670,6 +685,8 @@ export interface LaneDiff {
   base_ref: string
   merge_base?: string
   head: string
+  /** The gate record against the lane's HEAD. */
+  gate?: GateBadge
   mode: string
   read_at: string
   commits: DiffCommit[]

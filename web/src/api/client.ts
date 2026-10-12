@@ -123,9 +123,9 @@ export const api = {
 
 /** What a lane holds against its base (read-only; each read runs git in the worktree). */
 export const laneChanges = {
-  /** The file list; with `file`, that file's patch. */
-  diff: (laneId: number, file?: string) =>
-    get<LaneDiff>(`/v1/lanes/${laneId}/diff?${qs(file === undefined ? { mode: 'stat' } : { file })}`),
+  /** The file list; with `file`, that file's patch; with `run`, narrowed to that run's range. */
+  diff: (laneId: number, file?: string, run?: number) =>
+    get<LaneDiff>(`/v1/lanes/${laneId}/diff?${qs({ ...(file === undefined ? { mode: 'stat' } : { file }), ...(run ? { run } : {}) })}`),
 }
 
 /** Closing a lane, and judging whether its work is done. */
