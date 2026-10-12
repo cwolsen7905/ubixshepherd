@@ -3,7 +3,8 @@
 Status: **approved as written** by the maintainer (2026-10-11). Implementation is three
 merge requests, each its own lane (sequencing below). Step 1 (the core read, `shepherd lane
 diff` and the `lane_diff` tool) and step 2 (the web Changes tab and the editor link) are
-built; step 3 is not.
+built; step 3 is built in its backend (the gate record, the badge and the run range) and
+waits only for its web parts.
 
 ## The problem
 
@@ -189,6 +190,16 @@ separate decision) a `shepherd lane gate <lane>` that runs the gate in the lane 
 records it; the badge's "not run" state would then have an action. Listed here only so
 the schema leaves room (`source`).
 
+As built (step 3, backend): the `gate_results` table records a row whenever Shepherd's
+own gate command runs in a lane (`Runner.gate`, which both the end-of-run push and
+`lane ship` go through), with the commit it ran on, the command, pass or fail, the time
+and `source: ship`. A run over a worktree with uncommitted changes is not recorded, since
+it says nothing about the head. The badge (`store.GateBadge`: `state` is `passed`,
+`failed`, `stale` or `not_run`, with `sha`, `at`, `command`, `source`) is on `LaneView.gate`
+(the lane list and a project's open lanes, against the branch tip) and on
+`LaneDiff.gate` (against the lane's HEAD), so a diff read and the board agree. The
+standards checks and the commit rules are not the gate and are not recorded.
+
 ## 3. The run view
 
 The Runs table on the lane page and the run's own page show `commits` and `outside`
@@ -203,6 +214,12 @@ latest run. The run's `Outside` list is shown as the scope mark on those files.
 The CLI equivalent is `shepherd run diff <id>`, a thin wrapper that resolves the lane
 and passes the range. The desk gets no second tool: `lane_diff` takes an optional `run`
 argument instead.
+
+As built: the diff read takes `run=<id>` (`DiffRequest.Run`, `lane diff --run N`), which
+the daemon resolves to the run's `start_sha..end_sha`; a run with no recorded end reads
+from its start and includes the worktree. It refuses a run of another lane, a run with no
+start commit, and `run` together with `since` or `until`. The web's run page uses the same
+read with `run=`.
 
 ## How it fits the existing pages and docs
 

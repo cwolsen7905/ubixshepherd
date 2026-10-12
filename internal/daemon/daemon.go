@@ -530,6 +530,7 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		commits := s.commits.Times(ctx, rp.Path, lanes)
+		heads := fold.BranchHeads(ctx, rp.Path, lanes)
 		for _, l := range lanes {
 			v := api.LaneView{Lane: l, Repo: rp.Name}
 			// The store holds the last the forge said, so an unreachable forge keeps it.
@@ -543,6 +544,10 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 				lf = store.LaneForge{}
 			}
 			v.LastActivity, v.LastActivityBy = laneActivity(l, active[l.ID], commits[l.ID], lf)
+			if l.State == store.LaneOpen {
+				b := s.Fold.GateBadge(ctx, l.ID, heads[l.ID])
+				v.Gate = &b
+			}
 			out = append(out, v)
 		}
 	}

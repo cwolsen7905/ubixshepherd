@@ -236,6 +236,13 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		return errUsage
 	}
 	sub := args[0]
+	if sub == "diff" {
+		// shepherd run diff <id> [--files | --file PATH] [--json]: the run's own range.
+		if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+			return errUsage
+		}
+		return laneDiff(ctx, env, append([]string{"--run", args[1]}, args[2:]...))
+	}
 	fs := flags("run "+sub, env)
 	followFlag := fs.Bool("f", false, "follow until the run ends")
 	all := fs.Bool("all", false, "every lane's runs, not only this lane's")

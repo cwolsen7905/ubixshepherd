@@ -331,6 +331,18 @@ var migrations = []string{
 		done_at TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX next_items_state ON next_items (state, rank);`,
+	// What Shepherd's own gate run said about one commit of a lane, so "the gate passed on
+	// this head" can be told from a pass on an earlier commit. source is who ran it.
+	`CREATE TABLE gate_results (
+		id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		lane_id INTEGER NOT NULL REFERENCES lanes(id),
+		sha     TEXT NOT NULL,
+		gate    TEXT NOT NULL,
+		passed  INTEGER NOT NULL,
+		at      TEXT NOT NULL,
+		source  TEXT NOT NULL
+	);
+	CREATE INDEX gate_results_lane ON gate_results (lane_id, id);`,
 }
 
 // DB is a SQLite-backed store.Store.

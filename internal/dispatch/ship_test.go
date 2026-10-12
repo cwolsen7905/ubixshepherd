@@ -330,3 +330,37 @@ func TestShipPostsGateKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestShipRecordsTheGateOnTheCommit(t *testing.T) {
+	ctx := context.Background()
+	f, _ := shipFixture(t, "ok", pushes)
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	f.wait(t, run.ID)
+	waitFeed(t, f, "opened !42 for you to review")
+	head, err := exec.Command("git", "-C", f.lane.Worktree, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := f.st.GateResultFor(ctx, f.lane.ID, strings.TrimSpace(string(head)))
+	if err != nil || g == nil {
+		t.Fatalf("no record for the head: %v %v", g, err)
+	}
+	if !g.Passed || g.Gate != "true" || g.Source != store.GateSourceShip {
+		t.Errorf("record = %+v", g)
+	}
+}
+
+func TestShipRecordsAFailedGate(t *testing.T) {
+	ctx := context.Background()
+	f, _ := shipFixture(t, "ok", strings.Replace(pushes, `gate: "true"`, `gate: "exit 1"`, 1))
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	f.wait(t, run.ID)
+	waitFeed(t, f, "asked claude to fix it")
+	g, err := f.st.LastGateResult(ctx, f.lane.ID)
+	if err != nil || g == nil {
+		t.Fatalf("no record: %v %v", g, err)
+	}
+	if g.Passed || g.SHA == "" {
+		t.Errorf("record = %+v", g)
+	}
+}

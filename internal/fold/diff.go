@@ -45,6 +45,9 @@ type DiffRequest struct {
 	File  string `json:"file,omitempty"`
 	Since string `json:"since,omitempty"`
 	Until string `json:"until,omitempty"`
+	// Run reads one run's own range, its start_sha..end_sha (a run still going or with no
+	// recorded end reads from its start, with the worktree). It excludes Since and Until.
+	Run int64 `json:"run,omitempty"`
 }
 
 // DiffCommit is one commit of a lane.
@@ -86,6 +89,8 @@ type LaneDiff struct {
 	Head      string    `json:"head"`
 	Mode      string    `json:"mode"`
 	ReadAt    time.Time `json:"read_at"`
+	// Gate is what Shepherd knows about its gate on Head, whatever the range read.
+	Gate store.GateBadge `json:"gate"`
 
 	// Commits are the newest DiffMaxCommits, oldest first; CommitsTotal is all of them.
 	Commits      []DiffCommit `json:"commits"`
@@ -138,6 +143,22 @@ func (f *Fold) Diff(ctx context.Context, laneID int64, req DiffRequest) (res Lan
 	if mode == DiffFile && req.File == "" {
 		return LaneDiff{}, refuse("file mode needs a path")
 	}
+	if req.Run != 0 {
+		if req.Since != "" || req.Until != "" {
+			return LaneDiff{}, refuse("pass a run or a since/until range, not both")
+		}
+		run, err := f.Store.Run(ctx, req.Run)
+		if err != nil {
+			return LaneDiff{}, err
+		}
+		if run.LaneID != lane.ID {
+			return LaneDiff{}, refuse("run %d belongs to another lane, not %s", run.ID, lane.Name)
+		}
+		if run.StartSHA == "" {
+			return LaneDiff{}, refuse("run %d recorded no start commit, so it has no range of its own", run.ID)
+		}
+		req.Since, req.Until = run.StartSHA, run.EndSHA
+	}
 	for _, s := range []string{req.Since, req.Until} {
 		if s != "" && !shaRe.MatchString(s) {
 			return LaneDiff{}, refuse("%q is not a commit SHA", s)
@@ -157,6 +178,7 @@ func (f *Fold) Diff(ctx context.Context, laneID int64, req DiffRequest) (res Lan
 	if d.Head, err = git.Run(ctx, wt, "rev-parse", "HEAD"); err != nil {
 		return d, err
 	}
+	d.Gate = f.GateBadge(ctx, lane.ID, d.Head)
 	d.MergeBase, _ = git.Run(ctx, wt, "merge-base", d.BaseRef, "HEAD")
 
 	// The committed side: the base to HEAD (or a run's own range).
@@ -424,4 +446,41 @@ func baseRef(ctx context.Context, lane store.Lane) string {
 		return "origin/" + lane.Base
 	}
 	return lane.Base
+}
+
+// GateBadge is the lane's gate badge for the commit head: passed or failed when Shepherd
+// ran the gate on exactly that commit, stale when its newest record is for another, and
+// not_run for none. A store error reads as not_run: the badge never claims a pass.
+func (f *Fold) GateBadge(ctx context.Context, laneID int64, head string) store.GateBadge {
+	var onHead *store.GateResult
+	if head != "" {
+		onHead, _ = f.Store.GateResultFor(ctx, laneID, head)
+	}
+	last := onHead
+	if last == nil {
+		last, _ = f.Store.LastGateResult(ctx, laneID)
+	}
+	return store.BadgeFor(head, onHead, last)
+}
+
+// BranchHeads returns the commit each lane's branch is at, for the lanes whose branch
+// exists in the repo (a lane's worktree is on its branch), from one read of the refs.
+func BranchHeads(ctx context.Context, repoPath string, lanes []store.Lane) map[int64]string {
+	out := map[int64]string{}
+	refs, err := git.Run(ctx, repoPath, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads")
+	if err != nil {
+		return out
+	}
+	sha := map[string]string{}
+	for _, line := range strings.Split(refs, "\n") {
+		if name, id, ok := strings.Cut(line, " "); ok {
+			sha[name] = id
+		}
+	}
+	for _, l := range lanes {
+		if id, ok := sha["refs/heads/"+l.Branch]; ok {
+			out[l.ID] = id
+		}
+	}
+	return out
 }

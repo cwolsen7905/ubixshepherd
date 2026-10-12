@@ -71,7 +71,7 @@ func commands() []command {
 			"shepherd repo list [--json] | add <path|name>... [--workspace W] | remove <name> [--why TEXT] [--workspace W] | scan [workspace] [--json]", runRepo},
 		{"lane", "Open, list and close lanes: a branch and worktree per stream of work",
 			"shepherd lane open <name> --scope '<globs>' [--branch B] [--repo R] [--item N] | list [--all] [--json] | close [name] [--force] | scope [lane] --add G --remove G | review [--repo R] [--only V] | diff [lane] [--repo R] [--stat | --files | --file P] [--since SHA --until SHA] [--json] | ship [lane] [--repo R] | run [lane] --agent claude|copilot|cursor|opencode [--model M] [--effort E] [--new] [--detach] \"task\"", runLane},
-		{"run", "Agent runs: list, show, follow, continue, attach to, stop and dismiss them; see why one failed and fix it", "shepherd run list [--all] | show <id> | logs [-f] <id> | continue <id> \"message\" [--model M] [--effort E] [--detach] | attach <id> | stop <id> | dismiss <id> | undismiss <id> | why <id> | fix <id> <action> [--agent A] [--model M]", runRun},
+		{"run", "Agent runs: list, show, follow, continue, attach to, stop and dismiss them; see why one failed and fix it", "shepherd run list [--all] | show <id> | logs [-f] <id> | continue <id> \"message\" [--model M] [--effort E] [--detach] | attach <id> | stop <id> | diff <id> [--files | --file P] | dismiss <id> | undismiss <id> | why <id> | fix <id> <action> [--agent A] [--model M]", runRun},
 		{"models", "Which models each agent may run in a repo, what each is for, and the default model and effort",
 			"shepherd models [--repo R] [--agent A] [--json]", runModels},
 		{"stats", "Tokens, context sizes and cost over a range of days: by agent and model, by lane, and the front desk",

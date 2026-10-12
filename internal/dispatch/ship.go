@@ -339,6 +339,7 @@ func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	r.feed(ctx, store.FeedGate, lane.ID, "running the gate `%s` in lane %s before pushing", gate, lane.Name)
+	head, clean := gateTarget(ctx, lane)
 	err := cmd.Run()
 	if err != nil {
 		code = -1
@@ -355,13 +356,30 @@ func (r *Runner) gate(ctx context.Context, lane store.Lane, gate, logName string
 		lines = lines[len(lines)-60:]
 	}
 	tail = strings.Join(lines, "\n")
-	if ctx.Err() != nil {
+	timedOut := ctx.Err() != nil
+	if clean {
+		// The record outlives the run's own context: a cancelled run still ran the gate.
+		r.Store.AddGateResult(context.WithoutCancel(ctx), store.GateResult{LaneID: lane.ID, SHA: head, Gate: redact.String(gate),
+			Passed: err == nil && !timedOut, Source: store.GateSourceShip})
+	}
+	if timedOut {
 		return false, tail + "\n(the gate timed out after " + GateTimeout.String() + ")", logPath, code
 	}
 	if err == nil {
 		r.feed(ctx, store.FeedGate, lane.ID, "gate `%s` passed in lane %s", gate, lane.Name)
 	}
 	return err == nil, tail, logPath, code
+}
+
+// gateTarget is the commit a gate run checks, and whether the worktree is exactly that
+// commit: a run over uncommitted changes says nothing about the head, so it is not recorded.
+func gateTarget(ctx context.Context, lane store.Lane) (head string, clean bool) {
+	head, err := git.Run(ctx, lane.Worktree, "rev-parse", "HEAD")
+	if err != nil || head == "" {
+		return "", false
+	}
+	dirty, err := git.Dirty(ctx, lane.Worktree)
+	return head, err == nil && dirty == ""
 }
 
 // gateFailed hands the gate's failure back to the agent while tries remain.
