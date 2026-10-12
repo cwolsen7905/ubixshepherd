@@ -19,6 +19,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/workspace"
 )
 
 // MaxFixTries is how many times Shepherd hands a failed pipeline back to the lane's agent
@@ -117,7 +118,9 @@ func (w *Watcher) Check(ctx context.Context) {
 		if err != nil {
 			continue
 		}
-		for _, repo := range repos {
+		for i := range repos {
+			repos[i] = w.refreshRemote(ctx, ws, repos[i])
+			repo := repos[i]
 			lanes, err := w.Store.Lanes(ctx, repo.ID)
 			if err != nil || len(lanes) == 0 {
 				continue
@@ -150,6 +153,26 @@ func (w *Watcher) Check(ctx context.Context) {
 		}
 		w.checkFollows(ctx, repos)
 	}
+}
+
+// refreshRemote re-reads a repo's origin URL and saves it when it changed, so a repo
+// whose origin was repointed after it was registered is polled at its current host. If
+// git cannot say, the saved value stands. It returns the repo as it now is.
+func (w *Watcher) refreshRemote(ctx context.Context, ws store.Workspace, repo store.Repo) store.Repo {
+	now, err := workspace.Remote(ctx, repo.Path)
+	if err != nil || now == "" || now == repo.Remote {
+		return repo
+	}
+	old := repo.Remote
+	repo.Remote = now
+	if _, err := w.Store.SaveWorkspace(ctx, ws, []store.Repo{repo}); err != nil {
+		w.Log.Error("watch: save remote", "repo", repo.Name, "err", err)
+		repo.Remote = old
+		return repo
+	}
+	delete(w.skipped, repo.ID)
+	w.Log.Info("watch: repo origin changed", "repo", repo.Name, "from", redact.String(old), "to", redact.String(now))
+	return repo
 }
 
 func (w *Watcher) forgeFor(repo store.Repo) (forge.Forge, error) {

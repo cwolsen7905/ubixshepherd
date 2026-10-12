@@ -92,11 +92,21 @@ func Scan(ctx context.Context, root string) ([]Found, error) {
 	return found, nil
 }
 
+// Remote reads a repo's origin URL as git has it now. It is how the saved value is kept
+// current when someone repoints origin; an error means git could not say, and the caller
+// keeps what it had.
+func Remote(ctx context.Context, repoPath string) (string, error) {
+	out, err := exec.CommandContext(ctx, "git", "-C", repoPath, "config", "--get", "remote.origin.url").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func inspect(ctx context.Context, rel, p string) Found {
 	f := Found{Name: filepath.ToSlash(rel), Path: p}
-	out, err := exec.CommandContext(ctx, "git", "-C", p, "config", "--get", "remote.origin.url").Output()
-	if err == nil {
-		f.Remote = strings.TrimSpace(string(out))
+	if remote, err := Remote(ctx, p); err == nil {
+		f.Remote = remote
 	}
 	for _, m := range markers {
 		if _, err := os.Stat(filepath.Join(p, m.file)); err == nil {
