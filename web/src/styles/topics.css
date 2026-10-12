@@ -1,0 +1,27 @@
+/* The topics section of the chat rail (docs/topics.md), under the backlog. */
+.chat-layout .chat-rail { grid-column: 2; grid-row: 1; align-self: start; position: sticky; top: calc(var(--bar-h) + 8px); max-height: calc(100vh - var(--bar-h) - 24px); overflow-y: auto; }
+.chat-layout .chat-rail .backlog { position: static; max-height: none; overflow: visible; grid-column: auto; }
+.topics { margin-top: 12px; padding-left: 12px; border-left: 1px solid var(--rule); font-size: var(--t-sm); }
+.topics-head { margin: 0 0 6px; font-size: inherit; display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.topics-title { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: var(--t-xs); color: var(--muted); }
+.topics-counts { font-weight: 600; }
+.topics-rows { list-style: none; margin: 0; padding: 0; }
+.topic-row { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; border-top: 1px solid var(--rule); }
+.topic-row.is-active { border-left: 3px solid var(--accent, currentColor); padding-left: 6px; }
+.topic-row.is-cleared { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.topic-main { display: flex; flex-direction: column; text-align: left; padding: 0; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.topic-title { font-weight: 600; overflow-wrap: anywhere; }
+.topic-meta, .topic-note { font-size: var(--t-xs); }
+.topic-actions { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: var(--t-xs); }
+.topic-detail { font-size: var(--t-xs); }
+.topic-detail ul { margin: 4px 0; padding-left: 16px; }
+.topic-merge { display: flex; gap: 6px; align-items: baseline; }
+.topic-rename, .topics-new { display: flex; gap: 6px; margin-top: 6px; }
+.topic-rename input, .topics-new input { flex: 1; min-width: 0; font: inherit; }
+.topics-error { margin: 0 0 6px; }
+.topics-cleared { margin-top: 8px; }
+.topic-filter { margin: 0 0 8px; padding: 4px 8px; border-left: 3px solid var(--accent, currentColor); background: var(--rule); font-size: var(--t-sm); }
+@media (max-width: 760px) {
+  .chat-layout .chat-rail { grid-column: 1; position: static; max-height: 50vh; margin-bottom: 8px; }
+  .chat-main { grid-row: 2; }
+}

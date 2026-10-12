@@ -343,6 +343,29 @@ var migrations = []string{
 		source  TEXT NOT NULL
 	);
 	CREATE INDEX gate_results_lane ON gate_results (lane_id, id);`,
+	// Topics: a name for a matter the thread discusses, and links from the things that
+	// belong to it (docs/topics.md). A thing has one link; merged_into keeps an old id
+	// resolving.
+	`CREATE TABLE topics (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		title       TEXT NOT NULL,
+		status      TEXT NOT NULL DEFAULT 'open',
+		summary     TEXT NOT NULL DEFAULT '',
+		source      TEXT NOT NULL,
+		created     TEXT NOT NULL,
+		updated     TEXT NOT NULL,
+		cleared_at  TEXT NOT NULL DEFAULT '',
+		merged_into INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE topic_links (
+		topic_id INTEGER NOT NULL REFERENCES topics(id),
+		kind     TEXT NOT NULL,
+		ref      TEXT NOT NULL,
+		by       TEXT NOT NULL,
+		created  TEXT NOT NULL,
+		PRIMARY KEY (kind, ref)
+	);
+	CREATE INDEX topic_links_topic ON topic_links (topic_id);`,
 	`CREATE TABLE keep_going (
 		workspace_id   INTEGER PRIMARY KEY REFERENCES workspaces(id),
 		on_            INTEGER NOT NULL DEFAULT 0,

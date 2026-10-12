@@ -579,7 +579,7 @@ func (d *Desk) run(t turn) {
 	}
 	d.carry = ""
 	d.mu.Unlock()
-	message = d.takeActed() + message
+	message = d.takeActed() + d.topicHead(bg) + message
 	err = o.Agent.Turn(ctx, Spec{Session: session, New: fresh, Message: message, Dir: d.ws.Path, Model: model,
 		Env: []string{dispatch.EnvToken + "=" + tok, dispatch.EnvURL + "=" + o.Tokens.URL()}, Seed: seed, ToolChars: cfg.ToolOutputCap()}, emit)
 	if rest := strings.TrimSpace(partial.String()); rest != "" {

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { DecisionView, DeskEvent } from '../api/types'
 import { Backlog } from '../components/Backlog'
+import { Topics } from '../components/Topics'
 import { DecisionCard, splitQuestion } from '../components/DecisionCard'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
@@ -8,6 +9,8 @@ import { useNow } from '../hooks'
 import { DRAFT_EVENT, clearDraft, draftKey, prefillDraft, readDraft, writeDraft } from '../model/chatDraft'
 import { backlogItems, threadId } from '../model/backlog'
 import { MARKS } from '../model/marks'
+import { inTopic, memberKeys, readTopicFilter, withTopicFilter, type TopicView } from '../model/topic'
+import { topics as topicsApi } from '../api/client'
 import { href } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type Connection, type DeskSnapshot } from '../state/desk'
@@ -256,7 +259,40 @@ function ChatThread({
   const confirmButton = useRef<HTMLButtonElement>(null)
   const root = useRef<HTMLDivElement>(null)
 
-  const items = useMemo(() => timeline(d.events, live.feed), [d.events, live.feed])
+  const all = useMemo(() => timeline(d.events, live.feed), [d.events, live.feed])
+  // The topic filter is a view over the one thread, kept in the hash so it can be linked
+  // and survives a reload; the desk and history are never filtered.
+  const [topicId, setTopicId] = useState<number | null>(() => readTopicFilter(window.location.hash))
+  const [topic, setTopic] = useState<TopicView | null>(null)
+  useEffect(() => {
+    const onHash = () => setTopicId(readTopicFilter(window.location.hash))
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+  const filterTo = useCallback((id: number | null) => {
+    window.location.hash = withTopicFilter(window.location.hash, id)
+    setTopicId(id)
+  }, [])
+  useEffect(() => {
+    if (topicId === null) return
+    let live = true
+    const read = () =>
+      topicsApi.list(true).then(
+        (l) => live && setTopic(l.topics.find((t) => t.id === topicId) ?? null),
+        () => {},
+      )
+    void read()
+    const id = window.setInterval(() => void read(), 15_000)
+    return () => {
+      live = false
+      window.clearInterval(id)
+    }
+  }, [topicId])
+  const items = useMemo(() => {
+    if (topicId === null || topic === null || topic.id !== topicId) return all
+    const members = memberKeys(topic)
+    return all.filter((it) => inTopic(it, members))
+  }, [all, topic, topicId])
   const open = useMemo(() => new Map(live.decisions.map((x) => [x.id, x])), [live.decisions])
   // Open decisions whose "asked" row is not in the loaded thread still wait on the person.
   const shown = new Set(items.flatMap((it) => (it.type === 'feed' && it.f.event === 'decision_asked' ? [it.f.ref ?? 0] : [])))
@@ -360,14 +396,25 @@ function ChatThread({
       )}
 
       <div className="chat-layout">
-        <Backlog
-          items={backlog}
-          now={now}
-          spend={live.spend}
-          onJump={jump}
-          onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
-        />
+        <div className="chat-rail">
+          <Backlog
+            items={backlog}
+            now={now}
+            spend={live.spend}
+            onJump={jump}
+            onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
+          />
+          <Topics active={topicId} now={now} onFilter={filterTo} />
+        </div>
         <div className="chat-main">
+        {topicId !== null && (
+          <p className="topic-filter" role="status">
+            Showing: {topic && topic.id === topicId ? topic.title : `topic ${topicId}`}, {items.length} {items.length === 1 ? 'row' : 'rows'}.{' '}
+            <button type="button" className="link-button" onClick={() => filterTo(null)}>
+              Show all
+            </button>
+          </p>
+        )}
         {d.more && (
           <p className="chat-earlier">
             <button type="button" className="link-button" onClick={() => void thread.loadEarlier()}>

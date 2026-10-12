@@ -3,6 +3,7 @@
 // when the daemon serves the app the browser holds a session cookie (from the link
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
+import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
   ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneDiff, LaneRecord, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
@@ -179,6 +180,14 @@ export const config = {
   get: () => get<ConfigDoc>('/v1/config'),
   preview: (change: ConfigChange) => post<ConfigPreview>('/v1/config/preview', change),
   save: (change: ConfigChange) => put<ConfigSaved>('/v1/config', change),
+}
+
+/** Conversation topics: the matters the thread is about. Renaming, merging and clearing are the person's click only. */
+export const topics = {
+  /** all adds cleared topics. */
+  list: (all = false) => get<TopicList>(all ? '/v1/topics?all=1' : '/v1/topics'),
+  add: (title: string) => post<TopicView>('/v1/topics', { title }),
+  update: (id: number, body: TopicUpdateBody) => patch<TopicView>(`/v1/topics/${id}`, body),
 }
 
 /** The next-up list: work planned but not being acted on. Changing a state or the order is the person's click only. */

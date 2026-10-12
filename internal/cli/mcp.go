@@ -446,6 +446,117 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name: "topic_list",
+			Description: "The conversation topics: the matters the thread is about, most attention first, each with what waits on the person and its linked lanes, items and decisions. " +
+				"Prefer an existing topic over a new one.",
+			InputSchema: obj(map[string]any{"all": map[string]any{"type": "boolean", "description": "Include cleared topics."}}),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"topic", "list"}
+				if all, _ := a["all"].(bool); all {
+					out = append(out, "--all")
+				}
+				return out, nil
+			},
+		},
+		{
+			Name:        "topic_show",
+			Description: "One topic with its links and what waits on the person.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"topic", "show", fmt.Sprint(int64(id))}, nil
+			},
+		},
+		{
+			Name: "topic_set",
+			Description: "Name the matter of the turn and tie work to it. Pass id to use an existing topic, or title to make one (at most one new topic per turn; a title that repeats an open topic is refused with its id). " +
+				"Pass one of lane, item, run, decision, request or turn to tie that thing to the topic. You cannot move a thing that is already in another topic: that is the person's.",
+			InputSchema: obj(map[string]any{
+				"id":       map[string]any{"type": "integer", "description": "An existing topic."},
+				"title":    map[string]any{"type": "string", "description": "A new topic's title: a few words, at most 80 characters."},
+				"summary":  map[string]any{"type": "string", "description": "One line saying what it is about."},
+				"lane":     map[string]any{"type": "integer", "description": "A lane's id."},
+				"item":     map[string]any{"type": "integer", "description": "A next-up item's id."},
+				"run":      map[string]any{"type": "integer"},
+				"decision": map[string]any{"type": "integer"},
+				"request":  map[string]any{"type": "integer"},
+				"turn":     map[string]any{"type": "integer", "description": "A desk turn's id."},
+			}),
+			args: func(a map[string]any) ([]string, error) {
+				var out []string
+				switch id, hasID := a["id"].(float64); {
+				case hasID:
+					out = []string{"topic", "set", fmt.Sprint(int64(id))}
+				case str(a, "title") != "":
+					out = []string{"topic", "new", str(a, "title")}
+				default:
+					return nil, fmt.Errorf("pass id or title")
+				}
+				if v := str(a, "summary"); v != "" {
+					out = append(out, "--summary", v)
+				}
+				for _, k := range []string{"lane", "item", "run", "decision", "request", "turn"} {
+					if v, ok := a[k].(float64); ok {
+						out = append(out, "--"+k, fmt.Sprint(int64(v)))
+					}
+				}
+				return out, nil
+			},
+		},
+		{
+			Name:        "topic_rename",
+			Description: "Rename a topic. The person's call: only in a turn they started, with their own words.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}, "title": map[string]any{"type": "string"}}, "id", "title"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok || str(a, "title") == "" {
+					return nil, fmt.Errorf("id and title are required")
+				}
+				return []string{"topic", "rename", fmt.Sprint(int64(id)), str(a, "title")}, nil
+			},
+		},
+		{
+			Name:        "topic_merge",
+			Description: "Merge a topic into another; its links move and its id keeps resolving. The person's call: only in a turn they started, with their own words.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}, "into": map[string]any{"type": "integer"}}, "id", "into"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok1 := a["id"].(float64)
+				into, ok2 := a["into"].(float64)
+				if !ok1 || !ok2 {
+					return nil, fmt.Errorf("id and into must be numbers")
+				}
+				return []string{"topic", "merge", fmt.Sprint(int64(id)), fmt.Sprint(int64(into))}, nil
+			},
+		},
+		{
+			Name: "topic_clear",
+			Description: "Clear a settled topic out of the thread. It folds the rows away and keeps them in history; it closes, cancels and answers nothing, and anything that needs the person stays visible. " +
+				"The person's call: only in a turn they started, with their own words. Never because a lane finished.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"topic", "clear", fmt.Sprint(int64(id))}, nil
+			},
+		},
+		{
+			Name:        "topic_reopen",
+			Description: "Bring a cleared topic back into the thread. The person's call: only in a turn they started.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"topic", "reopen", fmt.Sprint(int64(id))}, nil
+			},
+		},
+		{
 			Name:        "session_list",
 			Description: "Conversations the person had with agents outside Shepherd (adopted Claude Code sessions): id, repo, title, dates, branches. Ask one with session_ask.",
 			InputSchema: obj(map[string]any{}),
