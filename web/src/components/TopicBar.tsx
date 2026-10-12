@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
-import { readFlag, splitTopics, writeFlag, type TopicList, type TopicView } from '../model/topic'
+import { readFlag, splitTopics, topicHueClass, writeFlag, type TopicList, type TopicView } from '../model/topic'
 import '../styles/topics.css'
 
 const POLL = 15_000
@@ -69,7 +69,7 @@ export function TopicBar({
         </button>
         {chips.map((t) => (
           <button
-            key={t.id} type="button" className={`topic-chip${t.waits > 0 ? ' needs-you' : ''}`}
+            key={t.id} type="button" className={`topic-chip ${topicHueClass(t.id)}${t.waits > 0 ? ' needs-you' : ''}`}
             aria-pressed={active === t.id} onClick={() => onFilter(active === t.id ? null : t.id)}
           >
             <span className="topic-chip-title">{t.title}</span>

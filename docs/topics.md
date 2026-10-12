@@ -8,7 +8,7 @@ reopening with the needs-the-person flag (section 4), and the Topics section on 
 rail with the thread filter. Not built: the `topic` feed kind, search by title and
 `shepherd topic backfill` (sections 3 and 6); the terminal dock section and slash commands
 (section 3); a turn-level link, so a desk turn joins a topic only when it is tied by
-hand; the third rail toggle (the section sits under the backlog until the toggle's file is
+hand (the thread shows a pill on such a turn's messages); the third rail toggle (the section sits under the backlog until the toggle's file is
 free); the row chip and "Move to topic" action.
 
 ## The problem
@@ -259,3 +259,13 @@ Four merge requests, each green alone:
   Everything works untouched: General is the default, and the tab is optional.
 - **Filter mistaken for loss.** The filtered header says what is shown and offers "Show
   all"; the desk and history are never filtered.
+
+## The topic pill
+
+Each message of a turn tied to a topic (`turn` link) carries a small pill with the topic's
+title, truncated, with the full title on hover. A turn with no topic has none. Clicking it
+filters the thread to the topic, as the bar's chip does, and clicking the active one lifts
+the filter. The web reads it from the topic list and the event's `turn`, so the daemon
+needs no new field. A topic's colour is one of eight hues chosen by its id, so the pill,
+the bar chip and the rail row always match; text stays in the ink colour, so the hue is
+not what makes it readable.

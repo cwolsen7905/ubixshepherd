@@ -496,3 +496,37 @@ describe('topic bar and rail', () => {
     await waitFor(() => expect(within(bar).getByRole('button', { name: 'release' })).toHaveAttribute('aria-pressed', 'true'))
   })
 })
+
+describe('topic pill', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    window.location.hash = ''
+  })
+
+  it('names the topic on a tied turn, not on an untied one, and a click filters the thread', async () => {
+    window.location.hash = '#/chat'
+    const user = userEvent.setup()
+    vi.spyOn(client.topics, 'list').mockResolvedValue({
+      topics: [{
+        id: 3, title: 'the release of v0.3', status: 'open', source: 'desk', created: '', updated: '', activity: new Date().toISOString(),
+        waits: 0, links: [{ kind: 'turn', ref: '1', by: 'desk', time: '' }],
+      }],
+    })
+    const events = [
+      deskEvent({ seq: 1, kind: 'user', text: 'tied question', turn: 1 }),
+      deskEvent({ seq: 2, kind: 'assistant', text: 'tied answer', turn: 1 }),
+      deskEvent({ seq: 3, kind: 'user', text: 'loose question', turn: 3 }),
+      deskEvent({ seq: 4, kind: 'assistant', text: 'loose answer', turn: 3 }),
+    ]
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }) }))
+    const log = screen.getByRole('log')
+    const pills = await within(log).findAllByRole('button', { name: 'Topic: the release of v0.3' })
+    expect(pills).toHaveLength(2)
+    expect(pills[0]).toHaveAttribute('title', 'the release of v0.3')
+
+    await user.click(pills[1]!)
+    expect(window.location.hash).toBe('#/chat?topic=3')
+    await waitFor(() => expect(screen.queryByText('loose answer')).not.toBeInTheDocument())
+    expect(screen.getByText('tied answer')).toBeInTheDocument()
+  })
+})

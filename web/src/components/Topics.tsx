@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
 import { since } from '../format'
-import { kindName, readFlag, splitTopics, topicState, writeFlag, type TopicList, type TopicUpdateBody, type TopicView } from '../model/topic'
+import { kindName, readFlag, splitTopics, topicHueClass, topicState, writeFlag, type TopicList, type TopicUpdateBody, type TopicView } from '../model/topic'
 import { href } from '../router'
 import '../styles/topics.css'
 
@@ -169,7 +169,7 @@ function TopicRow({
   const [name, setName] = useState(t.title)
   const state = topicState(t)
   return (
-    <li className={`topic-row${active ? ' is-active' : ''}${t.waits > 0 ? ' needs-you' : ''}`}>
+    <li className={`topic-row ${topicHueClass(t.id)}${active ? ' is-active' : ''}${t.waits > 0 ? ' needs-you' : ''}`}>
       {renaming ? (
         <form
           className="topic-rename"

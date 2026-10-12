@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadItem } from '../state/desk'
-import { ACTIVE_WINDOW_MS, activeTopics, isActive, splitTopics, feedRefKind, inTopic, memberKeys, readTopicFilter, topicState, withTopicFilter, type TopicView } from './topic'
+import { ACTIVE_WINDOW_MS, activeTopics, isActive, splitTopics, feedRefKind, inTopic, memberKeys, readTopicFilter, topicState, withTopicFilter, topicByTurn, topicHue, TOPIC_HUES, topicHueClass, type TopicView } from './topic'
 
 const topic = (over: Partial<TopicView> = {}): TopicView => ({
   id: 1, title: 'release', status: 'open', source: 'desk', created: '', updated: '', activity: '', waits: 0, links: [], ...over,
@@ -98,5 +98,29 @@ describe('active and idle', () => {
     const sel = splitTopics(list, now, 3)
     expect(sel.active.map((x) => x.id)).toEqual([1, 3, 5])
     expect(sel.idle.map((x) => x.id)).toEqual([2])
+  })
+})
+
+describe('topic colour and turn lookup', () => {
+  it('gives a topic one stable hue, in range, from its id', () => {
+    for (const id of [1, 2, 7, 8, 9, 1000]) {
+      expect(topicHue(id)).toBe(topicHue(id))
+      expect(topicHue(id)).toBeGreaterThanOrEqual(0)
+      expect(topicHue(id)).toBeLessThan(TOPIC_HUES)
+    }
+    expect(topicHue(1)).not.toBe(topicHue(2))
+    expect(topicHueClass(3)).toBe('topic-hue-3')
+  })
+
+  it('maps a turn to its topic, cleared ones too, and leaves untied turns out', () => {
+    const link = (ref: string, kind: 'turn' | 'lane' = 'turn') => ({ kind, ref, by: 'desk' as const, time: '' })
+    const m = topicByTurn([
+      topic({ id: 1, links: [link('5'), link('9', 'lane')] }),
+      topic({ id: 2, status: 'cleared', links: [link('6')] }),
+    ])
+    expect(m.get(5)?.id).toBe(1)
+    expect(m.get(6)?.id).toBe(2)
+    expect(m.has(9)).toBe(false)
+    expect(m.has(7)).toBe(false)
   })
 })
