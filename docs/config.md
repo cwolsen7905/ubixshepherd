@@ -35,6 +35,21 @@ or a SIGHUP) applies a change to the next check.
 one session. The daily budget is `daemon.budget`: crossing it turns the mode off when the
 budget's cap is hard.
 
+## Update
+
+The release check (see [update-check.md](update-check.md)): the daemon asks GitHub about
+once a day whether a newer release exists and shows a notice you can dismiss. It only tells
+you; it installs nothing. The settings are in the `update:` section, and a reload
+(`shepherd daemon reload` or a SIGHUP) applies a change.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `update.check` | `true` | Turns the check on or off. `false` stops the daemon from calling GitHub. |
+| `update.channel` | `beta` | `beta` counts every release, pre-releases included; `stable` only full releases. |
+
+`SHEPHERD_NO_UPDATE_CHECK=1` in the daemon's environment turns the check off regardless of
+the config.
+
 ## Projects and the `repos:` section
 
 A project's `repos:` lists repo names; each name need not also appear under the top-level
