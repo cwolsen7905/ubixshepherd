@@ -109,6 +109,10 @@ export interface LaneView extends Lane {
   mr_url?: string
   pipeline?: number
   pipeline_status?: PipelineStatus
+  /** The open merge request has an approval, as of the last forge poll. */
+  approved?: boolean
+  /** The status of the head pipeline's require-approval job; absent when it has none. */
+  require_approval?: string
   /**
    * The latest of the lane's run, commit, decision, request, merge request and pipeline
    * times, with its creation as the floor; last_activity_by says which. The forge's times
