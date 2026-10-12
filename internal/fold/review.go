@@ -114,16 +114,27 @@ func (f *Fold) review(ctx context.Context, repoID int64, only string, fetch bool
 			continue
 		}
 		r := Review{Branch: wt.Branch, Worktree: canon}
+		var running *store.Run
 		if l, ok := laneAt[canon]; ok {
 			r.Lane = l.Name
+			if runs, _ := f.Store.Runs(ctx, l.ID, store.RunRunning, 1); len(runs) > 0 {
+				running = &runs[0]
+			}
 		}
-		f.judge(ctx, repo, target, fg, convs, logText, wt, &r)
+		f.judge(ctx, repo, target, fg, convs, logText, wt, running, &r)
 		out = append(out, r)
 	}
 	return out, nil
 }
 
-func (f *Fold) judge(ctx context.Context, repo store.Repo, target string, fg forge.Forge, convs []store.Conversation, logText string, wt git.Worktree, r *Review) {
+func (f *Fold) judge(ctx context.Context, repo store.Repo, target string, fg forge.Forge, convs []store.Conversation, logText string, wt git.Worktree, running *store.Run, r *Review) {
+	// An agent at work in the lane means it is not finished, whatever git shows: a
+	// stopped run followed by a running continuation is still running.
+	if running != nil {
+		r.Verdict, r.Why = Live, fmt.Sprintf("run %d is running in it", running.ID)
+		r.Evidence = append(r.Evidence, fmt.Sprintf("run %d (%s) is running", running.ID, running.Agent))
+		return
+	}
 	if _, err := os.Stat(wt.Path); err != nil {
 		r.Verdict, r.Why = Finished, "the worktree is gone from disk; git still lists it (git worktree prune clears it)"
 		return

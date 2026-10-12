@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/forge"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // commitAt commits a file in dir with an author and committer date.
@@ -125,5 +126,45 @@ func TestReviewIgnoresARootCommit(t *testing.T) {
 		if r.Branch == "rooted" && r.Verdict != Finished {
 			t.Errorf("a root-commit-only branch = %s (%s)", r.Verdict, r.Why)
 		}
+	}
+}
+
+// A stopped run followed by a running continuation in the same lane is not finished,
+// even when every change is in the base.
+func TestReviewRunningRunIsNotFinished(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	lane := f.open("feat/running")
+	verdict := func() Review {
+		t.Helper()
+		r, err := f.fold.ReviewLane(ctx, lane.ID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if r := verdict(); r.Verdict != Finished {
+		t.Fatalf("no runs: %s (%s), want finished", r.Verdict, r.Why)
+	}
+	first, err := f.fold.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", Prompt: "x", State: store.RunStopped, Log: "l", Session: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := verdict(); r.Verdict != Finished {
+		t.Fatalf("stopped run only: %s (%s), want finished", r.Verdict, r.Why)
+	}
+	next, err := f.fold.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", Prompt: "y", State: store.RunRunning, Log: "l", Session: "s", Parent: first.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := verdict(); r.Verdict != Live || r.InBase || !strings.Contains(r.Why, "running") {
+		t.Fatalf("running continuation: %+v, want live", r)
+	}
+	next.State = store.RunSucceeded
+	if err := f.fold.Store.UpdateRun(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if r := verdict(); r.Verdict != Finished {
+		t.Fatalf("run succeeded: %s (%s), want finished", r.Verdict, r.Why)
 	}
 }
