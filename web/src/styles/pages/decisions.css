@@ -1,0 +1,32 @@
+/* Decisions: the question is the headline; the options are the person's keys. */
+.decision {
+  display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr);
+  padding: var(--s-3) 0 var(--s-4); border-top: 1px solid color-mix(in srgb, var(--lantern) 30%, transparent);
+}
+.decision .glyph { font-size: var(--t-lg); line-height: 1.6; }
+.decision.is-focused { background: linear-gradient(to right, var(--lantern-wash), transparent 70%); }
+.decision-body { max-width: var(--measure-read); }
+.decision-meta { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); margin: 0; font-size: var(--t-sm); color: var(--muted); }
+.decision-q { margin: var(--s-1) 0 0.375rem; font-size: var(--t-lg); font-weight: 600; line-height: 1.35; }
+.decision-answer { border: 0; margin: 0; padding: 0; min-width: 0; }
+.options { list-style: none; margin: 0.375rem 0 var(--s-3); padding: 0; display: flex; flex-direction: column; gap: var(--s-1); }
+.option {
+  display: flex; align-items: baseline; gap: 0.625rem; width: 100%;
+  padding: 0.375rem 0.625rem; text-align: left; cursor: pointer;
+  background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius);
+}
+.option:hover { border-color: var(--muted); }
+.option[aria-pressed="true"] { border-color: var(--lantern); box-shadow: inset 3px 0 0 var(--lantern); }
+.option-text { flex: 1; white-space: pre-wrap; }
+.option-rec { font-size: var(--t-xs); color: var(--lantern-ink); font-weight: 600; }
+.option-rec::before { content: "◂ "; }
+.own textarea {
+  width: 100%; resize: vertical; padding: 0.375rem 0.625rem; min-height: 2.25rem;
+  background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius);
+}
+.send { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-2); }
+.decision-done { margin: var(--s-2) 0 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--s-1); }
+.decision-done .glyph { width: auto; margin-right: var(--s-1); }
+.answered { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
+.answered li { display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr); padding: var(--s-2) 0; border-top: 1px solid var(--rule); max-width: var(--measure-read); }
+

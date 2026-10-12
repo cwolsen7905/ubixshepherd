@@ -1,0 +1,7 @@
+/* Pages other than the board: a readable column on the same rail. */
+.page { max-width: var(--measure-page); margin-left: var(--page-margin-left); margin-right: auto; padding: 0 var(--pad); }
+.page-head { margin: var(--s-2) 0 var(--s-5); padding-left: var(--gutter); }
+.page-head h1 { margin: 0; font-size: var(--t-xl); font-weight: 600; letter-spacing: -0.01em; }
+.page-sub { margin: var(--s-1) 0 0; color: var(--muted); max-width: 72ch; }
+.page-foot { padding-left: var(--gutter); margin-top: var(--s-5); }
+
