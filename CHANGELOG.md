@@ -9,6 +9,15 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Added
+
+- **`lane_widen` and `shepherd lane widen`: the desk widens a lane's scope once the person
+  has approved it in a decision.** The tool adds globs to an open lane on the strength of an
+  answered decision raised by one of the lane's runs, only in a turn the person started (the
+  rule `decision_answer` follows). A glob another open lane holds is refused, naming that
+  lane, as for `lane_open`. Each change is logged and put in the feed. This adds the route
+  `POST /v1/lanes/{id}/widen` and the MCP tool `lane_widen`; `lane scope` is unchanged.
+
 ## [0.3.0-beta.1] - 2026-10-11
 
 A beta of uBixShepherd that adds a Next up list for planned work, `lane diff` and a

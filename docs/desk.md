@@ -111,6 +111,24 @@ when that lane's merge request merges. The desk should not invent items from its
 ideas: it puts on the list what the person asked for, and says which items agents or it
 proposed.
 
+## Widening a lane's scope
+
+An agent that needs a file outside its lane's scope asks the person in a decision. Once the
+person has answered, `lane_widen` adds the globs they approved to the open lane, so the lane
+does not have to be closed and reopened. The tool maps onto `shepherd lane widen <lane>
+--decision N --add GLOB...`, which calls `POST /v1/lanes/{id}/widen`.
+
+| Check | Refusal |
+|---|---|
+| The desk's token is for a turn the person started (the rule `decision_answer` and `next_update` follow) | 403: the desk may not widen a scope in a turn Shepherd started; an agent's token never reaches the route |
+| `decision` is an answered decision raised by a run of this lane | 409: it is open, or belongs to another lane |
+| No other open lane's scope overlaps the globs (the Fold's lease rule, as for `lane_open`) | The reason names the lane that holds them; nothing changes |
+
+The tool only adds globs; narrowing a scope stays `shepherd lane scope --remove`, the
+operator's. Each widening is logged by the daemon and put in the feed as "lane X scope
+widened by desk: +globs (decision N); scope is now ...". The desk should pass only the
+paths the person's answer approved, and the person can check them against the feed.
+
 ## Settings
 
 ```yaml
