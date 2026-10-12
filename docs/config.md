@@ -17,6 +17,24 @@ See [standards-packs.md](standards-packs.md) for what the fields do.
 | `standards_when` | none | Extra `when` tags active in every lane of the repo. |
 | `autonomy.plan_first` | `true` | The brief tells the agent to post its plan as a decision and wait before changing code. |
 
+## Keep-going
+
+See [keep-going.md](keep-going.md) for the mode. The `keep_going:` section holds its
+limits; a field left out or `0` takes its default, and a reload (`shepherd daemon reload`
+or a SIGHUP) applies a change to the next check.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `cap` | `5` | Dollars the mode may spend after it is turned on. At the cap it turns itself off. |
+| `max_runs` | `2` | Runs that may be running in the workspace while it is on. A start past it is refused. |
+| `idle_hours` | `4` | Hours with nothing started or answered before it turns itself off. |
+| `day_end` | `00:00` | Local time of day it turns itself off, `HH:MM`. `00:00` and `24:00` are midnight. |
+| `lane_starts` | `3` | Autonomous starts a lane may have in a day before it is handed back to the person. |
+
+`shepherd keep-going on --cap USD --runs N --idle HOURS` overrides the first three for
+one session. The daily budget is `daemon.budget`: crossing it turns the mode off when the
+budget's cap is hard.
+
 ## Projects and the `repos:` section
 
 A project's `repos:` lists repo names; each name need not also appear under the top-level

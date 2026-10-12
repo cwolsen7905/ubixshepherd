@@ -82,6 +82,8 @@ func commands() []command {
 			"shepherd fold import [--repo R] [--file F] [--adopt BRANCH] [--apply] | view [--repo R] [--write] | retire <worktree>... [--repo R] | gc [--json]", runFold},
 		{"next", "The next-up list: work that is planned but not being acted on",
 			"shepherd next [list] [--all] [--json] | add \"title\" [--approved] [--repo R] [--plan P] [--lane L] [--note N] | show <id> | approve|defer|drop|done <id> | move <id> top|up|down | link <id> --lane L [--repo R] | update <id> [--title T] [--note N] [--plan P] [--repo R] [--lane L] [--state S] [--move M] | seed [--dry-run]", runNext},
+		{"keep-going", "Let the front desk carry on with what is already approved, within limits, until a decision needs you",
+			"shepherd keep-going on [--cap USD] [--runs N] [--idle HOURS] | off | status   (each takes --json)", runKeepGoing},
 		{"decision", "The questions agents hold for you: list and answer them",
 			"shepherd decision list [--all] | answer <id> \"answer\"", runDecision},
 		{"session", "Conversations had outside Shepherd: adopt, list, reopen and ask them",

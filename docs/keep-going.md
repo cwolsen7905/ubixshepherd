@@ -1,8 +1,10 @@
 # Keep going: a switch that lets the desk carry on
 
 Status: **proposed**, approved in outline by the maintainer (2026-10-11), with the
-defaults in section 4. Nothing is built. Implementation is four merge requests, each its
-own lane (section 7).
+defaults in section 4. Merge request 1 of section 7 (Core) is built: the store, the
+daemon's limits and `Allow`, `GET/POST /v1/keep-going`, `shepherd keep-going` and the
+`keep_going:` config. The desk tool, the web switch and the feed kind are not.
+Implementation is four merge requests, each its own lane (section 7).
 
 ## The problem
 

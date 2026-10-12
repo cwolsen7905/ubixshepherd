@@ -62,6 +62,9 @@ func (h *feedHub) poll() {
 			return
 		}
 		h.last = items[len(items)-1].ID
+		if runEnded(items) {
+			h.s.KeepGoing().EvaluateAll(context.Background())
+		}
 		h.s.desks.Wake(items)
 		h.mu.Lock()
 		close(h.changed)
@@ -71,4 +74,16 @@ func (h *feedHub) poll() {
 			return
 		}
 	}
+}
+
+// runEnded reports whether a run ended among the items: keep-going checks its limits
+// then, as the spend has just changed.
+func runEnded(items []store.FeedItem) bool {
+	for _, it := range items {
+		switch it.Kind {
+		case store.FeedRunEnded, store.FeedRunPassed, store.FeedRunFailed, store.FeedRunInterrupted, store.FeedRunQuota:
+			return true
+		}
+	}
+	return false
 }

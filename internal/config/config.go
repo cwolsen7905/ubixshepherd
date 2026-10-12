@@ -30,6 +30,9 @@ type Config struct {
 	Daemon Daemon `yaml:"daemon" json:"daemon"`
 	Desk   Desk   `yaml:"desk" json:"desk"`
 	Chat   Chat   `yaml:"chat" json:"chat"`
+	// KeepGoing bounds keep-going mode, the switch that lets the front desk act on what
+	// is already approved (docs/keep-going.md).
+	KeepGoing KeepGoing `yaml:"keep_going,omitempty" json:"keep_going"`
 	// Web holds the browser UI's settings; the page reads them from GET /v1/config.
 	Web      Web                `yaml:"web" json:"web"`
 	OpenCode OpenCode           `yaml:"opencode" json:"opencode,omitempty"`
@@ -623,6 +626,7 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	}
 	c.Desk = file.Desk
 	c.Chat = file.Chat
+	c.KeepGoing = file.KeepGoing
 	if file.Web.EditorURL != nil {
 		c.Web = file.Web
 	}
@@ -668,6 +672,7 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("desk.model: %q is not a model name", c.Desk.Model))
 	}
 	errs = append(errs, c.Desk.validate()...)
+	errs = append(errs, c.KeepGoing.validate()...)
 	errs = append(errs, c.Web.validate()...)
 	if !slices.Contains(Caps, c.Daemon.BudgetCapMode()) {
 		errs = append(errs, fmt.Errorf("daemon.budget_cap: %q is not %s", c.Daemon.BudgetCap, strings.Join(Caps, " or ")))
