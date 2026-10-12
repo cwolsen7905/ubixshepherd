@@ -92,6 +92,11 @@ var chatMeta = map[string]fieldMeta{
 	"hyperlinks": {label: "Hyperlinks", help: "auto draws clickable links where the terminal supports them; on or off forces it. Applies to the next shepherd chat.", choices: config.HyperlinkModes},
 }
 
+var updateMeta = map[string]fieldMeta{
+	"check":   {label: "Check for updates", help: "The daemon asks GitHub about once a day whether a newer release exists; it only shows a notice. On unless turned off."},
+	"channel": {label: "Channel", help: "beta counts every release, pre-releases included; stable only full releases.", choices: config.UpdateChannels},
+}
+
 var openCodeMeta = map[string]fieldMeta{
 	"bin":             {label: "Executable", help: "Empty looks on PATH, then in ~/.opencode/bin."},
 	"endpoint":        {label: "Endpoint", help: "Base URL of an OpenAI-compatible model host (an Ollama's http://localhost:11434/v1)."},
@@ -125,6 +130,7 @@ func configSections() []api.ConfigSection {
 		{ID: "desk", Label: "Front desk", Root: []string{"desk"}, Fields: describe(reflect.TypeFor[config.Desk](), deskMeta)},
 		{ID: "keep_going", Label: "Keep going", Root: []string{"keep_going"}, Fields: describe(reflect.TypeFor[config.KeepGoing](), keepGoingMeta)},
 		{ID: "chat", Label: "Chat", Root: []string{"chat"}, Fields: describe(reflect.TypeFor[config.Chat](), chatMeta)},
+		{ID: "update", Label: "Updates", Root: []string{"update"}, Fields: describe(reflect.TypeFor[config.Update](), updateMeta)},
 		{ID: "opencode", Label: "OpenCode", Root: []string{"opencode"}, Fields: describe(reflect.TypeFor[config.OpenCode](), openCodeMeta)},
 		{ID: "web", Label: "Web", Root: []string{"web"}, Fields: describe(reflect.TypeFor[config.Web](), webMeta)},
 		{ID: "defaults", Label: "Defaults", Root: []string{"defaults"}, Fields: describe(reflect.TypeFor[config.Profile](), profileMeta)},

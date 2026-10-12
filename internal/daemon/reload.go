@@ -113,6 +113,12 @@ func configChanges(old, next config.Config) string {
 	if d.LogLevel != n.LogLevel {
 		out = append(out, fmt.Sprintf("daemon.log_level %s to %s", d.LogLevel, n.LogLevel))
 	}
+	if old.Update.Enabled() != next.Update.Enabled() {
+		out = append(out, fmt.Sprintf("update.check %t to %t", old.Update.Enabled(), next.Update.Enabled()))
+	}
+	if old.Update.ChannelName() != next.Update.ChannelName() {
+		out = append(out, fmt.Sprintf("update.channel %s to %s", old.Update.ChannelName(), next.Update.ChannelName()))
+	}
 	if old.Desk.Model != next.Desk.Model {
 		out = append(out, fmt.Sprintf("desk.model %q to %q", old.Desk.Model, next.Desk.Model))
 	}

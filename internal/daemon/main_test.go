@@ -9,5 +9,7 @@ import (
 
 func TestMain(m *testing.M) {
 	git.ClearEnvConfig()
+	// A test never asks GitHub for a release.
+	os.Setenv(NoUpdateCheckEnv, "1")
 	os.Exit(m.Run())
 }
