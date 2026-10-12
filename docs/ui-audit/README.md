@@ -289,6 +289,27 @@ window is wasted. Shots are at 1920 unless noted.
   on the right with requests and recent answers (the same main plus rail shape as the
   lane page); and align the sub-line, the requests block and the card to one measure.
 
+### 13. Decisions: options containing a comma are split into several options (bug)
+
+Reported from live use after the audit; not a layout problem, but it spoils the same page.
+
+- An option such as "Go with the recommended order (1, then 2 and 3 in parallel)" renders
+  as five separate keyed options ("Go with the recommended order (1", "then 2 and 3 in
+  parallel", "then 4", "5", "6)"), and the person's pick records the fragment, not the
+  intended choice.
+- Cause: not in the web UI. The `ask_human` tool passes each option as a `--option` flag
+  (`internal/cli/mcp.go`, the `ask_human` `args`), and `--option` is a `listFlag`
+  (`internal/cli/lane.go:20`), whose `Set` splits every value on commas (it exists for
+  `--scope a,b`). An option with a comma is therefore cut into pieces before it reaches the
+  store.
+- Fix, in `internal/cli`: give `--option` a flag type that keeps the value whole (one value
+  per flag, no comma split), with a test that an option containing commas round-trips. The
+  scope is Go, so it is a separate lane from the UI MRs; it is small and independent of
+  them, and worth doing first because it corrupts answers.
+- Related, in the UI: only options 1 to 9 get a key hint, so the tenth shows without one
+  (visible in the report). Show the hint up to 9 and say so in the sub line, or use
+  letters past 9.
+
 ## The shared fix: one layout and width system
 
 Goal: change a token and every page follows, and no page needs its own `max-width`.
