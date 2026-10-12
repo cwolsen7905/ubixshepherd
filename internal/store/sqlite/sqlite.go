@@ -343,6 +343,25 @@ var migrations = []string{
 		source  TEXT NOT NULL
 	);
 	CREATE INDEX gate_results_lane ON gate_results (lane_id, id);`,
+	`CREATE TABLE keep_going (
+		workspace_id   INTEGER PRIMARY KEY REFERENCES workspaces(id),
+		on_            INTEGER NOT NULL DEFAULT 0,
+		since          TEXT NOT NULL DEFAULT '',
+		by             TEXT NOT NULL DEFAULT '',
+		spent_at_start REAL NOT NULL DEFAULT 0,
+		reason_off     TEXT NOT NULL DEFAULT '',
+		off_at         TEXT NOT NULL DEFAULT '',
+		last_action    TEXT NOT NULL DEFAULT '',
+		cap_usd        REAL NOT NULL DEFAULT 0,
+		max_runs       INTEGER NOT NULL DEFAULT 0,
+		idle_hours     REAL NOT NULL DEFAULT 0
+	);
+	CREATE TABLE keep_going_starts (
+		lane_id INTEGER NOT NULL,
+		day     TEXT NOT NULL,
+		n       INTEGER NOT NULL,
+		PRIMARY KEY (lane_id, day)
+	);`,
 	// Topics: a name for a matter the thread discusses, and links from the things that
 	// belong to it (docs/topics.md). A thing has one link; merged_into keeps an old id
 	// resolving.
@@ -366,25 +385,6 @@ var migrations = []string{
 		PRIMARY KEY (kind, ref)
 	);
 	CREATE INDEX topic_links_topic ON topic_links (topic_id);`,
-	`CREATE TABLE keep_going (
-		workspace_id   INTEGER PRIMARY KEY REFERENCES workspaces(id),
-		on_            INTEGER NOT NULL DEFAULT 0,
-		since          TEXT NOT NULL DEFAULT '',
-		by             TEXT NOT NULL DEFAULT '',
-		spent_at_start REAL NOT NULL DEFAULT 0,
-		reason_off     TEXT NOT NULL DEFAULT '',
-		off_at         TEXT NOT NULL DEFAULT '',
-		last_action    TEXT NOT NULL DEFAULT '',
-		cap_usd        REAL NOT NULL DEFAULT 0,
-		max_runs       INTEGER NOT NULL DEFAULT 0,
-		idle_hours     REAL NOT NULL DEFAULT 0
-	);
-	CREATE TABLE keep_going_starts (
-		lane_id INTEGER NOT NULL,
-		day     TEXT NOT NULL,
-		n       INTEGER NOT NULL,
-		PRIMARY KEY (lane_id, day)
-	);`,
 }
 
 // DB is a SQLite-backed store.Store.
