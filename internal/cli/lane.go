@@ -29,6 +29,18 @@ func (l *listFlag) Set(v string) error {
 	return nil
 }
 
+// textFlag collects a repeatable flag of free text: one value per flag, kept whole, so a
+// comma belongs to the value rather than splitting it. Blank values are dropped.
+type textFlag []string
+
+func (l *textFlag) String() string { return strings.Join(*l, "; ") }
+func (l *textFlag) Set(v string) error {
+	if v = strings.TrimSpace(v); v != "" {
+		*l = append(*l, v)
+	}
+	return nil
+}
+
 func runLane(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
 		return errUsage
