@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { DecisionView, DeskEvent } from '../api/types'
 import { Backlog } from '../components/Backlog'
+import { TopicBar } from '../components/TopicBar'
 import { Topics } from '../components/Topics'
 import { DecisionCard, splitQuestion } from '../components/DecisionCard'
 import { EventGlyph, Glyph } from '../components/Glyph'
@@ -407,6 +408,7 @@ function ChatThread({
           <Topics active={topicId} now={now} onFilter={filterTo} />
         </div>
         <div className="chat-main">
+        <TopicBar active={topicId} onFilter={filterTo} />
         {topicId !== null && (
           <p className="topic-filter" role="status">
             Showing: {topic && topic.id === topicId ? topic.title : `topic ${topicId}`}, {items.length} {items.length === 1 ? 'row' : 'rows'}.{' '}

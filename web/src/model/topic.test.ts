@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ThreadItem } from '../state/desk'
-import { feedRefKind, inTopic, memberKeys, readTopicFilter, topicState, withTopicFilter, type TopicView } from './topic'
+import { activeTopics, feedRefKind, inTopic, memberKeys, readTopicFilter, topicState, withTopicFilter, type TopicView } from './topic'
 
 const topic = (over: Partial<TopicView> = {}): TopicView => ({
   id: 1, title: 'release', status: 'open', source: 'desk', created: '', updated: '', activity: '', waits: 0, links: [], ...over,
@@ -48,5 +48,12 @@ describe('a topic row state', () => {
     expect(topicState(topic({ settled: true }))).toBe('settled?')
     expect(topicState(topic({ status: 'cleared', reopen: true }))).toContain('needs you')
     expect(topicState(topic())).toBe('')
+  })
+})
+
+describe('activeTopics', () => {
+  it('keeps open topics in order and drops cleared ones', () => {
+    const list = [topic({ id: 1 }), topic({ id: 2, status: 'cleared' }), topic({ id: 3 })]
+    expect(activeTopics(list).map((x) => x.id)).toEqual([1, 3])
   })
 })

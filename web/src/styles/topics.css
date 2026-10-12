@@ -25,3 +25,20 @@
   .chat-layout .chat-rail { grid-column: 1; position: static; max-height: 50vh; margin-bottom: 8px; }
   .chat-main { grid-row: 2; }
 }
+
+/* The topic bar: sticky at the top of the thread, chips scroll sideways. */
+.topic-bar { position: sticky; top: var(--bar-h); z-index: 3; margin: 0 0 8px; padding: 6px 0; background: var(--field); border-bottom: 1px solid var(--rule); }
+.topic-bar-strip { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: thin; padding: 2px; }
+.topic-chip {
+  flex: none; display: inline-flex; align-items: baseline; gap: 6px; max-width: 18rem; padding: 3px 10px;
+  font: inherit; font-size: var(--t-sm); color: var(--ink); background: var(--sheet);
+  border: 1px solid var(--control-border); border-radius: 999px; cursor: pointer;
+}
+.topic-chip:hover { background: var(--hover); }
+.topic-chip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.topic-chip[aria-pressed="true"] { border-color: var(--lichen); background: color-mix(in srgb, var(--lichen) 16%, var(--sheet)); font-weight: 600; }
+.topic-chip-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-chip-count { flex: none; font-size: var(--t-xs); font-weight: 600; padding: 0 6px; border-radius: 999px; color: var(--lantern-ink); background: var(--lantern-wash); }
+@media (max-width: 760px) {
+  .topic-chip { max-width: 12rem; }
+}
