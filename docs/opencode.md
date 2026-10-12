@@ -82,9 +82,19 @@ endpoint; it no longer does, so write `local/<model>`.
    so it counts in the daily total and in budgets. A local model has no rates and
    records 0. For a hosted model the figure is **OpenCode's estimate** from its own
    price table, and the closing line says so: OpenCode's events carry no generation id
-   or billed cost, so Shepherd cannot read the provider's invoice. When OpenCode reports
-   no cost for a hosted model, the line says "cost unknown" and the run records 0.
-   Check the provider's own dashboard for the real figure.
+   or billed cost, so Shepherd cannot read the provider's invoice. OpenRouter does
+   return the billed `usage.cost` with every response, but OpenCode drops it before its
+   events and its session store, and reading the generation endpoint
+   (`/api/v1/generation?id=`) would need that id and OpenCode's login, which Shepherd
+   never reads. When OpenCode reports no cost for a hosted model, the line says "cost
+   unknown" and the run records 0. Check the provider's own dashboard for the real
+   figure.
+
+   Every hosted run is recorded with `cost_estimated`, whatever its figure, and the web
+   shows it as `~$0.05` with a tooltip, or "cost unknown" at zero. A local model is
+   "local, no cost". Totals (the Runs page, usage stats) say how much of their dollars
+   is an estimate, and budgets count the estimate as spend: they can be under-run by a
+   provider that bills more.
 
 `--pure` only disables external plugins, and `OPENCODE_CONFIG_CONTENT` is inline
 config layered over your files; neither is documented as changing where OpenCode reads
@@ -149,7 +159,8 @@ than failing with an authentication error, shows it is.
   run of the lane resumes it with `-s`.
 - **Cost**: tokens are logged. Cost is recorded as 0 for a local model, which OpenCode
   has no rates for. A hosted provider's per-step cost is OpenCode's estimate: it is
-  summed per run, logged at the end as an estimate and recorded as `opencode`'s spend.
+  summed per run, logged at the end as an estimate, recorded as `opencode`'s spend and
+  marked `cost_estimated` on the run and its usage record.
 - **Output** is read from `--format json` and goes through the same redaction as every
   other agent's.
 

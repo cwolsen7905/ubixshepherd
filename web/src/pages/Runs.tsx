@@ -2,7 +2,7 @@ import { history } from '../api/client'
 import type { RunRecord } from '../api/types'
 import { EventGlyph } from '../components/Glyph'
 import { RangeFilter } from '../components/RangeFilter'
-import { clockTime, duration, runCost, usd } from '../format'
+import { clockTime, costNote, duration, runCost, usd } from '../format'
 import { useNow } from '../hooks'
 import { DEFAULT_RANGE, mergeHistories, RANGES, RANGE_PHRASE, rangeStart } from '../model/history'
 import { go, href, type Range } from '../router'
@@ -28,7 +28,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
   const nav = (o: { range?: Range; agent?: string; lane?: number }) =>
     href.runs({ range, agent: agent || undefined, lane: lane || undefined, ...o })
 
-  const cost = data ? runCost({ cost_usd: data.cost_usd, credits: data.credits }) || usd(0) : ''
+  const cost = data ? runCost({ cost_usd: data.cost_usd, credits: data.credits, estimated_usd: data.estimated_usd }) || usd(0) : ''
   const lanes = data?.lanes ?? []
   const agents = data?.agents ?? []
   // A filter the range does not hold stays a choice, so the select shows what is applied.
@@ -42,7 +42,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
         <p className="page-sub runs-total" aria-live="polite">
           {data ? (
             <>
-              <strong>{cost}</strong> spent {RANGE_PHRASE[range]}
+              <strong title={costNote({ estimated_usd: data.estimated_usd })}>{cost}</strong> spent {RANGE_PHRASE[range]}
               <span className="faint">
                 {' '}
                 across {data.count} {data.count === 1 ? 'run' : 'runs'}
@@ -120,7 +120,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
                 </td>
                 <td>{r.state}</td>
                 <td className="num">{r.commits}</td>
-                <td className="num">{runCost(r)}</td>
+                <td className="num" title={costNote(r)}>{runCost(r)}</td>
                 <td className="faint" title={r.started}>{clockTime(r.started, now)}</td>
                 <td className="num">{duration(r.started, r.ended, now)}</td>
                 <td className="run-task" title={r.task}>{r.task}</td>

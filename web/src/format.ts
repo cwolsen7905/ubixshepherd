@@ -71,15 +71,49 @@ export function usd(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
-/** What a run cost: "$1.24", "3.5 credits", "1 credit", both "$1.24 + 3 credits"; "" when neither is set or both are zero. Credits keep at most one decimal. */
-export function runCost(run: { cost_usd?: number; credits?: number }): string {
+/** What a cost line reads: a run or a total, with how much of it is an agent's own estimate. */
+export interface CostInput {
+  cost_usd?: number
+  credits?: number
+  /** The run's dollars are an agent's price-table estimate, not a bill (a hosted OpenCode model). */
+  cost_estimated?: boolean
+  /** The part of a total's dollars that is an estimate. */
+  estimated_usd?: number
+  agent?: string
+}
+
+/** What an estimated figure is: said in a tooltip next to a "~$" amount. */
+export const ESTIMATE_NOTE = "OpenCode's estimate from its price table, not the provider's bill: the provider may bill more, several times more when cache reads are charged at the full input rate."
+
+/** All of a cost's dollars are an estimate (a run so marked, or a total whose estimated part is all of it). */
+function allEstimated(c: CostInput): boolean {
+  if (c.cost_estimated) return true
+  return !!c.cost_usd && !!c.estimated_usd && c.estimated_usd >= c.cost_usd - 1e-9
+}
+
+/** What a run cost: "$1.24", "3.5 credits", "1 credit", both "$1.24 + 3 credits". A hosted OpenCode run's dollars are an estimate: "~$0.05", or "cost unknown" at zero; an OpenCode run with no estimate is "local, no cost". "" when nothing is set for any other agent. Credits keep at most one decimal. */
+export function runCost(run: CostInput): string {
   const parts: string[] = []
-  if (run.cost_usd && run.cost_usd > 0) parts.push(usd(run.cost_usd))
+  if (run.cost_usd && run.cost_usd > 0) {
+    if (allEstimated(run)) parts.push(`~${usd(run.cost_usd)}`)
+    else if (run.estimated_usd && run.estimated_usd > 0) parts.push(`${usd(run.cost_usd)} (~${usd(run.estimated_usd)} estimated)`)
+    else parts.push(usd(run.cost_usd))
+  }
   if (run.credits && run.credits > 0) {
     const n = Math.round(run.credits * 10) / 10
     parts.push(`${n} ${n === 1 ? 'credit' : 'credits'}`)
   }
+  if (parts.length === 0) {
+    if (run.cost_estimated) return 'cost unknown'
+    if (run.agent === 'opencode') return 'local, no cost'
+  }
   return parts.join(' + ')
+}
+
+/** A tooltip for a cost that is an estimate; undefined for a billed one. */
+export function costNote(run: CostInput): string | undefined {
+  if (run.cost_estimated || (run.estimated_usd && run.estimated_usd > 0)) return ESTIMATE_NOTE
+  return undefined
 }
 
 /** A time of day for a timeline: "14:05" when the time is on now's local day, else "Oct 3 14:05" (en-US short month, 24-hour). "" for unparsable. */

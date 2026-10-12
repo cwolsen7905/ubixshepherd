@@ -178,6 +178,8 @@ export interface TRun {
   commits: number
   costUsd?: number
   credits?: number
+  /** costUsd is the agent's own estimate, not a bill. */
+  costEstimated?: boolean
   /** The first line of the prompt. */
   task: string
   /** What the run is doing now, while it runs. */
@@ -265,7 +267,7 @@ export function assemble(src: Sources): TimelineData {
     runs.set(r.id, {
       id: r.id, laneId: r.lane_id, agent: r.agent, ...(r.model ? { model: r.model } : {}), state: r.state, started,
       ...(r.ended ? { ended: ms(r.ended) } : {}), commits: r.commits,
-      ...(r.cost_usd !== undefined ? { costUsd: r.cost_usd } : {}), ...(r.credits ? { credits: r.credits } : {}), task: r.task,
+      ...(r.cost_usd !== undefined ? { costUsd: r.cost_usd } : {}), ...(r.credits ? { credits: r.credits } : {}), ...(r.cost_estimated ? { costEstimated: true } : {}), task: r.task,
     })
   }
   for (const r of src.runs) {
@@ -274,7 +276,7 @@ export function assemble(src: Sources): TimelineData {
     runs.set(r.id, {
       id: r.id, laneId: r.lane_id, agent: r.agent, ...(r.model ? { model: r.model } : {}), state: r.state, started,
       ...(r.ended ? { ended: ms(r.ended) } : {}), commits: r.commits,
-      ...(r.cost_usd !== undefined ? { costUsd: r.cost_usd } : {}), ...(r.credits ? { credits: r.credits } : {}),
+      ...(r.cost_usd !== undefined ? { costUsd: r.cost_usd } : {}), ...(r.credits ? { credits: r.credits } : {}), ...(r.cost_estimated ? { costEstimated: true } : {}),
       task: firstLine(r.prompt) || runs.get(r.id)?.task || '', ...(r.progress ? { progress: r.progress.line } : {}),
       ...(r.diagnosis ? { diagnosis: r.diagnosis.summary } : {}),
     })
@@ -778,7 +780,7 @@ export function runPhrase(r: TRun, now: number): string {
 /** A bar's accessible name: "claude, feat/export-csv, running for 14m 03s, 2 commits, $0.84". */
 export function runLabel(r: TRun, lane: string, now: number): string {
   const parts = [r.agent, lane, runPhrase(r, now), `${r.commits} ${r.commits === 1 ? 'commit' : 'commits'}`]
-  const cost = runCost({ cost_usd: r.costUsd, credits: r.credits })
+  const cost = runCost({ cost_usd: r.costUsd, credits: r.credits, cost_estimated: r.costEstimated, agent: r.agent })
   if (cost) parts.push(cost)
   return parts.join(', ')
 }

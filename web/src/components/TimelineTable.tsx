@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { clockTime, duration, runCost } from '../format'
+import { clockTime, duration, ESTIMATE_NOTE, runCost } from '../format'
 import { EventGlyph } from './Glyph'
 import { href } from '../router'
 import type { TRun } from '../model/timeline'
@@ -86,7 +86,9 @@ export function TimelineTable({ rows, now }: { rows: Row[]; now: number }) {
             </td>
             <td>{run.state}</td>
             <td className="num">{run.commits}</td>
-            <td className="num">{runCost({ cost_usd: run.costUsd, credits: run.credits })}</td>
+            <td className="num" title={run.costEstimated ? ESTIMATE_NOTE : undefined}>
+              {runCost({ cost_usd: run.costUsd, credits: run.credits, cost_estimated: run.costEstimated, agent: run.agent })}
+            </td>
             <td className="faint" title={iso(run.started)}>{clockTime(iso(run.started), now)}</td>
             <td className="num">{duration(iso(run.started), run.ended !== undefined ? iso(run.ended) : undefined, now)}</td>
             <td className="run-task" title={run.task}>{run.task}</td>

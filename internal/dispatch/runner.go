@@ -509,6 +509,7 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 		return run, r.fail(ctx, run, err)
 	}
 	run.PID = cmd.Process.Pid
+	run.CostEstimated = ad.EstimatesCost != nil && ad.EstimatesCost(opts)
 	if err := r.Store.UpdateRun(ctx, run); err != nil {
 		r.Log.Error("record run pid", "run", run.ID, "err", err)
 	}
@@ -661,7 +662,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	use := r.recordUsage(ctx, run, p)
 	fmt.Fprintf(logf, "\n# shepherd: run %d %s (exit %d) with %d commit(s)", run.ID, run.State, code, run.Commits)
 	if run.CostUSD > 0 {
-		fmt.Fprintf(logf, ", $%.2f", run.CostUSD)
+		est := ""
+		if run.CostEstimated {
+			est = " (estimate)"
+		}
+		fmt.Fprintf(logf, ", $%.2f%s", run.CostUSD, est)
 	}
 	if run.Credits > 0 {
 		fmt.Fprintf(logf, ", %.2f credits", run.Credits)
@@ -725,7 +730,7 @@ func (r *Runner) recordUsage(ctx context.Context, run store.Run, p *proc) store.
 	if u.Model == "" {
 		u.Model = run.Model
 	}
-	u.CostUSD, u.Credits = run.CostUSD, run.Credits
+	u.CostUSD, u.Credits, u.CostEstimated = run.CostUSD, run.Credits, run.CostEstimated
 	if err := r.Store.AddUsage(ctx, u); err != nil {
 		r.Log.Error("record run usage", "run", run.ID, "err", err)
 	}

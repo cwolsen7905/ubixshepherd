@@ -11,6 +11,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Changed
 
+- **A hosted OpenCode run's cost is shown as an estimate.** OpenCode prices a step from its
+  own table, and OpenRouter's billed `usage.cost` never reaches its events, so the figure
+  can be several times low. Runs and usage records gain `cost_estimated` (an appended
+  migration, which also marks earlier hosted OpenCode runs), the run history and usage
+  totals say how much of their dollars is an estimate (`estimated_usd`), and the web shows
+  `~$0.05` with a tooltip, "cost unknown" for a hosted run that reported none and "local, no
+  cost" for a local model. The figure itself is unchanged.
 - **The front desk files its turns under topics without being told their ids.** `topic_set`
   with only an `id`, or a new `title`, files the turn in progress: the daemon knows the turn
   the desk's token was minted for. The desk may file only its own turn. A turn Shepherd

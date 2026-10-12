@@ -385,6 +385,15 @@ var migrations = []string{
 		PRIMARY KEY (kind, ref)
 	);
 	CREATE INDEX topic_links_topic ON topic_links (topic_id);`,
+	// Cost estimates: a run's cost_usd is the agent's own price-table figure, not a
+	// bill, when cost_estimated is 1 (a hosted OpenCode model: a model id with a slash
+	// that is not local/). Earlier runs and usage records are marked by the same rule.
+	`ALTER TABLE runs ADD COLUMN cost_estimated INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE usage ADD COLUMN cost_estimated INTEGER NOT NULL DEFAULT 0;
+	UPDATE runs SET cost_estimated = 1
+		WHERE agent = 'opencode' AND model LIKE '%/%' AND model NOT LIKE 'local/%';
+	UPDATE usage SET cost_estimated = 1
+		WHERE agent = 'opencode' AND model LIKE '%/%' AND model NOT LIKE 'local/%';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -680,14 +689,14 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	return r, err
 }
 
-const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits, dismissed`
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits, dismissed, cost_estimated`
 
 func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	var r store.Run
 	var outside, started, ended, dismissed string
 	var exit sql.NullInt64
 	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
-		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits, &dismissed); err != nil {
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits, &dismissed, &r.CostEstimated); err != nil {
 		return r, err
 	}
 	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
@@ -741,9 +750,9 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
 			exit_code = ?, error = ?, ended = ?, session = ?, cost_usd = ?, credits = ?,
-			session_usd = ?, session_credits = ? WHERE id = ?`,
+			session_usd = ?, session_credits = ?, cost_estimated = ? WHERE id = ?`,
 		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits,
-		r.SessionUSD, r.SessionCredits, r.ID)
+		r.SessionUSD, r.SessionCredits, r.CostEstimated, r.ID)
 	return err
 }
 

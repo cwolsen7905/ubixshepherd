@@ -121,7 +121,7 @@ func (s *DB) RunHistory(ctx context.Context, f store.RunHistoryFilter) (store.Ru
 	// The prompt is clipped in SQL: a task line never needs more, and the totals walk
 	// every run in the range.
 	q := `SELECT x.id, x.lane_id, r.name, l.name, l.state, x.agent, x.model, x.state, x.commits,
-			x.cost_usd, x.credits, x.started, x.ended, substr(x.prompt, 1, 1000)
+			x.cost_usd, x.credits, x.cost_estimated, x.started, x.ended, substr(x.prompt, 1, 1000)
 		FROM runs x JOIN lanes l ON l.id = x.lane_id JOIN repos r ON r.id = l.repo_id
 		WHERE (? = 0 OR r.workspace_id = ?) AND (? = 0 OR l.repo_id = ?)
 			AND (? = '' OR x.state = ?) AND (? = '' OR x.started >= ?)
@@ -141,7 +141,7 @@ func (s *DB) RunHistory(ctx context.Context, f store.RunHistoryFilter) (store.Ru
 		var r store.RunSummary
 		var started, ended, prompt string
 		if err := rows.Scan(&r.ID, &r.LaneID, &r.Repo, &r.Lane, &r.LaneState, &r.Agent, &r.Model, &r.State, &r.Commits,
-			&r.CostUSD, &r.Credits, &started, &ended, &prompt); err != nil {
+			&r.CostUSD, &r.Credits, &r.CostEstimated, &started, &ended, &prompt); err != nil {
 			return h, err
 		}
 		r.Started = parseTime(started)
@@ -160,6 +160,9 @@ func (s *DB) RunHistory(ctx context.Context, f store.RunHistoryFilter) (store.Ru
 		h.Count++
 		h.CostUSD += r.CostUSD
 		h.Credits += r.Credits
+		if r.CostEstimated {
+			h.EstimatedUSD += r.CostUSD
+		}
 		if len(h.Runs) < limit {
 			r.Task = taskLine(prompt)
 			h.Runs = append(h.Runs, r)

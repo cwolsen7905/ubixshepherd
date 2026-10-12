@@ -180,6 +180,10 @@ type Run struct {
 	// run's (Copilot): the next run of the session costs what it adds beyond them.
 	SessionUSD     float64 `json:"session_usd,omitempty"`
 	SessionCredits float64 `json:"session_credits,omitempty"`
+	// CostEstimated says CostUSD is the agent's own price-table estimate, not what the
+	// provider billed: a hosted OpenCode model. It stays set when the estimate is 0, so
+	// that "cost unknown" differs from a local model's genuine "no cost".
+	CostEstimated bool `json:"cost_estimated,omitempty"`
 	// Dismissed is when the person cleared the run from the board's attention group; nil
 	// when they have not. The run and its log stay in history.
 	Dismissed *time.Time `json:"dismissed,omitempty"`
@@ -242,9 +246,11 @@ type Usage struct {
 	// Compactions counts the times the CLI summarised the conversation to make room.
 	Compactions int `json:"compactions,omitempty"`
 	// CostUSD and Credits are what this run or turn added, as Run and Spend record them.
-	CostUSD float64   `json:"cost_usd,omitempty"`
-	Credits float64   `json:"credits,omitempty"`
-	Created time.Time `json:"created,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Credits float64 `json:"credits,omitempty"`
+	// CostEstimated is Run.CostEstimated for the record's run.
+	CostEstimated bool      `json:"cost_estimated,omitempty"`
+	Created       time.Time `json:"created,omitempty"`
 }
 
 // Prompt is the tokens the prompts of all requests held, cached or not.
@@ -270,6 +276,8 @@ type UsageTotals struct {
 	Compactions   int     `json:"compactions"`
 	CostUSD       float64 `json:"cost_usd"`
 	Credits       float64 `json:"credits,omitempty"`
+	// EstimatedUSD is the part of CostUSD that is an agent's estimate, not a bill.
+	EstimatedUSD float64 `json:"estimated_usd,omitempty"`
 }
 
 // Add folds one record into the totals.
@@ -277,6 +285,9 @@ func (t *UsageTotals) Add(u Usage) {
 	t.Count++
 	t.CostUSD += u.CostUSD
 	t.Credits += u.Credits
+	if u.CostEstimated {
+		t.EstimatedUSD += u.CostUSD
+	}
 	t.ContextWindow = max(t.ContextWindow, u.ContextWindow)
 	if !u.Measured() {
 		return
@@ -667,19 +678,21 @@ type RunHistoryFilter struct {
 
 // RunSummary is a run without its prompt, with where it ran.
 type RunSummary struct {
-	ID        int64      `json:"id"`
-	LaneID    int64      `json:"lane_id"`
-	Repo      string     `json:"repo"`
-	Lane      string     `json:"lane"`
-	LaneState string     `json:"lane_state"`
-	Agent     string     `json:"agent"`
-	Model     string     `json:"model,omitempty"`
-	State     string     `json:"state"`
-	Commits   int        `json:"commits"`
-	CostUSD   float64    `json:"cost_usd,omitempty"`
-	Credits   float64    `json:"credits,omitempty"`
-	Started   time.Time  `json:"started"`
-	Ended     *time.Time `json:"ended,omitempty"`
+	ID        int64   `json:"id"`
+	LaneID    int64   `json:"lane_id"`
+	Repo      string  `json:"repo"`
+	Lane      string  `json:"lane"`
+	LaneState string  `json:"lane_state"`
+	Agent     string  `json:"agent"`
+	Model     string  `json:"model,omitempty"`
+	State     string  `json:"state"`
+	Commits   int     `json:"commits"`
+	CostUSD   float64 `json:"cost_usd,omitempty"`
+	Credits   float64 `json:"credits,omitempty"`
+	// CostEstimated: CostUSD is the agent's estimate, not a bill (Run.CostEstimated).
+	CostEstimated bool       `json:"cost_estimated,omitempty"`
+	Started       time.Time  `json:"started"`
+	Ended         *time.Time `json:"ended,omitempty"`
 	// Task is the first line of the run's prompt, clipped.
 	Task string `json:"task"`
 }
@@ -698,6 +711,8 @@ type RunHistory struct {
 	Count   int
 	CostUSD float64
 	Credits float64
+	// EstimatedUSD is the part of CostUSD that is an agent's estimate, not a bill.
+	EstimatedUSD float64
 	// Agents and Lanes are what the range (since, workspace, repo, state) holds, before
 	// the agent and lane filters, so a filter can offer the other choices.
 	Agents []string

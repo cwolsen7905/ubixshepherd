@@ -8,7 +8,7 @@ import { EventGlyph, Glyph } from '../components/Glyph'
 import { GateBadge } from '../components/GateBadge'
 import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
-import { clockTime, duration, runCost, shortSha, since } from '../format'
+import { clockTime, costNote, duration, runCost, shortSha, since } from '../format'
 import { boardItems, GROUP_NAMES } from '../model/board'
 import { ending } from '../model/history'
 import { aboutLane, type Refs } from '../model/feed'
@@ -350,7 +350,7 @@ function RunsTable({ runs, now }: { runs: RunView[]; now: number }) {
               {r.outside?.length ? <span className="tone-bad" title={r.outside.join(', ')}> outside scope</span> : null}
             </td>
             <td className="num">{duration(r.started, r.ended, now)}</td>
-            <td className="num">{runCost(r)}</td>
+            <td className="num" title={costNote(r)}>{runCost(r)}</td>
             <td className="faint" title={r.started}>{clockTime(r.started, now)}</td>
           </tr>
         ))}
