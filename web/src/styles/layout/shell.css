@@ -20,10 +20,10 @@
 }
 .wordmark b { font-weight: 600; color: var(--brand); }
 .wordmark-mark { width: 0.95em; height: 0.95em; flex: none; border-radius: 1px; }
-.nav { display: flex; gap: var(--s-1); }
+.nav { display: flex; gap: var(--s-1); flex-shrink: 0; }
 .nav a {
   padding: var(--s-1) 0.625rem; border-radius: var(--radius);
-  text-decoration: none; color: var(--muted);
+  text-decoration: none; color: var(--muted); white-space: nowrap;
 }
 .nav a:hover { background: var(--hover); color: var(--ink); }
 .nav a[aria-current="page"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--lichen); border-radius: 0; }
@@ -39,7 +39,6 @@
 .banner { padding: 0.375rem calc(var(--shell-edge) + var(--pad)); background: var(--broken-wash); border-bottom: 1px solid var(--rule); font-size: var(--t-sm); }
 
 .main { flex: 1; padding: var(--s-3) var(--shell-edge) var(--s-6); }
-.empty { max-width: 64ch; margin: var(--s-6) auto; padding: 0 var(--pad); color: var(--muted); }
 
 .glyph {
   display: inline-block; width: var(--gutter); flex: none;

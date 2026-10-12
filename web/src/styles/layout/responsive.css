@@ -1,3 +1,12 @@
+/* The bar at 1024px: below 1100 the counts go (the dock and the rail already show them),
+   so the name, the views and the spend sit on one line without wrapping. */
+@media (max-width: 1100px) {
+  .bar { gap: var(--s-3); }
+  .bar-counts { display: none; }
+  .bar-meta { margin-left: auto; }
+  .nav a { padding-inline: var(--s-2); }
+}
+
 @media (max-width: 760px) {
   .bar { gap: var(--s-3); }
   .bar-counts { display: none; }
