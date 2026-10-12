@@ -943,6 +943,13 @@ type Store interface {
 	// what the range holds to filter by. Read-only.
 	RunHistory(ctx context.Context, f RunHistoryFilter) (RunHistory, error)
 
+	// AddGateResult records one gate run on one commit of a lane.
+	AddGateResult(ctx context.Context, g GateResult) (GateResult, error)
+	// GateResultFor returns the lane's newest gate record for the commit sha, or nil.
+	GateResultFor(ctx context.Context, laneID int64, sha string) (*GateResult, error)
+	// LastGateResult returns the lane's newest gate record, or nil for none.
+	LastGateResult(ctx context.Context, laneID int64) (*GateResult, error)
+
 	// LaneForge returns a zero value (with LaneID set) for a lane the forge never saw.
 	LaneForge(ctx context.Context, laneID int64) (LaneForge, error)
 	PutLaneForge(ctx context.Context, f LaneForge) error
@@ -994,4 +1001,59 @@ func (u Usage) Line() string {
 		parts = append(parts, fmt.Sprintf("%d compaction(s)", u.Compactions))
 	}
 	return strings.Join(parts, "; ")
+}
+
+// Where a gate result came from (GateResult.Source). v1 records only Shepherd's own runs.
+const (
+	GateSourceShip  = "ship"
+	GateSourceAgent = "agent"
+)
+
+// GateResult is one run of a repo's gate on one commit of a lane.
+type GateResult struct {
+	ID     int64     `json:"id"`
+	LaneID int64     `json:"lane_id"`
+	SHA    string    `json:"sha"`
+	Gate   string    `json:"command"`
+	Passed bool      `json:"passed"`
+	At     time.Time `json:"at"`
+	Source string    `json:"source"`
+}
+
+// The states of a lane's gate badge (GateBadge.State).
+const (
+	GatePassed = "passed" // a passing record for the lane's current head
+	GateFailed = "failed" // a failing record for the current head
+	GateStale  = "stale"  // the newest record is for an earlier commit
+	GateNotRun = "not_run"
+)
+
+// GateBadge is what Shepherd knows about the gate on a lane's head. It never claims more:
+// "not_run" is the normal state of a lane in a repo where a person pushes.
+type GateBadge struct {
+	State   string     `json:"state"`
+	SHA     string     `json:"sha,omitempty"`
+	At      *time.Time `json:"at,omitempty"`
+	Command string     `json:"command,omitempty"`
+	Source  string     `json:"source,omitempty"`
+}
+
+// BadgeFor derives the badge for head from the newest record for head (onHead) and the
+// newest record overall (last); either may be nil. A head of "" is unknown: any record
+// is then stale, never a pass.
+func BadgeFor(head string, onHead, last *GateResult) GateBadge {
+	g := onHead
+	state := GatePassed
+	switch {
+	case g != nil && head != "":
+		if !g.Passed {
+			state = GateFailed
+		}
+	case last != nil:
+		g, state = last, GateStale
+	default:
+		return GateBadge{State: GateNotRun}
+	}
+	at := g.At
+	return GateBadge{State: state, SHA: g.SHA, At: &at, Command: g.Gate, Source: g.Source}
 }

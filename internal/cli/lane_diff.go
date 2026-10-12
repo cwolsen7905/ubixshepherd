@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // laneDiff shows what a lane holds against its base: shepherd lane diff [lane]
@@ -19,15 +20,16 @@ func laneDiff(ctx context.Context, env Env, args []string) error {
 	file := fs.String("file", "", "one file's patch, or an untracked file's start")
 	since := fs.String("since", "", "narrow to the commits after this SHA")
 	until := fs.String("until", "", "with --since, end at this SHA (and leave out uncommitted work)")
+	run := fs.Int64("run", 0, "narrow to this run's own commits, start to end (without a lane name, the run's lane)")
 	asJSON := fs.Bool("json", false, "print JSON")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
-	if len(pos) > 1 || (*stat && *files) || (*stat && *file != "") || (*files && *file != "") {
+	if (*run != 0 && (*since != "" || *until != "")) || len(pos) > 1 || (*stat && *files) || (*stat && *file != "") || (*files && *file != "") {
 		return errUsage
 	}
-	req := fold.DiffRequest{Mode: fold.DiffStat, Since: *since, Until: *until}
+	req := fold.DiffRequest{Mode: fold.DiffStat, Since: *since, Until: *until, Run: *run}
 	switch {
 	case *file != "":
 		req.Mode, req.File = fold.DiffFile, *file
@@ -38,15 +40,25 @@ func laneDiff(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	h, err := locate(ctx, env, c, *repo)
-	if err != nil {
-		return err
+	var laneID int64
+	if *run != 0 && len(pos) == 0 {
+		rv, err := c.Run(ctx, *run)
+		if err != nil {
+			return err
+		}
+		laneID = rv.LaneID
+	} else {
+		h, err := locate(ctx, env, c, *repo)
+		if err != nil {
+			return err
+		}
+		target, err := pickLane(ctx, c, h, pos)
+		if err != nil {
+			return err
+		}
+		laneID = target.ID
 	}
-	target, err := pickLane(ctx, c, h, pos)
-	if err != nil {
-		return err
-	}
-	d, err := c.LaneDiff(ctx, target.ID, req)
+	d, err := c.LaneDiff(ctx, laneID, req)
 	if err != nil {
 		return err
 	}
@@ -76,6 +88,7 @@ func writeLaneDiff(w io.Writer, d fold.LaneDiff) {
 		}
 		return
 	}
+	fmt.Fprintf(w, "gate: %s\n", gateLine(d.Gate))
 	fmt.Fprintf(w, "%d commit(s); files: %d committed, %d uncommitted, %d untracked",
 		d.CommitsTotal, len(d.Committed), len(d.Uncommitted), len(d.Untracked))
 	if d.OutOfScope > 0 {
@@ -130,4 +143,21 @@ func writeLaneDiff(w io.Writer, d fold.LaneDiff) {
 	if d.Truncated {
 		fmt.Fprintln(w, "note: this read was cut by a limit (see above); --file PATH reads one file")
 	}
+}
+
+// gateLine says what Shepherd knows about its gate on the head, without claiming more.
+func gateLine(g store.GateBadge) string {
+	at := ""
+	if g.At != nil {
+		at = ", " + age(*g.At) + " ago"
+	}
+	switch g.State {
+	case store.GatePassed:
+		return fmt.Sprintf("passed on this head (`%s`%s)", g.Command, at)
+	case store.GateFailed:
+		return fmt.Sprintf("FAILED on this head (`%s`%s)", g.Command, at)
+	case store.GateStale:
+		return fmt.Sprintf("stale: it last ran on %s, not this head (`%s`%s)", short(g.SHA), g.Command, at)
+	}
+	return "not run by Shepherd on this lane"
 }

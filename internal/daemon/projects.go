@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"net/http"
 	"slices"
 	"sort"
@@ -51,6 +52,7 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 			if err != nil {
 				return nil, err
 			}
+			heads := fold.BranchHeads(ctx, rp.Path, lanes)
 			for _, l := range lanes {
 				d.laneRepo[l.ID], d.laneName[l.ID] = rp.Name, l.Name
 				if l.State == store.LaneClosed {
@@ -61,6 +63,8 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 					v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
 					v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
 				}
+				b := s.Fold.GateBadge(ctx, l.ID, heads[l.ID])
+				v.Gate = &b
 				d.lanes = append(d.lanes, v)
 			}
 		}

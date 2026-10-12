@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 func writeFile(t *testing.T, dir, file, body string) {
@@ -212,5 +214,78 @@ func TestDiffRefusesAClosedLane(t *testing.T) {
 	_, err := f.fold.Diff(context.Background(), l.ID, DiffRequest{})
 	if err == nil || !strings.Contains(err.Error(), "no worktree") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestDiffRunRangeAndGateBadge(t *testing.T) {
+	f := newFixture(t)
+	l := f.open("feat/gate")
+	ctx := context.Background()
+	st := f.fold.Store
+
+	base := gitT(t, l.Worktree, "rev-parse", "HEAD")
+	f.commit(l.Worktree, "src/one.go")
+	first := gitT(t, l.Worktree, "rev-parse", "HEAD")
+	f.commit(l.Worktree, "src/two.go")
+	second := gitT(t, l.Worktree, "rev-parse", "HEAD")
+
+	d, err := f.fold.Diff(ctx, l.ID, DiffRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Gate.State != store.GateNotRun || d.Gate.At != nil {
+		t.Errorf("no record: gate = %+v", d.Gate)
+	}
+
+	// A pass on the first commit is stale once a second lands; a record on the head wins.
+	st.AddGateResult(ctx, store.GateResult{LaneID: l.ID, SHA: first, Gate: "make check", Passed: true})
+	d, _ = f.fold.Diff(ctx, l.ID, DiffRequest{})
+	if d.Gate.State != store.GateStale || d.Gate.SHA != first || d.Gate.Command != "make check" {
+		t.Errorf("earlier commit: gate = %+v", d.Gate)
+	}
+	st.AddGateResult(ctx, store.GateResult{LaneID: l.ID, SHA: second, Gate: "make check", Passed: false})
+	d, _ = f.fold.Diff(ctx, l.ID, DiffRequest{})
+	if d.Gate.State != store.GateFailed || d.Gate.SHA != second {
+		t.Errorf("failing head: gate = %+v", d.Gate)
+	}
+	st.AddGateResult(ctx, store.GateResult{LaneID: l.ID, SHA: second, Gate: "make check", Passed: true})
+	d, _ = f.fold.Diff(ctx, l.ID, DiffRequest{})
+	if d.Gate.State != store.GatePassed || d.Gate.Source != store.GateSourceShip {
+		t.Errorf("passing head: gate = %+v", d.Gate)
+	}
+	if heads := BranchHeads(ctx, f.repo.Path, []store.Lane{l}); heads[l.ID] != second {
+		t.Errorf("branch head = %q, want %q", heads[l.ID], second)
+	}
+
+	// A run's own range: start_sha..end_sha, with no worktree files.
+	run, err := st.CreateRun(ctx, store.Run{LaneID: l.ID, Agent: "claude", State: store.RunRunning, StartSHA: first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.State, run.EndSHA = store.RunSucceeded, second
+	if err := st.UpdateRun(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, l.Worktree, "src/loose.go", "x\n")
+	d, err = f.fold.Diff(ctx, l.ID, DiffRequest{Run: run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Commits) != 1 || len(d.Committed) != 1 || d.Committed[0].Path != "src/two.go" || len(d.Untracked) != 0 {
+		t.Errorf("run range = %+v", d)
+	}
+	if d.Gate.State != store.GatePassed {
+		t.Errorf("the badge is for the head whatever the range: %+v", d.Gate)
+	}
+	if _, err := f.fold.Diff(ctx, l.ID, DiffRequest{Run: run.ID, Since: base}); err == nil {
+		t.Error("a run and a range accepted together")
+	}
+	otherLane, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "feat/other", Scope: []string{"lib/**"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := otherLane.Lane
+	if _, err := f.fold.Diff(ctx, other.ID, DiffRequest{Run: run.ID}); err == nil {
+		t.Error("another lane's run accepted")
 	}
 }

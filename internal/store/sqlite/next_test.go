@@ -76,3 +76,37 @@ func TestNextItemsOrderAndMove(t *testing.T) {
 		t.Error("empty title accepted")
 	}
 }
+
+func TestGateResultsAndBadge(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if g, err := db.LastGateResult(ctx, 1); err != nil || g != nil {
+		t.Fatalf("none yet: %v %v", g, err)
+	}
+	// lanes(id) is a foreign key: open one through a workspace.
+	w, err := db.SaveWorkspace(ctx, store.Workspace{Name: "w", Path: t.TempDir()}, []store.Repo{{Name: "app", Path: t.TempDir()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := db.Repos(ctx, w.ID)
+	lane, err := db.CreateLane(ctx, store.Lane{RepoID: repos[0].ID, Name: "feat/x", Branch: "feat/x", Base: "main", Worktree: t.TempDir(), State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.AddGateResult(ctx, store.GateResult{LaneID: lane.ID, SHA: "aaa", Gate: "make check", Passed: true})
+	db.AddGateResult(ctx, store.GateResult{LaneID: lane.ID, SHA: "bbb", Gate: "make check", Passed: false})
+	db.AddGateResult(ctx, store.GateResult{LaneID: lane.ID, SHA: "aaa", Gate: "make check", Passed: false})
+	if g, _ := db.GateResultFor(ctx, lane.ID, "aaa"); g == nil || g.Passed || g.Source != store.GateSourceShip || g.At.IsZero() {
+		t.Errorf("newest for aaa = %+v", g)
+	}
+	if g, _ := db.GateResultFor(ctx, lane.ID, "ccc"); g != nil {
+		t.Errorf("for ccc = %+v", g)
+	}
+	if g, _ := db.LastGateResult(ctx, lane.ID); g == nil || g.SHA != "aaa" {
+		t.Errorf("last = %+v", g)
+	}
+}

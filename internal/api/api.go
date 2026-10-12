@@ -495,6 +495,9 @@ type LaneView struct {
 	// lane that has run nothing. Progress is what that run is doing now while it goes.
 	Diagnosis *Diagnosis `json:"diagnosis,omitempty"`
 	Progress  *Progress  `json:"progress,omitempty"`
+	// Gate is whether Shepherd's own gate run covers the lane's branch head: passed,
+	// failed, stale (the newest record is for an earlier commit) or not_run.
+	Gate *store.GateBadge `json:"gate,omitempty"`
 }
 
 // Where a lane's last activity came from (LaneView.LastActivityBy): the store's three

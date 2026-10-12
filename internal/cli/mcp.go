@@ -354,9 +354,13 @@ func mcpTools() []mcpTool {
 				"name":  map[string]any{"type": "string", "description": "The lane's name."},
 				"files": map[string]any{"type": "boolean", "description": "Add each file's hunk headers to the stat."},
 				"file":  map[string]any{"type": "string", "description": "A path relative to the repo: return only that file's patch."},
+				"run":   map[string]any{"type": "number", "description": "A run's id in this lane: read only that run's own commits (start to end)."},
 			}, "repo", "name"),
 			args: func(a map[string]any) ([]string, error) {
 				out := []string{"lane", "diff", str(a, "name"), "--repo", str(a, "repo")}
+				if run, ok := a["run"].(float64); ok && run != 0 {
+					out = append(out, "--run", fmt.Sprint(int64(run)))
+				}
 				files, _ := a["files"].(bool)
 				switch file := str(a, "file"); {
 				case file != "" && files:

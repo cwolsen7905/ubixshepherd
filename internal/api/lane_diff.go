@@ -18,6 +18,7 @@ import (
 //
 //	mode=stat|files|file   how much (default stat; file when file is set)
 //	file=PATH              one file's patch, or an untracked file's start
+//	run=ID                 narrow to that run's own start_sha..end_sha
 //	since=SHA&until=SHA    narrow the commits and committed diff to a range
 //
 // The answer is a fold.LaneDiff, already bounded and redacted.
@@ -28,6 +29,9 @@ func PathLaneDiff(id int64, req fold.DiffRequest) string {
 	}
 	if req.File != "" {
 		q.Set("file", req.File)
+	}
+	if req.Run != 0 {
+		q.Set("run", strconv.FormatInt(req.Run, 10))
 	}
 	if req.Since != "" {
 		q.Set("since", req.Since)
@@ -52,8 +56,15 @@ func LaneDiff(f *fold.Fold) http.HandlerFunc {
 			return
 		}
 		q := r.URL.Query()
+		var run int64
+		if v := q.Get("run"); v != "" {
+			if run, err = strconv.ParseInt(v, 10, 64); err != nil {
+				conversationError(w, http.StatusBadRequest, errors.New("bad run id"))
+				return
+			}
+		}
 		d, err := f.Diff(r.Context(), id, fold.DiffRequest{
-			Mode: q.Get("mode"), File: q.Get("file"), Since: q.Get("since"), Until: q.Get("until"),
+			Mode: q.Get("mode"), File: q.Get("file"), Since: q.Get("since"), Until: q.Get("until"), Run: run,
 		})
 		if err != nil {
 			code := http.StatusInternalServerError
