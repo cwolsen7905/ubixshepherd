@@ -46,6 +46,16 @@ at most one project, and a repeated name is an error.
 Parsing cannot know which names are real repos of your workspace, so a name that matches
 no repo is not rejected: it simply never matches anything.
 
+## Web
+
+The `web:` section holds settings for the browser UI.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `editor_url` | `vscode://file/{path}` | A URL template for "open in editor" links on the lane page. `{path}` is the file's absolute path (URL-escaped), `{line}` is optional. `{path}` must be present; only `{line}` may be omitted. Empty value hides the links. The scheme must open an application (e.g. `vscode`, `cursor`), not `javascript`, `data`, `vbscript`, `file`, `blob`, or `about`. Validated when the config loads. |
+
+Examples: `vscode://file/{path}:{line}`, `cursor://file/{path}`, `{path}:{line}`.
+
 ## Unknown and retired keys
 
 The file is read strictly: a key Shepherd does not know is an error, so a typo cannot

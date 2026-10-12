@@ -237,3 +237,16 @@ func TestConfigSectionsHaveChatHyperlinks(t *testing.T) {
 	}
 	t.Error("no chat section")
 }
+
+func TestConfigSectionsHaveWebEditorUrl(t *testing.T) {
+	for _, s := range configSections() {
+		if s.ID != "web" {
+			continue
+		}
+		if len(s.Fields) != 1 || strings.Join(s.Fields[0].Key, ".") != "editor_url" || s.Fields[0].Kind != "string" {
+			t.Errorf("web section = %+v", s.Fields)
+		}
+		return
+	}
+	t.Error("no web section")
+}
