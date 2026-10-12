@@ -11,6 +11,7 @@ describe('router', () => {
     expect(parse(href.project('a b/c'))).toEqual({ page: 'project', name: 'a b/c' })
     expect(parse(href.unassigned())).toEqual({ page: 'unassigned' })
     expect(parse(href.chat())).toEqual({ page: 'chat' })
+    expect(parse(href.next())).toEqual({ page: 'next' })
     expect(parse('#/chat?x=1')).toEqual({ page: 'chat' })
     expect(parse(href.lane(4))).toEqual({ page: 'lane', id: 4 })
     expect(parse(href.log(12))).toEqual({ page: 'log', run: 12 })

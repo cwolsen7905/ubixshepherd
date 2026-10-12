@@ -8,6 +8,8 @@ import path from 'node:path'
 const { CHROME, SHOTS_BASE, SHOTS_OUT, SHOTS_W, SHOTS_H, SHOTS_SCALE, SHOTS_THEMES, SHOTS_PAGES } = process.env
 const ALL_PAGES = [
   ['chat', '#/chat'],
+  ['chat-next', '#/chat', { rail: 'Next up' }],
+  ['next', '#/next'],
   ['board', '#/'],
   ['lane', '#/lanes/4'],
   // A third element names a tab to open and a file to expand on that page.
@@ -77,7 +79,8 @@ async function shot(name, route, theme, steps) {
   await sleep(1500) // the stub's streamed events arrive over about two seconds
   if (steps) {
     const click = (text, role) => s('Runtime.evaluate', { expression: `(() => { const el = [...document.querySelectorAll('${role}')].find((e) => e.textContent.includes(${JSON.stringify(text)})); el?.click(); return !!el })()`, returnByValue: true })
-    await click(steps.tab, '[role=tab]')
+    if (steps.rail) await click(steps.rail, '.backlog-views button')
+    if (steps.tab) await click(steps.tab, '[role=tab]')
     await sleep(800)
     if (steps.file) await click(steps.file, '.change-toggle')
     await sleep(800)

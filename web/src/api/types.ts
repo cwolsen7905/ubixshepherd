@@ -665,3 +665,67 @@ export interface LaneDiff {
   notes?: string[]
   redacted?: number
 }
+
+/** What a next-up item is: started and done are derived from its lane, the rest are chosen. */
+export type NextState = 'planned' | 'approved' | 'deferred' | 'started' | 'done' | 'dropped'
+
+/** The states the person can set; GET /v1/next never reports `started` as chosen. */
+export type NextChosen = Exclude<NextState, 'started'>
+
+/** An item of the next-up list; GET /v1/next. */
+export interface NextItem {
+  id: number
+  title: string
+  repo?: string
+  /** A path under the repo to the doc that plans it. */
+  plan?: string
+  /** The name a lane opened for it is expected to have. */
+  lane?: string
+  /** The effective state: started and done come from the lane. */
+  state: NextState
+  stored_state: NextChosen
+  rank: number
+  source: string
+  /** Added by an agent or the desk and not yet approved by the person. */
+  proposed?: boolean
+  note?: string
+  lane_id?: number
+  lane_name?: string
+  lane_state?: string
+  lane_repo?: string
+  mr?: string
+  mr_url?: string
+  mr_state?: MRState
+  running?: boolean
+  /** Why an item whose lane closed is not started. */
+  why?: string
+  created: string
+  updated: string
+  done_at?: string
+}
+
+/** The list in order: approved, planned, deferred, then dropped and done when asked for. */
+export interface NextList {
+  items: NextItem[]
+  /** The first approved item with no lane; unset when none. */
+  next_up?: number
+}
+
+/** The body of POST /v1/next. */
+export interface NextAddBody {
+  title: string
+  repo?: string
+  plan?: string
+  lane?: string
+  note?: string
+  /** planned unless the person says approved. */
+  state?: 'planned' | 'approved'
+}
+
+/** The body of PATCH /v1/next/{id}: only what changes. */
+export interface NextUpdateBody {
+  state?: NextChosen
+  /** A lane's id to link; 0 unlinks. */
+  lane_id?: number
+  move?: 'top' | 'up' | 'down'
+}

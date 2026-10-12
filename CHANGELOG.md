@@ -22,7 +22,16 @@ protocol) is listed under **Interface changes** in the release that makes it.
   merges. Approving, deferring, dropping, finishing and reordering are the person's: the
   daemon refuses them from the front desk outside a turn the person started, and an agent's
   token has no route. The API is `GET/POST /v1/next` and `GET/PATCH /v1/next/{id}`. The
-  web page and the work-matrix read-through are later merge requests.
+  work-matrix read-through is a later merge request.
+- **A Next up page and rail view in the web UI.** `#/next` (nav entry **Next up**, key
+  `g n`) lists the items in order: approved, planned and deferred, with done and dropped
+  behind a toggle. Each row shows its state, plan doc, repo, lane and merge request, and
+  the first approved item with no lane carries the **next** marker. The person approves,
+  defers, drops, restores, moves up or down, links to an open lane and adds items from
+  the page; a refusal from the daemon shows as it came. **Start** puts "open a lane for
+  item N" in the chat draft and starts nothing. The chat page's backlog rail gains a
+  **Now / Next up** toggle, remembered in the browser: **Now** is the rail as it was, and
+  **Next up** shows the top five approved items with Start and a link to the page.
 - **`shepherd lane diff` and the `lane_diff` tool.** One read of what a lane holds against
   its base: the commits, the committed changes, uncommitted changes in the worktree and
   untracked files, each file marked inside or outside the lane's scope. `--stat` is the

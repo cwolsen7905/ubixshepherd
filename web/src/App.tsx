@@ -8,6 +8,7 @@ import { useSnapshot } from './state/context'
 import { BoardPage } from './pages/Board'
 import { ChatPage } from './pages/Chat'
 import { DecisionsPage } from './pages/Decisions'
+import { NextPage } from './pages/Next'
 import { LanePage } from './pages/Lane'
 import { LogPage } from './pages/Log'
 import { ProjectPage } from './pages/Project'
@@ -54,6 +55,7 @@ export function App() {
       b: () => pending.current === 'g' && go(href.board()),
       d: () => pending.current === 'g' && go(href.decisions()),
       t: () => pending.current === 'g' && go(href.timeline()),
+      n: () => pending.current === 'g' && go(href.next()),
     },
     [],
   )
@@ -89,6 +91,9 @@ export function App() {
           <a href={href.decisions()} aria-current={route.page === 'decisions' ? 'page' : undefined}>
             Decisions
             {decisions > 0 && <span className="nav-count tone-warn">{decisions}</span>}
+          </a>
+          <a href={href.next()} aria-current={route.page === 'next' ? 'page' : undefined}>
+            Next up
           </a>
           <a href={href.runs()} aria-current={route.page === 'runs' ? 'page' : undefined}>
             Runs
@@ -158,6 +163,7 @@ export function App() {
         {route.page === 'timeline' && <TimelinePage range={route.range} agent={route.agent} />}
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'decisions' && <DecisionsPage focus={route.focus} />}
+        {route.page === 'next' && <NextPage />}
         {route.page === 'chat' && <ChatPage />}
         {route.page === 'settings' && <SettingsPage scope={route.scope} />}
         {route.page === 'lane' && <LanePage key={route.id} id={route.id} />}

@@ -4,7 +4,7 @@
 // `shepherd web` opens). Nothing here ever holds a token. A cookie session's writes carry
 // its CSRF token, read once from /v1/web/session.
 import type {
-  ConfigChange, ConfigDoc, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneDiff, LaneRecord, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneDiff, LaneRecord, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -93,6 +93,7 @@ async function exchange<T>(path: string, init: RequestInit | undefined, token: s
 export const get = <T>(path: string) => call<T>(path)
 export const post = <T>(path: string, body: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body) })
 export const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) })
+export const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
 export const qs = (params: Record<string, string | number>) => new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
 
 /** How many runs the board reads: enough to know every open lane's latest run. */
@@ -178,4 +179,12 @@ export const config = {
   get: () => get<ConfigDoc>('/v1/config'),
   preview: (change: ConfigChange) => post<ConfigPreview>('/v1/config/preview', change),
   save: (change: ConfigChange) => put<ConfigSaved>('/v1/config', change),
+}
+
+/** The next-up list: work planned but not being acted on. Changing a state or the order is the person's click only. */
+export const nextUp = {
+  /** all adds dropped and done items. */
+  list: (all = false) => get<NextList>(all ? '/v1/next?all=1' : '/v1/next'),
+  add: (body: NextAddBody) => post<NextItem>('/v1/next', body),
+  update: (id: number, body: NextUpdateBody) => patch<NextItem>(`/v1/next/${id}`, body),
 }

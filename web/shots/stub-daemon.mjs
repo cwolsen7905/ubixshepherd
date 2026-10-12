@@ -387,8 +387,78 @@ function laneDiff(id, file) {
   ].join('\n') + '\n' }
 }
 
+
+// The next-up list (docs/backlog-next.md), held in memory so the page's actions work in the stub.
+const nextItems = (() => {
+  const it = (id, stored, rank, title, o = {}) => ({
+    id, title, state: stored, stored_state: stored, rank, source: 'person', created: ago(o.age ?? 2880), updated: ago(o.age ?? 2880), ...o, age: undefined,
+  })
+  return [
+    it(3, 'approved', 1, 'Lane diff step 3: gate record, badge and the run page range view', { repo: 'acme-api', plan: 'docs/lane-diff.md', age: 4300 }),
+    it(1, 'approved', 2, 'Export the orders table as CSV', {
+      repo: 'acme-web', plan: 'docs/csv-export.md', lane: 'feat/export-csv', lane_id: 4, lane_name: 'feat/export-csv', lane_state: 'open',
+      state: 'started', running: true, mr: '!43', mr_url: 'https://git.example/acme/acme-web/-/merge_requests/43', mr_state: 'open', age: 5000,
+    }),
+    it(2, 'approved', 3, 'Retry failed webhooks with a backoff', { repo: 'acme-api', plan: 'docs/webhooks.md', age: 1500 }),
+    it(4, 'planned', 4, 'Widen a lane scope when the person approves it in a decision', { repo: 'acme-api', age: 600 }),
+    it(5, 'planned', 5, 'Answered decisions read with no time bound', { source: 'agent', proposed: true, repo: 'acme-api', note: 'Found while reading the decisions page: older answers are cut off.', age: 90 }),
+    it(6, 'deferred', 6, 'In-app editor for a lane diff', { repo: 'acme-web', plan: 'docs/lane-diff.md', age: 9000 }),
+    it(7, 'deferred', 7, 'Compare two lanes', { repo: 'acme-web', plan: 'docs/lane-diff.md', age: 9000 }),
+    it(8, 'done', 8, 'Lane diff step 2: the Changes tab', { state: 'done', repo: 'acme-web', plan: 'docs/lane-diff.md', lane_id: 7, lane_name: 'feat/lane-diff-web', mr: '!40', mr_state: 'merged', done_at: ago(1200), age: 7000 }),
+    it(9, 'dropped', 9, 'Per-lane fix-try count', { repo: 'acme-api', plan: 'docs/backlog-actions.md', age: 8000 }),
+  ]
+})()
+
+const nextView = () => {
+  const open = (x) => x.stored_state !== 'done' && x.stored_state !== 'dropped'
+  const order = { approved: 0, planned: 1, deferred: 2, done: 3, dropped: 4 }
+  const sorted = [...nextItems].sort((a, b) => order[a.stored_state] - order[b.stored_state] || a.rank - b.rank)
+  return { sorted, open }
+}
+
+function nextRoute(req, res, u, p) {
+  const m = p.match(/^\/v1\/next(?:\/(\d+))?$/)
+  if (!m) return false
+  const id = m[1] ? Number(m[1]) : 0
+  if (req.method === 'GET' && !id) {
+    const { sorted, open } = nextView()
+    const all = u.searchParams.get('all')
+    const items = sorted.filter((x) => all || open(x))
+    const first = sorted.find((x) => x.stored_state === 'approved' && x.state === 'approved')
+    json(res, { items, ...(first ? { next_up: first.id } : {}) })
+    return true
+  }
+  let body = ''
+  req.on('data', (c) => (body += c))
+  req.on('end', () => {
+    const b = body ? JSON.parse(body) : {}
+    if (req.method === 'POST' && !id) {
+      const st = b.state === 'approved' ? 'approved' : 'planned'
+      const x = { id: Math.max(0, ...nextItems.map((n) => n.id)) + 1, title: b.title, state: st, stored_state: st, rank: 100 + nextItems.length, source: 'person', created: new Date().toISOString(), updated: new Date().toISOString(), ...(b.repo ? { repo: b.repo } : {}), ...(b.plan ? { plan: b.plan } : {}) }
+      nextItems.push(x)
+      return json(res, x, 201)
+    }
+    const x = nextItems.find((n) => n.id === id)
+    if (!x) return json(res, { error: 'no such item' }, 404)
+    if (b.state) { x.stored_state = b.state; if (x.state !== 'started') x.state = b.state; x.proposed = undefined }
+    if (b.lane_id !== undefined) { x.lane_id = b.lane_id || undefined }
+    if (b.move) {
+      const peers = nextItems.filter((n) => n.stored_state === x.stored_state).sort((a, c) => a.rank - c.rank)
+      const at = peers.indexOf(x)
+      const to = b.move === 'top' ? 0 : b.move === 'up' ? at - 1 : at + 1
+      if (to >= 0 && to < peers.length) {
+        const other = peers[to]
+        ;[x.rank, other.rank] = [other.rank, x.rank]
+      }
+    }
+    return json(res, x)
+  })
+  return true
+}
+
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x'), p = u.pathname
+  if (nextRoute(req, res, u, p)) return
   if (p === '/v1/desk/stream') return deskStream(req, res, u)
   if (p === '/v1/feed/stream') return sse(res)
   if (p === '/v1/status') return json(res, status(u.searchParams.get('detail') === '1'))

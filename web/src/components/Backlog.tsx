@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
 import { daemonInfo } from '../api/client'
-import type { SpendToday, Status, StatusDetail } from '../api/types'
+import type { NextList, SpendToday, Status, StatusDetail } from '../api/types'
 import { clockTime, since, usd } from '../format'
 import {
   BACKLOG_MARKS, BACKLOG_NAMES, RAIL_ROWS, backlogCounts, backlogText, readRailOpen, writeRailOpen, type BacklogItem,
 } from '../model/backlog'
 import { budgetUse } from '../model/projects'
+import {
+  NEXT_MARKER, readRailView, startText, canStart, planLabel, railItems, waitingCount, writeRailView, type RailView,
+} from '../model/next'
+import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { href } from '../router'
 import { Glyph } from './Glyph'
 import { MrBadge } from './MrBadge'
+import '../styles/next.css'
 
 /** Where a row leads: a decision to its answer, a lane to its page. */
 function target(it: BacklogItem): string | null {
@@ -52,16 +57,21 @@ function useDetail(load: () => Promise<Status>) {
  * A row's name leads to its page; "in thread" jumps to where the work last spoke.
  */
 export function Backlog({
-  items, now, spend, onJump, loadStatus = daemonInfo.status,
+  items, now, spend, onJump, onStart, loadStatus = daemonInfo.status, load = loadNext,
 }: {
   items: BacklogItem[]
   now: number
   spend: SpendToday | null
   onJump: (anchor: string) => void
+  /** Puts a next-up item's request in the chat draft; the Start button is absent without it. */
+  onStart?: (text: string) => void
   loadStatus?: () => Promise<Status>
+  load?: LoadNext
 }) {
   const [open, setOpen] = useState(startsOpen)
   const [all, setAll] = useState(false)
+  const [view, setView] = useState<RailView>(() => readRailView(window.localStorage))
+  const { list: nextList } = useNextList(false, load)
   const detail = useDetail(loadStatus)
   const holds = detail?.quota_holds ?? []
   const forge = detail?.forge
@@ -86,7 +96,30 @@ export function Backlog({
           <span className="backlog-counts">{text || 'nothing waiting'}</span>
         </button>
       </h2>
+      <div className="backlog-views" role="group" aria-label="Rail view">
+        {(['now', 'next'] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={view === v}
+            onClick={() => {
+              writeRailView(window.localStorage, v)
+              setView(v)
+              if (!open) {
+                writeRailOpen(window.localStorage, true)
+                setOpen(true)
+              }
+            }}
+          >
+            {v === 'now' ? 'Now' : `Next up${nextList && waitingCount(nextList) > 0 ? ` ${waitingCount(nextList)}` : ''}`}
+          </button>
+        ))}
+      </div>
       <div id="backlog-body" className="backlog-body" hidden={!open}>
+        {view === 'next' ? (
+          <NextView list={nextList} now={now} onStart={onStart} />
+        ) : (
+          <>
         {spend && (
           <p className="backlog-spend">
             {use ? (
@@ -161,7 +194,55 @@ export function Backlog({
             <a href={href.board()}>Board</a>
           </p>
         )}
+          </>
+        )}
       </div>
     </aside>
+  )
+}
+
+/** The top of the next-up list for the rail: the approved items still to start, and a link to the page. */
+function NextView({ list, now, onStart }: { list: NextList | null; now: number; onStart?: (text: string) => void }) {
+  if (list === null) return <p className="faint backlog-empty">Reading the next-up list…</p>
+  const rows = railItems(list)
+  const waiting = waitingCount(list)
+  return (
+    <>
+      {rows.length === 0 ? (
+        <p className="faint backlog-empty">No approved item is waiting to start.</p>
+      ) : (
+        <ul className="backlog-rows">
+          {rows.map((it) => {
+            const isNext = list.next_up === it.id
+            return (
+              <li key={it.id} className={`backlog-row${isNext ? ' is-next' : ''}`} aria-current={isNext ? 'true' : undefined}>
+                <Glyph
+                  glyph={isNext ? NEXT_MARKER.glyph : '◇'}
+                  tone="accent"
+                  label={isNext ? NEXT_MARKER.label : 'approved'}
+                />
+                <span className="backlog-main">
+                  <a href={href.next()} className="backlog-name">{it.title}</a>
+                  <span className="backlog-detail">
+                    {[it.repo, it.plan ? planLabel(it.plan) : ''].filter(Boolean).join(' · ') || 'no repo or plan'}
+                  </span>
+                </span>
+                <span className="backlog-side">
+                  <time dateTime={it.created} title={it.created} className="faint">{since(it.created, now) || 'now'}</time>
+                  {onStart && canStart(it) && (
+                    <button type="button" className="link-button backlog-start" onClick={() => onStart(startText(it))}>
+                      Start
+                    </button>
+                  )}
+                </span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <p className="backlog-more">
+        <a href={href.next()}>{waiting > rows.length ? `All ${waiting} approved` : 'Next up page'}</a>
+      </p>
+    </>
   )
 }

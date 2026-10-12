@@ -12,8 +12,9 @@ It needs Node 22 or later and Chrome or Chromium. The script starts `stub-daemon
 which serves the built app and canned `/v1` answers (acme-* repos on `git.example`),
 drives headless Chrome over the DevTools protocol (`shoot.mjs`), and stops both.
 
-It takes the chat page (with the backlog rail), the board, a lane, a run log, decisions
-and the timeline, each in `-light` and `-dark`, named `<page>-<theme>.png`. Every shot
+It takes the chat page (with the backlog rail, and again on its Next up view), the next-up
+list, the board, a lane, a run log, decisions
+and the timeline, each in `-light` and `-dark`, named `<page>-<theme>.png`. The stub holds the next-up list in memory, so its actions work. Every shot
 emulates `prefers-reduced-motion: reduce`, so the timeline's pulse and breathing are frozen
 and a shot repeats; its static markers are drawn for that.
 

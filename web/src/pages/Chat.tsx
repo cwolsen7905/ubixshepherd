@@ -4,7 +4,7 @@ import { Backlog } from '../components/Backlog'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { useNow } from '../hooks'
-import { answerKey, clearDraft, draftKey, readDraft, writeDraft } from '../model/chatDraft'
+import { DRAFT_EVENT, answerKey, clearDraft, draftKey, prefillDraft, readDraft, writeDraft } from '../model/chatDraft'
 import { backlogItems, threadId } from '../model/backlog'
 import { MARKS } from '../model/marks'
 import { href } from '../router'
@@ -356,7 +356,13 @@ function ChatThread({
       )}
 
       <div className="chat-layout">
-        <Backlog items={backlog} now={now} spend={live.spend} onJump={jump} />
+        <Backlog
+          items={backlog}
+          now={now}
+          spend={live.spend}
+          onJump={jump}
+          onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
+        />
         <div className="chat-main">
         {d.more && (
           <p className="chat-earlier">
@@ -417,6 +423,16 @@ function Composer({
   }
   const box = useRef<HTMLTextAreaElement>(null)
   const sending = d.sending
+  // Words put in the draft from elsewhere (the rail's Start) show at once.
+  useEffect(() => {
+    const onDraft = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== key) return
+      setText(readDraft(window.localStorage, key))
+      box.current?.focus()
+    }
+    window.addEventListener(DRAFT_EVENT, onDraft)
+    return () => window.removeEventListener(DRAFT_EVENT, onDraft)
+  }, [key])
 
   const send = async () => {
     if (sending || disabled || !text.trim()) return
