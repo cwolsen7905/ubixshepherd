@@ -406,7 +406,8 @@ func TestLaneViewForge(t *testing.T) {
 		}
 		return l
 	}
-	mk("failing", store.LaneForge{MR: 34, MRState: "opened", MRURL: "https://x/34", Pipeline: 9, PipelineStatus: "failed"})
+	mk("failing", store.LaneForge{MR: 34, MRState: "opened", MRURL: "https://x/34", Pipeline: 9, PipelineStatus: "failed",
+		Approved: true, RequireApproval: "success"})
 	mk("odd", store.LaneForge{MR: 35, MRState: "locked", Pipeline: 10, PipelineStatus: "manual"})
 	mk("merged-nopipe", store.LaneForge{MR: 36, MRState: "merged"})
 
@@ -418,10 +419,10 @@ func TestLaneViewForge(t *testing.T) {
 	for _, l := range lanes {
 		by[l.Name] = l
 	}
-	if v := by["no-mr"]; v.MR != 0 || v.MRState != "" || v.MRURL != "" || v.Pipeline != 0 || v.PipelineStatus != "" {
+	if v := by["no-mr"]; v.MR != 0 || v.MRState != "" || v.MRURL != "" || v.Pipeline != 0 || v.PipelineStatus != "" || v.Approved || v.RequireApproval != "" {
 		t.Errorf("lane without MR has forge fields: %+v", v)
 	}
-	if v := by["failing"]; v.MR != 34 || v.MRState != api.MRStateOpen || v.MRURL != "https://x/34" || v.Pipeline != 9 || v.PipelineStatus != api.PipelineFailed {
+	if v := by["failing"]; v.MR != 34 || v.MRState != api.MRStateOpen || v.MRURL != "https://x/34" || v.Pipeline != 9 || v.PipelineStatus != api.PipelineFailed || !v.Approved || v.RequireApproval != "success" {
 		t.Errorf("failing = %+v", v)
 	}
 	if v := by["odd"]; v.MRState != api.MRStateUnknown || v.PipelineStatus != api.PipelineUnknown {
