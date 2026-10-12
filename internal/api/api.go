@@ -478,6 +478,13 @@ type LaneView struct {
 	MRURL          string `json:"mr_url,omitempty"`
 	Pipeline       int64  `json:"pipeline,omitempty"`
 	PipelineStatus string `json:"pipeline_status,omitempty"`
+	// Approved is whether the open merge request has an approval (as the approval
+	// route's approved); RequireApproval is the status of the head pipeline's
+	// require-approval job (pending, manual, blocked, running, failed, success...),
+	// empty when the pipeline has none. Both are as of the last forge poll, and absent
+	// until the poll records them.
+	Approved        bool   `json:"approved,omitempty"`
+	RequireApproval string `json:"require_approval,omitempty"`
 	// LastActivity is the latest of the lane's run start or end, commit beyond its base,
 	// decision asked or answered, request made or updated, merge request update and
 	// pipeline start or finish, with the lane's creation as the floor; LastActivityBy
