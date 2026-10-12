@@ -118,6 +118,33 @@ describe('Changes', () => {
   })
 })
 
+describe('Changes narrowed to a run', () => {
+  it('reads with run=<id> and shows the worktree\'s work only for the latest run', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', fakeFetch(read({ gate: { state: 'stale', sha: 'aaaaaaaa11', at: '2026-10-11T09:00:00Z', command: 'make check', source: 'ship' } }), calls))
+    render(view({ run: { id: 9, latest: true, outside: ['web/a.ts'] } }))
+    expect(await screen.findByText('feat: add the thing')).toBeInTheDocument()
+    expect(calls).toEqual(['/v1/lanes/4/diff?mode=stat&run=9'])
+    expect(screen.getByRole('region', { name: /Uncommitted/ })).toHaveTextContent("in the lane's worktree now")
+    expect(screen.getByRole('region', { name: /Untracked/ })).toHaveTextContent('new.bin')
+    // web/a.ts is on the run's Outside list though the read called it in scope.
+    expect(within(screen.getByRole('region', { name: /Committed/ })).getAllByText('outside scope')).toHaveLength(2)
+    expect(screen.getByText('gate stale')).toBeInTheDocument()
+  })
+
+  it('hides the worktree groups for an earlier run, and reads its patches in the range', async () => {
+    const calls: string[] = []
+    vi.stubGlobal('fetch', fakeFetch(read(), calls))
+    render(view({ run: { id: 3, latest: false } }))
+    await screen.findByText('feat: add the thing')
+    expect(screen.queryByRole('region', { name: /Uncommitted/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /Untracked/ })).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: /web\/a\.ts/ }))
+    await screen.findByLabelText('Patch of web/a.ts')
+    expect(calls).toContain('/v1/lanes/4/diff?file=web%2Fa.ts&run=3')
+  })
+})
+
 describe('lineClass', () => {
   it('tells headers from content', () => {
     expect(lineClass('+++ b/x')).toBe('patch-meta')

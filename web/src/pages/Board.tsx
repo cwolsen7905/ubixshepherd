@@ -15,6 +15,7 @@ import '../styles/projects.css'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
+import { GateBadge } from '../components/GateBadge'
 import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
@@ -136,7 +137,7 @@ export function BoardPage({
                   <span className="row-lane">{it.name}</span>
                   <span className="row-agent">{it.agent ?? ''}</span>
                   <span className="row-repo">{it.repo}</span>
-                  <span className="row-mr">{it.lane && <MrBadge lane={it.lane} link={false} />}</span>
+                  <span className="row-mr">{it.lane && <MrBadge lane={it.lane} link={false} />}{it.lane?.gate && <> <GateBadge gate={it.lane.gate} /></>}</span>
                   <span className="row-detail">{it.detail}</span>
                   <span className="row-age" title={it.at}>
                     {since(it.at, now)}

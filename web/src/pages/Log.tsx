@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { api } from '../api/client'
+import { api, config } from '../api/client'
 import type { RunView } from '../api/types'
 import { BackLink } from '../components/BackLink'
+import { Changes } from '../components/Changes'
 import { EventGlyph } from '../components/Glyph'
 import { RunFailure } from '../components/RunFailure'
 import { duration, runCost, since } from '../format'
@@ -172,6 +173,8 @@ export function LogPage({ run: id }: { run: number }) {
 
       {run?.diagnosis && <RunFailure run={run} onFixed={() => api.run(id).then(setRun, () => {})} />}
 
+      {run && <RunChanges run={run} now={now} />}
+
       <div className="log-tools" role="toolbar" aria-label="Log">
         <label className="log-search">
           <span className="visually-hidden">Search the log</span>
@@ -223,6 +226,54 @@ export function LogPage({ run: id }: { run: number }) {
         {done && text !== '' && <p className="log-end faint">End of log.</p>}
       </div>
     </div>
+  )
+}
+
+/**
+ * The run's own changes: the lane's Changes view narrowed to the run's start_sha..end_sha.
+ * Closed until opened, since each read runs git; whether the run is the lane's latest
+ * (the only one that shows the worktree's uncommitted work) is read then too.
+ */
+function RunChanges({ run, now }: { run: RunView; now: number }) {
+  const [open, setOpen] = useState(false)
+  const [latest, setLatest] = useState<boolean | null>(null)
+  const [editorUrl, setEditorUrl] = useState<string | null>(null)
+  const laneId = run.lane_id
+  const runId = run.id
+  const state = run.state
+  useEffect(() => {
+    if (!open) return
+    let current = true
+    api.runs(laneId, 1).then(
+      (rs) => current && setLatest(Array.isArray(rs) && rs[0]?.id === runId),
+      () => current && setLatest(false),
+    )
+    config.get().then(
+      (doc) => {
+        const web = (doc.effective?.web ?? {}) as { editor_url?: unknown }
+        if (current && typeof web.editor_url === 'string') setEditorUrl(web.editor_url)
+      },
+      () => {},
+    )
+    return () => {
+      current = false
+    }
+  }, [open, laneId, runId, state])
+  return (
+    <details className="run-changes" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>Changes in this run</summary>
+      {open && latest === null && <p className="faint">Reading…</p>}
+      {open && latest !== null && (
+        <Changes
+          laneId={laneId}
+          worktree={run.worktree}
+          editorUrl={editorUrl}
+          refreshKey={0}
+          now={now}
+          run={{ id: runId, latest, outside: run.outside }}
+        />
+      )}
+    </details>
   )
 }
 

@@ -5,6 +5,7 @@ import { BackLink } from '../components/BackLink'
 import { Changes } from '../components/Changes'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { EventGlyph, Glyph } from '../components/Glyph'
+import { GateBadge } from '../components/GateBadge'
 import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
 import { clockTime, duration, runCost, shortSha, since } from '../format'
@@ -267,6 +268,11 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
 
         <aside className="lane-facts" aria-label="Lane details">
           <Forge lane={lane} />
+          {lane.gate && (
+            <p className="gate faint">
+              <GateBadge gate={lane.gate} now={now} />
+            </p>
+          )}
           <dl>
             <dt>Scope</dt>
             <dd>

@@ -307,6 +307,24 @@ describe('the Changes tab', () => {
   })
 })
 
+describe('the gate badge', () => {
+  it('shows the lane\'s gate record in the facts aside', async () => {
+    const live = liveWith([lane({ gate: { state: 'stale', sha: 'abcdef0123456', at: '2026-10-08T09:00:00Z', command: 'make check', source: 'ship' } })])
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => new Response(JSON.stringify(path.startsWith('/v1/runs') ? [run()] : [])))
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} />
+      </LiveProvider>,
+    )
+    const badge = await screen.findByText('gate stale')
+    expect(badge.title).toContain('commit abcdef01')
+    expect(badge.title).toContain('command: make check')
+  })
+})
+
 describe('closing from the lane page', () => {
   const finishedReview = [{ branch: 'feat/login', worktree: '/tmp/acme-api', lane: 'feat/login', verdict: 'finished', why: 'every change on it is in origin/dev', in_base: true }]
 

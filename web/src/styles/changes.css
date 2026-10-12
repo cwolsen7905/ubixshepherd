@@ -31,3 +31,8 @@
   .change-commits li { grid-template-columns: auto 1fr; }
   .change-commits li .faint { grid-column: 2; }
 }
+
+.gate-badge { font-size: var(--t-xs); cursor: help; }
+.change-lane-note { font-size: var(--t-xs); font-weight: 400; }
+.run-changes { margin: 0 0 var(--s-3); }
+.run-changes > summary { cursor: pointer; font-weight: 600; }
