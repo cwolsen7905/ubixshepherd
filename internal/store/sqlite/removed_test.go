@@ -15,6 +15,11 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	db, path := open(t)
 	ws, _ := db.SaveWorkspace(ctx, store.Workspace{Name: "w", Path: "/w"}, []store.Repo{{Name: "a", Path: "/w/a"}})
 	// Put the database back to the version before the migration, as an older daemon left it.
+	for _, tbl := range []string{"keep_going", "keep_going_starts"} {
+		if _, err := db.db.ExecContext(ctx, `DROP TABLE `+tbl); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE gate_results`); err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +29,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-3)); err != nil {
+	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-4)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

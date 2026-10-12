@@ -864,6 +864,15 @@ type Store interface {
 	// SpendOn totals a day's spend by source.
 	SpendOn(ctx context.Context, day string) (map[string]Spend, error)
 
+	// KeepGoing returns a workspace's keep-going row: the zero value, off, when it has
+	// none. SetKeepGoing replaces it.
+	KeepGoing(ctx context.Context, workspaceID int64) (KeepGoing, error)
+	SetKeepGoing(ctx context.Context, k KeepGoing) error
+	// LaneStarts is how many autonomous starts a lane had on a local day; CountLaneStart
+	// adds one and returns the new count.
+	LaneStarts(ctx context.Context, laneID int64, day string) (int, error)
+	CountLaneStart(ctx context.Context, laneID int64, day string) (int, error)
+
 	// AddDeskEvent appends to a workspace's front-desk conversation and returns the
 	// event with its sequence number and time. A user or system message with no Turn
 	// starts one: its Turn is its own Seq.
