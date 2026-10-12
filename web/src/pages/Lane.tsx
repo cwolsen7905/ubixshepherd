@@ -3,6 +3,7 @@ import { api, config, history } from '../api/client'
 import type { LaneRecord, LaneView, RequestView, RunView } from '../api/types'
 import { BackLink } from '../components/BackLink'
 import { Changes } from '../components/Changes'
+import { LaneApprove } from '../components/LaneApprove'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { GateBadge } from '../components/GateBadge'
@@ -225,7 +226,10 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
       )}
 
       {tab === 'changes' && known && (
-        <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={editorUrl} refreshKey={feedLast} now={now} />
+        <>
+          {lane.state === 'open' && <LaneApprove laneId={lane.id} refreshKey={feedLast} />}
+          <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={editorUrl} refreshKey={feedLast} now={now} />
+        </>
       )}
       {tab === 'changes' && !known && (
         <p id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-changes" className="lane-note faint">

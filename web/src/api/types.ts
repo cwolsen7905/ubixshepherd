@@ -141,6 +141,32 @@ export interface LaneReview {
   in_base?: boolean
 }
 
+/** A lane's merge request as the approval control shows it (internal/daemon approve.go). */
+export interface LaneApproval {
+  /** False when the lane's forge cannot approve from here; `reason` says why. */
+  supported: boolean
+  reason?: string
+  /** 0 or absent: the lane has no merge request. */
+  mr?: number
+  mr_url?: string
+  mr_state?: string
+  /** The merge request's head now: what an approval is for. */
+  sha?: string
+  approved: boolean
+  approved_by?: string[]
+  pipeline?: number
+  pipeline_status?: string
+  pipeline_url?: string
+  /** The status of the pipeline's require-approval job; absent when it has none. */
+  require_approval?: string
+}
+
+/** What an approval did: `retried` says the require-approval job was started again. */
+export interface LaneApproved extends LaneApproval {
+  retried: boolean
+  retry_note?: string
+}
+
 /** What closing a lane did (internal/fold CloseResult). */
 export interface LaneClosed {
   lane: Lane

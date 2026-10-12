@@ -307,6 +307,37 @@ describe('the Changes tab', () => {
   })
 })
 
+describe('approving from the Changes tab', () => {
+  it('shows the merge request\'s approval above the diff', async () => {
+    const live = liveWith()
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => {
+      if (path === '/v1/lanes/1/approval') {
+        return new Response(JSON.stringify({ supported: true, mr: 7, mr_url: 'https://forge/mr/7', mr_state: 'opened', sha: 'abcdef0123456789', approved: false, pipeline: 9, pipeline_status: 'success', require_approval: 'failed' }))
+      }
+      if (path.includes('/diff')) {
+        return new Response(JSON.stringify({
+          lane_id: 1, lane: 'x', branch: 'x', base: 'dev', base_ref: 'origin/dev', head: 'abc1234', mode: 'stat', read_at: '2026-10-08T10:04:00Z',
+          commits: [], commits_total: 0, committed: [], uncommitted: [], untracked: [], out_of_scope: 0,
+        }))
+      }
+      return new Response(JSON.stringify(path.startsWith('/v1/runs') ? [run()] : []))
+    })
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} />
+      </LiveProvider>,
+    )
+    await userEvent.click(await screen.findByRole('tab', { name: 'Changes' }))
+    const box = await screen.findByLabelText('Merge request approval')
+    expect(box).toHaveTextContent('not approved')
+    expect(box).toHaveTextContent('require-approval failed')
+    expect(within(box).getByRole('button', { name: 'Approve !7…' })).toBeInTheDocument()
+  })
+})
+
 describe('the gate badge', () => {
   it('shows the lane\'s gate record in the facts aside', async () => {
     const live = liveWith([lane({ gate: { state: 'stale', sha: 'abcdef0123456', at: '2026-10-08T09:00:00Z', command: 'make check', source: 'ship' } })])

@@ -156,6 +156,10 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathLanes, desk, s.openLane)
 	handle("POST "+api.PathLanes+"/{id}/close", desk, s.acted(s.describeCloseLane, s.closeLane))
 	handle("POST "+api.PathLanes+"/{id}/scope", operatorOnly, s.rescopeLane)
+	// Approving a merge request is the person's own click in the browser: the approve
+	// route is refused to every token, the operator's included (see approveLane).
+	handle("GET "+pathLaneApproval, web, s.laneApproval)
+	handle("POST "+pathLaneApprove, web, s.acted(s.describeApproveLane, s.approveLane))
 	handle("POST "+api.PathLanes+"/{id}/widen", desk, s.widenLane)
 	handle("POST "+api.PathLanes+"/{id}/ship", desk, s.withRunner(s.shipLane))
 	// A transcript holds full tool input and output: the person's alone, never the desk's
