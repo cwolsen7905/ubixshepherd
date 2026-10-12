@@ -143,3 +143,26 @@ const KIND_NAMES: Record<TopicKind, string> = {
   turn: 'Turn', feed: 'Row', next_item: 'Next up', lane: 'Lane', run: 'Run', decision: 'Decision', request: 'Request',
 }
 export const kindName = (k: TopicKind) => KIND_NAMES[k] ?? k
+
+/** How many hues a topic's colour is drawn from (`--topic-hue-N` in topics.css). */
+export const TOPIC_HUES = 8
+
+/** A topic's colour index: from its id alone, so the pill, the bar chip and the rail row always agree. */
+export function topicHue(id: number): number {
+  return ((Math.trunc(id) % TOPIC_HUES) + TOPIC_HUES) % TOPIC_HUES
+}
+
+/** The class that gives an element its topic's colour. */
+export const topicHueClass = (id: number) => `topic-hue-${topicHue(id)}`
+
+/** Turn id to the topic it is tied to, open or cleared; a turn with no topic is absent. */
+export function topicByTurn(list: TopicView[]): Map<number, TopicView> {
+  const out = new Map<number, TopicView>()
+  for (const t of list) {
+    for (const l of t.links) {
+      const n = Number(l.ref)
+      if (l.kind === 'turn' && Number.isInteger(n) && !out.has(n)) out.set(n, t)
+    }
+  }
+  return out
+}

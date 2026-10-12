@@ -3,6 +3,7 @@ import type { DecisionView, DeskEvent } from '../api/types'
 import { Backlog } from '../components/Backlog'
 import { TopicBar } from '../components/TopicBar'
 import { Topics } from '../components/Topics'
+import { TopicPill } from '../components/TopicPill'
 import { DecisionCard, splitQuestion } from '../components/DecisionCard'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
@@ -10,7 +11,7 @@ import { useNow } from '../hooks'
 import { DRAFT_EVENT, clearDraft, draftKey, prefillDraft, readDraft, writeDraft } from '../model/chatDraft'
 import { backlogItems, threadId } from '../model/backlog'
 import { MARKS } from '../model/marks'
-import { inTopic, memberKeys, readTopicFilter, withTopicFilter, type TopicView } from '../model/topic'
+import { inTopic, memberKeys, readTopicFilter, topicByTurn, withTopicFilter, type TopicView } from '../model/topic'
 import { topics as topicsApi } from '../api/client'
 import { href } from '../router'
 import { useSnapshot } from '../state/context'
@@ -264,7 +265,7 @@ function ChatThread({
   // The topic filter is a view over the one thread, kept in the hash so it can be linked
   // and survives a reload; the desk and history are never filtered.
   const [topicId, setTopicId] = useState<number | null>(() => readTopicFilter(window.location.hash))
-  const [topic, setTopic] = useState<TopicView | null>(null)
+  const [topicList, setTopicList] = useState<TopicView[]>([])
   useEffect(() => {
     const onHash = () => setTopicId(readTopicFilter(window.location.hash))
     window.addEventListener('hashchange', onHash)
@@ -274,12 +275,12 @@ function ChatThread({
     window.location.hash = withTopicFilter(window.location.hash, id)
     setTopicId(id)
   }, [])
+  // One read of the topics serves the filter and the pill on each turn.
   useEffect(() => {
-    if (topicId === null) return
     let live = true
     const read = () =>
       topicsApi.list(true).then(
-        (l) => live && setTopic(l.topics.find((t) => t.id === topicId) ?? null),
+        (l) => live && setTopicList(l.topics),
         () => {},
       )
     void read()
@@ -288,9 +289,11 @@ function ChatThread({
       live = false
       window.clearInterval(id)
     }
-  }, [topicId])
+  }, [])
+  const topic = useMemo(() => (topicId === null ? null : (topicList.find((t) => t.id === topicId) ?? null)), [topicList, topicId])
+  const byTurn = useMemo(() => topicByTurn(topicList), [topicList])
   const items = useMemo(() => {
-    if (topicId === null || topic === null || topic.id !== topicId) return all
+    if (topicId === null || topic === null) return all
     const members = memberKeys(topic)
     return all.filter((it) => inTopic(it, members))
   }, [all, topic, topicId])
@@ -431,7 +434,7 @@ function ChatThread({
           )}
           {items.map((it) =>
             it.type === 'desk' ? (
-              <DeskRow key={it.key} e={it.e} now={now} />
+              <DeskRow key={it.key} e={it.e} now={now} topic={it.e.turn === undefined ? undefined : byTurn.get(it.e.turn)} activeTopic={topicId} onTopic={filterTo} />
             ) : (
               <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
             ),
@@ -554,22 +557,32 @@ function Composer({
   )
 }
 
-function DeskRow({ e, now }: { e: DeskEvent; now: number }) {
+function DeskRow({
+  e, now, topic, activeTopic = null, onTopic,
+}: {
+  e: DeskEvent
+  now: number
+  /** The topic this turn is tied to; none, no pill. */
+  topic?: TopicView
+  activeTopic?: number | null
+  onTopic?: (id: number | null) => void
+}) {
   const text = e.text ?? ''
   const age = since(e.created, now)
   const when = <time dateTime={e.created} title={e.created} className="faint trow-age">{age}</time>
+  const pill = topic && onTopic ? <TopicPill topic={topic} active={activeTopic === topic.id} onFilter={onTopic} /> : null
   switch (e.kind) {
     case 'user':
       return (
         <div className="msg msg-user">
-          <span className="msg-who">You {when}</span>
+          <span className="msg-who">You {when}{pill}</span>
           <p className="msg-text">{text}</p>
         </div>
       )
     case 'assistant':
       return (
         <div className="msg msg-assistant">
-          <span className="msg-who">Front desk {when}</span>
+          <span className="msg-who">Front desk {when}{pill}</span>
           <Markdown text={text} />
         </div>
       )
