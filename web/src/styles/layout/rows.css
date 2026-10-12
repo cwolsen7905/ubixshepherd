@@ -1,5 +1,5 @@
 /* The board: groups in dock order, rows in a fixed grid so columns line up across groups. */
-.board { display: flex; flex-direction: column; gap: var(--s-5); max-width: var(--measure-table); }
+.board { display: flex; flex-direction: column; gap: var(--s-5); max-width: var(--page-max); }
 .group-head {
   display: flex; align-items: baseline; gap: 0;
   margin: 0; padding: 0 var(--pad) var(--s-1);

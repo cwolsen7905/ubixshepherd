@@ -62,12 +62,22 @@
   /* The shell: the bar, the banner and every page share one centred box. The widths of
      what sits in it are tokens too: change one here and every page follows. */
   --shell-max: 112rem;   /* the box; the window is wider than this on a very large display */
-  --measure-table: 96rem; /* the board */
-  --measure-page: 68rem; /* lane, log, decisions, chat */
-  --measure-read: 76ch;  /* a line of prose: decisions, answered lists */
-  --measure-chat: 1800px; /* the chat thread and composer: the full column, capped on a very wide screen */
-  --rail: 20rem;         /* the lane's facts column; the live rail's width later */
+  --page-max: var(--shell-max); /* a page fills the shell; no page sets its own max-width */
+  --measure-prose: 100ch; /* a card or paragraph: readable on any window; tables ignore it */
+  /* Deprecated aliases: files outside the layout still read these. Migrate, then delete. */
+  --measure-table: var(--page-max);
+  --measure-page: var(--page-max);
+  --measure-read: var(--measure-prose);
+  --measure-chat: var(--page-max);
+  --rail: 20rem;         /* the lane's facts column */
+  --rail-wide: 26rem;    /* a rail that carries a list: the chat's, Decisions' */
   --page-margin-left: 0; /* 0 keeps pages on the shell's left edge; auto centres them */
+  /* Breakpoints. CSS cannot read a custom property inside @media, so these are written out
+     where used; this is the one list. Change them together.
+       760px   stack: the board row collapses, counts leave the bar
+       1100px  .page-split stacks, two-column forms collapse, the bar drops its counts
+       1600px  main plus rail on Decisions, Log and Lane
+       2000px  pages capped at --page-max and centred (--page-margin-left: auto) */
   --shell-edge: max(0px, calc((100% - var(--shell-max)) / 2));
 }
 

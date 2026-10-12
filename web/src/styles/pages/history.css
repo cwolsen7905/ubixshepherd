@@ -26,7 +26,7 @@
 .row-runs, .row-cost { color: var(--muted); text-align: right; }
 .row-end { color: var(--muted); }
 
-.page-wide { max-width: var(--measure-table); }
+.page-wide { max-width: var(--page-max); }
 .runs-total strong { color: var(--ink); font-size: var(--t-lg); font-weight: 600; }
 .filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3) var(--s-4); margin: 0 0 var(--s-4); padding-left: var(--gutter); }
 .filters .range { margin-left: 0; }
