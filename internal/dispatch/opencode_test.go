@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -266,7 +267,7 @@ func TestOpenCodeConfigPermissions(t *testing.T) {
 	if !strings.HasPrefix(bash, `{"*":"deny","go test*":"allow"`) || !strings.HasSuffix(bash, `"git push*":"deny"}`) {
 		t.Errorf("bash rules: %s", bash)
 	}
-	for _, want := range []string{`"make check*":"allow"`, `"git commit*":"allow"`, `"cat *":"allow"`, `"git fetch*":"allow"`, `"git rebase origin/*":"allow"`, `"git merge-base*":"allow"`, `"git rev-parse*":"allow"`} {
+	for _, want := range []string{`"make check":"allow"`, `"npm *":"allow"`, `"git commit*":"allow"`, `"cat *":"allow"`, `"git fetch*":"allow"`, `"git rebase origin/*":"allow"`, `"git merge-base*":"allow"`, `"git rev-parse*":"allow"`} {
 		if !strings.Contains(bash, want) {
 			t.Errorf("bash rules lack %s: %s", want, bash)
 		}
@@ -274,6 +275,9 @@ func TestOpenCodeConfigPermissions(t *testing.T) {
 	// Check that interactive rebases are explicitly denied
 	if !strings.Contains(bash, `"git rebase -i*":"deny"`) || !strings.Contains(bash, `"git rebase --interactive*":"deny"`) {
 		t.Errorf("bash rules missing explicit deny for interactive rebase: %s", bash)
+	}
+	if strings.Contains(bash, `"make check*"`) {
+		t.Errorf("the gate must match exactly, not by prefix: %s", bash)
 	}
 	p := cfg.Provider["local"]
 	if p.NPM != "@ai-sdk/openai-compatible" || p.Options.BaseURL != "http://localhost:11434/v1" || p.Models["qwen3-coder:30b"] == nil {
@@ -290,6 +294,80 @@ func TestOpenCodeConfigPermissions(t *testing.T) {
 	s = openCodeConfig(Opts{Push: true, Merge: true}, config.OpenCode{})
 	if !strings.Contains(s, `"git push*":"allow"`) || !strings.Contains(s, `"glab mr merge*":"allow"`) || strings.Contains(s, `"provider"`) || strings.Contains(s, `"mcp"`) {
 		t.Errorf("config: %s", s)
+	}
+}
+
+// openCodeMatch mirrors how OpenCode 1.18.35 judges one command against a bash rule set:
+// the last matching rule wins, "*" matches anything, and a trailing " *" also matches the
+// command with no arguments.
+func openCodeMatch(rules []kvRule, cmd string) string {
+	verdict := ""
+	for _, r := range rules {
+		pat := r.pattern
+		var re string
+		if base, ok := strings.CutSuffix(pat, " *"); ok {
+			re = regexp.QuoteMeta(base) + `( .*)?`
+		} else {
+			re = strings.ReplaceAll(regexp.QuoteMeta(pat), `\*`, `.*`)
+		}
+		if regexp.MustCompile(`^(?s)` + re + `$`).MatchString(cmd) {
+			verdict = r.action
+		}
+	}
+	return verdict
+}
+
+type kvRule struct{ pattern, action string }
+
+// bashRules reads the bash permission block of a run's config in order.
+func bashRules(t *testing.T, s string) []kvRule {
+	t.Helper()
+	var rules []kvRule
+	// Find the block by text: it is the object after "bash":.
+	i := strings.Index(s, `"bash":{`)
+	if i < 0 {
+		t.Fatalf("no bash block: %s", s)
+	}
+	dec := json.NewDecoder(strings.NewReader(s[i+len(`"bash":`):]))
+	if tok, _ := dec.Token(); tok != json.Delim('{') {
+		t.Fatalf("bash block: %v", tok)
+	}
+	for dec.More() {
+		k, _ := dec.Token()
+		var v string
+		if err := dec.Decode(&v); err != nil {
+			t.Fatal(err)
+		}
+		rules = append(rules, kvRule{k.(string), v})
+	}
+	return rules
+}
+
+func TestOpenCodeBashNpmAndExactGate(t *testing.T) {
+	for _, c := range []struct {
+		gate string
+		cmd  string
+		want string
+	}{
+		{"make check", "npm ci", "allow"},
+		{"make check", "npm", "allow"},
+		{"make check", "npm test -- --run", "allow"},
+		{"make check", "npm run build", "allow"},
+		{"make check", "npmx run build", "deny"},
+		{"make check", "npm-foo", "deny"},
+		{"make check", "make check", "allow"},
+		{"make check", "make check build", "deny"},
+		{"make check", "make checkfoo", "deny"},
+		{"make check", "make build", "deny"},
+		{"make ci", "make ci", "allow"},
+		{"make ci", "make check", "deny"},
+		{"", "make check", "deny"},
+		{"", "git push origin x", "deny"},
+	} {
+		rules := bashRules(t, openCodeConfig(Opts{Gate: c.gate}, config.OpenCode{}))
+		if got := openCodeMatch(rules, c.cmd); got != c.want {
+			t.Errorf("gate %q, %q: %q, want %q", c.gate, c.cmd, got, c.want)
+		}
 	}
 }
 

@@ -133,8 +133,10 @@ than failing with an authentication error, shows it is.
 - **Permissions** are explicit, and `--auto` is not used. Files may be edited. Shell
   commands are denied except `go test`, `go build`, `go vet`, `gofmt`, `git diff`,
   `git status`, `git log`, `git show`, `git add`, `git commit`, `ls`, `cat`, `git fetch`,
-  `git rebase origin/*`, `git merge-base`, `git rev-parse` and the repo's
-  gate. `git push` is denied unless the repo sets `autonomy.push: agent`, and the runner's
+  `git rebase origin/*`, `git merge-base`, `git rev-parse`, `npm` (any subcommand, so a
+  repo's web tests and build run) and the repo's gate. The gate is matched exactly, as the
+  command written in the repo's profile: `make check` allows `make check` and not
+  `make check build`. `git push` is denied unless the repo sets `autonomy.push: agent`, and the runner's
   push block applies as for every agent. Questions, web fetch and web search are denied,
   and so is access outside the worktree: `external_directory` is `deny` except for the
   lane's own worktree path, which is allowed by exact path (the path as given and its

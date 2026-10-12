@@ -260,14 +260,16 @@ func openCodeExternal(worktree string) any {
 
 // openCodeConfig is the run's opencode.json. The permissions are the evaluated set for
 // mechanical edits: files may be edited, shell commands are denied except the repo's
-// build and test tools, reading git state and committing, and everything that reaches
+// build and test tools (npm included), reading git state and committing, and everything that reaches
 // beyond the worktree is denied. Pushing is denied unless the repo lets agents push.
 func openCodeConfig(o Opts, s config.OpenCode) string {
 	bash := obj{{"*", "deny"}}
 	allow := []string{"go test*", "go build*", "go vet*", "gofmt*", "git diff*", "git status*",
-		"git log*", "git show*", "git add*", "git commit*", "ls*", "cat *", "git fetch*", "git rebase origin/*", "git merge-base*", "git rev-parse*"}
+		"git log*", "git show*", "git add*", "git commit*", "ls*", "cat *", "git fetch*", "git rebase origin/*", "git merge-base*", "git rev-parse*", "npm *"}
+	// The gate is allowed as written, with no trailing wildcard: it is the whole command, and
+	// a prefix rule would also allow `make check build` or `make checkfoo`.
 	if g := strings.TrimSpace(o.Gate); g != "" {
-		allow = append(allow, g+"*")
+		allow = append(allow, g)
 	}
 	if o.Merge {
 		allow = append(allow, "glab mr view*", "glab mr merge*")
