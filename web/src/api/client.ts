@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneDiff, LaneRecord, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -126,6 +126,18 @@ export const laneChanges = {
   /** The file list; with `file`, that file's patch. */
   diff: (laneId: number, file?: string) =>
     get<LaneDiff>(`/v1/lanes/${laneId}/diff?${qs(file === undefined ? { mode: 'stat' } : { file })}`),
+}
+
+/** Closing a lane, and judging whether its work is done. */
+export const laneClose = {
+  /**
+   * Closes the lane through the daemon's own checks. Without `force` it refuses uncommitted
+   * changes and a branch git cannot see merged (an ApiError with status 409 and the reason);
+   * with it, the worktree goes whatever it holds.
+   */
+  close: (laneId: number, force: boolean) => post<LaneClosed>(`/v1/lanes/${laneId}/close`, { force }),
+  /** Every worktree of the repo, judged finished, live or unclear. The daemon refreshes the remote first. */
+  review: (repoId: number) => post<LaneReview[]>('/v1/fold/review', { repo_id: repoId, apply: false }),
 }
 
 /** A failed run's diagnoses and its suggested fixes. */

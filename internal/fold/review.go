@@ -37,6 +37,11 @@ type Review struct {
 	Verdict  string   `json:"verdict"`
 	Why      string   `json:"why"`
 	Evidence []string `json:"evidence,omitempty"`
+	// InBase is set when the worktree is clean and every commit on the branch has its
+	// change in the base (or there are none): the narrowest reading of Finished, and
+	// the one that lets Shepherd close a lane by itself. A merged request, or a worktree
+	// gone from disk, is Finished without it.
+	InBase bool `json:"in_base,omitempty"`
 	// Unlanded are the subjects of commits whose change is in neither the base nor a
 	// merged request.
 	Unlanded []string `json:"unlanded,omitempty"`
@@ -46,6 +51,26 @@ type Review struct {
 // unclear. It changes nothing.
 func (f *Fold) ReviewRepo(ctx context.Context, repoID int64) ([]Review, error) {
 	return f.review(ctx, repoID, "", true)
+}
+
+// ReviewLane judges one open lane's worktree. fetch refreshes the remote first. It
+// changes nothing. A lane whose worktree git does not list gets no review: an error.
+func (f *Fold) ReviewLane(ctx context.Context, laneID int64, fetch bool) (Review, error) {
+	lane, err := f.Store.Lane(ctx, laneID)
+	if err != nil {
+		return Review{}, err
+	}
+	canon, _ := paths.Canonical(lane.Worktree)
+	reviews, err := f.review(ctx, lane.RepoID, canon, fetch)
+	if err != nil {
+		return Review{}, err
+	}
+	for _, r := range reviews {
+		if r.Worktree == canon {
+			return r, nil
+		}
+	}
+	return Review{}, refuse("git does not list %s as a worktree of the repo", canon)
 }
 
 // review judges the repo's worktrees, or only the one at only. fetch refreshes the
@@ -174,6 +199,7 @@ func (f *Fold) judge(ctx context.Context, repo store.Repo, target string, fg for
 	switch {
 	case len(unlanded) == 0:
 		r.Verdict, r.Why = Finished, "every change on it is in "+target
+		r.InBase = true
 	case inMR:
 		r.Verdict, r.Why = Finished, fmt.Sprintf("its merge request !%d is merged and the branch holds nothing beyond it", mr.IID)
 	case mr != nil && mr.State == "opened":

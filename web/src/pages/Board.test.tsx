@@ -155,3 +155,26 @@ describe('BoardPage dismiss', () => {
     expect(onShow).toHaveBeenCalledWith(true)
   })
 })
+
+describe('BoardPage closing', () => {
+  it('marks a finished lane, and disables closing one with a run going', async () => {
+    vi.stubGlobal('fetch', async (path: string) => {
+      if (path === '/v1/fold/review') {
+        return new Response(JSON.stringify([
+          { branch: 'feat/login', worktree: '/tmp/a', lane: 'feat/login', verdict: 'finished', why: 'every change on it is in origin/dev', in_base: true },
+          { branch: 'docs-pass', worktree: '/tmp/b', lane: 'docs-pass', verdict: 'finished', why: 'every change on it is in origin/dev', in_base: true },
+        ]), { status: 200 })
+      }
+      return new Response(JSON.stringify(path === '/v1/projects' ? { projects: [unassigned()] } : []), { status: 200 })
+    })
+    const running = run({ id: 11, lane_id: 2, state: 'running' })
+    await show([
+      { key: 'lane:1', group: 'done', name: 'feat/login', laneId: 1, repo: 'acme-api', lane: lane(), run: run({ id: 10, state: 'succeeded' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+      { key: 'lane:2', group: 'working', name: 'docs-pass', laneId: 2, repo: 'docs', lane: lane({ id: 2, name: 'docs-pass', repo: 'docs', repo_id: 1 }), run: running, detail: 'run 11', at: '2026-10-08T10:01:00Z' },
+    ])
+    expect(await screen.findAllByText(/finished: ready to close/)).toHaveLength(2)
+    const row = (name: string) => within(screen.getByText(name).closest('li') as HTMLElement)
+    expect(row('feat/login').getByRole('button', { name: 'Close lane' })).toBeEnabled()
+    expect(row('docs-pass').getByRole('button', { name: 'Close lane' })).toBeDisabled()
+  })
+})

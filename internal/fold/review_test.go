@@ -67,6 +67,13 @@ func TestReviewVerdicts(t *testing.T) {
 			t.Errorf("%s: %s (%s), want %s; evidence %v", b, got[b].Verdict, got[b].Why, v, got[b].Evidence)
 		}
 	}
+	// InBase is the narrow reading auto-close relies on: a merged request is finished
+	// but is not "every change is in the base".
+	for b, in := range map[string]bool{"landed": true, "merged": false, "old": false, "fresh": false, "dirty": false} {
+		if got[b].InBase != in {
+			t.Errorf("%s: InBase = %v, want %v", b, got[b].InBase, in)
+		}
+	}
 	if len(got["old"].Unlanded) != 1 || !strings.Contains(got["old"].Unlanded[0], "add src/old.go") {
 		t.Errorf("old's unlanded = %v", got["old"].Unlanded)
 	}

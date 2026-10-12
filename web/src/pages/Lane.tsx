@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, config, history } from '../api/client'
 import type { LaneRecord, LaneView, RequestView, RunView } from '../api/types'
 import { Changes } from '../components/Changes'
+import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
@@ -132,6 +133,10 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
     return boardItems({ ...snap, lanes: [lane], decisions: [], requests: [] })[0]?.group
   }, [snap, lane])
 
+  const openLane = known && known.state === 'open' ? known : undefined
+  const finishedLanes = useFinishedLanes(openLane ? [openLane] : [], feedLast)
+  const review = openLane ? finishedLanes.get(openLane.id) : undefined
+
   if (!lane) {
     const known = snap.ready && data
     return (
@@ -163,6 +168,13 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
           {group && <span>{GROUP_NAMES[group]}</span>}
         </p>
       </header>
+
+      {openLane && (
+        <p className="lane-actions">
+          {review && <FinishedMark review={review} lastRun={latest?.state} detail />}
+          <LaneCloseButton lane={openLane} running={runs.some((r) => r.state === 'running')} />
+        </p>
+      )}
 
       {!known && (
         <p className="lane-note faint">

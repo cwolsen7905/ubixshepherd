@@ -1,0 +1,37 @@
+.finished-mark {
+  color: var(--ok, #2f7d4f);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.finished-why {
+  font-weight: 400;
+  white-space: normal;
+}
+.lane-close {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+.lane-close-note,
+.lane-close-confirm {
+  flex-basis: 100%;
+}
+.lane-close-reason {
+  white-space: pre-wrap;
+}
+.lane-close-confirm {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--bad, #b3261e);
+}
+.lane-close-confirm button {
+  margin-right: 0.75rem;
+}
+.lane-actions,
+.lane-close-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+}

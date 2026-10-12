@@ -14,6 +14,7 @@ import { projectHref } from './Projects'
 import '../styles/projects.css'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
+import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
@@ -77,6 +78,12 @@ export function BoardPage({
     setCollapsed(next)
     writeCollapsed(window.localStorage, next)
   }
+
+  // Which open lanes the daemon judges finished, for the marker and the close button.
+  const finishedLanes = useFinishedLanes(
+    useMemo(() => items.flatMap((it) => (it.lane && !it.decision && !it.request ? [it.lane] : [])), [items]),
+    snap.feed.at(-1)?.id ?? 0,
+  )
 
   const clamped = Math.min(sel, Math.max(0, total - 1))
   useEffect(() => {
@@ -165,6 +172,15 @@ export function BoardPage({
                     >
                       {body}
                     </div>
+                  )}
+                  {it.lane && it.lane.state === 'open' && !it.decision && !it.request && (
+                    <p className="row-actions lane-close-row">
+                      {(() => {
+                        const review = finishedLanes.get(it.lane.id)
+                        return review && <FinishedMark review={review} lastRun={it.run?.state} />
+                      })()}
+                      <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
+                    </p>
                   )}
                   {dr && (canDismiss(it) || (dismissed?.show && dr.dismissed)) && (
                     <p className="row-actions">

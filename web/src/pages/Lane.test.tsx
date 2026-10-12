@@ -306,3 +306,41 @@ describe('the Changes tab', () => {
     expect(link.getAttribute('href')).toMatch(/^cursor:\/\/file\//)
   })
 })
+
+describe('closing from the lane page', () => {
+  const finishedReview = [{ branch: 'feat/login', worktree: '/tmp/acme-api', lane: 'feat/login', verdict: 'finished', why: 'every change on it is in origin/dev', in_base: true }]
+
+  async function showWith(runs: ReturnType<typeof run>[], reviews: unknown[]) {
+    const live = liveWith()
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => {
+      if (path === '/v1/fold/review') return new Response(JSON.stringify(reviews), { status: 200 })
+      return new Response(JSON.stringify(path.startsWith('/v1/runs') ? runs : []), { status: 200 })
+    })
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} conversation={() => source()} />
+      </LiveProvider>,
+    )
+  }
+
+  it('marks a finished lane and offers to close it', async () => {
+    await showWith([run({ state: 'succeeded' })], finishedReview)
+    expect(await screen.findByText(/finished: ready to close/)).toBeInTheDocument()
+    expect(screen.getByText(/every change on it is in origin\/dev; last run succeeded/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close lane' })).toBeEnabled()
+  })
+
+  it('shows no marker for a lane the review does not call finished', async () => {
+    await showWith([run({ state: 'succeeded' })], [{ ...finishedReview[0], verdict: 'live', why: 'it has uncommitted changes' }])
+    await screen.findByRole('button', { name: 'Close lane' })
+    expect(screen.queryByText(/finished: ready to close/)).not.toBeInTheDocument()
+  })
+
+  it('disables closing while a run is going in the lane', async () => {
+    await showWith([run({ state: 'running' })], [])
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close lane' })).toBeDisabled())
+  })
+})

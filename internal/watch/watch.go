@@ -37,11 +37,16 @@ type Watcher struct {
 	ForgeFor func(remote string) (forge.Forge, error)
 	// Clock is the time, for the backoff from an unreachable host; tests replace it.
 	Clock func() time.Time
+	// NoAutoClose turns off closing a finished lane by itself (autoclose.go). It is
+	// off by default; the daemon does not yet expose it as a setting.
+	NoAutoClose bool
 
 	mu      sync.Mutex
 	skipped map[int64]bool        // repos with no readable forge, logged once
 	noted   map[string]bool       // follow problems, logged once
 	down    map[string]*hostState // forge hosts that did not answer, by host (backoff.go)
+	// reviewed is when auto-close last judged a lane (autoclose.go), by lane id.
+	reviewed map[int64]time.Time
 
 	// statMu guards poll; apart from mu, which Check holds for a whole pass, so Status
 	// never waits on a forge.
@@ -131,6 +136,7 @@ func (w *Watcher) Check(ctx context.Context) {
 					w.skipped[repo.ID] = true
 					w.Log.Info("watch: not watching repo", "repo", repo.Name, "why", err)
 				}
+				w.autoCloseLanes(ctx, lanes)
 				continue
 			}
 			host := hostOf(repo)
@@ -150,8 +156,20 @@ func (w *Watcher) Check(ctx context.Context) {
 					break
 				}
 			}
+			w.autoCloseLanes(ctx, lanes)
 		}
 		w.checkFollows(ctx, repos)
+	}
+}
+
+// autoCloseLanes closes the lanes that are finished and idle (autoClose), whether or not
+// their forge can be read: a lane with no merge request has nothing to poll.
+func (w *Watcher) autoCloseLanes(ctx context.Context, lanes []store.Lane) {
+	for _, l := range lanes {
+		if cur, err := w.Store.Lane(ctx, l.ID); err != nil || cur.State != store.LaneOpen {
+			continue
+		}
+		w.autoClose(ctx, l)
 	}
 }
 

@@ -113,6 +113,26 @@ export interface LaneView extends Lane {
   progress?: Progress
 }
 
+/** One worktree's verdict from the daemon's review (internal/fold Review). */
+export interface LaneReview {
+  branch: string
+  worktree: string
+  lane?: string
+  verdict: 'finished' | 'live' | 'unclear'
+  why: string
+  evidence?: string[]
+  unlanded?: string[]
+  /** Clean, and every commit's change is in the base: what lets Shepherd close it by itself. */
+  in_base?: boolean
+}
+
+/** What closing a lane did (internal/fold CloseResult). */
+export interface LaneClosed {
+  lane: Lane
+  branch_deleted: boolean
+  notes?: string[]
+}
+
 export interface Run {
   id: number
   lane_id: number
