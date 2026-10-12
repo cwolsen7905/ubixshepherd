@@ -62,6 +62,7 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 				if lf, err := s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 {
 					v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
 					v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
+					v.Approved, v.RequireApproval = lf.Approved, lf.RequireApproval
 				}
 				b := s.Fold.GateBadge(ctx, l.ID, heads[l.ID])
 				v.Gate = &b

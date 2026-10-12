@@ -557,6 +557,7 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			if err == nil && lf.MR != 0 {
 				v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
 				v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
+				v.Approved, v.RequireApproval = lf.Approved, lf.RequireApproval
 				v.MRCreated, v.MRUpdated = timePtr(lf.MRCreated), timePtr(lf.MRUpdated)
 				v.PipelineStarted, v.PipelineFinished = timePtr(lf.PipelineStarted), timePtr(lf.PipelineFinished)
 			} else {
