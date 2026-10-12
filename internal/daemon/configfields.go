@@ -80,6 +80,14 @@ var deskMeta = map[string]fieldMeta{
 	"budget_cap":        {label: "Budget cap", choices: config.Caps},
 }
 
+var keepGoingMeta = map[string]fieldMeta{
+	"cap":         {label: "Spend cap (USD)", help: "What keep-going may spend after it is turned on; at the cap it turns itself off. 0 is the default, 5.", risk: true},
+	"max_runs":    {label: "Concurrent runs", help: "Runs that may run at once while it is on; a start past it is refused. 0 is the default, 2.", risk: true},
+	"idle_hours":  {label: "Idle hours", help: "Hours with nothing started or answered before it turns itself off. 0 is the default, 4."},
+	"day_end":     {label: "Day end", help: "Local time of day it turns itself off, HH:MM; empty is midnight."},
+	"lane_starts": {label: "Starts per lane per day", help: "Autonomous starts a lane may have in a day before it is handed back. 0 is the default, 3.", risk: true},
+}
+
 var chatMeta = map[string]fieldMeta{
 	"hyperlinks": {label: "Hyperlinks", help: "auto draws clickable links where the terminal supports them; on or off forces it. Applies to the next shepherd chat.", choices: config.HyperlinkModes},
 }
@@ -111,6 +119,7 @@ func configSections() []api.ConfigSection {
 	return []api.ConfigSection{
 		{ID: "daemon", Label: "Daemon", Root: []string{"daemon"}, Fields: describe(reflect.TypeFor[config.Daemon](), daemonMeta)},
 		{ID: "desk", Label: "Front desk", Root: []string{"desk"}, Fields: describe(reflect.TypeFor[config.Desk](), deskMeta)},
+		{ID: "keep_going", Label: "Keep going", Root: []string{"keep_going"}, Fields: describe(reflect.TypeFor[config.KeepGoing](), keepGoingMeta)},
 		{ID: "chat", Label: "Chat", Root: []string{"chat"}, Fields: describe(reflect.TypeFor[config.Chat](), chatMeta)},
 		{ID: "opencode", Label: "OpenCode", Root: []string{"opencode"}, Fields: describe(reflect.TypeFor[config.OpenCode](), openCodeMeta)},
 		{ID: "defaults", Label: "Defaults", Root: []string{"defaults"}, Fields: describe(reflect.TypeFor[config.Profile](), profileMeta)},

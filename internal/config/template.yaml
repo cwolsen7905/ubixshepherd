@@ -25,6 +25,21 @@
 #   ## SHEPHERD_LOG_LEVEL environment variable, when set, overrides it.
 #   log_level: info
 
+## Keep-going mode (docs/keep-going.md): lets the front desk act on what is already
+## approved, within these limits. Each setting is the default shown; `shepherd
+## keep-going on --cap --runs --idle` sets the first three for one session.
+# keep_going:
+#   ## Dollars it may spend after it is turned on; at the cap it turns itself off.
+#   cap: 5
+#   ## Runs that may be running at once while it is on; a start past it is refused.
+#   max_runs: 2
+#   ## Hours with nothing started or answered before it turns itself off.
+#   idle_hours: 4
+#   ## Local time of day it turns itself off (HH:MM); 00:00 is midnight.
+#   day_end: "00:00"
+#   ## Autonomous starts a lane may have in a day before it is handed back.
+#   lane_starts: 3
+
 ## The front desk (shepherd chat).
 # desk:
 #   ## Its model, unless the chat is started with --model or one was set with /model

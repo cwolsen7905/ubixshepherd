@@ -51,6 +51,11 @@ func (s *Server) background() {
 			Config: s.LiveConfig,
 			Grace:  s.DeskGrace,
 		})
+		// A restart past a limit turns keep-going off before the desk's first turn.
+		kg := s.KeepGoing()
+		kg.EvaluateAll(context.Background())
+		s.keepDone = make(chan struct{})
+		go func() { defer close(s.keepDone); kg.run(s.quit) }()
 		s.hub = newFeedHub(s)
 		s.deskStreams, s.feedStreams = newSlots(maxDeskStreams), newSlots(maxFeedStreams)
 		s.bgDone = make(chan struct{})
@@ -64,6 +69,7 @@ func (s *Server) Close() {
 	s.closeOnce.Do(func() {
 		close(s.quit)
 		<-s.bgDone
+		<-s.keepDone
 		s.desks.Close()
 	})
 }
@@ -139,6 +145,8 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.fail(w, err)
 	default:
+		// The person spoke: idle time counts from now.
+		s.KeepGoing().Touch(r.Context(), d.Workspace().ID)
 		writeJSON(w, http.StatusAccepted, api.DeskTurnAccepted{WorkspaceID: d.Workspace().ID, Turn: id, Ahead: ahead})
 	}
 }

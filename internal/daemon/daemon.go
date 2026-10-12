@@ -75,6 +75,10 @@ type Server struct {
 	progress progressCache
 	// web holds browser sign-in codes and sessions (web.go); sessions persist in the store.
 	web webAuth
+	// keep is keep-going mode's controller (keepgoing.go); keepDone ends with Close.
+	keepOnce sync.Once
+	keep     *KeepGoing
+	keepDone chan struct{}
 	// reload is how the last config reload went (statusdetail.go).
 	reload atomic.Pointer[reloadState]
 	// QuotaHolds and ForgeWatch report what the runner and the forge watcher know, for
@@ -218,6 +222,10 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathProjects+"/{name}/brief/approve", desk, s.personsApproval(s.approveBrief))
 	// The next-up list: work planned but not being acted on. The desk reads and adds;
 	// choosing a state or the order is the person's (personsNext). No worker route.
+	// Keep-going mode: the desk may read it and turn it off; turning it on is the
+	// person's, checked in the handler (keepGoing).
+	handle("GET "+api.PathKeepGoing, desk, s.keepGoing)
+	handle("POST "+api.PathKeepGoing, desk, s.keepGoing)
 	handle("GET "+api.PathNext, desk, s.listNext)
 	handle("POST "+api.PathNext, desk, s.addNext)
 	handle("GET "+api.PathNext+"/{id}", desk, s.getNext)
