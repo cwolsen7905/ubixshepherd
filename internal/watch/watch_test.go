@@ -102,7 +102,13 @@ func newFixture(t *testing.T) *fixture {
 	g(seed, "push", "-q", "origin", "HEAD:main")
 	ws := filepath.Join(root, "ws")
 	os.MkdirAll(ws, 0o755)
-	g(ws, "clone", "-q", origin, filepath.Join(ws, "app"))
+	app := filepath.Join(ws, "app")
+	g(ws, "clone", "-q", origin, app)
+	// The repo's origin is the forge address the store holds; git still reaches the bare
+	// repo through it, so the saved value and git agree.
+	const addr = "git@gl.example.com:g/app.git"
+	g(app, "remote", "set-url", "origin", addr)
+	g(app, "config", "url."+origin+".insteadOf", addr)
 
 	st, err := sqlite.Open(context.Background(), filepath.Join(root, "s.db"))
 	if err != nil {
@@ -110,7 +116,7 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { st.Close() })
 	ctx := context.Background()
-	w, _ := st.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: ws}, []store.Repo{{Name: "app", Path: filepath.Join(ws, "app"), Remote: "git@gl.example.com:g/app.git"}})
+	w, _ := st.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: ws}, []store.Repo{{Name: "app", Path: app, Remote: addr}})
 	repos, _ := st.Repos(ctx, w.ID)
 	cfg := config.Default()
 	fo := &fold.Fold{Store: st, Config: cfg}
@@ -369,5 +375,40 @@ func TestForgeTimesAreStoredAndKept(t *testing.T) {
 	again, _ := f.st.LaneForge(f.ctx, f.lane.ID)
 	if again != got {
 		t.Errorf("forge error changed %+v to %+v", got, again)
+	}
+}
+
+func TestRepointedOriginIsPolledAtItsNewURL(t *testing.T) {
+	f := newFixture(t)
+	repos := func() store.Repo {
+		wss, _ := f.st.Workspaces(f.ctx)
+		rs, _ := f.st.Repos(f.ctx, wss[0].ID)
+		return rs[0]
+	}
+	var polled []string
+	f.w.ForgeFor = func(remote string) (forge.Forge, error) {
+		polled = append(polled, remote)
+		return f.f, nil
+	}
+	rp := repos()
+	// Origin is repointed after the repo was registered, as from an address to a name.
+	next := "git@forge.example.org:g/app.git"
+	if out, err := exec.Command("git", "-C", rp.Path, "remote", "set-url", "origin", next).CombinedOutput(); err != nil {
+		t.Fatalf("set-url: %v %s", err, out)
+	}
+	f.w.Check(f.ctx)
+	if len(polled) == 0 || polled[len(polled)-1] != next {
+		t.Fatalf("polled %v, want %s", polled, next)
+	}
+	if got := repos().Remote; got != next {
+		t.Errorf("saved remote = %q, want %q", got, next)
+	}
+	// Git unreadable: the saved value stands.
+	if out, err := exec.Command("git", "-C", rp.Path, "config", "--unset", "remote.origin.url").CombinedOutput(); err != nil {
+		t.Fatalf("unset: %v %s", err, out)
+	}
+	f.w.Check(f.ctx)
+	if got := repos().Remote; got != next {
+		t.Errorf("saved remote after unreadable origin = %q, want %q", got, next)
 	}
 }
