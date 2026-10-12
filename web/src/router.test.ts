@@ -34,3 +34,20 @@ describe('router', () => {
     expect(parse('#/nope')).toEqual({ page: 'missing', path: '/nope' })
   })
 })
+
+describe('cameFrom', () => {
+  it('remembers the page left and its scroll, and ignores unknown pages', async () => {
+    const { cameFrom } = await import('./router')
+    const wait = () => new Promise((r) => setTimeout(r, 0))
+    window.location.hash = '#/?range=week'
+    await wait()
+    window.location.hash = '#/runs/3/log'
+    await wait()
+    expect(cameFrom()).toEqual({ hash: '#/?range=week', scroll: 0 })
+    window.location.hash = '#/nowhere/at/all'
+    await wait()
+    window.location.hash = '#/lanes/1'
+    await wait()
+    expect(cameFrom()).toBeUndefined()
+  })
+})
