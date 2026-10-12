@@ -1,6 +1,6 @@
 import { nextItem } from '../test/fixtures'
 import {
-  canMove, canStart, closedCount, deskWorkspace, nextSections, planLabel, railItems, readRailView, stateActions,
+  canMove, canStart, closedCount, deskWorkspace, nextSections, planLabel, railItems, readRailView, rowState, rowStateWord, stateActions,
   startText, waitingCount, writeRailView,
 } from './next'
 
@@ -40,13 +40,21 @@ describe('next-up model', () => {
     expect(stateActions(done)).toEqual([])
   })
 
-  it('lists for the rail the approved items nothing has started', () => {
-    const list = { items, next_up: 1 }
-    expect(railItems(list).map((i) => i.id)).toEqual([1, 3])
+  it('lists for the rail every open item: approved, then planned, then deferred', () => {
+    const list = { items: [deferred, planned, first, started, third, done, dropped], next_up: 1 }
+    expect(railItems(list).map((i) => i.id)).toEqual([1, 2, 3, 4, 5])
     expect(waitingCount(list)).toBe(2)
     const many = { items: Array.from({ length: 9 }, (_, i) => nextItem({ id: i + 1, rank: i })) }
-    expect(railItems(many)).toHaveLength(5)
-    expect(waitingCount(many)).toBe(9)
+    expect(railItems(many)).toHaveLength(9)
+  })
+
+  it('names the state on a row, proposed apart from planned', () => {
+    expect(rowStateWord(first)).toBe('approved')
+    expect(rowStateWord(started)).toBe('started')
+    expect(rowStateWord(planned)).toBe('planned')
+    expect(rowStateWord({ ...planned, proposed: true })).toBe('proposed')
+    expect(rowState(deferred).label).toBe('deferred')
+    expect(rowState({ ...planned, proposed: true }).label).toMatch(/^proposed/)
   })
 
   it('words the Start request and says when it applies', () => {

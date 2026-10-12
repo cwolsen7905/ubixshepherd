@@ -28,9 +28,6 @@ export const NEXT_MARKS: Record<NextState, { glyph: string; tone: Tone; label: s
 /** The marker on the first approved item with no lane: what the list says to do next. */
 export const NEXT_MARKER = { glyph: '▶', tone: 'accent' as Tone, label: 'next up' }
 
-/** How many items the rail's Next up view shows. */
-export const NEXT_RAIL_ROWS = 5
-
 /** The section an item sits in: its chosen state, so a started item stays among the approved. */
 export const sectionOf = (it: NextItem): NextChosen => it.stored_state
 
@@ -70,9 +67,21 @@ export function stateActions(it: NextItem): { label: string; state: NextChosen }
   }
 }
 
-/** The approved items still to start, in order, for the rail: no lane and not finished. */
+/** The open items for the rail, in the person's order: approved (started ones in place), then planned, then deferred. */
 export function railItems(list: NextList): NextItem[] {
-  return list.items.filter((it) => it.stored_state === 'approved' && it.state === 'approved').slice(0, NEXT_RAIL_ROWS)
+  const open = (it: NextItem) => it.state !== 'done' && it.state !== 'dropped' && it.stored_state !== 'done' && it.stored_state !== 'dropped'
+  return NEXT_SECTIONS.flatMap((s) => list.items.filter((it) => open(it) && sectionOf(it) === s))
+}
+
+/** What a row says about its item: the state's glyph, tone and word; a planned item an agent proposed reads as proposed. */
+export function rowState(it: NextItem): { glyph: string; tone: Tone; label: string } {
+  if (it.state === 'planned' && it.proposed) return { ...NEXT_MARKS.planned, label: 'proposed, not yet approved' }
+  return NEXT_MARKS[it.state]
+}
+
+/** The one word the rail shows beside a row's title. */
+export function rowStateWord(it: NextItem): string {
+  return it.state === 'planned' && it.proposed ? 'proposed' : it.state
 }
 
 /** How many approved items have no lane yet. */

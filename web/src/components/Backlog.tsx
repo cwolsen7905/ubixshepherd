@@ -7,7 +7,7 @@ import {
 } from '../model/backlog'
 import { budgetUse } from '../model/projects'
 import {
-  NEXT_MARKER, readRailView, startText, canStart, planLabel, railItems, waitingCount, writeRailView, type RailView,
+  NEXT_MARKER, readRailView, startText, canStart, planLabel, railItems, rowState, rowStateWord, waitingCount, writeRailView, type RailView,
 } from '../model/next'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { href } from '../router'
@@ -201,28 +201,25 @@ export function Backlog({
   )
 }
 
-/** The top of the next-up list for the rail: the approved items still to start, and a link to the page. */
+/** The next-up list for the rail: every open item with its state, and a link to the page. */
 function NextView({ list, now, onStart }: { list: NextList | null; now: number; onStart?: (text: string) => void }) {
   if (list === null) return <p className="faint backlog-empty">Reading the next-up list…</p>
   const rows = railItems(list)
-  const waiting = waitingCount(list)
   return (
     <>
       {rows.length === 0 ? (
-        <p className="faint backlog-empty">No approved item is waiting to start.</p>
+        <p className="faint backlog-empty">No open item in the next-up list.</p>
       ) : (
         <ul className="backlog-rows">
           {rows.map((it) => {
             const isNext = list.next_up === it.id
+            const mark = isNext ? NEXT_MARKER : rowState(it)
             return (
-              <li key={it.id} className={`backlog-row${isNext ? ' is-next' : ''}`} aria-current={isNext ? 'true' : undefined}>
-                <Glyph
-                  glyph={isNext ? NEXT_MARKER.glyph : '◇'}
-                  tone="accent"
-                  label={isNext ? NEXT_MARKER.label : 'approved'}
-                />
+              <li key={it.id} className={`backlog-row state-${it.state}${isNext ? ' is-next' : ''}`} aria-current={isNext ? 'true' : undefined}>
+                <Glyph glyph={mark.glyph} tone={mark.tone} label={mark.label} />
                 <span className="backlog-main">
-                  <a href={href.next()} className="backlog-name">{it.title}</a>
+                  <a href={href.next()} className="backlog-name">{it.title}</a>{' '}
+                  <span className="backlog-state">{rowStateWord(it)}</span>
                   <span className="backlog-detail">
                     {[it.repo, it.plan ? planLabel(it.plan) : ''].filter(Boolean).join(' · ') || 'no repo or plan'}
                   </span>
@@ -241,7 +238,7 @@ function NextView({ list, now, onStart }: { list: NextList | null; now: number; 
         </ul>
       )}
       <p className="backlog-more">
-        <a href={href.next()}>{waiting > rows.length ? `All ${waiting} approved` : 'Next up page'}</a>
+        <a href={href.next()}>{rows.length > 0 ? `All ${rows.length} open` : 'Next up page'}</a>
       </p>
     </>
   )

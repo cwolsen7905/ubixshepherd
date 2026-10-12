@@ -36,3 +36,7 @@
 .backlog-views button[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); }
 .backlog-start { margin-left: auto; }
 .backlog-row.is-next { box-shadow: inset 3px 0 0 var(--lantern); padding-left: 6px; }
+.backlog-state { font-size: var(--t-xs); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.backlog-row.state-approved .backlog-state, .backlog-row.state-started .backlog-state { color: var(--ink); }
+.backlog-row.state-planned .backlog-name, .backlog-row.state-deferred .backlog-name { font-weight: 400; }
+.backlog-row.state-deferred { opacity: .75; }
