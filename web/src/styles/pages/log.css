@@ -1,0 +1,40 @@
+/* Run log: the agent's words in mono on the rail; tool calls fold into one line. */
+.log-head h1 { display: flex; align-items: baseline; margin-left: calc(-1 * var(--gutter)); }
+.log-tools {
+  position: sticky; top: var(--bar-h); z-index: 4;
+  display: flex; align-items: center; gap: var(--s-3);
+  margin: 0 calc(-1 * var(--pad)); padding: 0.375rem var(--pad) 0.375rem calc(var(--pad) + var(--gutter));
+  background: var(--field); border-bottom: 1px solid var(--rule);
+  font-size: var(--t-sm);
+}
+.log-tools-gap { flex: 1; }
+.log-search input {
+  width: 17rem; padding: 0.1875rem var(--s-2);
+  background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius);
+}
+.log-tools .link-button[aria-pressed="true"] { color: var(--lichen); }
+.log-body { padding-top: var(--s-3); font-family: var(--font-mono); font-size: var(--t-sm); line-height: 1.55; }
+.log-body pre { margin: 0 0 var(--s-3); padding-left: var(--gutter); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.log-header { color: var(--faint); }
+.log-tools-block { margin: 0 0 var(--s-3); }
+.log-tools-block summary {
+  display: flex; align-items: baseline; cursor: pointer; list-style: none;
+  color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.log-tools-block summary::-webkit-details-marker { display: none; }
+.log-tools-block summary .glyph { color: var(--lichen); transition: transform 120ms; }
+.log-tools-block[open] summary .glyph { transform: rotate(90deg); }
+.log-tools-block summary:hover { color: var(--ink); }
+.log-tools-block ol { list-style: none; margin: 2px 0 0; padding: 0 0 0 var(--gutter); border-left: 1px solid var(--rule); margin-left: calc(var(--gutter) / 2); }
+.log-tools-block li { padding: 1px 0 1px var(--s-3); overflow-wrap: anywhere; }
+.log-input { color: var(--muted); }
+.log-body mark { background: var(--lantern-wash); color: inherit; outline: 1px solid color-mix(in srgb, var(--lantern) 50%, transparent); border-radius: 2px; }
+.log-body mark.is-current { background: var(--lantern); color: var(--sheet); }
+.log-live, .log-end { padding-left: 0; font-family: var(--font-ui); }
+.log-live .glyph { color: var(--lichen); animation: pulse 1.6s ease-in-out infinite; }
+.log-end { padding-left: var(--gutter); }
+@keyframes pulse { 50% { opacity: 0.3; } }
+.requests { margin-top: var(--s-5); }
+.requests-sub { padding-left: var(--gutter); margin-bottom: var(--s-2); }
+.request-msg { white-space: pre-wrap; }
+

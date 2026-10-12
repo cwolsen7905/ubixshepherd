@@ -1,0 +1,47 @@
+.badge { font-size: var(--t-sm); font-weight: 600; text-decoration: none; white-space: nowrap; }
+a.badge:hover { text-decoration: underline; }
+
+.link-button {
+  background: none; border: 0; padding: 0 var(--s-1); cursor: pointer;
+  color: var(--muted); font-size: var(--t-sm); font-weight: 500;
+}
+.link-button:hover { color: var(--ink); }
+
+/* Three buttons. Primary (.button-primary) is the one action that matters on a page,
+   secondary (.button) is every other bordered one, quiet (.link-button) is text. They
+   share one disabled look: the fill and border go quiet, never the words. */
+.button {
+  padding: var(--s-1) var(--s-3); border-radius: var(--radius);
+  border: 1px solid var(--control-border); background: var(--sheet); cursor: pointer;
+  box-shadow: var(--shadow-1);
+}
+.button:hover:not(:disabled) { border-color: var(--muted); }
+.button:active:not(:disabled) { background: var(--hover); }
+
+.help {
+  min-width: 24rem; max-width: 36rem; padding: var(--s-5); border: 1px solid var(--control-border); border-radius: var(--radius-lg);
+  background: var(--sheet); color: var(--ink); box-shadow: var(--shadow-2);
+}
+.help::backdrop { background: color-mix(in srgb, var(--field) 60%, transparent); }
+.help h2 { margin: 0 0 var(--s-3); font-size: var(--t-lg); }
+.help dl { margin: 0 0 var(--s-4); display: grid; gap: 0.375rem; }
+.help dl > div { display: grid; grid-template-columns: 6rem 1fr; gap: var(--s-3); }
+.help dt { display: flex; gap: var(--s-1); }
+.help dd { margin: 0; color: var(--muted); }
+
+.button-primary { background: var(--lantern); border-color: var(--lantern); color: var(--sheet); font-weight: 600; }
+.button-primary:hover:not(:disabled) { filter: brightness(1.08); border-color: var(--lantern); }
+/* Disabled keeps its text legible: the fill and the border go quiet, not the words. */
+.button:disabled, .button-primary:disabled {
+  background: var(--hover); border-color: var(--rule); color: var(--muted); cursor: default; box-shadow: none;
+}
+.link-button:disabled { color: var(--faint); cursor: default; }
+.button-primary:active:not(:disabled) { filter: brightness(0.94); }
+
+/* A field or choice in focus gets the ring and a soft halo, so it reads at a glance. */
+.own textarea:focus-visible, .option:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent);
+}
+.option[aria-pressed="true"]:focus-visible {
+  box-shadow: inset 3px 0 0 var(--lantern), 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent);
+}

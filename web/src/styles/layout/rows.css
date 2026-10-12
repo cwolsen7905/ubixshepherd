@@ -1,0 +1,39 @@
+/* The board: groups in dock order, rows in a fixed grid so columns line up across groups. */
+.board { display: flex; flex-direction: column; gap: var(--s-5); max-width: var(--page-max); }
+.group-head {
+  display: flex; align-items: baseline; gap: 0;
+  margin: 0; padding: 0 var(--pad) var(--s-1);
+  font-size: var(--t-sm); font-weight: 600; color: var(--muted);
+}
+.group-name { color: var(--ink); }
+.group-count { margin-left: var(--s-2); color: var(--faint); font-weight: 500; }
+.group-head .link-button { margin-left: auto; }
+
+/* The one loud thing: what waits on the person sits on a lantern band. */
+.group-needs { border-radius: var(--radius); background: var(--lantern-wash); border-block: 1px solid color-mix(in srgb, var(--lantern) 35%, transparent); padding-top: var(--s-2); }
+.group-needs .group-name { color: var(--lantern-ink); }
+
+.rows { list-style: none; margin: 0; padding: 0; }
+.row {
+  display: grid;
+  /* --cols is the one place a row's tracks are set: a section overrides it, not the grid. */
+  --cols: var(--gutter) minmax(9rem, 1.3fr) 5rem minmax(6rem, 0.8fr) 6rem minmax(0, 3fr) 3rem;
+  grid-template-columns: var(--cols);
+  align-items: center; column-gap: var(--s-3);
+  min-height: var(--row); padding: 0 var(--pad);
+  color: inherit; text-decoration: none;
+  border-top: 1px solid var(--rule);
+}
+.rows li:last-child .row { border-bottom: 1px solid var(--rule); }
+.group-needs .rows li .row { border-color: color-mix(in srgb, var(--lantern) 25%, transparent); }
+.group-needs .rows li:last-child .row { border-bottom: 0; }
+.row:hover { background: var(--hover); }
+.group-needs .row:hover { background: color-mix(in srgb, var(--lantern) 12%, var(--lantern-wash)); }
+.row:focus-visible { outline-offset: -2px; border-radius: 0; }
+.row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--lichen); }
+.row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-lane { font-weight: 600; }
+.row-agent, .row-repo { color: var(--muted); }
+.row-detail { color: var(--muted); }
+.row-age { text-align: right; color: var(--faint); font-size: var(--t-xs); }
+
