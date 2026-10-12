@@ -1,8 +1,15 @@
 # Topics: naming what the thread is about, and clearing what is settled
 
-Status: **proposed**, approved in outline by the maintainer (decision 85, 2026-10-11) with
-the defaults in the Decisions table. Nothing is built. Implementation is four merge
-requests, each its own lane (section 7).
+Status: **partly built**, approved in outline by the maintainer (decision 85, 2026-10-11)
+with the defaults in the Decisions table. Built: the store and API (section 1), the
+`shepherd topic` commands and the `topic_*` desk tools (section 3), the topic list at the
+head of each turn, the brief paragraph and the rotation summary (section 2), clearing and
+reopening with the needs-the-person flag (section 4), and the Topics section on the web
+rail with the thread filter. Not built: the `topic` feed kind, search by title and
+`shepherd topic backfill` (sections 3 and 6); the terminal dock section and slash commands
+(section 3); a turn-level link, so a desk turn joins a topic only when it is tied by
+hand; the third rail toggle (the section sits under the backlog until the toggle's file is
+free); the row chip and "Move to topic" action.
 
 ## The problem
 
