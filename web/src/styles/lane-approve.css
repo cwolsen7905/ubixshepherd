@@ -1,0 +1,21 @@
+.lane-approve {
+  margin: 0.5rem 0 0.75rem;
+}
+.lane-approve-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: baseline;
+  margin: 0 0 0.4rem;
+}
+.lane-approve-confirm {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--lantern, #b8860b);
+}
+.lane-approve-confirm button {
+  margin-left: 0.75rem;
+}
+.lane-approve-note {
+  margin: 0.4rem 0 0;
+}

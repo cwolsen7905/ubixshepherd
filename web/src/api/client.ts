@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -138,6 +138,13 @@ export const laneClose = {
   close: (laneId: number, force: boolean) => post<LaneClosed>(`/v1/lanes/${laneId}/close`, { force }),
   /** Every worktree of the repo, judged finished, live or unclear. The daemon refreshes the remote first. */
   review: (repoId: number) => post<LaneReview[]>('/v1/fold/review', { repo_id: repoId, apply: false }),
+}
+
+/** A lane's merge request approval: read, and given by the person's own click only. */
+export const laneApprove = {
+  read: (laneId: number) => get<LaneApproval>(`/v1/lanes/${laneId}/approval`),
+  /** `sha` is the head the person was looking at; a moved head is refused with a 409. */
+  approve: (laneId: number, sha: string) => post<LaneApproved>(`/v1/lanes/${laneId}/approve`, { sha }),
 }
 
 /** A failed run's diagnoses and its suggested fixes. */

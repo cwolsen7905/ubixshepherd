@@ -184,6 +184,10 @@ What is "his" is a rule set, not a mood:
 | merge sign-off | always; agents never approve, 👍, or resolve AI-review threads |
 | product choice / no-default design | declared by the agent (the only class a model triggers) |
 
+The sign-off itself is only ever the person's. The web Lane page's Approve is a route
+that accepts a browser session alone (not the desk, an agent or the CLI's token), pins the
+head the person looked at, and is recorded in the feed ([web.md](web.md)).
+
 Detection is code (paths, markers, commands). A model may **add** a reason to stop; it
 can never remove one. The held decision goes to the human thread with its options and a
 recommendation; the answer is recorded and released back to the agent.
