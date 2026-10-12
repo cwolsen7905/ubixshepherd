@@ -603,10 +603,11 @@ func workerTools() []mcpTool {
 		{
 			Name: "ask_human",
 			Description: "Hold a decision for the person: money or pricing, published or user-facing text, deleting or overwriting data, production, or a scope or design change with no clear default. " +
-				"Give the options and your recommendation. Then end your turn: Shepherd continues this conversation with the answer.",
+				"Give the options and your recommendation. Then end your turn: Shepherd continues this conversation with the answer. " +
+				"The person reads it as markdown: open the question with a one-line summary, then short sections or bullets (what you propose, the files, the risk); keep each option to a short phrase.",
 			InputSchema: obj(map[string]any{
-				"question":       map[string]any{"type": "string"},
-				"options":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+				"question":       map[string]any{"type": "string", "description": "Markdown: a one-line summary first, then short sections or bullets. Not a wall of text."},
+				"options":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Short phrases the person can pick; one line each."},
 				"recommendation": map[string]any{"type": "string", "description": "Which option you recommend, and why, in a sentence."},
 				"why":            map[string]any{"type": "string", "description": "Why this is the person's call rather than yours."},
 			}, "question", "recommendation"),

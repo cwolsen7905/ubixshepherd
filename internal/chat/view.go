@@ -48,7 +48,7 @@ func renderLine(l Line, width int) string {
 	case KindEvent:
 		return hang(eventGlyph(l.Event)+" ", "  ", styleLines(styleEvent, tintAgents(wrapLinks(l.Text, w))))
 	case KindDecision:
-		return hang(eventGlyph(api.EventDecisionAsked)+" ", "  ", styleLines(styleDecision, wrapLinks(l.Text, w)))
+		return hang(eventGlyph(api.EventDecisionAsked)+" ", "  ", renderMarkdown(l.Text, w))
 	case KindShell:
 		return hang(styleHead.Render("$")+" ", "  ", renderShell(l.Text, w))
 	case KindError:

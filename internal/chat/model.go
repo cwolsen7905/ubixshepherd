@@ -799,8 +799,10 @@ func (m *Model) handle(text string) tea.Cmd {
 			}
 			var b strings.Builder
 			for _, d := range ds {
+				if b.Len() > 0 {
+					b.WriteString("\n\n---\n\n")
+				}
 				b.WriteString(decisionText(d))
-				b.WriteString("\n")
 			}
 			return lineMsg{Kind: KindDecision, Text: strings.TrimSpace(b.String())}
 		}
@@ -943,16 +945,29 @@ func (m *Model) conversation(prefix string) (api.SessionView, error) {
 	return api.SessionView{}, fmt.Errorf("%d conversations start with %s; give more of the id", len(hit), prefix)
 }
 
+// decisionText is a decision as markdown for the thread: who asked, the question as the
+// agent wrote it, the options numbered, then the recommendation, why it is the person's
+// call, and how to answer. renderLine draws it through renderMarkdown.
 func decisionText(d api.DecisionView) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "decision %d from %s in lane %s: %s", d.ID, d.Agent, d.Lane, d.Question)
+	fmt.Fprintf(&b, "**decision %d** from %s in lane %s", d.ID, d.Agent, d.Lane)
+	if d.Repo != "" {
+		fmt.Fprintf(&b, " (%s)", d.Repo)
+	}
+	fmt.Fprintf(&b, "\n\n%s\n", strings.TrimSpace(d.Question))
+	if len(d.Options) > 0 {
+		b.WriteString("\n")
+	}
 	for i, o := range d.Options {
-		fmt.Fprintf(&b, "\n   %d. %s", i+1, o)
+		fmt.Fprintf(&b, "%d. %s\n", i+1, oneLine(o))
 	}
 	if d.Recommendation != "" {
-		fmt.Fprintf(&b, "\n   recommends: %s", d.Recommendation)
+		fmt.Fprintf(&b, "\n**recommends:** %s\n", strings.TrimSpace(d.Recommendation))
 	}
-	fmt.Fprintf(&b, "\n   /answer %d <option or words>", d.ID)
+	if d.Why != "" {
+		fmt.Fprintf(&b, "\n**why yours:** %s\n", strings.TrimSpace(d.Why))
+	}
+	fmt.Fprintf(&b, "\n/answer %d <option or words>", d.ID)
 	return b.String()
 }
 

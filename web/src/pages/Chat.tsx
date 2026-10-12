@@ -1,14 +1,15 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
 import type { DecisionView, DeskEvent } from '../api/types'
 import { Backlog } from '../components/Backlog'
+import { DecisionCard, splitQuestion } from '../components/DecisionCard'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { useNow } from '../hooks'
-import { DRAFT_EVENT, answerKey, clearDraft, draftKey, prefillDraft, readDraft, writeDraft } from '../model/chatDraft'
+import { DRAFT_EVENT, clearDraft, draftKey, prefillDraft, readDraft, writeDraft } from '../model/chatDraft'
 import { backlogItems, threadId } from '../model/backlog'
 import { MARKS } from '../model/marks'
 import { href } from '../router'
-import { useLive, useSnapshot } from '../state/context'
+import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type Connection, type DeskSnapshot } from '../state/desk'
 import '../styles/chat.css'
 
@@ -264,7 +265,10 @@ function ChatThread({
   // The rail's "in thread" links name rows the thread shows; one that is not loaded has none.
   const backlog = useMemo(() => {
     const shownFeed = new Set(items.flatMap((it) => (it.type === 'feed' ? [it.f.id] : [])))
-    return backlogItems({ ...live, shown: shownFeed })
+    // A decision's long markdown stays in its card: the rail names it by its headline.
+    return backlogItems({ ...live, shown: shownFeed }).map((b) =>
+      b.decision ? { ...b, detail: b.detail.replace(b.decision.question.replace(/\s+/g, ' ').trim(), splitQuestion(b.decision.question).head || clipHead(b.decision.question)) } : b,
+    )
   }, [items, live])
   const [flash, setFlash] = useState('')
   const jump = useCallback((anchor: string) => {
@@ -386,7 +390,7 @@ function ChatThread({
           {unplaced.map((x) => (
             <div key={`d${x.id}`} id={threadId(`d${x.id}`)} className={`trow trow-decision${flash === `d${x.id}` ? ' is-flash' : ''}`}>
               <Glyph glyph={MARKS.decision_asked.glyph} tone="warn" label="decision waiting" />
-              <InlineDecision d={x} />
+              <DecisionCard d={x} variant="inline" />
             </div>
           ))}
           {d.partial !== '' && (
@@ -598,100 +602,14 @@ function FeedRow({
           {RUN_KINDS.has(item.event) && item.ref ? <a href={href.log(item.ref)}>log</a> : null}{' '}
           <time dateTime={item.created} title={item.created} className="faint trow-age">{age}</time>
         </p>
-        {decision && <InlineDecision d={decision} />}
+        {decision && <DecisionCard d={decision} variant="inline" />}
       </div>
     </div>
   )
 }
 
-/**
- * A decision answered in place. The words go through Live.answer, the same call the
- * Decisions page makes, and only from the person's own click.
- */
-function InlineDecision({ d }: { d: DecisionView }) {
-  const live = useLive()
-  const options = d.options ?? []
-  const [choice, setChoice] = useState('')
-  const draft = answerKey(d.id)
-  const [own, setOwnText] = useState(() => readDraft(window.localStorage, draft))
-  const setOwn = (v: string) => {
-    setOwnText(v)
-    writeDraft(window.localStorage, draft, v)
-  }
-  const [state, setState] = useState<{ s: 'idle' | 'sending' | 'done' } | { s: 'error'; msg: string }>({ s: 'idle' })
-  const words = own.trim() || choice
-  const id = `chat-decision-${d.id}`
-
-  if (state.s === 'done') {
-    return (
-      <p className="decision-done" role="status">
-        <Glyph glyph="↳" tone="ok" label="answered" /> Answered “{words}”.
-      </p>
-    )
-  }
-  const send = async () => {
-    if (!words) return
-    setState({ s: 'sending' })
-    try {
-      await live.answer(d.id, words)
-      clearDraft(window.localStorage, draft)
-      setState({ s: 'done' })
-    } catch (e) {
-      setState({ s: 'error', msg: e instanceof Error ? e.message : String(e) })
-    }
-  }
-  return (
-    <section className="decision decision-inline" aria-labelledby={`${id}-q`}>
-      <p className="decision-meta">
-        <span>decision {d.id}</span>
-        <span>{d.lane}</span>
-        <span className="faint">{d.repo}</span>
-        <a href={href.decisions(d.id)}>open</a>
-      </p>
-      <p id={`${id}-q`} className="decision-q">{d.question}</p>
-      {d.why && <p className="decision-why">{d.why}</p>}
-      <fieldset className="decision-answer" disabled={state.s === 'sending'}>
-        <legend className="visually-hidden">Your answer to decision {d.id}</legend>
-        {options.length > 0 && (
-          <ol className="options">
-            {options.map((o) => (
-              <li key={o}>
-                <button
-                  type="button"
-                  className="option"
-                  aria-pressed={choice === o && !own.trim()}
-                  onClick={() => {
-                    setChoice(o)
-                    setOwn('')
-                  }}
-                >
-                  <span className="option-text">{o}</span>
-                  {d.recommendation && o.trim() === d.recommendation.trim() && <span className="option-rec">recommended</span>}
-                </button>
-              </li>
-            ))}
-          </ol>
-        )}
-        <label className="own">
-          <span className="visually-hidden">Or write your own answer to decision {d.id}</span>
-          <textarea
-            rows={1}
-            placeholder={options.length ? 'Or write your own answer' : 'Write your answer'}
-            value={own}
-            onChange={(e) => setOwn(e.target.value)}
-          />
-        </label>
-        <div className="send">
-          <button type="button" className="button button-primary" disabled={!words} onClick={() => void send()}>
-            {state.s === 'sending' ? 'Sending…' : 'Answer'}
-          </button>
-          {state.s === 'error' && (
-            <span className="tone-bad" role="alert">
-              Not sent: {state.msg}
-            </span>
-          )}
-        </div>
-      </fieldset>
-    </section>
-  )
+/** The first words of a question that has no summary line, for a one-line place. */
+function clipHead(q: string) {
+  const one = q.replace(/\s+/g, ' ').trim()
+  return one.length > 120 ? one.slice(0, 119) + '…' : one
 }
