@@ -905,6 +905,26 @@ type Store interface {
 	// MoveNextItem moves an item "top", "up" or "down" within its stored state.
 	MoveNextItem(ctx context.Context, id int64, how string) (NextItem, error)
 
+	// AddTopic makes an open topic. Title is required; Source defaults to person.
+	AddTopic(ctx context.Context, t Topic) (Topic, error)
+	// Topic reads one topic, following merged_into to the topic it became. ErrNotFound
+	// for an unknown id.
+	Topic(ctx context.Context, id int64) (Topic, error)
+	// Topics returns every topic that was not merged away, newest activity first.
+	Topics(ctx context.Context) ([]Topic, error)
+	// UpdateTopic applies the patch; ErrNotFound for an unknown id.
+	UpdateTopic(ctx context.Context, id int64, p TopicPatch) (Topic, error)
+	// MergeTopics repoints from's links to into and marks from merged. ErrConflict
+	// when they are the same topic or either is already merged away.
+	MergeTopics(ctx context.Context, from, into int64) (Topic, error)
+	// LinkTopic ties (kind, ref) to a topic. An existing link is replaced only when
+	// TopicLinkWins; the returned link is the one in force.
+	LinkTopic(ctx context.Context, l TopicLink) (TopicLink, error)
+	// TopicLinks returns a topic's links, oldest first.
+	TopicLinks(ctx context.Context, topicID int64) ([]TopicLink, error)
+	// TopicOf returns the link of a thing; ErrNotFound when it is in General.
+	TopicOf(ctx context.Context, kind, ref string) (TopicLink, error)
+
 	// SpendRollup splits the spend of the days from to to inclusive ("2006-01-02") by repo,
 	// the desk and the rest.
 	SpendRollup(ctx context.Context, from, to string) (SpendRollup, error)

@@ -230,6 +230,12 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathNext, desk, s.addNext)
 	handle("GET "+api.PathNext+"/{id}", desk, s.getNext)
 	handle("PATCH "+api.PathNext+"/{id}", desk, s.patchNext)
+	// Conversation topics (docs/topics.md): the desk reads, creates and tags; renaming,
+	// merging, moving, clearing and reopening are the person's (patchTopic). No worker route.
+	handle("GET "+api.PathTopics, desk, s.listTopics)
+	handle("POST "+api.PathTopics, desk, s.addTopic)
+	handle("GET "+api.PathTopics+"/{id}", desk, s.getTopic)
+	handle("PATCH "+api.PathTopics+"/{id}", desk, s.patchTopic)
 	handle("GET "+api.PathRequests, desk, s.listRequests)
 	handle("POST "+api.PathRequests+"/{id}/route", desk, s.acted(s.describeRoute, s.withRunner(s.routeRequest)))
 	handle("POST "+api.PathRequests+"/{id}/close", desk, s.acted(s.describeCloseRequest, s.withRunner(s.closeRequest)))
