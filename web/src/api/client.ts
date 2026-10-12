@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -162,6 +162,13 @@ export const daemonInfo = {
   status: () => get<Status>('/v1/status?detail=1'),
   /** This browser's session. */
   session: () => get<WebSession>('/v1/web/session'),
+}
+
+/** The daemon's release check: a cached answer, never a call to GitHub from the browser. */
+export const updateCheck = {
+  status: () => get<UpdateStatus>('/v1/update'),
+  /** Hides the notice for `version` (the one offered) until a newer release appears. */
+  dismiss: (version: string) => post<UpdateStatus>('/v1/update/dismiss', { version }),
 }
 
 /** What ran and how it ended, closed lanes included. `since` is an RFC 3339 time. */

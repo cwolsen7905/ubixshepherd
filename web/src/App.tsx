@@ -19,6 +19,7 @@ import { TimelinePage } from './pages/Timeline'
 import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
 import { Help } from './components/Help'
+import { UpdateNotice } from './components/UpdateNotice'
 import { GROUP_MARKS } from './model/groups'
 import { readShowDismissed, writeShowDismissed } from './model/board'
 
@@ -142,6 +143,8 @@ export function App() {
           The daemon did not answer: {snap.error}. Showing what was last loaded; retrying.
         </div>
       )}
+
+      <UpdateNotice />
 
       <main className="main">
         {route.page === 'board' && <BoardPage

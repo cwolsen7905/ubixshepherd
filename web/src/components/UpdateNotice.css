@@ -1,0 +1,11 @@
+/* A slim notice under the bar: a new release exists. It reuses the shell's .banner. */
+.banner.update-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  background: var(--lantern-wash);
+  color: var(--ink);
+}
+.update-notice .update-notice-text { flex: 1 1 auto; }
+.update-notice .update-notice-error { color: var(--lantern-ink); }
