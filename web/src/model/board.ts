@@ -122,6 +122,26 @@ export function mrOpen(l: LaneView): boolean {
   return !!l.mr && l.mr_state !== 'merged' && l.mr_state !== 'closed'
 }
 
+/** The require-approval job's statuses that hold a merge: not started, waiting to be played, blocked, or failed for want of a sign-off. */
+const HELD_JOB = new Set(['pending', 'manual', 'blocked', 'failed', 'created', 'scheduled'])
+
+/**
+ * An open merge request whose pipeline is held (or failed) at the repo's require-approval
+ * job and has no approval: only the person can move it. A pipeline that failed elsewhere
+ * is broken, not waiting for them, so a held job counts only while the pipeline has not
+ * failed, or when it is the job that failed.
+ */
+export function awaitingApproval(l: LaneView): boolean {
+  const job = l.require_approval
+  if (l.state === 'closed' || !mrOpen(l) || l.approved || !job || !HELD_JOB.has(job)) return false
+  return l.pipeline_status !== 'failed' || job === 'failed'
+}
+
+/** Since the pipeline reached the job (finished, when it failed there), else started, else the MR last changed. */
+function approvalSince(l: LaneView): string {
+  return l.pipeline_finished ?? l.pipeline_started ?? l.mr_updated ?? l.created
+}
+
 export function boardItems({ lanes, runs, decisions, requests, seen, showDismissed = false }: BoardInput): BoardItem[] {
   const clash = laneClashes(lanes)
   const name = (repo: string, lane: string) => (clash.has(lane) && repo ? `${repo}:${lane}` : lane)
@@ -156,6 +176,8 @@ export function boardItems({ lanes, runs, decisions, requests, seen, showDismiss
     if (l.state === 'closed') {
       if (l.mr_state !== 'merged' || !l.closed || !unseen(seen, `lane:${l.id}`, l.closed)) continue
       items.push({ ...base, group: 'done', at: l.closed, detail: 'merged' })
+    } else if (!failedRun && awaitingApproval(l)) {
+      items.push({ ...base, group: 'needs', at: approvalSince(l), detail: `approve MR !${l.mr}` })
     } else if (failedRun || failedPipeline) {
       let detail = failedRun ? `run ${run.id} ${run.state}${dismissed ? ', dismissed' : ''}` : 'pipeline failed'
       if (running) detail += ', fixing'

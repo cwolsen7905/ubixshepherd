@@ -13,14 +13,20 @@ first, and within a group the longest-waiting first:
 
 | Group | What it holds | Age is |
 |---|---|---|
-| needs you | open decisions, then requests needing routing | since asked |
+| needs you | open decisions, requests needing routing, and an open MR held at the require-approval job and not yet approved ("approve MR !N") | since asked; for an MR, since its pipeline reached that job (finished, if it failed there), else started, else the MR last changed |
 | broken | a failed or interrupted run, or an open MR whose pipeline failed | since the run ended, or the pipeline finished |
 | idle | an open lane with no run in flight and nothing to wait for | since the lane's last activity (a run, commit, decision, request, MR update or pipeline), which the row names: "last: commit" |
 | working | a run in flight, with its progress line | since it started |
 | to review | an open MR whose pipeline passed | since the pipeline finished, else since the MR last changed, else lane age |
 
+An MR counts as waiting for approval when the lane view's `require_approval` (the status of the
+head pipeline's require-approval job) is pending, manual, blocked, created, scheduled or failed
+and `approved` is not set. A pipeline that failed at another job stays broken. Once the person
+approves and the job runs again the lane drops back to waiting. The row leads to the lane's
+page, where the Changes tab has the Approve button. Both fields come from the forge poll.
+
 Left out: finished work (the board's "done unseen" is history), closed lanes, a lane
-waiting on a running pipeline (that is waiting, not idle), a lane the person has already
+waiting on a running pipeline (that is waiting, not idle, unless it is held at require-approval, above), a lane the person has already
 been asked about (it is listed once, as needing them), and runs the person dismissed.
 
 ## Rows and links

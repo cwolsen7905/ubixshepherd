@@ -98,6 +98,19 @@ describe('backlogItems', () => {
     expect(groups({ lanes, runs })).toEqual([])
   })
 
+  it('lists a lane whose MR waits on approval under needs you, after decisions and requests, leading to the lane', () => {
+    const l = lane({
+      id: 5, name: 'held', mr: 164, mr_state: 'open', pipeline_status: 'running', require_approval: 'manual',
+      pipeline_started: '2026-10-08T11:00:00Z',
+    })
+    const got = backlogItems(input({ lanes: [l], runs: [run({ lane_id: 5, state: 'succeeded' })], decisions: [decision({ id: 9 })] }))
+    expect(got.map((i) => `${i.group}:${i.key}`)).toEqual(['needs:decision:9', 'needs:lane:5'])
+    expect(got[1]).toMatchObject({ detail: 'approve MR !164', laneId: 5, at: '2026-10-08T11:00:00Z' })
+    expect(backlogCounts(got).needs).toBe(2)
+    // Approved, and the pipeline running again, it is waiting and drops out.
+    expect(groups({ lanes: [{ ...l, approved: true, require_approval: 'running' }], runs: [run({ lane_id: 5 })] })).toEqual([])
+  })
+
   it('shows a dismissed failure again when asked, as broken', () => {
     const lanes = [lane({ id: 3, name: 'dropped' })]
     const runs = [run({ id: 8, lane_id: 3, state: 'failed', dismissed: '2026-10-08T11:00:00Z' })]

@@ -41,6 +41,33 @@ describe('boardItems', () => {
     }
   })
 
+  it('asks the person to approve an open MR held at require-approval, aged from the pipeline', () => {
+    for (const job of ['pending', 'manual', 'blocked', 'failed']) {
+      const l = lane({
+        ...openMR('running'), pipeline_status: job === 'failed' ? 'failed' : 'running', require_approval: job,
+        pipeline_started: '2026-10-08T11:00:00Z', mr_updated: '2026-10-08T10:30:00Z',
+      })
+      expect(only({ lanes: [l], runs: [run()] })).toMatchObject({
+        group: 'needs', detail: 'approve MR !34', laneId: 1, at: '2026-10-08T11:00:00Z',
+      })
+    }
+    const f = lane({ ...openMR('failed'), require_approval: 'failed', pipeline_started: '2026-10-08T11:00:00Z', pipeline_finished: '2026-10-08T11:05:00Z' })
+    expect(only({ lanes: [f], runs: [run()] }).at).toBe('2026-10-08T11:05:00Z')
+    const m = lane({ ...openMR('running'), require_approval: 'manual', mr_updated: '2026-10-08T10:30:00Z' })
+    expect(only({ lanes: [m], runs: [run()] }).at).toBe('2026-10-08T10:30:00Z')
+  })
+
+  it('does not ask for approval once approved, with no require-approval job, or when the pipeline broke elsewhere', () => {
+    const approved = lane({ ...openMR('running'), require_approval: 'manual', approved: true })
+    expect(items({ lanes: [approved], runs: [run()] }).map((i) => i.group)).not.toContain('needs')
+    const running = lane({ ...openMR('running'), require_approval: 'running' })
+    expect(items({ lanes: [running], runs: [run()] }).map((i) => i.group)).not.toContain('needs')
+    const elsewhere = lane({ ...openMR('failed'), require_approval: 'manual' })
+    expect(only({ lanes: [elsewhere], runs: [run()] })).toMatchObject({ group: 'broken', detail: 'pipeline failed' })
+    const closed = lane({ ...openMR('running'), require_approval: 'manual', mr_state: 'merged' })
+    expect(items({ lanes: [closed], runs: [run()] }).map((i) => i.group)).not.toContain('needs')
+  })
+
   it('calls a lane broken when its open MR failed its pipeline, and says when an agent is fixing it', () => {
     expect(only({ lanes: [lane(openMR('failed'))], runs: [run()] })).toMatchObject({ group: 'broken', detail: 'pipeline failed' })
     const fixing = run({ id: 11, state: 'running', ended: undefined })
