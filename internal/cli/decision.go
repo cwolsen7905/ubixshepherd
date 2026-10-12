@@ -111,7 +111,7 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 	}
 	fs := flags("worker "+args[0], env)
 	status := fs.String("status", "", "report: progress, done or blocked")
-	var options listFlag
+	var options textFlag
 	fs.Var(&options, "option", "ask-human: an option (repeatable)")
 	rec := fs.String("recommendation", "", "ask-human: what you recommend")
 	why := fs.String("why", "", "ask-human: why it is the person's call")
