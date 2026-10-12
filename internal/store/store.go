@@ -579,6 +579,12 @@ type LaneForge struct {
 	MRUpdated        time.Time `json:"mr_updated,omitzero"`
 	PipelineStarted  time.Time `json:"pipeline_started,omitzero"`
 	PipelineFinished time.Time `json:"pipeline_finished,omitzero"`
+	// Approved is whether the forge says the open request has the approvals it needs.
+	// RequireApproval is the status of the head pipeline's approval job (success,
+	// manual, failed, ...), or empty when there is none. Both are cleared when the
+	// request is new, not open, or has no head pipeline.
+	Approved        bool   `json:"approved,omitempty"`
+	RequireApproval string `json:"require_approval,omitempty"`
 }
 
 // Activity sources: what LaneActivity can say a lane's latest activity was.

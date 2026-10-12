@@ -47,6 +47,8 @@ type Watcher struct {
 	down    map[string]*hostState // forge hosts that did not answer, by host (backoff.go)
 	// reviewed is when auto-close last judged a lane (autoclose.go), by lane id.
 	reviewed map[int64]time.Time
+	// approvalRead is what each lane's approval was last read for (approval.go).
+	approvalRead map[int64]approvalRead
 
 	// statMu guards poll; apart from mu, which Check holds for a whole pass, so Status
 	// never waits on a forge.
@@ -249,6 +251,8 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 	if p := mr.Pipeline; p != nil && p.ID == next.Pipeline {
 		next.PipelineStarted, next.PipelineFinished = p.Started.UTC(), p.Finished.UTC()
 	}
+
+	w.approval(ctx, f, lane, mr, prev, &next)
 
 	// Act only on a merge seen happening. A request already merged the first time
 	// Shepherd looks (an imported lane, a branch reused after its merge) proves nothing
