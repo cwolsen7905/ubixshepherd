@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
-import { activeTopics, type TopicList, type TopicView } from '../model/topic'
+import { readFlag, splitTopics, writeFlag, type TopicList, type TopicView } from '../model/topic'
 import '../styles/topics.css'
 
 const POLL = 15_000
+export const IDLE_KEY = 'shepherd.topicbar.idle.open'
 
 export type LoadTopicBar = (all: boolean) => Promise<TopicList>
 
 /**
- * A strip stuck to the top of the thread: "All" and one chip per active topic. It filters
+ * A strip stuck to the top of the thread: "All" and one chip per active topic, then "+N idle" to reveal
+ * the quiet ones. The selected topic is always a chip, idle or not. It filters
  * through the same `onFilter` the rail's Topics section uses, so the hash is the one
  * source of truth and the two cannot disagree. Hidden while no topic is active.
  */
@@ -21,13 +23,19 @@ export function TopicBar({
   load?: LoadTopicBar
 }) {
   const [list, setList] = useState<TopicView[]>([])
+  const [showIdle, setShowIdle] = useState(() => readFlag(IDLE_KEY))
+  const [now, setNow] = useState(() => Date.now())
   const strip = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let live = true
     const read = () =>
       load(true).then(
-        (l) => live && setList(l.topics),
+        (l) => {
+          if (!live) return
+          setNow(Date.now())
+          setList(l.topics)
+        },
         () => {},
       )
     void read()
@@ -38,7 +46,8 @@ export function TopicBar({
     }
   }, [load])
 
-  const chips = activeTopics(list)
+  const { active: shown, idle } = splitTopics(list, now, active)
+  const chips = showIdle ? [...shown, ...idle] : shown
 
   // Keep the selected chip in view when the strip overflows; scrolls the strip only, never the page.
   useEffect(() => {
@@ -51,7 +60,7 @@ export function TopicBar({
     }
   }, [active, chips.length])
 
-  if (chips.length === 0) return null
+  if (shown.length === 0 && idle.length === 0) return null
   return (
     <div className="topic-bar" role="group" aria-label="Filter the thread by topic">
       <div className="topic-bar-strip" ref={strip}>
@@ -72,6 +81,14 @@ export function TopicBar({
             )}
           </button>
         ))}
+        {idle.length > 0 && (
+          <button
+            type="button" className="topic-chip topic-chip-idle" aria-expanded={showIdle}
+            onClick={() => { writeFlag(IDLE_KEY, !showIdle); setShowIdle(!showIdle) }}
+          >
+            {showIdle ? `Hide ${idle.length} idle` : `+${idle.length} idle`}
+          </button>
+        )}
       </div>
     </div>
   )

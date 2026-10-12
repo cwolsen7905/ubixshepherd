@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
 import { since } from '../format'
-import { kindName, topicState, type TopicList, type TopicUpdateBody, type TopicView } from '../model/topic'
+import { kindName, readFlag, splitTopics, topicState, writeFlag, type TopicList, type TopicUpdateBody, type TopicView } from '../model/topic'
 import { href } from '../router'
 import '../styles/topics.css'
 
 const POLL = 15_000
+export const IDLE_KEY = 'shepherd.topics.idle.open'
 
 export type LoadTopics = (all: boolean) => Promise<TopicList>
 export type ChangeTopic = (id: number, body: TopicUpdateBody) => Promise<unknown>
@@ -44,6 +45,7 @@ export function Topics({
   const [tick, setTick] = useState(0)
   const [open, setOpen] = useState<number | null>(null)
   const [showCleared, setShowCleared] = useState(false)
+  const [showIdle, setShowIdle] = useState(() => readFlag(IDLE_KEY))
   const [title, setTitle] = useState('')
   const reload = useCallback(() => setTick((t) => t + 1), [])
 
@@ -77,7 +79,17 @@ export function Topics({
 
   const opened = (list ?? []).filter((t) => t.status === 'open')
   const cleared = (list ?? []).filter((t) => t.status === 'cleared')
+  const { active: live, idle } = splitTopics(opened, now, active)
   const waiting = opened.reduce((n, t) => n + t.waits, 0)
+
+  const row = (t: TopicView) => (
+    <TopicRow
+      key={t.id} t={t} now={now} active={active === t.id} expanded={open === t.id} others={opened.filter((o) => o.id !== t.id)}
+      onFilter={() => onFilter(active === t.id ? null : t.id)}
+      onExpand={() => setOpen(open === t.id ? null : t.id)}
+      change={(body) => act(change(t.id, body))}
+    />
+  )
 
   return (
     <section className="topics" aria-label="Topics">
@@ -91,16 +103,18 @@ export function Topics({
       {list !== null && opened.length === 0 && (
         <p className="faint">No topics yet. The front desk names the matter of a conversation as it goes.</p>
       )}
-      <ul className="topics-rows">
-        {opened.map((t) => (
-          <TopicRow
-            key={t.id} t={t} now={now} active={active === t.id} expanded={open === t.id} others={opened.filter((o) => o.id !== t.id)}
-            onFilter={() => onFilter(active === t.id ? null : t.id)}
-            onExpand={() => setOpen(open === t.id ? null : t.id)}
-            change={(body) => act(change(t.id, body))}
-          />
-        ))}
-      </ul>
+      {live.length > 0 && <ul className="topics-rows">{live.map(row)}</ul>}
+      {idle.length > 0 && (
+        <div className="topics-idle">
+          <button
+            type="button" className="link-button" aria-expanded={showIdle}
+            onClick={() => { writeFlag(IDLE_KEY, !showIdle); setShowIdle(!showIdle) }}
+          >
+            Idle ({idle.length})
+          </button>
+          {showIdle && <ul className="topics-rows">{idle.map(row)}</ul>}
+        </div>
+      )}
       <form
         className="topics-new"
         onSubmit={(e) => {

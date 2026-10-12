@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TopicView } from '../model/topic'
+import { ACTIVE_WINDOW_MS } from '../model/topic'
 import { Topics } from './Topics'
 
 const t = (over: Partial<TopicView>): TopicView => ({
@@ -45,5 +46,43 @@ describe('Topics', () => {
     render(<Topics active={null} now={Date.now()} onFilter={() => {}} load={load} change={change} />)
     await user.click(await screen.findByRole('button', { name: 'Clear' }))
     await waitFor(() => expect(screen.getByText(/not in a turn/)).toBeInTheDocument())
+  })
+
+  describe('idle topics', () => {
+    const old = new Date(Date.now() - ACTIVE_WINDOW_MS * 3).toISOString()
+    const list = () => [t({ id: 1, title: 'busy' }), t({ id: 2, title: 'quiet', activity: old }), t({ id: 3, title: 'dusty', activity: old })]
+    beforeEach(() => window.localStorage.clear())
+
+    it('collapses idle topics under Idle (N), expands on click and remembers it', async () => {
+      const user = userEvent.setup()
+      const load = vi.fn().mockResolvedValue({ topics: list() })
+      const { unmount } = render(<Topics active={null} now={Date.now()} onFilter={() => {}} load={load} />)
+      expect(await screen.findByText('busy')).toBeInTheDocument()
+      expect(screen.queryByText('quiet')).toBeNull()
+      const toggle = screen.getByRole('button', { name: 'Idle (2)' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      await user.click(toggle)
+      expect(screen.getByText('quiet')).toBeInTheDocument()
+      expect(screen.getByText('dusty')).toBeInTheDocument()
+      unmount()
+      render(<Topics active={null} now={Date.now()} onFilter={() => {}} load={load} />)
+      expect(await screen.findByText('quiet')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Idle (2)' })).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('shows the selected idle topic among the active ones', async () => {
+      const load = vi.fn().mockResolvedValue({ topics: list() })
+      render(<Topics active={2} now={Date.now()} onFilter={() => {}} load={load} />)
+      expect(await screen.findByText('quiet')).toBeInTheDocument()
+      expect(screen.queryByText('dusty')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Idle (1)' })).toBeInTheDocument()
+    })
+
+    it('has no Idle group when all topics are active', async () => {
+      const load = vi.fn().mockResolvedValue({ topics: [t({})] })
+      render(<Topics active={null} now={Date.now()} onFilter={() => {}} load={load} />)
+      await screen.findByText('release v0.3.0')
+      expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull()
+    })
   })
 })
