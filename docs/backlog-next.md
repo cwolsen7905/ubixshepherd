@@ -54,7 +54,7 @@ why:
   marked done by hand, and when a merged lane finishes it. Its `ref` is the item id and
   its text is one redacted line. A rank move, a note edit and a return to `planned` write
   nothing. The thread, history and terminal draw it with the glyph `≡`.
-- **The page reads again on a `plan` item**; its 20 second poll stays, because matrix
+- **The page reads again on a `plan` item**; its poll, slowed to 60 seconds, stays, because matrix
   rows change with git, not on the feed.
 - **Seeding stays the person's step** (section 5 and below).
 

@@ -68,7 +68,7 @@ something waits.
 The rail's Now / Next up toggle and the `#/next` page show the next-up list
 ([backlog-next.md](backlog-next.md)). The page reads the list again whenever a `plan` item
 arrives on the feed (an item added, approved, deferred, dropped or done), after each
-action, and every 20 seconds, which also picks up work-matrix rows: rows with status
+action, and every 60 seconds, which also picks up work-matrix rows: rows with status
 `todo` or `blocked` from each repo's `docs/WORK.md`, shown read-only in a "From work
 matrix" group with their lane and PR links and no actions. The rail's Next up view lists
 stored approved items only. The `plan` kind has the glyph `≡` in the thread, history and
