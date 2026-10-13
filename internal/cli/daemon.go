@@ -26,6 +26,8 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/service"
 	"github.com/ubixsys/ubixshepherd/internal/standards"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
+	"github.com/ubixsys/ubixshepherd/internal/update"
+	"github.com/ubixsys/ubixshepherd/internal/version"
 	"github.com/ubixsys/ubixshepherd/internal/watch"
 )
 
@@ -107,8 +109,44 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 	return errUsage
 }
 
-// daemonRun runs the daemon in the foreground until interrupted or asked to stop.
+// daemonRun runs the daemon in the foreground until interrupted or asked to stop. When
+// an upgrade asked for the stop, it then starts the binary now in place (reexec): under a
+// service manager the process keeps its place, so nothing sees a restart.
 func daemonRun(ctx context.Context, env Env) error {
+	var restart bool
+	if err := daemonServe(ctx, env, &restart); err != nil {
+		return err
+	}
+	if !restart {
+		return nil
+	}
+	if err := reexec(env); err != nil {
+		// The new binary would not start: put the old one back and start that.
+		if rerr := rollbackUpgrade(env, "the new binary could not be started: "+err.Error()); rerr != nil {
+			return fmt.Errorf("upgrade restart failed (%v) and rollback failed: %w", err, rerr)
+		}
+		return reexec(env)
+	}
+	return nil
+}
+
+// rollbackUpgrade restores the binary an upgrade replaced and records that the release
+// it tried did not take, so update.auto does not try it again.
+func rollbackUpgrade(env Env, why string) error {
+	marker := daemon.UpgradeMarkerPath(env.Layout.Config())
+	m, _ := update.ReadMarker(marker)
+	if err := update.Restore(env.Exe); err != nil {
+		return err
+	}
+	update.ClearMarker(marker)
+	if m.To != "" {
+		c := &update.Checker{StatePath: filepath.Join(env.Layout.Home, "update.json")}
+		c.MarkFailed(m.To, "rolled back to "+m.From+": "+why, true)
+	}
+	return nil
+}
+
+func daemonServe(ctx context.Context, env Env, restart *bool) error {
 	l := env.Layout
 	// Whatever started this daemon, it must not carry a run's push block or identity.
 	unsetRunEnv()
@@ -121,6 +159,15 @@ func daemonRun(ctx context.Context, env Env) error {
 		return fmt.Errorf("a daemon is already running (pid %d, version %s); a command or make install started it in the background.\n"+
 			"  watch it:        tail -f %s\n"+
 			"  or run it here:  shepherd daemon stop && shepherd daemon", st.PID, st.Version, l.Log())
+	}
+	// A freshly upgraded binary that never stayed up is put back before it runs again.
+	if bad, m := update.Startup(daemon.UpgradeMarkerPath(l.Config()), version.Version); bad {
+		fmt.Fprintf(env.Stderr, "upgrade to %s did not start cleanly: restoring %s\n", m.To, m.From)
+		if err := rollbackUpgrade(env, "it did not stay up after starting"); err != nil {
+			return fmt.Errorf("rollback failed: %w", err)
+		}
+		*restart = true
+		return nil
 	}
 	if err := os.MkdirAll(l.Home, 0o700); err != nil {
 		return err
@@ -167,6 +214,7 @@ func daemonRun(ctx context.Context, env Env) error {
 		srv.Log.Warn("config", "warning", w)
 	}
 	srv.Fold.Exe = env.Exe
+	srv.Exe = env.Exe
 	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
 	srv.QuotaHolds = func() []api.QuotaHold { return quotaHolds(srv.Runner) }
 	if cfg.Daemon.Poll != "off" {
@@ -175,7 +223,9 @@ func daemonRun(ctx context.Context, env Env) error {
 		srv.ForgeWatch = func() api.ForgeWatch { return forgeWatch(w) }
 		go w.Run(ctx)
 	}
-	return srv.Run(ctx, l.Runtime())
+	err = srv.Run(ctx, l.Runtime())
+	*restart = srv.RestartRequested()
+	return err
 }
 
 // quotaHolds maps the runner's quota holds to the status detail's.

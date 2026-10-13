@@ -94,6 +94,7 @@ var chatMeta = map[string]fieldMeta{
 
 var updateMeta = map[string]fieldMeta{
 	"check":   {label: "Check for updates", help: "The daemon asks GitHub about once a day whether a newer release exists; it only shows a notice. On unless turned off."},
+	"auto":    {label: "Upgrade automatically", help: "Install a newer release by itself and restart onto it once no agent is running. Off unless turned on; needs the check on.", risk: true},
 	"channel": {label: "Channel", help: "beta counts every release, pre-releases included; stable only full releases.", choices: config.UpdateChannels},
 }
 

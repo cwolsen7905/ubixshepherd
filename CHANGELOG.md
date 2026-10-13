@@ -11,6 +11,19 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **The update notice can upgrade the daemon in one click, and the daemon can do it by
+  itself.** The notice in the web UI gains an Upgrade button, `shepherd update upgrade
+  [--now]` and `/update upgrade [now]` in `shepherd chat` do the same. The daemon downloads
+  the release archive for its platform, checks it against the release's `SHA256SUMS`,
+  proves the new binary runs, keeps the old one as `shepherd.previous`, swaps it in, and
+  restarts onto it at the first moment no agent is running (or at once with `--now`,
+  "Restart now", which interrupts them). A new binary that does not stay up is replaced
+  by the previous one on the next start. Homebrew, `go install` and source installs are
+  not replaced: the notice says what to run. New opt-in setting `update.auto` (default
+  `false`) installs a newer release without a click. **Interface changes:** new route
+  `POST /v1/update/upgrade`, an `upgrade` object in `GET /v1/update`, config key
+  `update.auto`. See [docs/update-check.md](docs/update-check.md#upgrading).
+
 - **Next-up items that wait on the person's approval are counted where decisions are.**
   An item the desk or an agent proposed, still planned and not started, no longer sits on
   the list unseen: the terminal dock's counts row shows "N Next-up to approve (/next)", the
@@ -18,6 +31,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
   session says "N Next-up items wait on your approval" with each item, after the waiting
   decisions. `shepherd chat` gains `/next`, which lists them. Nothing is added to the API:
   the count comes from the existing `GET /v1/next`.
+
+### Fixed
+
+- **The web Backlog and board no longer hide a lane whose open merge request has no
+  pipeline.** Only a queued or running pipeline counts as waiting on the forge. A merge
+  request with no pipeline (a repo whose CI skips the branch), or with a canceled, skipped
+  or unknown one, now shows under "To review" so the person sees it is waiting on them.
 
 ## [0.4.0-beta.1] - 2026-10-12
 

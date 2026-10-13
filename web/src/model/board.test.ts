@@ -1,4 +1,4 @@
-import { boardItems, canDismiss, counts, dismissedCount, readShowDismissed, writeShowDismissed, countsText, laneClashes, noteOutcome, type BoardInput, type Seen } from './board'
+import { boardItems, canDismiss, counts, dismissedCount, readShowDismissed, writeShowDismissed, countsText, laneClashes, noteOutcome, type BoardInput, type BoardItem, type Seen } from './board'
 import { decision, lane, request, run } from '../test/fixtures'
 
 // The person last cleared the board at 09:00; the fixtures' runs end at 10:04.
@@ -11,10 +11,10 @@ function items(o: Partial<BoardInput>) {
 function only(o: Partial<BoardInput>) {
   const all = items(o)
   expect(all).toHaveLength(1)
-  return all[0]!
+  return all[0] as BoardItem
 }
 
-const openMR = (status: 'passed' | 'failed' | 'running') =>
+const openMR = (status: 'passed' | 'failed' | 'running' | 'pending' | 'canceled' | 'skipped' | 'unknown') =>
   ({ mr: 34, mr_state: 'open', mr_url: 'https://forge.example.com/acme/api/-/merge_requests/34', pipeline_status: status }) as const
 
 describe('boardItems', () => {
@@ -78,6 +78,19 @@ describe('boardItems', () => {
     expect(only({ lanes: [lane(openMR('passed'))] })).toMatchObject({ group: 'review', detail: 'waiting for a merge' })
     expect(only({ lanes: [lane(openMR('passed'))], runs: [run()] })).toMatchObject({ group: 'review' })
     expect(items({ lanes: [lane({ ...openMR('passed'), mr_state: 'merged' })] })).toEqual([])
+  })
+
+  it('puts an open MR with no pipeline, or a canceled, skipped or unknown one, to review', () => {
+    const none = { mr: 34, mr_state: 'open', mr_url: 'https://forge.example.com/acme/api/-/merge_requests/34' } as const
+    expect(only({ lanes: [lane(none)] })).toMatchObject({ group: 'review', detail: 'MR !34 open, no pipeline' })
+    for (const status of ['canceled', 'skipped', 'unknown'] as const) {
+      expect(only({ lanes: [lane(openMR(status))] })).toMatchObject({ group: 'review', detail: `MR !34 open, pipeline ${status}` })
+    }
+  })
+
+  it('leaves an open MR whose pipeline is queued or running to the forge', () => {
+    expect(items({ lanes: [lane(openMR('running'))] })).toEqual([])
+    expect(items({ lanes: [lane(openMR('pending'))] })).toEqual([])
   })
 
   it('shows a finished run as done until the person has seen it', () => {

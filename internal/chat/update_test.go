@@ -70,3 +70,40 @@ func TestNoUpdateNoticeWithoutTheDaemonsCheck(t *testing.T) {
 		t.Error("a notice with no release check")
 	}
 }
+
+type upgradeAPI struct {
+	*updateAPI
+	version string
+	now     bool
+}
+
+func (u *upgradeAPI) UpgradeUpdate(_ context.Context, v string, now bool) (api.UpdateStatus, error) {
+	u.version, u.now = v, now
+	u.st.Upgrade.State, u.st.Upgrade.Target = api.UpgradeInstalled, v
+	return u.st, nil
+}
+
+func TestUpdateUpgradeFromTheNotice(t *testing.T) {
+	m, _, base := newTestModel()
+	u := &upgradeAPI{updateAPI: &updateAPI{fakeAPI: base, st: api.UpdateStatus{
+		Enabled: true, Current: "v0.4.0", CurrentKnown: true, Latest: "v0.5.0", Available: true, Show: true,
+		Upgrade: api.UpgradeStatus{State: api.UpgradeIdle, CanUpgrade: true},
+	}}}
+	m.api = u
+	drive(t, m, m.pollPanel(true))
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "/update upgrade") {
+		t.Fatalf("notice offers no upgrade:\n%s", v)
+	}
+	typeLine(t, m, "/update upgrade")
+	if u.version != "v0.5.0" || u.now {
+		t.Errorf("upgrade %q now=%v", u.version, u.now)
+	}
+	typeLine(t, m, "/update upgrade now")
+	if !u.now {
+		t.Error("now was not passed")
+	}
+	drive(t, m, m.pollPanel(true))
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "restarts when no agent is running") {
+		t.Errorf("no pending-restart line:\n%s", v)
+	}
+}

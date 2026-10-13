@@ -84,6 +84,16 @@ describe('backlogItems', () => {
     expect(it?.at).toBe('2026-10-08T11:00:00Z')
   })
 
+  it('lists an open MR with no pipeline, or a canceled one, as to review, and hides a running one', () => {
+    const lanes = [
+      lane({ id: 1, name: 'docs', mr: 39, mr_state: 'open' }),
+      lane({ id: 2, name: 'canceled', mr: 40, mr_state: 'open', pipeline_status: 'canceled' }),
+      lane({ id: 3, name: 'running', mr: 41, mr_state: 'open', pipeline_status: 'running' }),
+      lane({ id: 4, name: 'queued', mr: 42, mr_state: 'open', pipeline_status: 'pending' }),
+    ]
+    expect(groups({ lanes })).toEqual(['review:lane:1', 'review:lane:2'])
+  })
+
   it('leaves out done work, closed lanes, lanes waiting on a pipeline, and dismissed failures', () => {
     const lanes = [
       lane({ id: 1, name: 'closed', state: 'closed', closed: '2026-10-08T10:00:00Z', mr_state: 'merged' }),

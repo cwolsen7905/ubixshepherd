@@ -821,4 +821,23 @@ export interface UpdateStatus {
   show: boolean
   checked_at?: string
   error?: string
+  /** The upgrade step; absent from a daemon too old to have it. */
+  upgrade?: UpgradeStatus
+}
+
+/** Where an upgrade stands and whether the daemon can start one (internal/api/update.go). */
+export interface UpgradeStatus {
+  state: 'idle' | 'installing' | 'installed' | 'restarting' | 'failed' | 'rolled_back'
+  /** How this binary was installed: binary, brew, go, source or readonly. */
+  method: string
+  can_upgrade: boolean
+  /** What to run instead when the daemon will not replace this install itself. */
+  hint?: string
+  target?: string
+  /** Agents a restart now would interrupt. */
+  active_runs: number
+  error?: string
+  failed_version?: string
+  /** update.auto is on. */
+  auto: boolean
 }

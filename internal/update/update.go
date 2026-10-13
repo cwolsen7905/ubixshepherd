@@ -1,7 +1,7 @@
 // Package update checks whether a newer Shepherd release exists. The daemon owns the
 // check: it asks GitHub's releases API about once a day, caches the answer and serves it
 // to every client, so no client calls GitHub itself. It never downloads or installs
-// anything; that is the upgrade step (docs/update-check.md).
+// anything; installing it is install.go (docs/update-check.md).
 package update
 
 import (
@@ -77,6 +77,10 @@ type Status struct {
 	// a good one.
 	CheckedAt time.Time
 	LastError string
+	// FailedVersion is the release an upgrade last failed for, and FailedWhy why;
+	// RolledBack says the new binary started badly and the old one was put back.
+	FailedVersion, FailedWhy string
+	RolledBack               bool
 }
 
 // Checker polls the releases API and holds the answer. The zero value is not usable:
@@ -106,11 +110,17 @@ type Checker struct {
 	attempted time.Time
 	lastErr   string
 	dismissed string
+	failed    state // an upgrade that failed or was rolled back, kept so auto-upgrade does not retry it
 	loaded    bool
 }
 
 type state struct {
 	Dismissed string `json:"dismissed,omitempty"`
+	// Failed is the version an upgrade was tried for and did not take; FailedWhy says why.
+	// RolledBack marks a failure that was a binary restored after a bad start.
+	Failed     string `json:"failed,omitempty"`
+	FailedWhy  string `json:"failed_why,omitempty"`
+	RolledBack bool   `json:"rolled_back,omitempty"`
 }
 
 func (c *Checker) now() time.Time {
@@ -264,7 +274,8 @@ func (c *Checker) Status() Status {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.loadLocked()
-	st := Status{Enabled: enabled, Channel: channel, Current: c.Current, CheckedAt: c.checkedAt, LastError: c.lastErr}
+	st := Status{Enabled: enabled, Channel: channel, Current: c.Current, CheckedAt: c.checkedAt, LastError: c.lastErr,
+		FailedVersion: c.failed.Failed, FailedWhy: c.failed.FailedWhy, RolledBack: c.failed.RolledBack}
 	cur, known := parseSemver(c.Current)
 	st.CurrentKnown = known
 	var best *Release
@@ -298,12 +309,45 @@ func (c *Checker) Dismiss(version string) error {
 	defer c.mu.Unlock()
 	c.loadLocked()
 	if c.StatePath != "" {
-		if err := writeState(c.StatePath, state{Dismissed: version}); err != nil {
+		next := c.failed
+		next.Dismissed = version
+		if err := writeState(c.StatePath, next); err != nil {
 			return err
 		}
 	}
 	c.dismissed = version
 	return nil
+}
+
+// MarkFailed records that upgrading to version failed (or was rolled back), so an
+// automatic upgrade does not try it again. A newer release is tried afresh.
+func (c *Checker) MarkFailed(version, why string, rolledBack bool) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadLocked()
+	c.failed = state{Failed: version, FailedWhy: why, RolledBack: rolledBack}
+	return c.saveLocked()
+}
+
+// ClearFailed forgets a recorded failure, as a new attempt by the person does.
+func (c *Checker) ClearFailed() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.loadLocked()
+	if c.failed.Failed == "" {
+		return nil
+	}
+	c.failed = state{}
+	return c.saveLocked()
+}
+
+func (c *Checker) saveLocked() error {
+	if c.StatePath == "" {
+		return nil
+	}
+	next := c.failed
+	next.Dismissed = c.dismissed
+	return writeState(c.StatePath, next)
 }
 
 func (c *Checker) loadLocked() {
@@ -327,6 +371,7 @@ func (c *Checker) loadLocked() {
 		return
 	}
 	c.dismissed = s.Dismissed
+	c.failed = state{Failed: s.Failed, FailedWhy: s.FailedWhy, RolledBack: s.RolledBack}
 }
 
 // writeState replaces the file whole, so a crash leaves the old one or the new one.

@@ -49,6 +49,7 @@ func (s *Server) updateStatus() api.UpdateStatus {
 		out.Latest, out.URL, out.Notes = st.Latest.Version, st.Latest.URL, st.Latest.Notes
 	}
 	// An unknown build cannot be compared, so it is told of the latest release anyway.
+	out.Upgrade = s.upgradeView(st)
 	out.Show = out.Enabled && out.Latest != "" && !out.Dismissed && (out.Available || !out.CurrentKnown)
 	return out
 }
@@ -83,4 +84,5 @@ func (s *Server) startUpdateCheck(ctx context.Context) {
 		return
 	}
 	go s.updates().Run(ctx)
+	go s.autoUpgradeLoop(ctx)
 }

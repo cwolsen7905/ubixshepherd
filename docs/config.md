@@ -38,14 +38,15 @@ budget's cap is hard.
 ## Update
 
 The release check (see [update-check.md](update-check.md)): the daemon asks GitHub about
-once a day whether a newer release exists and shows a notice you can dismiss. It only tells
-you; it installs nothing. The settings are in the `update:` section, and a reload
+once a day whether a newer release exists and shows a notice you can dismiss. The notice
+carries an Upgrade action; `update.auto` lets the daemon take it by itself. The settings are in the `update:` section, and a reload
 (`shepherd daemon reload` or a SIGHUP) applies a change.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `update.check` | `true` | Turns the check on or off. `false` stops the daemon from calling GitHub. |
 | `update.channel` | `beta` | `beta` counts every release, pre-releases included; `stable` only full releases. |
+| `update.auto` | `false` | Opt in: install a newer release by itself and restart onto it once no agent is running. Needs `update.check`; it only replaces a release binary it may write, and never retries a release that failed. |
 
 `SHEPHERD_NO_UPDATE_CHECK=1` in the daemon's environment turns the check off regardless of
 the config.

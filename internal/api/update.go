@@ -7,12 +7,14 @@ import "time"
 //
 //	GET  /v1/update          UpdateStatus
 //	POST /v1/update/dismiss  UpdateDismiss, answers UpdateStatus
+//	POST /v1/update/upgrade  UpdateUpgrade, answers UpdateStatus (202 once started)
 //
 // Both are the person's: the operator token and a browser session may call them, an
 // agent's token and the front desk may not.
 const (
 	PathUpdate        = "/v1/update"
 	PathUpdateDismiss = "/v1/update/dismiss"
+	PathUpdateUpgrade = "/v1/update/upgrade"
 )
 
 // UpdateStatus is the cached check against the build's own version.
@@ -40,6 +42,50 @@ type UpdateStatus struct {
 	// CheckedAt is the last good check; Error is the last failure, cleared by a good one.
 	CheckedAt time.Time `json:"checked_at,omitzero"`
 	Error     string    `json:"error,omitempty"`
+	// Upgrade is where an upgrade stands and whether one can be started.
+	Upgrade UpgradeStatus `json:"upgrade"`
+}
+
+// The upgrade's states.
+const (
+	UpgradeIdle       = "idle"
+	UpgradeInstalling = "installing"
+	// UpgradeInstalled: the new binary is in place and the daemon restarts onto it once no
+	// agent is running (or when the person says now).
+	UpgradeInstalled  = "installed"
+	UpgradeRestarting = "restarting"
+	UpgradeFailed     = "failed"
+	UpgradeRolledBack = "rolled_back"
+)
+
+// UpgradeStatus is the upgrade step of the notice.
+type UpgradeStatus struct {
+	State string `json:"state"`
+	// Method is how this binary was installed: binary, brew, go, source or readonly.
+	Method string `json:"method"`
+	// CanUpgrade says the daemon can install Latest itself; when it cannot, Hint says
+	// what the person does instead.
+	CanUpgrade bool   `json:"can_upgrade"`
+	Hint       string `json:"hint,omitempty"`
+	// Target is the version being installed or waiting for a restart.
+	Target string `json:"target,omitempty"`
+	// ActiveRuns is how many agents a restart now would interrupt.
+	ActiveRuns int `json:"active_runs"`
+	// Error is why the last attempt failed; FailedVersion is the release it was for. An
+	// automatic upgrade does not retry that release.
+	Error         string `json:"error,omitempty"`
+	FailedVersion string `json:"failed_version,omitempty"`
+	// Auto is update.auto.
+	Auto bool `json:"auto"`
+}
+
+// UpdateUpgrade is the body of POST /v1/update/upgrade: the version to install, which
+// must be the one now offered. Now restarts at once even with agents running, which
+// interrupts their runs; without it the restart waits until none is. A version already
+// installed and waiting is restarted onto by Now alone.
+type UpdateUpgrade struct {
+	Version string `json:"version"`
+	Now     bool   `json:"now,omitempty"`
 }
 
 // UpdateDismiss is the body of POST /v1/update/dismiss: the version to hide. A version
