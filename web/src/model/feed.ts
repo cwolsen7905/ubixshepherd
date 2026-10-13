@@ -38,7 +38,7 @@ const KIND_EVENTS: Record<string, string> = {
 }
 
 const RUN_REF = new Set(['run_started', 'run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota', 'commit', 'report'])
-const LANE_REF = new Set(['lane_opened', 'lane_closed', 'gate', 'mr', 'pipeline', 'release'])
+const LANE_REF = new Set(['lane_opened', 'lane_closed', 'gate', 'mr', 'mr_approve', 'pipeline', 'release'])
 const DECISION_REF = new Set(['decision', 'decision_answered'])
 const REQUEST_REF = new Set(['request', 'request_routed', 'request_needs_routing', 'request_replied', 'request_failed'])
 

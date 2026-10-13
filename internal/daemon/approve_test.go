@@ -136,7 +136,7 @@ func TestApproveFromTheWeb(t *testing.T) {
 	feed, _ := s.Store.Feed(context.Background(), 0, 50)
 	found := false
 	for _, f := range feed {
-		if f.Kind == store.FeedMR && f.Ref == l.ID && strings.Contains(f.Text, "!7 approved by the person from the web at abcdef01") {
+		if f.Kind == store.FeedMRApprove && f.Ref == l.ID && strings.Contains(f.Text, "!7 approved by the person from the web at abcdef01") {
 			found = true
 		}
 	}

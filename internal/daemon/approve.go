@@ -182,7 +182,7 @@ func (s *Server) approveLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("merge request approved from the web", "lane", lane.Name, "mr", v.MR, "sha", short(body.SHA))
-	s.Store.AddFeed(ctx, store.FeedMR, fmt.Sprintf("!%d approved by the person from the web at %s (lane %s)", v.MR, short(body.SHA), lane.Name), lane.ID)
+	s.Store.AddFeed(ctx, store.FeedMRApprove, fmt.Sprintf("!%d approved by the person from the web at %s (lane %s)", v.MR, short(body.SHA), lane.Name), lane.ID)
 
 	res := approveResult{laneApproval: v}
 	res.Approved = true

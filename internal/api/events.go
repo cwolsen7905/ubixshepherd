@@ -20,6 +20,7 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	                   described the gate stay pipeline)
 //	report, decision_asked, decision_answered, request, request_attention,
 //	plan               a next-up item was added, approved, deferred, dropped or finished
+//	mr_approve         the person approved a merge request from the web
 //	mr, budget, tag, release, config, desk_rotated
 //	info               anything else, and any kind a newer daemon adds
 const (
@@ -39,6 +40,7 @@ const (
 	EventRequest          = "request"           // between lanes, moving normally
 	EventRequestAttention = "request_attention" // stuck or failed: the person or front desk must act
 	EventMR               = "mr"                // a merge request opened, updated, merged or closed
+	EventMRApprove        = "mr_approve"        // the person approved a merge request from the web
 	EventPipeline         = "pipeline"          // the forge's pipeline: pass, fail or hand-back
 	EventBudget           = "budget"
 	EventTag              = "tag"
@@ -75,6 +77,7 @@ var eventKinds = map[string]string{
 	store.FeedTag:            EventTag,
 	store.FeedRelease:        EventRelease,
 	store.FeedPlan:           EventPlan,
+	store.FeedMRApprove:      EventMRApprove,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)
 }
