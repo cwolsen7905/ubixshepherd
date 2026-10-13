@@ -108,12 +108,15 @@ How an item is added:
 | By | Through | Starts as |
 |---|---|---|
 | The person | `shepherd next add`, the web page's add box | `planned`, or `approved` with `--approved` |
-| The desk | `next_add` tool, when the person says "put X on the list" | `planned` |
+| The desk | `next_add` tool, when the person says "put X on the list" or the person and desk agree in chat on work not being started now (the desk checks `next_list` first, quotes the person in the note and says it added it) | `planned` |
 | An agent | worker tool `next_propose`, for follow-ups it found but is not scoped to do | `planned`, source `agent` |
 
 Agents never approve ([CLAUDE.md](../CLAUDE.md)). Approval is the person's: the CLI, the
 web page, or the desk acting on the person's words in a turn the person started, the same
-rule `decision_answer` follows. Agent-proposed items show as "proposed" until then.
+rule `decision_answer` follows. Agent-proposed items show as "proposed" until then, and so do items the desk
+registered from chat, because both have source `desk` or `agent` and no approval. A
+separate `chat` source, so that agreed work shows as planned without waiting on the person,
+is a follow-up that needs store, daemon and web changes.
 
 ## 2. States, links and how items move
 
