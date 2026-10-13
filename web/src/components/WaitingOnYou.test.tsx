@@ -1,7 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Waiting } from '../api/types'
+import { refocus } from '../router'
 import { WaitingOnYou } from './WaitingOnYou'
+
+vi.mock('../router', async (orig) => ({ ...(await orig<typeof import('../router')>()), refocus: vi.fn() }))
 
 const list: Waiting = {
   count: 4,
@@ -46,10 +49,24 @@ describe('WaitingOnYou', () => {
     render(<WaitingOnYou />)
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     expect(screen.getByText('Which option?')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Answer' })).toHaveAttribute('href', '#/decisions')
-    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '#/next')
+    expect(screen.getByRole('link', { name: 'Answer' })).toHaveAttribute('href', '#/decisions?d=4')
+    expect(screen.getByRole('link', { name: 'Review' })).toHaveAttribute('href', '#/next?item=9')
     expect(screen.getByRole('button', { name: 'Approve…' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Ship' })).toBeInTheDocument()
+  })
+
+  it('asks the page to focus again when the link points at the hash already shown', async () => {
+    daemon(list)
+    render(<WaitingOnYou />)
+    await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
+    const link = screen.getByRole('link', { name: 'Review' })
+    vi.mocked(refocus).mockClear()
+    await userEvent.click(link)
+    expect(refocus).not.toHaveBeenCalled()
+    window.location.hash = '#/next?item=9'
+    await userEvent.click(link)
+    expect(refocus).toHaveBeenCalledTimes(1)
+    window.location.hash = ''
   })
 
   it('opens the approval control, which reads the forge only then', async () => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, waitingOnYou } from '../api/client'
 import type { Waiting, WaitingItem } from '../api/types'
-import { href } from '../router'
+import { href, refocus } from '../router'
 import { LaneApprove } from './LaneApprove'
 import './WaitingOnYou.css'
 
@@ -18,6 +18,11 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
 /** A stable key for an item: the daemon's list has no ids of its own. */
 function keyOf(it: WaitingItem): string {
   return `${it.kind}:${it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}`
+}
+
+/** A click on the link to the hash already shown fires no hashchange: ask the page to focus again. */
+function again(to: string) {
+  if (window.location.hash === to) refocus()
 }
 
 /**
@@ -112,8 +117,12 @@ export function WaitingOnYou() {
                     {it.title}
                     {where && <span className="faint"> · {where}</span>}
                   </span>
-                  {it.action === 'answer' && <a href={href.decisions()}>Answer</a>}
-                  {it.action === 'review' && <a href={href.next()}>Review</a>}
+                  {it.action === 'answer' && (
+                    <a href={href.decisions(it.decision_id)} onClick={() => again(href.decisions(it.decision_id))}>Answer</a>
+                  )}
+                  {it.action === 'review' && (
+                    <a href={href.next(it.next_id)} onClick={() => again(href.next(it.next_id))}>Review</a>
+                  )}
                   {it.action === 'open' && it.lane_id ? <a href={href.lane(it.lane_id)}>Open lane</a> : null}
                   {it.action === 'approve' && it.lane_id ? (
                     <button type="button" aria-expanded={approving === key} onClick={() => setApproving(approving === key ? null : key)}>

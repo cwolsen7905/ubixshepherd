@@ -1,10 +1,11 @@
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
 import type { NextList } from '../api/types'
 import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { lane, nextItem, spend, status } from '../test/fixtures'
+import { refocus } from '../router'
 import { NextPage } from './Next'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -62,7 +63,51 @@ function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({
 
 describe('NextPage', () => {
   beforeEach(() => localStorage.clear())
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    window.location.hash = ''
+  })
+
+  describe('focus', () => {
+    let scrolled: HTMLElement[]
+    beforeEach(() => {
+      scrolled = []
+      Element.prototype.scrollIntoView = vi.fn(function (this: HTMLElement) {
+        scrolled.push(this)
+      })
+    })
+
+    it('scrolls the focused row to the middle and marks it, once the list has loaded', async () => {
+      window.location.hash = '#/next?item=2'
+      show()
+      const row = (await screen.findByText('Second approved')).closest('li') as HTMLElement
+      await waitFor(() => expect(row).toHaveClass('is-focus-target'))
+      expect(row).toHaveAttribute('aria-current', 'true')
+      expect(scrolled).toEqual([row])
+      expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ block: 'center' })
+      expect(screen.getByText('Idea').closest('li')).not.toHaveClass('is-focus-target')
+    })
+
+    it('does not scroll or mark anything without a focus', async () => {
+      show()
+      await screen.findByText('Second approved')
+      expect(scrolled).toEqual([])
+      expect(document.querySelector('.is-focus-target')).toBeNull()
+    })
+
+    it('focuses again on a refocus, and on a new item in the route', async () => {
+      window.location.hash = '#/next?item=2'
+      show()
+      await waitFor(() => expect(scrolled).toHaveLength(1))
+      act(() => refocus())
+      await waitFor(() => expect(scrolled).toHaveLength(2))
+      act(() => {
+        window.location.hash = '#/next?item=3'
+      })
+      await waitFor(() => expect(scrolled).toHaveLength(3))
+      expect(scrolled[2]).toBe((screen.getByText('Idea').closest('li')) as HTMLElement)
+    })
+  })
 
   it('lists in order with the next marker, and holds done behind a toggle', async () => {
     show()

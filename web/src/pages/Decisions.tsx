@@ -6,7 +6,10 @@ import { inline } from '../conversation/Markdown'
 import { Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { useNow } from '../hooks'
+import { useFocusTarget } from '../router'
 import { useSnapshot } from '../state/context'
+
+const slotSelector = (id: number) => `[data-decision-id="${id}"]`
 
 export function DecisionsPage({ focus }: { focus?: number }) {
   const snap = useSnapshot()
@@ -29,6 +32,7 @@ export function DecisionsPage({ focus }: { focus?: number }) {
 
   const open = snap.decisions
   const first = focus ?? open[0]?.id
+  const lit = useFocusTarget(focus, open.some((d) => d.id === focus), slotSelector)
 
   return (
     <div className="page decisions">
@@ -42,7 +46,14 @@ export function DecisionsPage({ focus }: { focus?: number }) {
       </header>
 
       {open.map((d) => (
-        <DecisionCard key={d.id} d={d} laneId={lanes.get(`${d.repo}\n${d.lane}`)} focused={d.id === first} />
+        <div
+          key={d.id}
+          data-decision-id={d.id}
+          className={`decision-slot${lit === d.id ? ' is-focus-target' : ''}`}
+          aria-current={lit === d.id ? 'true' : undefined}
+        >
+          <DecisionCard d={d} laneId={lanes.get(`${d.repo}\n${d.lane}`)} focused={d.id === first} />
+        </div>
       ))}
 
       {snap.requests.length > 0 && (

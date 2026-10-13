@@ -37,16 +37,34 @@ function option(name: string) {
   return within(list).getByRole('button', { name: new RegExp(`^\\d?${name}`) })
 }
 
-async function show(live: Live) {
+async function show(live: Live, focus?: number) {
   await act(() => live.refresh())
   render(
     <LiveProvider live={live}>
-      <DecisionsPage />
+      <DecisionsPage focus={focus} />
     </LiveProvider>,
   )
 }
 
 describe('DecisionsPage', () => {
+  it('scrolls a focused decision to the middle and marks it', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    const { live } = setup()
+    await show(live, decision().id)
+    const slot = document.querySelector<HTMLElement>(`[data-decision-id="${decision().id}"]`) as HTMLElement
+    expect(slot).toHaveClass('is-focus-target')
+    expect(slot).toHaveAttribute('aria-current', 'true')
+    expect(scroll).toHaveBeenCalledWith({ block: 'center' })
+    expect(scroll.mock.contexts).toContain(slot)
+  })
+
+  it('marks nothing when no decision is asked for', async () => {
+    const { live } = setup()
+    await show(live)
+    expect(document.querySelector('.is-focus-target')).toBeNull()
+  })
+
   it('shows the question, its options and the recommendation, with nothing sent', async () => {
     const { live, answer } = setup()
     await show(live)

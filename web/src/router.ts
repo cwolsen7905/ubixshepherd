@@ -1,5 +1,5 @@
 // Hash routes, so the app needs nothing from the server that serves it.
-import { useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 /** The time filter on the history views. */
 export type Range = 'today' | 'week'
@@ -16,7 +16,7 @@ export type Route =
   | { page: 'decisions'; focus?: number }
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
   | { page: 'timeline'; range?: TimelineRange; agent?: string }
-  | { page: 'next' }
+  | { page: 'next'; focus?: number }
   | { page: 'projects' }
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
@@ -73,7 +73,10 @@ export function parse(hash: string): Route {
       return { page: 'missing', path }
     }
   }
-  if (path === '/next') return { page: 'next' }
+  if (path === '/next') {
+    const item = Number(q.get('item'))
+    return item > 0 ? { page: 'next', focus: item } : { page: 'next' }
+  }
   if (path === '/chat') return { page: 'chat' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
   m = /^\/lanes\/(\d+)$/.exec(path)
@@ -111,7 +114,7 @@ export const href = {
   projects: () => '#/projects',
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,
   unassigned: () => '#/unassigned',
-  next: () => '#/next',
+  next: (item?: number) => (item ? `#/next?item=${item}` : '#/next'),
   chat: () => '#/chat',
   settings: (scope?: string) => (scope ? `#/settings?scope=${encodeURIComponent(scope)}` : '#/settings'),
   lane: (id: number) => `#/lanes/${id}`,
@@ -130,6 +133,57 @@ export function useRoute(): Route {
 
 export function go(to: string) {
   window.location.hash = to.replace(/^#/, '')
+}
+
+let refocusCount = 0
+const refocusSubs = new Set<() => void>()
+
+/**
+ * Asks the page to show its focused item again. A link to the hash the person is already on
+ * fires no hashchange, so a click on it calls this instead.
+ */
+export function refocus() {
+  refocusCount++
+  refocusSubs.forEach((fn) => fn())
+}
+
+/** How long a focused item stays marked. */
+export const FOCUS_MS = 4000
+
+/**
+ * Scrolls the element for `id` to the middle of the view once per navigation, and returns the
+ * id while it is marked (for FOCUS_MS) so the page can highlight it. `present` says the item
+ * is on the page now, so a list that loads after the route changes still gets its focus; a
+ * `refocus()` runs it again for the same id.
+ */
+export function useFocusTarget(id: number | undefined, present: boolean, selector: (id: number) => string): number | undefined {
+  const pulse = useSyncExternalStore(
+    (fn) => {
+      refocusSubs.add(fn)
+      return () => void refocusSubs.delete(fn)
+    },
+    () => refocusCount,
+  )
+  const [lit, setLit] = useState<number | undefined>()
+  const done = useRef('')
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!id) {
+      done.current = ''
+      return
+    }
+    const key = `${id}:${pulse}`
+    if (!present || done.current === key) return
+    const el = document.querySelector(selector(id))
+    if (!el) return
+    done.current = key
+    el.scrollIntoView?.({ block: 'center' })
+    window.clearTimeout(timer.current)
+    setLit(id)
+    timer.current = window.setTimeout(() => setLit(undefined), FOCUS_MS)
+  }, [id, present, pulse, selector])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  return id && lit === id ? lit : undefined
 }
 
 /** The page the person was on before this one, and how far down it they had scrolled. */
