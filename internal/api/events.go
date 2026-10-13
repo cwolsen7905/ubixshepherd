@@ -19,6 +19,7 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	pipeline           the forge's pipeline only: pass, fail or hand-back (old rows that
 //	                   described the gate stay pipeline)
 //	report, decision_asked, decision_answered, request, request_attention,
+//	plan               a next-up item was added, approved, deferred, dropped or finished
 //	mr, budget, tag, release, config, desk_rotated
 //	info               anything else, and any kind a newer daemon adds
 const (
@@ -42,6 +43,7 @@ const (
 	EventBudget           = "budget"
 	EventTag              = "tag"
 	EventRelease          = "release"
+	EventPlan             = "plan" // a next-up item added, approved, deferred, dropped or done
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
 	EventInfo             = "info"         // anything else, such as a session note
@@ -72,6 +74,7 @@ var eventKinds = map[string]string{
 	store.FeedBudget:         EventBudget,
 	store.FeedTag:            EventTag,
 	store.FeedRelease:        EventRelease,
+	store.FeedPlan:           EventPlan,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)
 }

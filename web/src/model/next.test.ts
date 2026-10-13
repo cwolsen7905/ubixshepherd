@@ -1,7 +1,7 @@
 import { nextItem } from '../test/fixtures'
 import {
   canMove, canStart, closedCount, deskWorkspace, nextSections, planLabel, railItems, readRailView, rowState, rowStateWord, stateActions,
-  startText, waitingCount, writeRailView,
+  startText, waitingCount, writeRailView, lastPlanId, matrixGroups,
 } from './next'
 
 const first = nextItem({ id: 1, rank: 1 })
@@ -78,5 +78,20 @@ describe('next-up model', () => {
     writeRailView(store, 'next')
     expect(readRailView(store)).toBe('next')
     expect(readRailView({ getItem: () => { throw new Error('no') } })).toBe('now')
+  })
+})
+
+describe('matrix rows and plan events', () => {
+  it('groups matrix rows by repo with blocked first', () => {
+    const row = (row_id: string, repo: string, state: 'planned' | 'blocked') =>
+      ({ ...nextItem({ id: 0, repo, row_id, source: 'matrix' }), state, stored_state: state })
+    const g = matrixGroups({ items: [], matrix: [row('W1', 'a', 'planned'), row('W2', 'b', 'planned'), row('W3', 'a', 'blocked')] })
+    expect(g.map((x) => [x.repo, x.rows.map((r) => r.row_id)])).toEqual([['a', ['W3', 'W1']], ['b', ['W2']]])
+    expect(matrixGroups(null)).toEqual([])
+  })
+
+  it('finds the newest plan item in the feed', () => {
+    expect(lastPlanId([{ id: 3, kind: 'commit' }, { id: 5, kind: 'plan' }, { id: 7, kind: 'run_passed' }, { id: 4, kind: 'plan' }])).toBe(5)
+    expect(lastPlanId([])).toBe(0)
   })
 })

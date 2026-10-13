@@ -1,13 +1,13 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ApiError, nextUp } from '../api/client'
-import type { NextAddBody, NextItem, NextUpdateBody } from '../api/types'
+import type { MatrixRow, NextAddBody, NextItem, NextUpdateBody } from '../api/types'
 import { Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { useNow } from '../hooks'
 import { prefillDraft, draftKey } from '../model/chatDraft'
 import {
-  NEXT_MARKER, NEXT_MARKS, NEXT_SECTION_NAMES, canMove, canStart, closedCount, deskWorkspace, nextSections, planLabel,
-  stateActions, startText,
+  NEXT_MARKER, NEXT_MARKS, NEXT_SECTION_NAMES, canMove, canStart, closedCount, deskWorkspace, lastPlanId, matrixGroups,
+  nextSections, planLabel, stateActions, startText,
 } from '../model/next'
 import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
@@ -29,9 +29,21 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
   const now = useNow()
   const [closed, setClosed] = useState(false)
   const { list, error, reload } = useNextList(closed, load)
+  // A plan event on the feed (an item added, approved, deferred, dropped or done) reads
+  // the list again at once; the hook's own poll still catches matrix rows, which change
+  // with git and not on the feed.
+  const planLast = lastPlanId(snap.feed)
+  const seenPlan = useRef(planLast)
+  useEffect(() => {
+    if (planLast !== seenPlan.current) {
+      seenPlan.current = planLast
+      reload()
+    }
+  }, [planLast, reload])
   const [busy, setBusy] = useState<number | 'add' | null>(null)
   const [problem, setProblem] = useState('')
   const items = useMemo(() => list?.items ?? [], [list])
+  const matrix = useMemo(() => matrixGroups(list), [list])
   const sections = useMemo(() => nextSections(items, closed), [items, closed])
   const hiddenClosed = closed ? 0 : closedCount(items)
   const repos = useMemo(() => [...new Set(snap.lanes.map((l) => l.repo))].sort(), [snap.lanes])
@@ -86,7 +98,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
         </label>
       </p>
 
-      {list !== null && items.length === 0 && (
+      {list !== null && items.length === 0 && matrix.length === 0 && (
         <p className="empty">Nothing is planned. Add an item above, or run <code>shepherd next seed</code>.</p>
       )}
 
@@ -114,7 +126,61 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
           </section>
         ),
       )}
+
+      {matrix.length > 0 && (
+        <section className="next-section next-matrix" aria-labelledby="next-matrix-h">
+          <h2 id="next-matrix-h" className="section-h">
+            From work matrix <span className="faint">{matrix.reduce((n, g) => n + g.rows.length, 0)}</span>
+          </h2>
+          <p className="faint">
+            Rows with status todo or blocked in each repo's <code>docs/WORK.md</code>. Read from git, not stored here: edit the
+            file to change one.
+          </p>
+          {matrix.map((g) => (
+            <div key={g.repo}>
+              <h3 className="next-matrix-repo">{g.repo}</h3>
+              <ol className="next-rows">
+                {g.rows.map((r) => (
+                  <MatrixItem key={r.key} row={r} />
+                ))}
+              </ol>
+            </div>
+          ))}
+        </section>
+      )}
     </div>
+  )
+}
+
+/** A work-matrix row: read-only, so it has links and no actions. */
+function MatrixItem({ row }: { row: MatrixRow }) {
+  const blocked = row.state === 'blocked'
+  return (
+    <li className={`next-row state-${row.state} next-matrix-row`}>
+      <span className="next-glyph">
+        <Glyph glyph={blocked ? '■' : '○'} tone={blocked ? 'warn' : 'muted'} label={blocked ? 'blocked' : 'todo'} />
+      </span>
+      <div className="next-main">
+        <p className="next-title">
+          <span className="next-id faint">{row.row_id}</span> {row.title}
+          {blocked && <span className="badge tone-warn next-badge">blocked</span>}
+          <span className="badge next-badge" title="Read through from docs/WORK.md">matrix</span>
+        </p>
+        <p className="next-meta faint">
+          {row.area && <span>{row.area}</span>}
+          {row.lane && <span title="The lane the row names">lane {row.lane}</span>}
+          {row.mr &&
+            (row.pr_url ? (
+              <a href={row.pr_url} target="_blank" rel="noreferrer">
+                PR {row.mr}
+              </a>
+            ) : (
+              <span>PR {row.mr}</span>
+            ))}
+        </p>
+        {row.note && <p className="next-note">{row.note}</p>}
+      </div>
+    </li>
   )
 }
 

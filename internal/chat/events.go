@@ -49,6 +49,7 @@ var eventMarks = map[string]eventMark{
 	api.EventBudget:           {"$", toneWarn},
 	api.EventTag:              {"#", toneMuted},
 	api.EventRelease:          {"▲", toneMuted},
+	api.EventPlan:             {"≡", toneMuted},
 	api.EventConfig:           {"~", toneMuted},
 	kindDeskRotated:           {"↻", toneMuted},
 	api.EventInfo:             {"·", toneMuted},

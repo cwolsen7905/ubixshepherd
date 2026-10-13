@@ -98,6 +98,7 @@ func (s *Server) settleNext(ctx context.Context, items []store.NextItem) []store
 			continue
 		}
 		s.Log.Info("next item done: its lane's merge request merged", "item", it.ID, "lane", lane.Name)
+		s.postFeed(ctx, store.FeedPlan, it.ID, fmt.Sprintf("next-up item %d done: %s (lane %s merged)", it.ID, upd.Title, lane.Name))
 		items[i] = upd
 	}
 	return items
@@ -113,6 +114,9 @@ func (s *Server) listNext(w http.ResponseWriter, r *http.Request) {
 	items = s.settleNext(ctx, items)
 	all := r.URL.Query().Get("all") != ""
 	out := api.NextList{Items: []api.NextItemView{}}
+	if r.URL.Query().Get("matrix") != "0" {
+		out.Matrix = s.matrixRows(ctx, items)
+	}
 	// Effective state decides the order shown: approved, then planned, deferred, with
 	// started items among the rest by their stored place.
 	for _, it := range items {
@@ -213,6 +217,7 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("next item added", "item", it.ID, "state", it.State, "source", it.Source)
+	s.postFeed(r.Context(), store.FeedPlan, it.ID, fmt.Sprintf("next-up item %d added by %s as %s: %s", it.ID, it.Source, it.State, it.Title))
 	writeJSON(w, http.StatusOK, s.nextView(r.Context(), it))
 }
 
@@ -245,7 +250,8 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := s.Store.NextItem(ctx, id); err != nil {
+	before, err := s.Store.NextItem(ctx, id)
+	if err != nil {
 		s.nextError(w, err)
 		return
 	}
@@ -263,7 +269,21 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.Log.Info("next item changed", "item", id, "state", it.State)
+	if it.State != before.State {
+		if verb, ok := planVerbs[it.State]; ok {
+			s.postFeed(ctx, store.FeedPlan, id, fmt.Sprintf("next-up item %d %s: %s", id, verb, it.Title))
+		}
+	}
 	writeJSON(w, http.StatusOK, s.nextView(ctx, it))
+}
+
+// planVerbs are the stored states whose arrival is told on the feed; a return to
+// planned, a move and a note edit are not.
+var planVerbs = map[string]string{
+	store.NextApproved: "approved",
+	store.NextDeferred: "deferred",
+	store.NextDropped:  "dropped",
+	store.NextDone:     "marked done",
 }
 
 func (s *Server) nextError(w http.ResponseWriter, err error) {

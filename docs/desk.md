@@ -106,7 +106,7 @@ planned but not being acted on ([backlog-next.md](backlog-next.md)).
 
 | Tool | What it does | Who decides |
 |---|---|---|
-| `next_list` | Reads the list in the person's order: approved, then planned, then deferred, each with its plan doc and, once a lane is open for it, the lane and merge request. The item marked next is the first approved one with no lane. `all` adds done and dropped items. | Read only |
+| `next_list` | Reads the list in the person's order: approved, then planned, then deferred, each with its plan doc and, once a lane is open for it, the lane and merge request. The item marked next is the first approved one with no lane. `all` adds done and dropped items. A `matrix` list follows: the repos' `docs/WORK.md` rows with status `todo` or `blocked`, read-only and with no id. | Read only |
 | `next_add` | Adds an item as `planned` when the person says "put X on the list". | The desk may add; the item shows as proposed until approved |
 | `next_update` | Changes an item's title, note, plan, repo or lane hint; with `state` or `move`, approves, defers, drops, finishes or reorders it. | `state` and `move` are the person's |
 

@@ -24,6 +24,7 @@ export const EVENTS = [
   'budget',
   'tag',
   'release',
+  'plan',
   'config',
   'desk_rotated',
   'info'
@@ -61,6 +62,7 @@ export const MARKS: Record<EventKind, Mark> = {
   budget: { glyph: '$', tone: 'warn', label: 'budget' },
   tag: { glyph: '#', tone: 'muted', label: 'tag' },
   release: { glyph: '▲', tone: 'muted', label: 'release' },
+  plan: { glyph: '≡', tone: 'muted', label: 'next-up item' },
   config: { glyph: '~', tone: 'muted', label: 'config' },
   desk_rotated: { glyph: '↻', tone: 'muted', label: 'desk session rotated' },
   info: { glyph: '·', tone: 'muted', label: 'note' }

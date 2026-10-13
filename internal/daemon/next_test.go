@@ -100,6 +100,16 @@ func TestNextItemsApprovalAndDerivedState(t *testing.T) {
 	if it.State != store.NextDone || it.DoneAt == nil {
 		t.Errorf("done was not kept: %+v", it)
 	}
+	feed, _ := s.Store.Feed(ctx, 0, 200)
+	told := 0
+	for _, f := range feed {
+		if f.Kind == store.FeedPlan && f.Ref == proposed.ID && strings.Contains(f.Text, "done") {
+			told++
+		}
+	}
+	if told != 1 {
+		t.Errorf("a merged lane's item should be told done once on the feed, got %d", told)
+	}
 	call(t, ts, s.Token, "GET", api.PathNext, nil, &l)
 	for _, x := range l.Items {
 		if x.ID == proposed.ID {

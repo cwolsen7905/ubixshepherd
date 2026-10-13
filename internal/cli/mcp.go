@@ -402,7 +402,7 @@ func mcpTools() []mcpTool {
 		{
 			Name: "next_list",
 			Description: "The next-up list: work that is planned but not being acted on, in the person's order (approved, then planned, then deferred), each with its plan doc and, once a lane is open for it, the lane and MR. " +
-				"The item marked next is the first approved one with no lane. Use it to say what is next up; items marked proposed are not approved.",
+				"The item marked next is the first approved one with no lane. Use it to say what is next up; items marked proposed are not approved. The matrix list is each repo's docs/WORK.md rows with status todo or blocked, read-only (no id), edited in the file.",
 			InputSchema: obj(map[string]any{"all": map[string]any{"type": "boolean", "description": "Include done and dropped items."}}),
 			args: func(a map[string]any) ([]string, error) {
 				out := []string{"next", "list"}

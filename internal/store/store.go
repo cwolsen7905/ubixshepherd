@@ -511,6 +511,7 @@ const (
 	FeedSession        = "session"
 	FeedPipeline       = "pipeline" // the forge's pipeline only
 	FeedRelease        = "release"
+	FeedPlan           = "plan" // a next-up item added, approved, deferred, dropped or done
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's

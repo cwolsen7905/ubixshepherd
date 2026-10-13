@@ -63,6 +63,17 @@ something waits.
 - **Anchors need the feed.** A jump needs the row to be in the feed window the page holds
   (the newest 1000 items) and in the loaded thread.
 
+## Next up
+
+The rail's Now / Next up toggle and the `#/next` page show the next-up list
+([backlog-next.md](backlog-next.md)). The page reads the list again whenever a `plan` item
+arrives on the feed (an item added, approved, deferred, dropped or done), after each
+action, and every 20 seconds, which also picks up work-matrix rows: rows with status
+`todo` or `blocked` from each repo's `docs/WORK.md`, shown read-only in a "From work
+matrix" group with their lane and PR links and no actions. The rail's Next up view lists
+stored approved items only. The `plan` kind has the glyph `≡` in the thread, history and
+the legend.
+
 ## Review list
 
 Every element considered for the rail, and where it stands.
