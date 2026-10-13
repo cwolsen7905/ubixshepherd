@@ -18,6 +18,7 @@ function liveFake() {
     runEvents: async () => { throw new Error('unused') },
     decisions: async () => [],
     requests: async () => [],
+    next: async () => ({ items: [] }),
     spend: async () => spend(),
     feedLatest: async () => ({ items: [], events: [], last: 0 }),
     feed: async (after) => ({ items: [], events: [], last: after }),

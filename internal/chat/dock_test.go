@@ -298,3 +298,37 @@ func TestFeedOutcomeShowsBeforeThePoll(t *testing.T) {
 		}
 	}
 }
+
+func TestDockCountsNextUpItemsAwaitingApproval(t *testing.T) {
+	m := dockModel()
+	if strings.Contains(ansi.Strip(m.countsRow(m.dockItems())), "to approve") {
+		t.Fatal("approvals shown when none wait")
+	}
+	m.approvals = 2
+	got := ansi.Strip(m.countsRow(m.dockItems()))
+	if !strings.HasSuffix(got, "2 Next-up to approve (/next)") {
+		t.Errorf("counts row: %q", got)
+	}
+	// Alone, it still draws a dock.
+	m.lanes, m.runs, m.decisions, m.requests = nil, nil, nil, nil
+	rows := m.dockRows(m.dockItems())
+	if len(rows) != 1 || !strings.Contains(ansi.Strip(rows[0]), "2 Next-up to approve") {
+		t.Errorf("dock rows: %q", rows)
+	}
+	m.approvals = 0
+	if rows := m.dockRows(m.dockItems()); rows != nil {
+		t.Errorf("an empty dock drew %q", rows)
+	}
+}
+
+func TestAwaitingApprovalIsProposedAndPlanned(t *testing.T) {
+	items := []api.NextItemView{
+		{ID: 1, State: store.NextPlanned, Proposed: true},
+		{ID: 2, State: store.NextPlanned},
+		{ID: 3, State: store.NextStarted, Proposed: true},
+		{ID: 4, State: store.NextApproved, Proposed: true},
+	}
+	if got := api.AwaitingApproval(items); len(got) != 1 || got[0].ID != 1 {
+		t.Errorf("got %+v", got)
+	}
+}

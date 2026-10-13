@@ -47,20 +47,21 @@ const cutMark = "\n[... cut to desk.summary_chars ...]"
 
 // summaryInput is what a summary is built from, gathered from the store.
 type summaryInput struct {
-	now      time.Time
-	cfg      config.Config
-	model    string // the desk.model setting
-	repos    []store.Repo
-	lanes    map[int64]laneAt // open lanes by id
-	running  []store.Run
-	reports  map[int64]string // a running run's latest report
-	recent   []store.Run      // completed, newest first
-	open     []store.Decision
-	answered []store.Decision // newest first
-	requests []store.Request
-	spend    map[string]store.Spend
-	turns    []quotedTurn // oldest first
-	topics   []string     // open topics, newest first
+	now       time.Time
+	cfg       config.Config
+	model     string // the desk.model setting
+	repos     []store.Repo
+	lanes     map[int64]laneAt // open lanes by id
+	running   []store.Run
+	reports   map[int64]string // a running run's latest report
+	recent    []store.Run      // completed, newest first
+	open      []store.Decision
+	answered  []store.Decision // newest first
+	requests  []store.Request
+	approvals []store.NextItem // Next-up items proposed to the person, planned and not started
+	spend     map[string]store.Spend
+	turns     []quotedTurn // oldest first
+	topics    []string     // open topics, newest first
 }
 
 type laneAt struct {
@@ -176,6 +177,22 @@ func (d *Desk) gather(ctx context.Context, before int64) (summaryInput, error) {
 			in.requests = append(in.requests, q)
 		}
 	}
+	items, err := st.NextItems(ctx)
+	if err != nil {
+		return in, err
+	}
+	for _, it := range items {
+		if it.Source == store.NextByPerson || it.State != store.NextPlanned {
+			continue
+		}
+		// A linked lane that is open makes the item started: nothing waits on it.
+		if it.LaneID != 0 {
+			if l, err := st.Lane(ctx, it.LaneID); err == nil && (l.State == store.LaneOpen || l.State == store.LaneOpening) {
+				continue
+			}
+		}
+		in.approvals = append(in.approvals, it)
+	}
 	if in.spend, err = st.SpendOn(ctx, dispatch.Today()); err != nil {
 		return in, err
 	}
@@ -245,6 +262,7 @@ func (in summaryInput) render(max int, notes string) string {
 	}
 
 	section("Waiting for the person (decisions; only the person answers them):", in.decisionLines())
+	section(in.approvalTitle(), in.approvalLines())
 	section("Requests between lanes, not yet replied:", in.requestLines())
 	section("Open topics (the thread's vocabulary; keep these names):", in.topics)
 	section("Runs in flight:", in.runningLines())
@@ -309,6 +327,27 @@ func (in summaryInput) decisionLines() []string {
 		}
 		if dc.Recommendation != "" {
 			l += " Recommends: " + oneLine(dc.Recommendation)
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
+// approvalTitle names the Next-up items that wait on the person, with their count.
+func (in summaryInput) approvalTitle() string {
+	n := len(in.approvals)
+	if n == 1 {
+		return "1 Next-up item waits on your approval (only the person approves, defers or drops it; they see it on the Next up page):"
+	}
+	return fmt.Sprintf("%d Next-up items wait on your approval (only the person approves, defers or drops them; they see them on the Next up page):", n)
+}
+
+func (in summaryInput) approvalLines() []string {
+	var out []string
+	for _, it := range in.approvals {
+		l := fmt.Sprintf("next-up item %d, proposed by the %s, waiting %s: %s", it.ID, it.Source, age(in.now, it.Created), oneLine(it.Title))
+		if it.Repo != "" {
+			l += " (repo " + it.Repo + ")"
 		}
 		out = append(out, l)
 	}

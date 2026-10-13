@@ -27,6 +27,7 @@ type API interface {
 	RunLog(ctx context.Context, id, offset int64) (api.RunLog, error)
 	Decisions(ctx context.Context, state string) ([]api.DecisionView, error)
 	Requests(ctx context.Context, states string) ([]api.RequestView, error)
+	NextItems(ctx context.Context, all bool) (api.NextList, error)
 	Answer(ctx context.Context, id int64, answer string) (store.Decision, error)
 	Setting(ctx context.Context, key string) (string, error)
 	SettingInfo(ctx context.Context, key string) (api.Setting, error)
@@ -129,6 +130,7 @@ type Model struct {
 	lanes            []api.LaneView
 	runs             []api.RunView // the latest, of every state
 	decisions        []api.DecisionView
+	approvals        int               // Next-up items waiting on the person's approval
 	requests         []api.RequestView // those needing routing
 	release          *api.UpdateStatus // the release check, for a one-line notice
 	lastActivity     time.Time
@@ -208,6 +210,7 @@ type panelMsg struct {
 	runs            []api.RunView
 	decisions       []api.DecisionView
 	requests        []api.RequestView
+	approvals       int
 	spend           api.SpendToday
 	sessions        []api.SessionView
 	panelUpdated    bool
@@ -387,6 +390,10 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		next, err := m.api.NextItems(m.ctx, false)
+		if err != nil {
+			return errorMsg{err}
+		}
 		sp, err := m.api.SpendToday(m.ctx)
 		if err != nil {
 			return errorMsg{err}
@@ -399,7 +406,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 			}
 		}
 		pm := panelMsg{
-			lanes: lanes, runs: runs, decisions: ds, requests: reqs, spend: sp, sessions: ss,
+			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), spend: sp, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions,
 		}
 		if includeSessions {
@@ -615,6 +622,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 	case panelMsg:
 		if msg.panelUpdated {
 			m.lanes, m.runs, m.decisions, m.requests = msg.lanes, msg.runs, msg.decisions, msg.requests
+			m.approvals = msg.approvals
 			if _, ok := m.focusedDecision(); !ok && m.focusDecision != 0 {
 				// Answered elsewhere: the keys go back to the input.
 				m.focusInput()
@@ -774,7 +782,7 @@ func (m *Model) handle(text string) tea.Cmd {
 		m.add(Line{Kind: KindInfo, Text: "/answer <decision> <option number or words>   answer a decision yourself\n" +
 			"Tab / Shift-Tab   move to the decisions in the dock and between them; a number answers with that option (Enter confirms when asked), Enter alone answers in your own words, Esc goes back\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
-			"/decisions   decisions waiting for you\n/log <run>   a run's live output (q to come back)\n" +
+			"/decisions   decisions waiting for you\n/next   Next-up items waiting for your approval\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/model [<name>|reset]   the desk's model: show it, set it, or go back to config.yaml\n" +
 			"/update dismiss   hide the new-release notice until a newer release appears\n" +
@@ -826,6 +834,23 @@ func (m *Model) handle(text string) tea.Cmd {
 				b.WriteString(decisionText(d))
 			}
 			return lineMsg{Kind: KindDecision, Text: strings.TrimSpace(b.String())}
+		}
+	case "/next":
+		return func() tea.Msg {
+			l, err := m.api.NextItems(m.ctx, false)
+			if err != nil {
+				return errorMsg{err}
+			}
+			items := api.AwaitingApproval(l.Items)
+			if len(items) == 0 {
+				return lineMsg{Kind: KindInfo, Text: "No Next-up items waiting for your approval."}
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "%d Next-up item(s) wait on your approval (approve, defer or drop them with the desk or on the Next up page):", len(items))
+			for _, it := range items {
+				fmt.Fprintf(&b, "\n  %d  %s", it.ID, oneLine(it.Title))
+			}
+			return lineMsg{Kind: KindInfo, Text: b.String()}
 		}
 	case "/answer":
 		if len(f) < 3 {

@@ -91,6 +91,7 @@ type fakeAPI struct {
 	lanes      []api.LaneView
 	runs       []api.RunView
 	reqs       []api.RequestView
+	next       []api.NextItemView
 	spent      float64
 	asked      []string
 	redialErrs []error
@@ -130,6 +131,9 @@ func (f *fakeAPI) Runs(context.Context, int64, string, int) ([]api.RunView, erro
 	return f.runs, nil
 }
 func (f *fakeAPI) Requests(context.Context, string) ([]api.RequestView, error) { return f.reqs, nil }
+func (f *fakeAPI) NextItems(context.Context, bool) (api.NextList, error) {
+	return api.NextList{Items: f.next}, nil
+}
 func (f *fakeAPI) RunLog(context.Context, int64, int64) (api.RunLog, error) {
 	return api.RunLog{Data: "line\n", Offset: 5, Done: true}, nil
 }

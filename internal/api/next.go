@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // PathNext is the next-up list: GET lists it (all=1 adds dropped and done items), POST
@@ -96,4 +97,17 @@ type NextList struct {
 type OpenLaneBody struct {
 	fold.OpenRequest
 	Item int64 `json:"item,omitempty"`
+}
+
+// AwaitingApproval is the items that wait on the person: proposed by the desk or an
+// agent, still planned, and not yet started from a lane. The dock, the web header and
+// the desk's summary count the same set.
+func AwaitingApproval(items []NextItemView) []NextItemView {
+	var out []NextItemView
+	for _, it := range items {
+		if it.Proposed && it.State == store.NextPlanned {
+			out = append(out, it)
+		}
+	}
+	return out
 }

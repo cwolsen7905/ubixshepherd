@@ -1,6 +1,7 @@
 import type { Feed } from '../api/types'
 import { ApiError } from '../api/client'
-import { BACKOFF, INTERVALS, Live, type Api, type Clock } from './live'
+import { nextItem } from '../test/fixtures'
+import { awaitingApproval, BACKOFF, INTERVALS, Live, type Api, type Clock } from './live'
 
 // A clock whose timers run only when the test says, and a tab that can be hidden.
 function fakeClock() {
@@ -49,6 +50,7 @@ function fakeApi(over: Partial<Api> = {}) {
     runEvents: async () => { throw new Error('unused') },
     decisions: async () => (calls.push('decisions'), []),
     requests: async () => (calls.push('requests'), []),
+    next: async () => ({ items: [] }),
     spend: async () => (calls.push('spend'), { day: '2026-10-08', usd: 1, budget: 20, credit_usd: 0, by_source: null }),
     feedLatest: async () => (calls.push('latest'), { items: [], events: [], last: 5 }),
     feed: async (after) => (calls.push(`feed:${after}`), feeds.shift() ?? { items: [], events: [], last: after }),
@@ -73,6 +75,23 @@ describe('Live', () => {
     expect(f.calls).toContain('latest')
     expect(live.getSnapshot().ready).toBe(true)
     expect(live.getSnapshot().spend?.usd).toBe(1)
+  })
+
+  it('loads the next-up list and counts the proposals that wait on the person', async () => {
+    const f = fakeApi({
+      next: async () => ({
+        items: [
+          nextItem({ id: 1, state: 'planned', stored_state: 'planned', source: 'desk', proposed: true }),
+          nextItem({ id: 2, state: 'planned', stored_state: 'planned' }),
+          nextItem({ id: 3, state: 'approved', source: 'agent', proposed: true }),
+        ],
+      }),
+    })
+    const live = new Live(f.api, fakeClock().clock)
+    live.start()
+    await settle()
+    expect(live.getSnapshot().next).toHaveLength(3)
+    expect(awaitingApproval(live.getSnapshot().next).map((i) => i.id)).toEqual([1])
   })
 
   it('polls the feed from its cursor, notes a run outcome at once and reloads the lists', async () => {

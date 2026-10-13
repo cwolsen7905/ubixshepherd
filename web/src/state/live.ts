@@ -4,11 +4,12 @@
 // slower clock, since the forge's state changes without asking. Both slow down while the
 // tab is hidden. (Server-sent events will replace the feed poll.)
 import { api as realApi, ApiError, SIGN_IN_HINT } from '../api/client'
-import type { DecisionView, LaneView, RequestView, RunView, SpendToday, Status } from '../api/types'
+import type { DecisionView, LaneView, NextItem, RequestView, RunView, SpendToday, Status } from '../api/types'
 import { noteOutcome, type Seen } from '../model/board'
 import { entries, type FeedEntry } from '../model/feed'
 
-export type Api = typeof realApi
+/** The daemon calls Live makes. `next` is optional so a fake that does not model the next-up list need not. */
+export type Api = Omit<typeof realApi, 'next'> & Partial<Pick<typeof realApi, 'next'>>
 
 export interface Snapshot {
   status: Status | null
@@ -16,6 +17,8 @@ export interface Snapshot {
   runs: RunView[]
   decisions: DecisionView[]
   requests: RequestView[]
+  /** The open next-up list (dropped and done items left out). */
+  next: NextItem[]
   spend: SpendToday | null
   /** The newest FEED_WINDOW items, oldest first. */
   feed: FeedEntry[]
@@ -28,6 +31,11 @@ export interface Snapshot {
   /** When the lists last loaded. */
   updated: number
   seen: Seen
+}
+
+/** The next-up items waiting on the person: proposed by the desk or an agent, planned, not started. */
+export function awaitingApproval(next: NextItem[]): NextItem[] {
+  return next.filter((it) => it.proposed && it.state === 'planned')
 }
 
 export const FEED_WINDOW = 1000
@@ -75,7 +83,7 @@ export class Live {
     this.api = apiImpl
     this.clock = clock
     this.snap = {
-      status: null, lanes: [], runs: [], decisions: [], requests: [], spend: null, feed: [],
+      status: null, lanes: [], runs: [], decisions: [], requests: [], next: [], spend: null, feed: [],
       error: null, downSince: null, ready: false, updated: 0, seen: loadSeen(clock.now()),
     }
   }
@@ -194,15 +202,16 @@ export class Live {
   private async loadLists() {
     try {
       const status = await this.api.status()
-      const [laneLists, runs, decisions, requests, spend] = await Promise.all([
+      const [laneLists, runs, decisions, requests, nextList, spend] = await Promise.all([
         Promise.all(status.workspaces.map((w) => this.api.lanes(w.id))),
         this.api.runs(),
         this.api.decisions('open'),
         this.api.requests('needs_routing'),
+        this.api.next ? this.api.next() : { items: [] },
         this.api.spend(),
       ])
       this.set({
-        status, lanes: laneLists.flat(), runs, decisions, requests, spend,
+        status, lanes: laneLists.flat(), runs, decisions, requests, next: nextList.items, spend,
         error: null, ready: true, updated: this.clock.now(),
       })
     } catch (e) {

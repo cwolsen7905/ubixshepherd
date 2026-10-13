@@ -113,6 +113,8 @@ export const api = {
   /** state "" lists every decision. */
   decisions: (state: '' | 'open' | 'answered') => get<DecisionView[]>(`/v1/decisions?${qs({ state })}`),
   requests: (states: string) => get<RequestView[]>(`/v1/requests?${qs({ state: states })}`),
+  /** The open next-up list; the live view counts the items waiting on the person from it. */
+  next: () => get<NextList>('/v1/next'),
   spend: () => get<SpendToday>('/v1/spend'),
   /** The newest feed id only. */
   feedLatest: () => get<Feed>('/v1/feed?after=latest'),

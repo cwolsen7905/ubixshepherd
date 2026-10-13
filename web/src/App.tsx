@@ -5,6 +5,7 @@ import { faviconHref } from './favicon'
 import { useKeys } from './hooks'
 import { go, href, useRoute } from './router'
 import { useSnapshot } from './state/context'
+import { awaitingApproval } from './state/live'
 import { BoardPage } from './pages/Board'
 import { ChatPage } from './pages/Chat'
 import { DecisionsPage } from './pages/Decisions'
@@ -62,6 +63,7 @@ export function App() {
   )
 
   const decisions = snap.decisions.length + snap.requests.length
+  const approvals = awaitingApproval(snap.next).length
   const spend = snap.spend
 
   return (
@@ -95,6 +97,11 @@ export function App() {
           </a>
           <a href={href.next()} aria-current={route.page === 'next' ? 'page' : undefined}>
             Next up
+            {approvals > 0 && (
+              <span className="nav-count tone-warn" title={`${approvals} Next-up item${approvals === 1 ? '' : 's'} wait${approvals === 1 ? 's' : ''} on your approval`}>
+                {approvals}
+              </span>
+            )}
           </a>
           <a href={href.runs()} aria-current={route.page === 'runs' ? 'page' : undefined}>
             Runs
