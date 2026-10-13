@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { CopyButton } from '../components/CopyButton'
 
 // What an agent wrote is text, never markup: elements are built here, so nothing of it
 // reaches innerHTML, and a link survives only as an http or https anchor.
@@ -87,9 +88,12 @@ export function Markdown({ text }: { text: string }) {
         switch (b.t) {
           case 'code':
             return (
-              <pre key={i}>
-                <code>{b.text}</code>
-              </pre>
+              <div key={i} className="cv-code">
+                <pre>
+                  <code>{b.text}</code>
+                </pre>
+                <CopyButton text={b.text.replace(/\n+$/, '')} />
+              </div>
             )
           case 'h':
             return (

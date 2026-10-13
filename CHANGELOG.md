@@ -11,6 +11,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **Fenced code blocks in the web chat have a copy button.** Each block in a desk or agent
+  message gets an icon button in its top-right corner that copies the block's text exactly,
+  over plain http too, and shows a check for a moment. Inline code is unchanged.
 - **The update notice can upgrade the daemon in one click, and the daemon can do it by
   itself.** The notice in the web UI gains an Upgrade button, `shepherd update upgrade
   [--now]` and `/update upgrade [now]` in `shepherd chat` do the same. The daemon downloads
