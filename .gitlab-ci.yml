@@ -95,7 +95,7 @@ go-cross:
 web-typecheck:
   extends: .web
   script:
-    - web_run 'cd web && npm ci && tsc -b --noEmit'
+    - web_run 'cd web && npm ci && npm run typecheck'
 
 # dev -> main. main only ever moves by fast-forward from a green dev (bin/promote.sh, which
 # fails closed and never forces). Runs only on a push pipeline of the dev branch, and only
