@@ -388,8 +388,8 @@ export function mergeEvents(a: DeskEvent[], b: DeskEvent[]): DeskEvent[] {
 // rest (commits, gate steps, run starts) stay on the board and the lane's timeline.
 const THREAD_EVENTS = new Set<EventKind>([
   'run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota',
-  'decision_asked', 'decision_answered', 'request_attention', 'budget', 'mr', 'release',
-  'lane_opened', 'lane_closed',
+  'decision_asked', 'decision_answered', 'request_attention', 'budget', 'mr', 'mr_approve', 'release',
+  'lane_opened', 'lane_closed', 'plan',
 ])
 
 export type ThreadItem =
