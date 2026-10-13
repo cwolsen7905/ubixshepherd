@@ -32,6 +32,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
   decisions. `shepherd chat` gains `/next`, which lists them. Nothing is added to the API:
   the count comes from the existing `GET /v1/next`.
 
+### Fixed
+
+- **The web Backlog and board no longer hide a lane whose open merge request has no
+  pipeline.** Only a queued or running pipeline counts as waiting on the forge. A merge
+  request with no pipeline (a repo whose CI skips the branch), or with a canceled, skipped
+  or unknown one, now shows under "To review" so the person sees it is waiting on them.
+
 ## [0.4.0-beta.1] - 2026-10-12
 
 A beta of uBixShepherd that shows each lane's gate result in the web UI, files the

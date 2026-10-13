@@ -524,7 +524,7 @@ describe('topic pill', () => {
     expect(pills).toHaveLength(2)
     expect(pills[0]).toHaveAttribute('title', 'the release of v0.3')
 
-    await user.click(pills[1]!)
+    await user.click(pills[1] as HTMLElement)
     expect(window.location.hash).toBe('#/chat?topic=3')
     await waitFor(() => expect(screen.queryByText('loose answer')).not.toBeInTheDocument())
     expect(screen.getByText('tied answer')).toBeInTheDocument()

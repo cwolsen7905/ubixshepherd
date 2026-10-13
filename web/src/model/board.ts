@@ -122,6 +122,16 @@ export function mrOpen(l: LaneView): boolean {
   return !!l.mr && l.mr_state !== 'merged' && l.mr_state !== 'closed'
 }
 
+/**
+ * Whether the forge is still working on the open merge request's pipeline, so the lane is
+ * waiting on the forge and not on the person. No pipeline at all (a repo whose CI skips
+ * the branch), and a canceled, skipped or unknown one, are not in progress: nothing will
+ * move the merge request but the person.
+ */
+export function pipelineInProgress(l: LaneView): boolean {
+  return l.pipeline_status === 'pending' || l.pipeline_status === 'running'
+}
+
 /** The require-approval job's statuses that hold a merge: not started, waiting to be played, blocked, or failed for want of a sign-off. */
 const HELD_JOB = new Set(['pending', 'manual', 'blocked', 'failed', 'created', 'scheduled'])
 
@@ -184,8 +194,12 @@ export function boardItems({ lanes, runs, decisions, requests, seen, showDismiss
       items.push({ ...base, group: 'broken', at: failedRun ? endedAt(run) : l.created, detail })
     } else if (running) {
       items.push({ ...base, group: 'working', at: run.started, detail: run.progress?.line ?? `run ${run.id}` })
-    } else if (mrOpen(l) && l.pipeline_status === 'passed') {
-      items.push({ ...base, group: 'review', at: l.created, detail: 'waiting for a merge' })
+    } else if (mrOpen(l) && !pipelineInProgress(l)) {
+      // Passed, or nothing the forge is still running (no pipeline, canceled, skipped,
+      // unknown): the merge request waits on the person.
+      const detail = l.pipeline_status === 'passed' ? 'waiting for a merge'
+        : l.pipeline_status ? `MR !${l.mr} open, pipeline ${l.pipeline_status}` : `MR !${l.mr} open, no pipeline`
+      items.push({ ...base, group: 'review', at: l.created, detail })
     } else if (run?.ended && !dismissed && unseen(seen, `run:${run.id}`, run.ended)) {
       items.push({ ...base, group: 'done', at: run.ended, detail: `run ${run.id} ${run.state}` })
     }

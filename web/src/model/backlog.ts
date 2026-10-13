@@ -5,7 +5,7 @@
 import type { FeedEntry } from './feed'
 import { aboutLane } from './feed'
 import {
-  boardItems, laneClashes, latestRuns, endedBadly, mrOpen, type BoardItem,
+  boardItems, laneClashes, latestRuns, endedBadly, mrOpen, pipelineInProgress, type BoardItem,
 } from './board'
 import type { ActivityKind, DecisionView, LaneView, RequestView, RunView } from '../api/types'
 import type { Tone } from './marks'
@@ -84,8 +84,9 @@ export function backlogItems(input: BacklogInput): BacklogItem[] {
     if (run?.state === 'running') continue
     // A dismissed run is one the person has asked not to hear about.
     if (endedBadly(run) && run.dismissed) continue
-    // Waiting on the forge is waiting, not idle: an open merge request whose pipeline runs.
-    if (mrOpen(l) && l.pipeline_status !== 'failed' && l.pipeline_status !== 'passed') continue
+    // Waiting on the forge is waiting, not idle: an open merge request whose pipeline is
+    // queued or running. One with no pipeline, or a canceled one, is the board's to list.
+    if (mrOpen(l) && pipelineInProgress(l)) continue
     // The daemon's activity time is when the lane last did anything; before it is known
     // (an older daemon), the last run's end stands in.
     const detail = l.last_activity
