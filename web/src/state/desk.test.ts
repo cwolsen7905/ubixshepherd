@@ -323,4 +323,17 @@ describe('timeline', () => {
     const m = mergeEvents([deskEvent({ seq: 5 }), deskEvent({ seq: 6 })], [deskEvent({ seq: 4 }), deskEvent({ seq: 5 })])
     expect(m.map((e) => e.seq)).toEqual([4, 5, 6])
   })
+
+  it('includes plan and mr_approve as thread events', () => {
+    const events = [deskEvent({ seq: 1, created: '2026-10-08T10:00:00Z' })]
+    const feed = entries({
+      items: [
+        feedItem({ id: 1, kind: 'plan', created: '2026-10-08T10:01:00Z' }),
+        feedItem({ id: 2, kind: 'mr_approve', created: '2026-10-08T10:02:00Z' }),
+        feedItem({ id: 3, kind: 'commit', created: '2026-10-08T10:03:00Z' }),
+      ],
+      last: 3,
+    })
+    expect(timeline(events, feed).map((i) => i.key)).toEqual(['d1', 'f1', 'f2'])
+  })
 })
