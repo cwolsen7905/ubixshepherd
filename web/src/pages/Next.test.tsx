@@ -1,7 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
-import type { NextList } from '../api/types'
+import type { MatrixRow, NextList } from '../api/types'
 import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { lane, nextItem, spend, status } from '../test/fixtures'
@@ -48,8 +48,11 @@ const matrixList: NextList = {
   ...everything,
   matrix: [
     nextItem({ id: 0, key: 'matrix:acme-api:W2', row_id: 'W2', title: 'Typed work orders', state: 'planned', stored_state: 'planned', source: 'matrix', read_only: true, area: 'core', repo: 'acme-api', plan: undefined, rank: 0 }),
-    nextItem({ id: 0, key: 'matrix:acme-api:W3', row_id: 'W3', title: 'Needs a decision', state: 'blocked', stored_state: 'blocked', source: 'matrix', read_only: true, repo: 'acme-api', plan: undefined, rank: 0, mr: '#12', pr_url: 'https://example.com/pull/12' }),
-  ].map((i) => ({ ...i, state: i.state as 'planned' | 'blocked', stored_state: i.stored_state as 'planned' | 'blocked' })),
+    nextItem({ id: 0, key: 'matrix:acme-api:W3', row_id: 'W3', title: 'Needs a decision', source: 'matrix', read_only: true, repo: 'acme-api', plan: undefined, rank: 0, mr: '#12', pr_url: 'https://example.com/pull/12' }),
+  ].map((i): MatrixRow => {
+    const state = i.row_id === 'W3' ? 'blocked' : 'planned'
+    return { ...i, state, stored_state: state }
+  }),
 }
 
 function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }, load = vi.fn(async (all: boolean): Promise<NextList> => (all ? everything : { ...everything, items: everything.items.slice(0, 4) }))) {
