@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 )
@@ -33,4 +34,15 @@ func (c *Client) AddNextItem(ctx context.Context, req api.NextAdd) (api.NextItem
 func (c *Client) UpdateNextItem(ctx context.Context, id int64, req api.NextUpdate) (api.NextItemView, error) {
 	var out api.NextItemView
 	return out, c.do(ctx, http.MethodPatch, api.PathNextItem(id), req, &out)
+}
+
+// Waiting reads everything that waits on the person (GET /v1/waiting); workspaceID 0
+// is every workspace.
+func (c *Client) Waiting(ctx context.Context, workspaceID int64) (api.Waiting, error) {
+	var out api.Waiting
+	p := api.PathWaiting
+	if workspaceID != 0 {
+		p += "?workspace_id=" + strconv.FormatInt(workspaceID, 10)
+	}
+	return out, c.do(ctx, http.MethodGet, p, nil, &out)
 }

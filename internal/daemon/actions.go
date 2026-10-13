@@ -197,6 +197,11 @@ func (s *Server) describeCloseLane(ctx context.Context, r *http.Request, body, _
 	return ws, text
 }
 
+func (s *Server) describeShipLane(ctx context.Context, r *http.Request, _, _ []byte) (int64, string) {
+	ws, lane := s.workspaceOfLane(ctx, pathID(r))
+	return ws, "shipped lane " + lane.Name
+}
+
 // workspaceOfRequest is the workspace of the run that asked.
 func (s *Server) workspaceOfRequest(ctx context.Context, id int64) (int64, store.Request) {
 	q, err := s.Store.Request(ctx, id)

@@ -1,0 +1,98 @@
+package api
+
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+// PathWaiting is GET /v1/waiting: everything that waits on the person's action, in one
+// list. It is derived from the decisions, lanes, merge requests and Next-up items the
+// daemon already holds; nothing is stored for it. The optional workspace_id narrows it
+// to one workspace's lanes (Next-up items belong to none, and are always listed).
+const PathWaiting = "/v1/waiting"
+
+// The kinds of Waiting item, and the actions the person can take on them.
+const (
+	WaitingDecision = "decision" // an agent's ask_human, open
+	WaitingMR       = "mr"       // a lane's merge request held at the require-approval job, or failed
+	WaitingShip     = "ship"     // an open lane with commits not yet pushed
+	WaitingNext     = "next"     // a Next-up item proposed to the person, planned
+)
+
+// WaitingItem is one thing that needs the person. Action says what they can do about it
+// from the web page: answer (a decision), approve (a merge request, then Shepherd retries
+// its approval job), ship (the lane's unpushed work), review (a Next-up item, on the Next
+// up page) or open (look at the lane: nothing Shepherd can do for them).
+type WaitingItem struct {
+	Kind   string `json:"kind"`
+	Action string `json:"action"`
+	Repo   string `json:"repo,omitempty"`
+	Lane   string `json:"lane,omitempty"`
+	LaneID int64  `json:"lane_id,omitempty"`
+	// DecisionID and NextID are set for their kinds; MR is the merge request's number.
+	DecisionID int64  `json:"decision_id,omitempty"`
+	NextID     int64  `json:"next_id,omitempty"`
+	MR         int    `json:"mr,omitempty"`
+	Title      string `json:"title"`
+	Detail     string `json:"detail,omitempty"`
+	// Since is when it started to wait, as far as Shepherd knows.
+	Since time.Time `json:"since,omitzero"`
+}
+
+// WaitingCounts is the number of items of each kind.
+type WaitingCounts struct {
+	Decisions int `json:"decisions"`
+	MRs       int `json:"mrs"`
+	Ship      int `json:"ship"`
+	Next      int `json:"next"`
+}
+
+// Waiting answers GET /v1/waiting: the items, oldest first, with their counts.
+type Waiting struct {
+	Count  int           `json:"count"`
+	Counts WaitingCounts `json:"counts"`
+	Items  []WaitingItem `json:"items"`
+}
+
+// Line is the list as one tagged line for the front desk, or "" when nothing waits:
+// "[Waiting on you (3)] decision 12 (lane a): ...; ..."
+func (w Waiting) Line() string {
+	if w.Count == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(w.Items))
+	for _, it := range w.Items {
+		p := it.Label()
+		if it.Detail != "" {
+			p += ": " + it.Detail
+		}
+		parts = append(parts, p)
+	}
+	return fmt.Sprintf("[Waiting on you (%d)] %s", w.Count, strings.Join(parts, "; "))
+}
+
+// Label names the item the way the person and the desk refer to it.
+func (it WaitingItem) Label() string {
+	where := it.Lane
+	if it.Repo != "" && it.Lane != "" {
+		where = it.Repo + ":" + it.Lane
+	}
+	var s string
+	switch it.Kind {
+	case WaitingDecision:
+		s = fmt.Sprintf("decision %d", it.DecisionID)
+	case WaitingMR:
+		s = fmt.Sprintf("MR !%d", it.MR)
+	case WaitingShip:
+		s = "ship"
+	case WaitingNext:
+		return fmt.Sprintf("next-up item %d", it.NextID)
+	default:
+		s = it.Kind
+	}
+	if where != "" {
+		s += " (" + where + ")"
+	}
+	return s
+}

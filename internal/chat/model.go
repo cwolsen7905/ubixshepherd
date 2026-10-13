@@ -28,6 +28,7 @@ type API interface {
 	Decisions(ctx context.Context, state string) ([]api.DecisionView, error)
 	Requests(ctx context.Context, states string) ([]api.RequestView, error)
 	NextItems(ctx context.Context, all bool) (api.NextList, error)
+	Waiting(ctx context.Context, workspaceID int64) (api.Waiting, error)
 	Answer(ctx context.Context, id int64, answer string) (store.Decision, error)
 	Setting(ctx context.Context, key string) (string, error)
 	SettingInfo(ctx context.Context, key string) (api.Setting, error)
@@ -131,6 +132,7 @@ type Model struct {
 	runs             []api.RunView // the latest, of every state
 	decisions        []api.DecisionView
 	approvals        int               // Next-up items waiting on the person's approval
+	waiting          api.Waiting       // everything waiting on the person's action
 	requests         []api.RequestView // those needing routing
 	release          *api.UpdateStatus // the release check, for a one-line notice
 	lastActivity     time.Time
@@ -211,6 +213,7 @@ type panelMsg struct {
 	decisions       []api.DecisionView
 	requests        []api.RequestView
 	approvals       int
+	waiting         api.Waiting
 	spend           api.SpendToday
 	sessions        []api.SessionView
 	panelUpdated    bool
@@ -394,6 +397,10 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		wt, err := m.api.Waiting(m.ctx, 0)
+		if err != nil {
+			return errorMsg{err}
+		}
 		sp, err := m.api.SpendToday(m.ctx)
 		if err != nil {
 			return errorMsg{err}
@@ -406,7 +413,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 			}
 		}
 		pm := panelMsg{
-			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), spend: sp, sessions: ss,
+			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), waiting: wt, spend: sp, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions,
 		}
 		if includeSessions {
@@ -623,6 +630,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		if msg.panelUpdated {
 			m.lanes, m.runs, m.decisions, m.requests = msg.lanes, msg.runs, msg.decisions, msg.requests
 			m.approvals = msg.approvals
+			m.waiting = msg.waiting
 			if _, ok := m.focusedDecision(); !ok && m.focusDecision != 0 {
 				// Answered elsewhere: the keys go back to the input.
 				m.focusInput()
@@ -1108,6 +1116,9 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 func (m *Model) brief() tea.Cmd {
 	msg := "[Shepherd] Since your last turn:\n- " + strings.Join(m.pending, "\n- ") +
 		"\nTell the person briefly what matters and what needs them. Route any request that needs routing. Do not start new work they have not asked for."
+	if line := m.waiting.Line(); line != "" {
+		msg += "\n" + line + "\nEnd your reply by repeating this line, so the person sees what waits on them."
+	}
 	m.pending = nil
 	return m.send(msg)
 }

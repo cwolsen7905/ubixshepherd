@@ -131,6 +131,10 @@ func (f *fakeAPI) Runs(context.Context, int64, string, int) ([]api.RunView, erro
 	return f.runs, nil
 }
 func (f *fakeAPI) Requests(context.Context, string) ([]api.RequestView, error) { return f.reqs, nil }
+func (f *fakeAPI) Waiting(context.Context, int64) (api.Waiting, error) {
+	return api.Waiting{}, nil
+}
+
 func (f *fakeAPI) NextItems(context.Context, bool) (api.NextList, error) {
 	return api.NextList{Items: f.next}, nil
 }

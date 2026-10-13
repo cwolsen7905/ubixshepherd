@@ -841,3 +841,36 @@ export interface UpgradeStatus {
   /** update.auto is on. */
   auto: boolean
 }
+
+/** One thing that needs the person (internal/api WaitingItem). */
+export interface WaitingItem {
+  kind: 'decision' | 'mr' | 'ship' | 'next'
+  /** answer, approve, ship, review or open: what the person can do from here. */
+  action: 'answer' | 'approve' | 'ship' | 'review' | 'open'
+  repo?: string
+  lane?: string
+  lane_id?: number
+  decision_id?: number
+  next_id?: number
+  mr?: number
+  title: string
+  detail?: string
+  since?: string
+}
+
+/** GET /v1/waiting: everything that waits on the person's action, oldest first. */
+export interface Waiting {
+  count: number
+  counts: { decisions: number; mrs: number; ship: number; next: number }
+  items: WaitingItem[]
+}
+
+/** What an explicit lane ship did (POST /v1/lanes/{id}/ship). */
+export interface LaneShipped {
+  lane: string
+  commits: number
+  pushed: boolean
+  mr?: number
+  url?: string
+  message: string
+}

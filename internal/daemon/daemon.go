@@ -178,7 +178,7 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+pathLaneApproval, web, s.laneApproval)
 	handle("POST "+pathLaneApprove, web, s.acted(s.describeApproveLane, s.approveLane))
 	handle("POST "+api.PathLanes+"/{id}/widen", desk, s.widenLane)
-	handle("POST "+api.PathLanes+"/{id}/ship", desk, s.withRunner(s.shipLane))
+	handle("POST "+api.PathLanes+"/{id}/ship", desk, s.acted(s.describeShipLane, s.withRunner(s.shipLane)))
 	// A transcript holds full tool input and output: the person's alone, never the desk's
 	// or an agent's.
 	handle("GET "+api.PathLanes+"/{id}/conversation", web, api.LaneConversation(s.Store, convo.Source{}))
@@ -249,6 +249,7 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathKeepGoing, desk, s.keepGoing)
 	handle("POST "+api.PathKeepGoing, desk, s.keepGoing)
 	handle("GET "+api.PathNext, desk, s.listNext)
+	handle("GET "+api.PathWaiting, desk, s.waiting)
 	handle("POST "+api.PathNext, desk, s.addNext)
 	handle("GET "+api.PathNext+"/{id}", desk, s.getNext)
 	handle("PATCH "+api.PathNext+"/{id}", desk, s.patchNext)
