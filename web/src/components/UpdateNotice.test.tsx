@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { UpdateStatus } from '../api/types'
+import type { UpdateStatus, UpgradeStatus } from '../api/types'
 import { UpdateNotice } from './UpdateNotice'
 
 const status = (o: Partial<UpdateStatus> = {}): UpdateStatus => ({
@@ -51,5 +51,62 @@ describe('UpdateNotice', () => {
     await user.click(await screen.findByRole('button', { name: 'Dismiss' }))
     expect(await screen.findByText(/Could not dismiss: 409/)).toBeInTheDocument()
     expect(screen.getByText('v0.5.0-beta.2')).toBeInTheDocument()
+  })
+
+  describe('upgrade', () => {
+    const upgrade = (o: Partial<UpgradeStatus> = {}): UpgradeStatus => ({
+      state: 'idle', method: 'binary', can_upgrade: true, active_runs: 0, auto: false, ...o,
+    })
+
+    it('upgrades from the notice and shows the pending restart', async () => {
+      const user = userEvent.setup()
+      // The daemon's answer follows the upgrade, as the notice's faster polling will read it.
+      let now = status({ upgrade: upgrade() })
+      const load = vi.fn(() => Promise.resolve(now))
+      const start = vi.fn((...args: [string, boolean]) => {
+        void args
+        now = status({ upgrade: upgrade({ state: 'installed', target: 'v0.5.0-beta.2', active_runs: 2 }) })
+        return Promise.resolve(now)
+      })
+      render(<UpdateNotice load={load} dismiss={vi.fn()} upgrade={start} />)
+      await user.click(await screen.findByRole('button', { name: 'Upgrade' }))
+      expect(start).toHaveBeenCalledWith('v0.5.0-beta.2', false)
+      expect(await screen.findByText(/restarts when no agent is running \(2 running now\)/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Upgrade' })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /Restart now \(interrupts 2 running agents\)/ }))
+      expect(start).toHaveBeenLastCalledWith('v0.5.0-beta.2', true)
+    })
+
+    it('shows the command instead when the daemon will not replace this install', async () => {
+      const hint = 'installed with Homebrew: run `brew upgrade shepherd`'
+      const load = () => Promise.resolve(status({ upgrade: upgrade({ method: 'brew', can_upgrade: false, hint }) }))
+      render(<UpdateNotice load={load} dismiss={vi.fn()} upgrade={vi.fn()} />)
+      expect(await screen.findByText(/brew upgrade shepherd/)).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Upgrade' })).not.toBeInTheDocument()
+    })
+
+    it('says why a failed upgrade failed and lets the person retry', async () => {
+      const load = () =>
+        Promise.resolve(status({ upgrade: upgrade({ state: 'rolled_back', error: 'it did not stay up', failed_version: 'v0.5.0-beta.2' }) }))
+      render(<UpdateNotice load={load} dismiss={vi.fn()} upgrade={vi.fn()} />)
+      expect(await screen.findByText(/The upgrade failed: it did not stay up/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Upgrade' })).toBeInTheDocument()
+    })
+
+    it('shows the error and keeps the button when the request is refused', async () => {
+      const user = userEvent.setup()
+      const load = () => Promise.resolve(status({ upgrade: upgrade() }))
+      render(<UpdateNotice load={load} dismiss={vi.fn()} upgrade={() => Promise.reject(new Error('409 not newer'))} />)
+      await user.click(await screen.findByRole('button', { name: 'Upgrade' }))
+      expect(await screen.findByText(/409 not newer/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Upgrade' })).toBeEnabled()
+    })
+
+    it('offers no upgrade to a daemon that has none', async () => {
+      render(<UpdateNotice load={() => Promise.resolve(status())} dismiss={vi.fn()} upgrade={vi.fn()} />)
+      await screen.findByText('v0.5.0-beta.2')
+      expect(screen.queryByRole('button', { name: 'Upgrade' })).not.toBeInTheDocument()
+    })
   })
 })

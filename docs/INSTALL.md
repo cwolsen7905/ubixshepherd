@@ -137,8 +137,18 @@ The README has the full tour: lanes, scope leases, tags, agent runs and decision
 
 ## Upgrade
 
-Install the newer release over the old one (re-run the script, or copy the new binary
-into place), then restart the daemon so it runs the new build:
+The quickest way: when the daemon's update notice appears, press **Upgrade** in the web
+UI, or run `shepherd update upgrade` (`/update upgrade` in `shepherd chat`). The daemon
+downloads the release archive, checks it against the release's `SHA256SUMS`, replaces its
+own binary and restarts onto it once no agent is running; `--now` restarts at once and
+interrupts them. It does this only for a release binary in a directory it can write
+(the install script, or an archive unpacked by hand). For a Homebrew, `go install` or
+source install the notice says what to run instead. Set `update.auto: true` in
+`config.yaml` to have the daemon do it without a click
+([update-check.md](update-check.md#upgrading)).
+
+Or by hand: install the newer release over the old one (re-run the script, or copy the
+new binary into place), then restart the daemon so it runs the new build:
 
 ```sh
 shepherd daemon check           # does the new build accept your config.yaml?

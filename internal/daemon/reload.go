@@ -116,6 +116,9 @@ func configChanges(old, next config.Config) string {
 	if old.Update.Enabled() != next.Update.Enabled() {
 		out = append(out, fmt.Sprintf("update.check %t to %t", old.Update.Enabled(), next.Update.Enabled()))
 	}
+	if old.Update.AutoUpgrade() != next.Update.AutoUpgrade() {
+		out = append(out, fmt.Sprintf("update.auto %t to %t", old.Update.AutoUpgrade(), next.Update.AutoUpgrade()))
+	}
 	if old.Update.ChannelName() != next.Update.ChannelName() {
 		out = append(out, fmt.Sprintf("update.channel %s to %s", old.Update.ChannelName(), next.Update.ChannelName()))
 	}

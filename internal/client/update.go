@@ -18,3 +18,9 @@ func (c *Client) DismissUpdate(ctx context.Context, version string) (api.UpdateS
 	var out api.UpdateStatus
 	return out, c.do(ctx, http.MethodPost, api.PathUpdateDismiss, api.UpdateDismiss{Version: version}, &out)
 }
+
+// UpgradeUpdate installs the offered release (POST /v1/update/upgrade).
+func (c *Client) UpgradeUpdate(ctx context.Context, version string, now bool) (api.UpdateStatus, error) {
+	var out api.UpdateStatus
+	return out, c.do(ctx, http.MethodPost, api.PathUpdateUpgrade, api.UpdateUpgrade{Version: version, Now: now}, &out)
+}

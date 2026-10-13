@@ -84,6 +84,13 @@ type Server struct {
 	// use. Tests set it to one pointed at a fake server.
 	Updates    *update.Checker
 	updateOnce sync.Once
+	// Exe is the binary an upgrade replaces; "" is this process's own. Upgrade holds the
+	// seams an upgrade test replaces (upgrade.go); the zero value is the real thing.
+	Exe     string
+	Upgrade UpgradeHooks
+	upg     upgradeState
+	// restartReq says Run stopped to be started again, on the binary now in place.
+	restartReq atomic.Bool
 	// reload is how the last config reload went (statusdetail.go).
 	reload atomic.Pointer[reloadState]
 	// QuotaHolds and ForgeWatch report what the runner and the forge watcher know, for
@@ -152,6 +159,7 @@ func (s *Server) Handler() http.Handler {
 	// the desk's and not a worker's (update.go).
 	handle("GET "+api.PathUpdate, web, s.getUpdate)
 	handle("POST "+api.PathUpdateDismiss, web, s.dismissUpdate)
+	handle("POST "+api.PathUpdateUpgrade, web, s.upgradeUpdate)
 	handle("GET "+api.PathWorkspaces, desk, s.listWorkspaces)
 	handle("POST "+api.PathWorkspaces, operatorOnly, s.saveWorkspace)
 	// Managing a repo is the person's call inside their own workspace: the desk may do
@@ -1839,6 +1847,8 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	updateCtx, stopUpdates := context.WithCancel(ctx)
 	defer stopUpdates()
 	s.startUpdateCheck(updateCtx)
+	s.startUpgradeVerify(updateCtx)
+	defer s.clearOwnMarker()
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	defer s.Close()
 	errc := make(chan error, 1)

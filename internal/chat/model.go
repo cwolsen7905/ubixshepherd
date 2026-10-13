@@ -637,7 +637,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		}
 	case updateMsg:
 		m.release = msg.st
-		m.add(Line{Kind: KindInfo, Text: "Update notice dismissed until a newer release appears."})
+		note := msg.note
+		if note == "" {
+			note = "Update notice dismissed until a newer release appears."
+		}
+		m.add(Line{Kind: KindInfo, Text: note})
 	case deskLineMsg:
 		switch msg.Kind {
 		case KindCost:
@@ -786,6 +790,7 @@ func (m *Model) handle(text string) tea.Cmd {
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/model [<name>|reset]   the desk's model: show it, set it, or go back to config.yaml\n" +
 			"/update dismiss   hide the new-release notice until a newer release appears\n" +
+			"/update upgrade [now]   install the new release; the daemon restarts onto it when no agent is running, or at once (interrupting them) with now\n" +
 			"!<command>   run a shell command yourself, in the workspace root; !@<lane> <command> runs it in that lane's worktree (!@<repo>/<lane> if the name is in several repos). Ctrl-C stops it. The desk never runs it; it is told the result with your next message. No editors or pagers.\n" +
 			"/quit   leave (Ctrl-C too)\n" +
 			"The dock above the input: what needs you, what is broken, to review, working, and done since you last looked. Ctrl-G clears done; opening a run's log does too.\n" +
@@ -811,7 +816,13 @@ func (m *Model) handle(text string) tea.Cmd {
 		if len(f) == 2 && f[1] == "dismiss" {
 			return m.dismissUpdate()
 		}
-		m.add(Line{Kind: KindError, Text: "usage: /update dismiss"})
+		if len(f) == 2 && f[1] == "upgrade" {
+			return m.upgradeUpdate(false)
+		}
+		if len(f) == 3 && f[1] == "upgrade" && f[2] == "now" {
+			return m.upgradeUpdate(true)
+		}
+		m.add(Line{Kind: KindError, Text: "usage: /update dismiss | upgrade [now]"})
 	case "/auto":
 		if len(f) == 2 && (f[1] == "on" || f[1] == "off") {
 			m.auto = f[1] == "on"

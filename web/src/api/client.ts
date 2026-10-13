@@ -171,6 +171,8 @@ export const updateCheck = {
   status: () => get<UpdateStatus>('/v1/update'),
   /** Hides the notice for `version` (the one offered) until a newer release appears. */
   dismiss: (version: string) => post<UpdateStatus>('/v1/update/dismiss', { version }),
+  /** Installs `version`; the daemon restarts onto it when no agent runs, or at once with `now`. */
+  upgrade: (version: string, now = false) => post<UpdateStatus>('/v1/update/upgrade', { version, now }),
 }
 
 /** What ran and how it ended, closed lanes included. `since` is an RFC 3339 time. */

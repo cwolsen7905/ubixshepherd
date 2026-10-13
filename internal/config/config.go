@@ -205,6 +205,10 @@ type Update struct {
 	// Channel is which releases count: beta (every release, pre-releases included) or
 	// stable (full releases only); "" is beta, as every release so far is a beta.
 	Channel string `yaml:"channel,omitempty" json:"channel,omitempty"`
+	// Auto lets the daemon install a newer release by itself and restart onto it when no
+	// agent is running; unset is off. It needs the check on, and only replaces a release
+	// binary it may write (docs/update-check.md).
+	Auto *bool `yaml:"auto,omitempty" json:"auto,omitempty"`
 }
 
 // update.channel's choices.
@@ -218,6 +222,9 @@ var UpdateChannels = []string{UpdateBeta, UpdateStable}
 
 // Enabled is update.check, with its default (on) filled in.
 func (u Update) Enabled() bool { return u.Check == nil || *u.Check }
+
+// AutoUpgrade is update.auto, with its default (off) filled in.
+func (u Update) AutoUpgrade() bool { return u.Auto != nil && *u.Auto }
 
 // ChannelName is update.channel, with its default filled in.
 func (u Update) ChannelName() string {

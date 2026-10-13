@@ -929,6 +929,13 @@ func (r *Runner) changedNothing(ctx context.Context, run store.Run, lane store.L
 	return true
 }
 
+// Active is how many agents are running now: what a restart would interrupt.
+func (r *Runner) Active() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.procs)
+}
+
 // Shutdown stops every running agent and waits for their outcomes to be recorded, up
 // to the context's deadline. Runs cut short this way are recorded as interrupted. No
 // run's end sets anything off once it has begun (no answer delivered, no request
