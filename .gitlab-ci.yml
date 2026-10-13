@@ -81,7 +81,7 @@ go-cross:
   extends: .every_pipeline
   tags: [shell]
   variables:
-    WEB_IMAGE: node:20
+    WEB_IMAGE: node:20-alpine
   before_script:
     - mkdir -p "$HOME/.cache/ubixshepherd-npm"
     - |
