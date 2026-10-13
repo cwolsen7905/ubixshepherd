@@ -414,7 +414,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "next_add",
-			Description: "Put an item on the next-up list when the person asks (\"put X on the list\"). It starts planned. Approval is the person's: pass approved only when the person's own words in this turn approve it, never your guess.",
+			Description: "Put an item on the next-up list: when the person asks (\"put X on the list\"), or when the person and you agreed in chat on concrete work not being started now (call next_list first to avoid a duplicate; the note quotes what the person said; tell them you added it). It starts planned. Never add work from your own ideas the person has not discussed. Approval is the person's: pass approved only when the person's own words in this turn approve it, never your guess.",
 			InputSchema: obj(map[string]any{
 				"title":    map[string]any{"type": "string", "description": "One line naming the work: one merge request's worth."},
 				"repo":     map[string]any{"type": "string", "description": "The repo it is for, by its name in the workspace."},

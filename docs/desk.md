@@ -107,7 +107,7 @@ planned but not being acted on ([backlog-next.md](backlog-next.md)).
 | Tool | What it does | Who decides |
 |---|---|---|
 | `next_list` | Reads the list in the person's order: approved, then planned, then deferred, each with its plan doc and, once a lane is open for it, the lane and merge request. The item marked next is the first approved one with no lane. `all` adds done and dropped items. A `matrix` list follows: the repos' `docs/WORK.md` rows with status `todo` or `blocked`, read-only and with no id. | Read only |
-| `next_add` | Adds an item as `planned` when the person says "put X on the list". | The desk may add; the item shows as proposed until approved |
+| `next_add` | Adds an item as `planned` when the person says "put X on the list", and, without being asked, for concrete work the person and desk agreed in chat that is not being started now. The desk calls `next_list` first, quotes the person in the note and says in one line that it added it. | The desk may add; the item shows as proposed until approved |
 | `next_update` | Changes an item's title, note, plan, repo or lane hint; with `state` or `move`, approves, defers, drops, finishes or reorders it. | `state` and `move` are the person's |
 
 Approval follows the rule `decision_answer` does. The daemon refuses `state` and `move`
@@ -115,9 +115,10 @@ Approval follows the rule `decision_answer` does. The daemon refuses `state` and
 `[Shepherd]` event can never be the reason an item moves, and an agent's token reaches none
 of it. `started` and `done` are not set: they follow the linked lane, which opens with
 `lane_open` and the item's `item` id (or `shepherd lane open --item N`), and the item is done
-when that lane's merge request merges. The desk should not invent items from its own
-ideas: it puts on the list what the person asked for, and says which items agents or it
-proposed.
+when that lane's merge request merges. The desk does not add items from its own
+ideas: it puts on the list what the person asked for or agreed to in the thread (never
+approved, so it is not lost when the session rolls over), and says which items agents or it
+proposed. Work it only suggested and the person did not take up is not agreed.
 
 ## Widening a lane's scope
 

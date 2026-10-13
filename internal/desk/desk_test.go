@@ -474,3 +474,18 @@ func TestWakeWithinGrace(t *testing.T) {
 	r.m.Wake([]store.FeedItem{feedItem(store.FeedRunPassed, "run 7 passed")})
 	r.waitEnded(t, 1)
 }
+
+// The daemon's brief matches shepherd chat's on registering agreed work on Next up.
+func TestBriefRegistersAgreedWork(t *testing.T) {
+	for _, want := range []string{
+		"without being asked",
+		"call next_list first",
+		"as planned, never approved",
+		"quoting what the person said",
+		"never add items from your own ideas that the person has not discussed",
+	} {
+		if !strings.Contains(Brief, want) {
+			t.Errorf("Brief lacks %q", want)
+		}
+	}
+}
