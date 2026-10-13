@@ -74,6 +74,29 @@ go-cross:
     paths: [dist/]
     expire_in: 1 week
 
+# Web type check. Runs in the same stage as the Go checks; a TypeScript error
+# fails the pipeline. Uses the same Docker pattern as the Go jobs since the
+# shell runner has no Node of its own.
+.web:
+  extends: .every_pipeline
+  tags: [shell]
+  variables:
+    WEB_IMAGE: node:20-alpine
+  before_script:
+    - mkdir -p "$HOME/.cache/ubixshepherd-npm"
+    - |
+      web_run() {
+        docker run --rm -v "$PWD:/src" -w /src --user "$(id -u):$(id -g)" \
+          -v "$HOME/.cache/ubixshepherd-npm:/cache" \
+          -e NPM_CONFIG_CACHE=/cache -e CI=true \
+          "$WEB_IMAGE" sh -c "$1"
+      }
+
+web-typecheck:
+  extends: .web
+  script:
+    - web_run 'cd web && npm ci && npm run typecheck'
+
 # dev -> main. main only ever moves by fast-forward from a green dev (bin/promote.sh, which
 # fails closed and never forces). Runs only on a push pipeline of the dev branch, and only
 # once all three checks above have passed. The promotion's own push to main starts a pipeline
@@ -82,7 +105,7 @@ go-cross:
 promote-to-main:
   stage: promote
   tags: [shell]
-  needs: [public-boundary, go-check, go-cross]
+  needs: [public-boundary, go-check, go-cross, web-typecheck]
   resource_group: promote-main   # two quick pushes to dev cannot promote at once
   interruptible: false
   variables:
