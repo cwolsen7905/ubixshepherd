@@ -192,9 +192,12 @@ func nextMark(v api.NextItemView) string {
 }
 
 func writeNextList(w io.Writer, l api.NextList) {
-	if len(l.Items) == 0 {
+	if len(l.Items) == 0 && len(l.Matrix) == 0 {
 		fmt.Fprintln(w, "Nothing on the next-up list. Add one with: shepherd next add \"title\"")
 		return
+	}
+	if len(l.Items) == 0 {
+		fmt.Fprintln(w, "Nothing stored on the next-up list. Add one with: shepherd next add \"title\"")
 	}
 	for _, v := range l.Items {
 		mark := " "
@@ -225,6 +228,19 @@ func writeNextList(w io.Writer, l api.NextList) {
 	}
 	if l.NextUp != 0 {
 		fmt.Fprintln(w, "\n> is next: the first approved item with no lane.")
+	}
+	if len(l.Matrix) > 0 {
+		fmt.Fprintln(w, "\nFrom work matrices (docs/WORK.md, read-only; edit the file):")
+		for _, v := range l.Matrix {
+			fmt.Fprintf(w, "  %-9s %s  %s  (%s)", v.State, v.RowID, v.Title, v.Repo)
+			if v.Lane != "" {
+				fmt.Fprintf(w, "  lane %s", v.Lane)
+			}
+			if v.MR != "" {
+				fmt.Fprintf(w, "  PR %s", v.MR)
+			}
+			fmt.Fprintln(w)
+		}
 	}
 }
 

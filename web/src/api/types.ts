@@ -776,13 +776,24 @@ export interface NextItem {
   created: string
   updated: string
   done_at?: string
+  /** Set on a work-matrix row (source "matrix"): read through from docs/WORK.md, id 0, read-only. */
+  key?: string
+  read_only?: boolean
+  area?: string
+  row_id?: string
+  pr_url?: string
 }
+
+/** A work-matrix row as the list shows it: planned for todo, blocked for blocked; never changed here. */
+export type MatrixRow = Omit<NextItem, 'state' | 'stored_state'> & { state: 'planned' | 'blocked'; stored_state: 'planned' | 'blocked' }
 
 /** The list in order: approved, planned, deferred, then dropped and done when asked for. */
 export interface NextList {
   items: NextItem[]
   /** The first approved item with no lane; unset when none. */
   next_up?: number
+  /** Rows of the repos' work matrices with status todo or blocked, read through and not stored. */
+  matrix?: MatrixRow[]
 }
 
 /** The body of POST /v1/next. */

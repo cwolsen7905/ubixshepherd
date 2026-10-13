@@ -9,7 +9,7 @@ import { NextPage } from './Next'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
-function live() {
+function live(feedItems: { id: number; kind: string; text: string; created: string }[] = []) {
   const api: Api = {
     status: async () => status(),
     lanes: async () => [lane({ id: 4, name: 'feat/export-csv', repo: 'acme-api' })],
@@ -20,8 +20,11 @@ function live() {
     decisions: async () => [],
     requests: async () => [],
     spend: async () => spend(),
-    feedLatest: async () => ({ items: [], events: [], last: 0 }),
-    feed: async () => ({ items: [], events: [], last: 0 }),
+    feedLatest: async () => ({ items: [], events: [], last: feedItems.at(-1)?.id ?? 0 }),
+    feed: async (after) => {
+      const items = feedItems.filter((f) => f.id > after)
+      return { items, events: items.map((f) => f.kind), last: feedItems.at(-1)?.id ?? after }
+    },
     dismissRun: async () => { throw new Error('unused') },
     undismissRun: async () => { throw new Error('unused') },
     answer: async () => { throw new Error('unused') },
@@ -38,6 +41,14 @@ const everything: NextList = {
     nextItem({ id: 4, title: 'Later', rank: 4, state: 'deferred', stored_state: 'deferred' }),
     nextItem({ id: 5, title: 'Shipped', rank: 5, state: 'done', stored_state: 'done', mr: '!40', mr_state: 'merged' }),
   ],
+}
+
+const matrixList: NextList = {
+  ...everything,
+  matrix: [
+    nextItem({ id: 0, key: 'matrix:acme-api:W2', row_id: 'W2', title: 'Typed work orders', state: 'planned', stored_state: 'planned', source: 'matrix', read_only: true, area: 'core', repo: 'acme-api', plan: undefined, rank: 0 }),
+    nextItem({ id: 0, key: 'matrix:acme-api:W3', row_id: 'W3', title: 'Needs a decision', state: 'blocked', stored_state: 'blocked', source: 'matrix', read_only: true, repo: 'acme-api', plan: undefined, rank: 0, mr: '#12', pr_url: 'https://example.com/pull/12' }),
+  ].map((i) => ({ ...i, state: i.state as 'planned' | 'blocked', stored_state: i.stored_state as 'planned' | 'blocked' })),
 }
 
 function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }, load = vi.fn(async (all: boolean): Promise<NextList> => (all ? everything : { ...everything, items: everything.items.slice(0, 4) }))) {
@@ -116,5 +127,32 @@ describe('NextPage', () => {
     await userEvent.click(within(first).getByRole('button', { name: 'Start' }))
     expect(localStorage.getItem('shepherd.chat.draft.0')).toBe('Open a lane for next-up item 1: First approved')
     expect(window.location.hash).toBe('#/chat')
+  })
+
+  it('shows matrix rows read-only, blocked first, with no actions', async () => {
+    const load = vi.fn(async (): Promise<NextList> => matrixList)
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={load} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    const todo = (await screen.findByText('Typed work orders')).closest('li') as HTMLElement
+    const blocked = screen.getByText('Needs a decision').closest('li') as HTMLElement
+    expect(screen.getByRole('heading', { name: /From work matrix/ })).toBeInTheDocument()
+    expect(blocked.compareDocumentPosition(todo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(within(todo).queryByRole('button')).toBeNull()
+    expect(within(blocked).getByRole('link', { name: /PR #12/ })).toHaveAttribute('href', 'https://example.com/pull/12')
+    expect(within(todo).getByText('matrix')).toBeInTheDocument()
+  })
+
+  it('reads the list again when a plan event arrives on the feed', async () => {
+    const load = vi.fn(async (): Promise<NextList> => everything)
+    render(
+      <LiveProvider live={live([{ id: 9, kind: 'plan', text: 'next-up item 3 approved: Idea', created: '2026-10-08T10:00:00Z' }])}>
+        <NextPage load={load} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    await screen.findByText('First approved')
+    await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(2))
   })
 })

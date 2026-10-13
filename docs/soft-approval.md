@@ -365,7 +365,9 @@ flagged rates, then set `agent` there. No repo is `agent` by default.
 
 ## 13. Docs to change when this is accepted
 
-These say the opposite today, so they change in the same release as MR 3, not before:
+These say the opposite today, so they change in the same release as MR 3 of this plan
+(section 6: the daemon ingest and the loop; not the third merge request of the Next-up
+list in [backlog-next.md](backlog-next.md)), not before:
 
 | File | Line | Change |
 |---|---|---|

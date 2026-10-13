@@ -1,7 +1,7 @@
 // The next-up list: work that is planned but not being acted on (docs/backlog-next.md).
 // The daemon orders it and derives started and done from the lane; this holds how the
 // page groups it, which moves are possible, and the words the page prefills for the desk.
-import type { NextChosen, NextItem, NextList, NextState, Workspace } from '../api/types'
+import type { FeedItem, MatrixRow, NextChosen, NextItem, NextList, NextState, Workspace } from '../api/types'
 import type { Tone } from './marks'
 
 /** The sections of the page, in order; done and dropped sit behind a toggle. */
@@ -129,4 +129,24 @@ export function writeRailView(store: Pick<Storage, 'setItem'>, view: RailView) {
 export function planLabel(plan: string): string {
   const parts = plan.split('/').filter(Boolean)
   return parts.slice(-2).join('/')
+}
+
+/** The matrix rows of a list, grouped by repo in the order the daemon sent them; blocked rows first within a repo. */
+export function matrixGroups(list: NextList | null): { repo: string; rows: MatrixRow[] }[] {
+  const out: { repo: string; rows: MatrixRow[] }[] = []
+  for (const row of list?.matrix ?? []) {
+    const repo = row.repo ?? ''
+    let g = out.find((x) => x.repo === repo)
+    if (!g) out.push((g = { repo, rows: [] }))
+    g.rows.push(row)
+  }
+  for (const g of out) g.rows.sort((a, b) => Number(b.state === 'blocked') - Number(a.state === 'blocked'))
+  return out
+}
+
+/** The id of the newest plan item in the feed, 0 when there is none: when it moves, the list is read again. */
+export function lastPlanId(feed: Pick<FeedItem, 'id' | 'kind'>[]): number {
+  let last = 0
+  for (const f of feed) if (f.kind === 'plan' && f.id > last) last = f.id
+  return last
 }

@@ -74,3 +74,13 @@ the most recent 500 closed in the repo.
 Rows are grouped by status: `doing` and `blocked` first, then `todo`; `done` and
 `dropped` are collapsed. A row links to its lane page and to its PR or MR. Drift and
 unreadable rows are listed beneath the groups.
+
+## In the Next-up list
+
+A repo's rows with status `todo` or `blocked` also appear in the Next-up list
+([backlog-next.md](backlog-next.md)): the web page's "From work matrix" group,
+`shepherd next` and the desk's `next_list`. They are read through from the same base-ref
+read as the Work section and are not copied into the store, so the file stays the one
+source: edit it to change or finish a row. They carry no id and no actions, are not
+counted in "Waiting on you", and are hidden when a live Next-up item in the repo already
+names the row's lane. `doing` rows are not listed there: a lane is already acting on them.

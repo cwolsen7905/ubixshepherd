@@ -20,6 +20,13 @@ describe('feedEvent', () => {
   })
 })
 
+describe('mr_approve', () => {
+  it('is its own event, with an older daemon naming it by kind', () => {
+    const f = { items: [feedItem({ kind: 'mr_approve' }), feedItem({ kind: 'mr' })], events: ['info', 'mr'], last: 2 }
+    expect([0, 1].map((i) => feedEvent(f, i))).toEqual(['mr_approve', 'mr'])
+  })
+})
+
 describe('aboutLane', () => {
   it('finds run kinds by the run, decisions by their run, requests by their lanes', () => {
     expect(aboutLane(feedItem({ kind: 'run_passed', ref: 10 }), lane, refs)).toBe(true)
@@ -34,5 +41,6 @@ describe('aboutLane', () => {
     expect(aboutLane(feedItem({ kind: 'pipeline', ref: 1, text: 'pipeline 7 failed for !3 (lane feat/login)' }), lane, refs)).toBe(true)
     expect(aboutLane(feedItem({ kind: 'lane_opened', ref: 1, text: 'imported 2 lane(s) from the coordination file' }), lane, refs)).toBe(false)
     expect(aboutLane(feedItem({ kind: 'budget', ref: 0 }), lane, refs)).toBe(false)
+    expect(aboutLane(feedItem({ kind: 'mr_approve', ref: 1, text: '!7 approved by the person from the web at abc (lane feat/login)' }), lane, refs)).toBe(true)
   })
 })

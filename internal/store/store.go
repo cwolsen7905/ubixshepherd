@@ -511,6 +511,8 @@ const (
 	FeedSession        = "session"
 	FeedPipeline       = "pipeline" // the forge's pipeline only
 	FeedRelease        = "release"
+	FeedMRApprove      = "mr_approve" // the person approved a merge request from the web
+	FeedPlan           = "plan"       // a next-up item added, approved, deferred, dropped or done
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's

@@ -48,6 +48,9 @@ type NextUpdate struct {
 	Move string `json:"move,omitempty"`
 }
 
+// NextSourceMatrix is the Source of a row read through from a repo's work matrix.
+const NextSourceMatrix = "matrix"
+
 // NextItemView is an item as the person and the desk see it: what they chose, and what
 // its lane makes of it. The lane's own state is borrowed, never copied into a status.
 type NextItemView struct {
@@ -81,6 +84,13 @@ type NextItemView struct {
 	Created time.Time  `json:"created"`
 	Updated time.Time  `json:"updated"`
 	DoneAt  *time.Time `json:"done_at,omitempty"`
+	// Key, ReadOnly, Area, RowID and PRURL are set on a work-matrix row (Source is
+	// NextSourceMatrix): read through from the repo's docs/WORK.md, id 0, never changed here.
+	Key      string `json:"key,omitempty"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+	Area     string `json:"area,omitempty"`
+	RowID    string `json:"row_id,omitempty"`
+	PRURL    string `json:"pr_url,omitempty"`
 }
 
 // NextList answers GET /v1/next: the items in list order (approved, planned, deferred,
@@ -89,6 +99,10 @@ type NextList struct {
 	Items []NextItemView `json:"items"`
 	// NextUp is the id of the first approved item that has no lane, 0 when none.
 	NextUp int64 `json:"next_up,omitempty"`
+	// Matrix is the repos' work-matrix rows with status todo or blocked, read through and
+	// not stored, after the items. A row a stored item already names by lane is left out.
+	// ?matrix=0 omits them.
+	Matrix []NextItemView `json:"matrix,omitempty"`
 }
 
 // OpenLaneBody is the body of POST /v1/lanes: the lane to open, and the next-up item it

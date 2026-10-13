@@ -13,7 +13,7 @@ import (
 var allEvents = []string{
 	api.EventLaneOpened, api.EventLaneClosed, api.EventRunStarted, api.EventRunEnded, api.EventReport,
 	api.EventDecisionAsked, api.EventDecisionAnswer, api.EventRequest, api.EventRequestAttention,
-	api.EventMR, api.EventPipeline, api.EventBudget, api.EventTag, api.EventRelease, api.EventConfig, api.EventInfo,
+	api.EventMR, api.EventPipeline, api.EventBudget, api.EventTag, api.EventRelease, api.EventPlan, api.EventMRApprove, api.EventConfig, api.EventInfo,
 	kindRunPassed, kindRunFailed, kindRunInterrupted, kindRunQuota, kindCommit, kindGate, kindDeskRotated,
 }
 

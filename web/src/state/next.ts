@@ -2,14 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { nextUp } from '../api/client'
 import type { NextList } from '../api/types'
 
-const POLL = 20_000
+// The feed's plan items read the list at once (pages/Next.tsx); the poll is for matrix
+// rows, which change with git and not on the feed.
+const POLL = 60_000
 
 export type LoadNext = (all: boolean) => Promise<NextList>
 
 export const loadNext: LoadNext = (all) => nextUp.list(all)
 
 /**
- * The next-up list, read now and every 20 seconds while mounted. `reload` reads it again
+ * The next-up list, read now and every 60 seconds while mounted. `reload` reads it again
  * at once (after the person's action). A failed read keeps the last list and says why.
  */
 export function useNextList(all: boolean, load: LoadNext = loadNext) {

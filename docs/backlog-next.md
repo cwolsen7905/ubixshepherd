@@ -2,9 +2,9 @@
 
 Status: **approved as written** by the maintainer (2026-10-11). Merge request 1 (the core)
 is built: the table, API, `shepherd next`, `lane open --item` and the `next_*` desk tools.
-Merge request 2 (the web page and rail toggle) is built too. The matrix read-through and
-`plan` feed kind (3) are not. Implementation is three merge requests, each its own lane
-(section 6).
+Merge request 2 (the web page and rail toggle) is built too, and so is merge request 3
+(the matrix read-through and the `plan` feed kind). Implementation was three merge
+requests, each its own lane (section 6).
 
 What the core did differently from section 6, and why:
 
@@ -31,8 +31,32 @@ What the web page did differently from section 3, and why:
   `shepherd.chat.backlog`, and the toggle shows the count of approved items.
 - **Link to lane** is a menu of the open lanes in the item's repo, shown on items with no
   lane. `docs/web-chat.md` is not updated here: the lane's scope did not include it.
-- **The page reads the list every 20 seconds** and again after each action; it does not
-  use the feed, which has no `plan` kind until merge request 3.
+- **The page reads the list every 20 seconds** and again after each action; merge request
+  3 adds a read on each `plan` feed item (below).
+
+What the matrix read-through and feed kind did differently from sections 1, 3 and 6, and
+why:
+
+- **Matrix rows are a separate `matrix` list in `GET /v1/next`**, beside `items`, not mixed
+  into it. Each is an item view with `source: "matrix"`, `id` 0, `key`
+  (`matrix:<repo>:<row id>`), `read_only`, `area`, `row_id` and `pr_url`. Callers that
+  read `items` (the rail, the dock count, the desk's `next_update`) therefore never meet a
+  row they cannot change. `?matrix=0` leaves them out. Rows with status `todo` show as
+  `planned` and `blocked` as `blocked`.
+- **A row is hidden when a live stored item in the same repo links a lane, or hints a lane
+  name, equal to the row's lane**, so the work shows once, as the item (see Risks). Rows
+  are read from each repo's base ref through the work page's cache; a repo with no
+  `docs/WORK.md` adds nothing and no warning.
+- **Matrix rows are not in "Waiting on you"** ([waiting-on-you.md](waiting-on-you.md)):
+  they are not proposals awaiting approval. `next_up` also counts stored approved items
+  only.
+- **The `plan` kind** is written when an item is added, approved, deferred, dropped or
+  marked done by hand, and when a merged lane finishes it. Its `ref` is the item id and
+  its text is one redacted line. A rank move, a note edit and a return to `planned` write
+  nothing. The thread, history and terminal draw it with the glyph `≡`.
+- **The page reads again on a `plan` item**; its poll, slowed to 60 seconds, stays, because matrix
+  rows change with git, not on the feed.
+- **Seeding stays the person's step** (section 5 and below).
 
 ## The problem
 
@@ -195,6 +219,12 @@ Three merge requests, each its own lane, each green alone:
 
 Seeding is a person's step after 1, not a migration, so no item is invented in the store
 without them.
+
+How to seed: run `shepherd next seed --dry-run` to see what would be added, then
+`shepherd next seed`. It adds the items in section 5 with the states shown there, skips a
+title already on the list (done and dropped included, so a dropped item is not
+re-proposed), and can be run again safely. It adds nothing from a repo's `docs/WORK.md`:
+those rows appear on their own through the read-through and are not copied.
 
 ## Out of scope
 
