@@ -9,6 +9,16 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Added
+
+- **Next-up items that wait on the person's approval are counted where decisions are.**
+  An item the desk or an agent proposed, still planned and not started, no longer sits on
+  the list unseen: the terminal dock's counts row shows "N Next-up to approve (/next)", the
+  web header's Next up link carries a count badge, and the summary that seeds a new desk
+  session says "N Next-up items wait on your approval" with each item, after the waiting
+  decisions. `shepherd chat` gains `/next`, which lists them. Nothing is added to the API:
+  the count comes from the existing `GET /v1/next`.
+
 ## [0.4.0-beta.1] - 2026-10-12
 
 A beta of uBixShepherd that shows each lane's gate result in the web UI, files the

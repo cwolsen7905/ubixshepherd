@@ -50,6 +50,7 @@ function liveWith(clock: Clock, feedLast = { n: 1 }, over: Partial<Api> = {}) {
     runEvents: async () => { throw new Error('unused') },
     decisions: async () => src.decisions,
     requests: async () => src.requests,
+    next: async () => ({ items: [] }),
     spend: async () => src.spend as NonNullable<typeof src.spend>,
     feedLatest: async () => ({ items: [], events: [], last: feedLast.n }),
     feed: async (after) =>

@@ -270,6 +270,10 @@ func (r *rig) records(t *testing.T, secret string) {
 	r.st.AnswerDecision(ctx, old.ID, "keep the name")
 	r.st.CreateRequest(ctx, store.Request{FromRun: running.ID, Kind: "review", Message: "review my form", State: store.RequestNeedsRouting})
 	r.st.AddSpend(ctx, store.Spend{Day: time.Now().Format("2006-01-02"), Source: "claude", USD: 1.5})
+	// One proposal waits; the person's own item and an approved proposal do not.
+	r.st.AddNextItem(ctx, store.NextItem{Title: "Add the export command", Source: store.NextByDesk, State: store.NextPlanned})
+	r.st.AddNextItem(ctx, store.NextItem{Title: "Mine", Source: store.NextByPerson, State: store.NextPlanned})
+	r.st.AddNextItem(ctx, store.NextItem{Title: "Approved already", Source: store.NextByAgent, State: store.NextApproved})
 }
 
 // The summary is built from the store, redacted: a secret-shaped string in a run's task
@@ -286,7 +290,8 @@ func TestSummaryFromTheStoreRedacted(t *testing.T) {
 	r.waitEnded(t, 2)
 	last := r.lastArgs(t)
 	for _, want := range []string{
-		"Waiting for the person", "Use the password=" + redact.Mask,
+		"Waiting for the person", "1 Next-up item waits on your approval", "Add the export command",
+		"Use the password=" + redact.Mask,
 		"request 1, review from run 1, needs_routing: review my form",
 		"Runs in flight:", "claude in app feat/login, running", "last report: progress: form done, tests next",
 		"Open lanes:", "app feat/login: open, scope src/auth/**",
@@ -297,6 +302,11 @@ func TestSummaryFromTheStoreRedacted(t *testing.T) {
 	} {
 		if !strings.Contains(last, want) {
 			t.Errorf("summary lacks %q:\n%s", want, last)
+		}
+	}
+	for _, not := range []string{"Mine", "Approved already"} {
+		if strings.Contains(last, not) {
+			t.Errorf("summary lists %q, which does not wait on the person:\n%s", not, last)
 		}
 	}
 	if strings.Contains(last, secret) {

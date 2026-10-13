@@ -18,6 +18,7 @@ describe('the run page', () => {
       runEvents: async () => { throw new Error('unused') },
       decisions: async () => [decision()],
       requests: async () => [],
+      next: async () => ({ items: [] }),
       spend: async () => spend(),
       feedLatest: async () => ({ items: [], events: [], last: 1 }),
       feed: async () => ({ items: [feedItem({ id: 1 })], events: [], last: 1 }),
