@@ -12,6 +12,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
 
 // maxNextTitle and maxNextNote bound an item: a line to name the work, a paragraph to
@@ -339,4 +340,24 @@ func (s *Server) checkLaneItem(ctx context.Context, item int64) error {
 		}
 	}
 	return nil
+}
+
+// waiting answers GET /v1/waiting: what needs the person's action, in one list. The
+// optional workspace_id narrows the lanes to one workspace.
+func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
+	var ws int64
+	if v := r.URL.Query().Get("workspace_id"); v != "" {
+		id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, errors.New("bad workspace_id"))
+			return
+		}
+		ws = id
+	}
+	out, err := waiting.Collect(r.Context(), s.Store, s.LiveConfig(), ws)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }

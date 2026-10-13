@@ -20,6 +20,7 @@ import { TimelinePage } from './pages/Timeline'
 import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
 import { Help } from './components/Help'
+import { WaitingOnYou } from './components/WaitingOnYou'
 import { UpdateNotice } from './components/UpdateNotice'
 import { GROUP_MARKS } from './model/groups'
 import { readShowDismissed, writeShowDismissed } from './model/board'
@@ -126,6 +127,7 @@ export function App() {
             </span>
           ))}
         </p>
+        <WaitingOnYou />
         <p className="bar-meta">
           {spend && (
             <span title={`Spent today (${spend.day})`}>

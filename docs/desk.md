@@ -91,6 +91,14 @@ to ship before telling the person, and to answer "what did that agent change". I
 only: the desk still cannot edit, and a file marked `OUT` is the person's to rescope or
 revert, not the desk's.
 
+## What waits on the person
+
+Each `[Shepherd] Since your last turn` message ends with a tagged
+`[Waiting on you (N)]` line listing the decisions, held merge requests, lanes to ship and
+proposed Next-up items that need the person ([waiting-on-you.md](waiting-on-you.md)). The
+desk repeats it at the end of its reply, so the person sees it without digging through
+the thread.
+
 ## The next-up list
 
 `next_list`, `next_add` and `next_update` are the desk's tools for the list of work that is

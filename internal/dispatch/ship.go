@@ -449,3 +449,16 @@ func outsideDiagnosis(files []string) store.Diagnosis {
 func forbiddenDiagnosis(bad string) store.Diagnosis {
 	return store.Diagnosis{Kind: store.DiagCommitsForbidden, Evidence: bad, Summary: "not pushed: " + clip(bad, 200)}
 }
+
+// Unpushed counts the lane's commits that are not on its branch at origin (or, with no
+// branch there, beyond its base): the work `lane ship` would push. It is 0 when git
+// cannot say.
+func Unpushed(ctx context.Context, lane store.Lane) int {
+	out, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", pushedRef(ctx, lane)+"..HEAD")
+	if err != nil {
+		return 0
+	}
+	var n int
+	fmt.Sscan(strings.TrimSpace(out), &n)
+	return n
+}

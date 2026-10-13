@@ -17,6 +17,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
 
 // ErrQueueFull refuses a turn when the queue is at its bound.
@@ -496,7 +497,7 @@ func (d *Desk) next() (turn, bool) {
 			for i, p := range d.pending {
 				lines[i], topics[i] = p.text, p.topic
 			}
-			text := digest(lines, d.dropped)
+			text := digest(lines, d.dropped, d.waitingLine())
 			d.pending, d.dropped = nil, 0
 			e, err := d.appendLocked(d.m.ctx, store.DeskEvent{Kind: store.DeskSystem, Text: text, Origin: store.DeskBySystem})
 			d.mu.Unlock()
@@ -520,12 +521,36 @@ func (d *Desk) next() (turn, bool) {
 }
 
 // digest is the one message the swarm's waiting events become.
-func digest(items []string, dropped int) string {
+//
+// It ends with the tagged "Waiting on you (N)" line when anything waits, so the desk can
+// repeat it at the end of its reply; waiting is "" when nothing does.
+func digest(items []string, dropped int, waiting string) string {
 	msg := "[Shepherd] Since your last turn:\n- " + strings.Join(items, "\n- ")
 	if dropped > 0 {
 		msg += fmt.Sprintf("\n(and %d earlier event(s), left out)", dropped)
 	}
-	return msg + "\nTell the person briefly what matters and what needs them. Route any request that needs routing. Do not start new work they have not asked for."
+	msg += "\nTell the person briefly what matters and what needs them. Route any request that needs routing. Do not start new work they have not asked for."
+	if waiting != "" {
+		msg += "\n" + waiting + "\nEnd your reply by repeating this line, so the person sees what waits on them."
+	}
+	return msg
+}
+
+// waitingLine is the tagged line of what waits on the person in this workspace, or ""
+// when nothing does or it cannot be read.
+func (d *Desk) waitingLine() string {
+	o := d.m.o
+	if o.Config == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(d.m.ctx, 5*time.Second)
+	defer cancel()
+	w, err := waiting.Collect(ctx, o.Store, o.Config(), d.ws.ID)
+	if err != nil {
+		o.Log.Warn("desk: read what waits on the person", "workspace", d.ws.Name, "err", err)
+		return ""
+	}
+	return w.Line()
 }
 
 // run runs one turn and records what it produced.

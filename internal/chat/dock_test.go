@@ -332,3 +332,30 @@ func TestAwaitingApprovalIsProposedAndPlanned(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 }
+
+func TestDockCountsWhatWaitsOnYouAndBriefEndsWithIt(t *testing.T) {
+	m := dockModel()
+	if strings.Contains(ansi.Strip(m.countsRow(m.dockItems())), "waiting on you") {
+		t.Fatal("waiting count shown when nothing waits")
+	}
+	m.waiting = api.Waiting{Count: 2, Items: []api.WaitingItem{
+		{Kind: api.WaitingDecision, DecisionID: 4, Repo: "app", Lane: "a", Detail: "decision 4: ok?"},
+		{Kind: api.WaitingMR, MR: 9, Repo: "app", Lane: "b", Detail: "approve it"},
+	}}
+	if got := ansi.Strip(m.countsRow(m.dockItems())); !strings.HasSuffix(got, "2 waiting on you") {
+		t.Errorf("counts row: %q", got)
+	}
+	m.pending = []string{"run 3 ended"}
+	m.brief()
+	if m.pending != nil {
+		t.Fatal("brief left events pending")
+	}
+}
+
+func TestWaitingLineIsTagged(t *testing.T) {
+	w := api.Waiting{Count: 1, Items: []api.WaitingItem{{Kind: api.WaitingShip, Repo: "app", Lane: "a", Detail: "2 commits not pushed; ship it"}}}
+	want := "[Waiting on you (1)] ship (app:a): 2 commits not pushed; ship it"
+	if got := w.Line(); got != want {
+		t.Errorf("line %q, want %q", got, want)
+	}
+}

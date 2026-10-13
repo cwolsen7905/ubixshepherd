@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, WebSession,
+  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -147,6 +147,13 @@ export const laneApprove = {
   read: (laneId: number) => get<LaneApproval>(`/v1/lanes/${laneId}/approval`),
   /** `sha` is the head the person was looking at; a moved head is refused with a 409. */
   approve: (laneId: number, sha: string) => post<LaneApproved>(`/v1/lanes/${laneId}/approve`, { sha }),
+}
+
+/** Everything that waits on the person's action, and shipping a lane from the list. */
+export const waitingOnYou = {
+  list: () => get<Waiting>('/v1/waiting'),
+  /** Pushes the lane's committed work and opens or updates its merge request, after Shepherd's own checks. */
+  ship: (laneId: number) => post<LaneShipped>(`/v1/lanes/${laneId}/ship`, {}),
 }
 
 /** A failed run's diagnoses and its suggested fixes. */

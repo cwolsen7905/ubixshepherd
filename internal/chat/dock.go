@@ -252,7 +252,7 @@ func (m *Model) dockBudget() int {
 // dockRows draws the dock within its budget: the counts, then the items, most urgent
 // first, with "+N more" for what does not fit. Nothing at all when nothing is there.
 func (m *Model) dockRows(items []dockItem) []string {
-	if len(items) == 0 && m.approvals == 0 {
+	if len(items) == 0 && m.approvals == 0 && m.waiting.Count == 0 {
 		return nil
 	}
 	rows := []string{m.countsRow(items)}
@@ -296,6 +296,11 @@ func (m *Model) countsRow(items []dockItem) string {
 		// Next-up proposals wait on the person like a decision does, but they are one
 		// count, not a row each: /next lists them.
 		parts = append(parts, pal.warn.Render(fmt.Sprintf("%d Next-up to approve (/next)", m.approvals)))
+	}
+	if n := m.waiting.Count; n > 0 {
+		// Everything that needs the person's action in one number: decisions, merge
+		// requests held on them, lanes to ship and Next-up proposals.
+		parts = append(parts, pal.warn.Render(fmt.Sprintf("%d waiting on you", n)))
 	}
 	return strings.Join(parts, pal.muted.Render(" · "))
 }
