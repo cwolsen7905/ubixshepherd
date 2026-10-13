@@ -557,3 +557,4 @@ More versions (one-liner, technical) are in [docs/pitch.md](docs/pitch.md).
 ## Licence
 
 BSD 3-Clause. See [LICENSE](LICENSE).
+
