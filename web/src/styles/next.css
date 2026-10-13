@@ -40,3 +40,14 @@
 .backlog-row.state-approved .backlog-state, .backlog-row.state-started .backlog-state { color: var(--ink); }
 .backlog-row.state-planned .backlog-name, .backlog-row.state-deferred .backlog-name { font-weight: 400; }
 .backlog-row.state-deferred { opacity: .75; }
+
+/* The item a link pointed at: an accent outline and wash that fades out. */
+.next-row.is-focus-target { outline: 2px solid var(--lichen); outline-offset: -2px; animation: next-focus-fade 4s ease-out forwards; }
+@keyframes next-focus-fade {
+  from { background: color-mix(in srgb, var(--lichen) 22%, transparent); outline-color: var(--lichen); }
+  70% { background: color-mix(in srgb, var(--lichen) 22%, transparent); outline-color: var(--lichen); }
+  to { background: transparent; outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .next-row.is-focus-target { animation: none; background: color-mix(in srgb, var(--lichen) 22%, transparent); }
+}

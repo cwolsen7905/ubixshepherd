@@ -9,7 +9,7 @@ import {
   NEXT_MARKER, NEXT_MARKS, NEXT_SECTION_NAMES, canMove, canStart, closedCount, deskWorkspace, lastPlanId, matrixGroups,
   nextSections, planLabel, stateActions, startText,
 } from '../model/next'
-import { go, href } from '../router'
+import { go, href, useFocusTarget, useRoute } from '../router'
 import { useSnapshot } from '../state/context'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
 import '../styles/next.css'
@@ -22,6 +22,8 @@ export interface NextApi {
 const realApi: NextApi = { add: nextUp.add, update: nextUp.update }
 
 const reason = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e))
+
+const nextSelector = (id: number) => `[data-next-id="${id}"]`
 
 /** The next-up list: what is planned and not yet being acted on, in the person's order. */
 export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; api?: NextApi }) {
@@ -40,11 +42,18 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
       reload()
     }
   }, [planLast, reload])
+  const route = useRoute()
+  const focus = route.page === 'next' ? route.focus : undefined
   const [busy, setBusy] = useState<number | 'add' | null>(null)
   const [problem, setProblem] = useState('')
   const items = useMemo(() => list?.items ?? [], [list])
   const matrix = useMemo(() => matrixGroups(list), [list])
   const sections = useMemo(() => nextSections(items, closed), [items, closed])
+  const lit = useFocusTarget(
+    focus,
+    sections.some((s) => s.items.some((it) => it.id === focus)),
+    nextSelector,
+  )
   const hiddenClosed = closed ? 0 : closedCount(items)
   const repos = useMemo(() => [...new Set(snap.lanes.map((l) => l.repo))].sort(), [snap.lanes])
   const workspace = deskWorkspace(snap.status?.workspaces ?? [])
@@ -115,6 +124,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
                   it={it}
                   all={items}
                   isNext={list?.next_up === it.id}
+                  focused={lit === it.id}
                   now={now}
                   busy={busy === it.id}
                   lanes={snap.lanes.filter((l) => l.state === 'open' && (!it.repo || l.repo === it.repo))}
@@ -231,11 +241,12 @@ function AddForm({ repos, busy, onAdd }: { repos: string[]; busy: boolean; onAdd
 }
 
 function NextRow({
-  it, all, isNext, now, busy, lanes, onUpdate, onStart,
+  it, all, isNext, focused, now, busy, lanes, onUpdate, onStart,
 }: {
   it: NextItem
   all: NextItem[]
   isNext: boolean
+  focused: boolean
   now: number
   busy: boolean
   lanes: { id: number; name: string; repo: string }[]
@@ -246,7 +257,11 @@ function NextRow({
   const movable = it.stored_state === 'approved' || it.stored_state === 'planned' || it.stored_state === 'deferred'
   const laneName = it.lane_name ?? it.lane
   return (
-    <li className={`next-row state-${it.state}${isNext ? ' is-next' : ''}`} aria-current={isNext ? 'true' : undefined}>
+    <li
+      className={`next-row state-${it.state}${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}`}
+      data-next-id={it.id}
+      aria-current={isNext || focused ? 'true' : undefined}
+    >
       <span className="next-glyph">
         {isNext ? (
           <Glyph glyph={NEXT_MARKER.glyph} tone={NEXT_MARKER.tone} label={NEXT_MARKER.label} />

@@ -30,3 +30,14 @@
 .answered { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
 .answered li { display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr); padding: var(--s-2) 0; border-top: 1px solid var(--rule); max-width: var(--measure-prose); }
 
+
+/* The decision a link pointed at: an accent outline and wash that fades out. */
+.decision-slot.is-focus-target { outline: 2px solid var(--lichen); outline-offset: -2px; animation: decision-focus-fade 4s ease-out forwards; }
+@keyframes decision-focus-fade {
+  from { background: color-mix(in srgb, var(--lichen) 22%, transparent); outline-color: var(--lichen); }
+  70% { background: color-mix(in srgb, var(--lichen) 22%, transparent); outline-color: var(--lichen); }
+  to { background: transparent; outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-slot.is-focus-target { animation: none; background: color-mix(in srgb, var(--lichen) 22%, transparent); }
+}
