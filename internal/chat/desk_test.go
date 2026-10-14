@@ -30,3 +30,11 @@ func TestDeskBriefTracksQuestions(t *testing.T) {
 		}
 	}
 }
+
+func TestDeskBriefHasLinkRule(t *testing.T) {
+	for _, want := range []string{"#note_<first_note_id>", "/-/merge_requests/<iid>", "links_thread"} {
+		if !strings.Contains(DeskBrief, want) {
+			t.Errorf("DeskBrief lacks %q", want)
+		}
+	}
+}

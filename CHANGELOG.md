@@ -11,6 +11,7 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- Clickable GitLab links in reports: agents' briefs and the desk's instruction require links for merge requests, pipelines, jobs and review threads (a thread links to its first note), Shepherd's own watcher messages emit them, and `shepherd links` (MCP tool `links_thread`) turns a discussion id into its note URL. See [docs/links.md](docs/links.md).
 - **Shepherd sends unresolved review threads back to the lane's agent, and the fix budget
   is configurable.** The watcher reads an open lane merge request's unresolved threads
   and continues the agent with each thread's id, file and line and text, once per thread

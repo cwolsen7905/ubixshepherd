@@ -326,17 +326,17 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 		if err != nil {
 			tail = "(could not read the log: " + err.Error() + ")"
 		}
-		fmt.Fprintf(&logs, "== job %s (%s) ==\n%s\n\n", j.Name, j.URL, tail)
+		fmt.Fprintf(&logs, "== job [%s](%s) ==\n%s\n\n", j.Name, j.URL, tail)
 	}
 	if waits && len(names) == 0 {
-		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d for !%d (lane %s) is held by %s: it needs a reviewer, so it is yours", p.ID, mr.IID, lane.Name, forge.RequireApprovalJob)
+		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d (%s) for !%d (%s) (lane %s) is held by %s: it needs a reviewer, so it is yours", p.ID, p.URL, mr.IID, mr.URL, lane.Name, forge.RequireApprovalJob)
 		return tries
 	}
 	what := strings.Join(names, ", ")
 	if what == "" {
 		what = "no failed job listed"
 	}
-	w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d failed for !%d (lane %s): %s", p.ID, mr.IID, lane.Name, what)
+	w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d (%s) failed for !%d (%s) (lane %s): %s", p.ID, p.URL, mr.IID, mr.URL, lane.Name, what)
 
 	runs, _ := w.Store.Runs(ctx, lane.ID, "", 20)
 	var last *store.Run
@@ -357,9 +357,10 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline failed again after %d fixes by %s; lane %s is yours now", tries, last.Agent, lane.Name)
 		return tries
 	}
-	prompt := fmt.Sprintf("[Shepherd] The pipeline for your merge request !%d failed (pipeline %d, %s).\n\n%s"+
-		"Find the cause and fix it within your scope, run the gate, and commit. Do not push: the person pushes the fix.",
-		mr.IID, p.ID, p.URL, logs.String())
+	prompt := fmt.Sprintf("[Shepherd] The pipeline for your merge request [!%d](%s) failed ([pipeline %d](%s)).\n\n%s"+
+		"Find the cause and fix it within your scope, run the gate, and commit. Do not push: the person pushes the fix. "+
+		"When you report, name the merge request, pipeline and jobs by the clickable links given here.",
+		mr.IID, mr.URL, p.ID, p.URL, logs.String())
 	// Count the try before starting it, so a fix that ends fast is checked against it.
 	if lf, err := w.Store.LaneForge(ctx, lane.ID); err == nil {
 		lf.FixTries = tries + 1

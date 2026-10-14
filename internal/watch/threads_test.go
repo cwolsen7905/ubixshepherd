@@ -21,11 +21,12 @@ func (f *fixture) withSession(t *testing.T) {
 func TestReviewThreadsGoBackOnce(t *testing.T) {
 	f := newFixture(t)
 	f.withSession(t)
-	f.f.threads = []forge.Thread{{ID: "d1", File: "a.go", Line: 4, Body: "bot: handle nil"}}
+	f.f.threads = []forge.Thread{{ID: "d1abcdef0123", NoteID: 55, URL: "https://gl/mr/7#note_55", File: "a.go", Line: 4, Body: "bot: handle nil"}}
 	f.w.Check(f.ctx)
 	f.settle(t)
 	runs, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10)
-	if len(runs) != 2 || !strings.Contains(runs[0].Prompt, "thread d1 (a.go:4)") || !strings.Contains(runs[0].Prompt, "Do not resolve") {
+	if len(runs) != 2 || !strings.Contains(runs[0].Prompt, "[handle nil](https://gl/mr/7#note_55) [d1abcdef] (a.go:4)") ||
+		!strings.Contains(runs[0].Prompt, "[!7](https://gl/mr/7)") || !strings.Contains(runs[0].Prompt, "Do not resolve") {
 		t.Fatalf("runs = %+v", runs)
 	}
 	// Seen again: nothing, even from a fresh watcher (the ids are stored).
