@@ -21,6 +21,7 @@ workspace.
 | `decision` | An open decision (an agent's `ask_human`) | Answer, on the Decisions page |
 | `mr` | An open lane merge request with no approval whose pipeline is held at, or failed at, the `require-approval` job | Approve (the Lane page's approve control: approve, then Shepherd retries that job, since the forge does not re-run on approval) |
 | `mr` | An open lane merge request whose pipeline failed elsewhere and no run is working on it | Open the lane; nothing Shepherd can do for the person |
+| `mr` | An open lane merge request with unresolved review threads the watcher has not handed back because the fix budget (`watch.fix_tries`) is spent or the lane has no agent conversation | Open the lane; the threads are the person's now (listed once in the feed) |
 | `ship` | An open lane with commits not on its branch at origin, no run going, in a repo whose `autonomy.push` is `shepherd` | Ship (`POST /v1/lanes/{id}/ship`, after Shepherd's own checks) |
 | `ship` | The same, in a repo whose `autonomy.push` is `human` | Open the lane; the person pushes it |
 | `next` | A Next-up item the desk or an agent proposed, still planned, with no open lane | Review, on the Next up page, where approval already is |

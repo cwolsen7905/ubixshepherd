@@ -587,6 +587,10 @@ type LaneForge struct {
 	// request is new, not open, or has no head pipeline.
 	Approved        bool   `json:"approved,omitempty"`
 	RequireApproval string `json:"require_approval,omitempty"`
+	// ThreadsSeen are the review threads already handed back to the lane's agent for the
+	// request, as discussion ids joined by commas; cleared with the request. A string so
+	// a LaneForge still compares with ==.
+	ThreadsSeen string `json:"threads_seen,omitempty"`
 }
 
 // Activity sources: what LaneActivity can say a lane's latest activity was.

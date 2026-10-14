@@ -11,6 +11,14 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **Shepherd sends unresolved review threads back to the lane's agent, and the fix budget
+  is configurable.** The watcher reads an open lane merge request's unresolved threads
+  and continues the agent with each thread's id, file and line and text, once per thread
+  (remembered across restarts). It shares one per-request budget with failed pipelines,
+  now `watch.fix_tries` (default 2, `0` off) under `defaults` or a repo, with
+  `watch.review_threads: false` to stop thread handoff. A failure of the `require-approval`
+  job alone is never handed to an agent: it waits for a human reviewer. A migration adds
+  `lane_forge.threads_seen`. See the README's "Watching the forge".
 - **Work the desk registers from chat is marked as coming from chat and does not wait on
   you.** `next_add` from the front desk now stores source `chat`: the item shows as planned
   with a "chat" badge in Next up and is left out of "Waiting on you". The new `propose`

@@ -31,7 +31,11 @@ type fakeForge struct {
 	// err, when set, is what MRForBranch and RefPipeline return; calls counts them.
 	err   error
 	calls int
+	// threads are the request's unresolved review threads, for Threads.
+	threads []forge.Thread
 }
+
+func (f *fakeForge) Threads(context.Context, int) ([]forge.Thread, error) { return f.threads, nil }
 
 func (f *fakeForge) Name() string { return "fake" }
 func (f *fakeForge) MRForBranch(context.Context, string) (*forge.MR, error) {

@@ -173,7 +173,10 @@ or the memory.
 2. The job finds a blocking problem, posts threads, fails. The merge does not happen.
 3. The watcher sees a failed review job as it sees a failed pipeline
    (`internal/watch`) and continues the author's session with the findings, the same
-   handoff, counted separately by `approve.max_cycles` (section 10).
+   handoff, counted separately by `approve.max_cycles` (section 10). The same watcher
+   already hands any unresolved review thread back to the author's lane, with its id,
+   file and line (`watch.review_threads`, on the shared `watch.fix_tries` budget); the
+   review job's threads ride that path, so this loop needs no second one.
 4. The author fixes and pushes: a new SHA, so a new pipeline and a new review.
 5. The reviewer re-reads its own threads (matched by fingerprint), resolves the ones the
    change fixed and leaves the rest. A pass ends the loop; the merge proceeds.

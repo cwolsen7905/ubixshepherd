@@ -493,7 +493,37 @@ type Profile struct {
 	// Follows are the repos this one depends on: a release of one opens a lane here and
 	// hands it to an agent (a framework's tag, the host's version bump).
 	Follows []Follow `yaml:"follows,omitempty" json:"follows,omitempty"`
+	// Watch says what Shepherd's forge watcher hands back to a lane's agent unasked.
+	Watch Watch `yaml:"watch,omitempty" json:"watch"`
 }
+
+// DefaultFixTries is how many times Shepherd hands a merge request's failures (a failed
+// pipeline, unresolved review threads) back to the lane's agent before leaving it to
+// the person.
+const DefaultFixTries = 2
+
+// Watch is what the forge watcher sends back to the lane's agent on its own. The
+// require-approval job is never handed back: it needs a human reviewer. Set under
+// defaults for every repo, or under a repo to override.
+type Watch struct {
+	// FixTries is the tries per merge request; 0 turns handing back off. Unset is
+	// DefaultFixTries.
+	FixTries *int `yaml:"fix_tries,omitempty" json:"fix_tries,omitempty"`
+	// ReviewThreads hands unresolved review threads on the merge request back to the
+	// agent. Unset is on.
+	ReviewThreads *bool `yaml:"review_threads,omitempty" json:"review_threads,omitempty"`
+}
+
+// Tries is the effective try cap.
+func (w Watch) Tries() int {
+	if w.FixTries == nil {
+		return DefaultFixTries
+	}
+	return *w.FixTries
+}
+
+// Threads says whether review threads go back to the agent.
+func (w Watch) Threads() bool { return w.ReviewThreads == nil || *w.ReviewThreads }
 
 // When a follow acts on a release.
 const (
@@ -846,6 +876,9 @@ func (p Profile) validate(at string) []error {
 	if !slices.Contains(PermissionModes, p.Agent.PermissionMode) {
 		errs = append(errs, fmt.Errorf("%s.agent.permission_mode: %q is not %s", at, p.Agent.PermissionMode, strings.Join(PermissionModes, ", ")))
 	}
+	if p.Watch.FixTries != nil && *p.Watch.FixTries < 0 {
+		errs = append(errs, fmt.Errorf("%s.watch.fix_tries: %d is negative; 0 turns handing back off", at, *p.Watch.FixTries))
+	}
 	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
 	}
@@ -970,6 +1003,12 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Autonomy.PlanFirst != nil {
 		out.Autonomy.PlanFirst = over.Autonomy.PlanFirst
+	}
+	if over.Watch.FixTries != nil {
+		out.Watch.FixTries = over.Watch.FixTries
+	}
+	if over.Watch.ReviewThreads != nil {
+		out.Watch.ReviewThreads = over.Watch.ReviewThreads
 	}
 	if over.Agent.PermissionMode != "" {
 		out.Agent.PermissionMode = over.Agent.PermissionMode

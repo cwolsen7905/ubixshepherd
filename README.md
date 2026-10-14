@@ -268,8 +268,27 @@ credentials. What changed lands in the thread, and some of it is acted on:
   local branch goes, no `--force` needed after a squash merge. A worktree with
   uncommitted changes, or an agent still running, keeps the lane open and says why.
 - **Pipeline failed:** the failed jobs' logs go back into the lane's agent conversation
-  with "fix it and commit", at most twice per merge request; then it is yours. Who pushes
-  the fix follows the repo profile: `agent`, `shepherd` after its gate, or you by default.
+  with "fix it and commit". The `require-approval` job is never handed back: it needs a
+  human reviewer, so it waits for you. Who pushes the fix follows the repo profile:
+  `agent`, `shepherd` after its gate, or you by default.
+- **Unresolved review threads:** a new unresolved thread on the open merge request (a
+  person's or a review job's finding) goes back to the same conversation with its id,
+  file and line and text. The agent fixes and commits and says in its report what it did
+  per thread; it never resolves a thread, approves or merges. Each thread is handed back
+  once, and it is remembered across restarts.
+
+Both share one budget per merge request: `watch.fix_tries` (default 2; `0` turns it off),
+under `defaults` or overridden in a repo's profile. `watch.review_threads: false` stops
+handing threads back. When the budget is spent the rest is yours, with a line in the
+thread.
+
+```yaml
+defaults:
+  watch: {fix_tries: 2, review_threads: true}
+repos:
+  app:
+    watch: {fix_tries: 4}
+```
 - **Opened, pipeline passed, canceled, closed without merging:** a line in the thread.
 
 Agents run with the repo's `agent.permission_mode` (default `auto`). Repo profiles can

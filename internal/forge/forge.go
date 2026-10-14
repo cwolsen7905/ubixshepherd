@@ -51,6 +51,26 @@ type Job struct {
 	URL  string `json:"url"`
 }
 
+// Thread is an unresolved review discussion on a merge request that someone has to act
+// on: resolvable, not resolved, and not a system note.
+type Thread struct {
+	// ID is the forge's discussion id, stable for the thread's life.
+	ID string `json:"id"`
+	// Author is the first note's author's username.
+	Author string `json:"author,omitempty"`
+	// File and Line say where on the diff it was left; empty and 0 for a general thread.
+	File string `json:"file,omitempty"`
+	Line int    `json:"line,omitempty"`
+	// Body is the thread's notes in order, one per line, cleaned and cut short.
+	Body string `json:"body"`
+}
+
+// ThreadReader is a Forge that can list a request's review threads. GitLab can.
+type ThreadReader interface {
+	// Threads is the merge request's unresolved review threads, oldest first.
+	Threads(ctx context.Context, mr int) ([]Thread, error)
+}
+
 // Forge answers for one repository.
 type Forge interface {
 	Name() string
@@ -328,4 +348,92 @@ func Unreachable(err error) bool {
 		return false // an answer, whatever else the message says
 	}
 	return unreachable.MatchString(msg) || serverError.MatchString(msg)
+}
+
+// MaxThreadBody caps a thread's text, in bytes, so one long review cannot fill a prompt.
+const MaxThreadBody = 2000
+
+type glNote struct {
+	Body       string `json:"body"`
+	System     bool   `json:"system"`
+	Resolvable bool   `json:"resolvable"`
+	Resolved   bool   `json:"resolved"`
+	Author     struct {
+		Username string `json:"username"`
+	} `json:"author"`
+	Position *struct {
+		NewPath string `json:"new_path"`
+		OldPath string `json:"old_path"`
+		NewLine int    `json:"new_line"`
+		OldLine int    `json:"old_line"`
+	} `json:"position"`
+}
+
+type glDiscussion struct {
+	ID    string   `json:"id"`
+	Notes []glNote `json:"notes"`
+}
+
+// Threads reads the request's discussions (GitLab pages them; reads up to 10 pages of 100)
+// and keeps the unresolved, resolvable ones that are not system notes.
+func (g *GitLab) Threads(ctx context.Context, mr int) ([]Thread, error) {
+	var out []Thread
+	for page := 1; page <= 10; page++ {
+		var ds []glDiscussion
+		q := fmt.Sprintf("%s/merge_requests/%d/discussions?per_page=100&page=%d", g.project(), mr, page)
+		if err := g.api(ctx, q, &ds); err != nil {
+			return nil, err
+		}
+		for _, d := range ds {
+			if t, ok := d.thread(); ok {
+				out = append(out, t)
+			}
+		}
+		if len(ds) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (d glDiscussion) thread() (Thread, bool) {
+	if d.ID == "" || len(d.Notes) == 0 || d.Notes[0].System {
+		return Thread{}, false
+	}
+	// A thread is open when any of its resolvable notes is unresolved.
+	open := false
+	for _, n := range d.Notes {
+		if n.Resolvable && !n.Resolved {
+			open = true
+		}
+	}
+	if !open {
+		return Thread{}, false
+	}
+	first := d.Notes[0]
+	t := Thread{ID: d.ID, Author: first.Author.Username}
+	if p := first.Position; p != nil {
+		t.File, t.Line = p.NewPath, p.NewLine
+		if t.File == "" {
+			t.File = p.OldPath
+		}
+		if t.Line == 0 {
+			t.Line = p.OldLine
+		}
+	}
+	var b strings.Builder
+	for _, n := range d.Notes {
+		if n.System || strings.TrimSpace(n.Body) == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "%s: %s", n.Author.Username, strings.TrimSpace(n.Body))
+	}
+	t.Body = b.String()
+	if len(t.Body) > MaxThreadBody {
+		t.Body = strings.ToValidUTF8(t.Body[:MaxThreadBody], "") + " [cut]"
+	}
+	return t, true
 }
