@@ -9,6 +9,32 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-10-14
+
+A beta of uBixShepherd that tracks the front desk's questions to the person, hands
+unresolved review threads back to a lane's agent, links GitLab objects in reports, and can
+upgrade the daemon from the update notice. Nothing is removed or changed incompatibly.
+
+### Interface changes
+
+- New routes `GET|POST /v1/questions`, `POST /v1/questions/{id}/answer` and `/skip`, with
+  MCP tools `question_open`, `question_answer` and `question_list` and the command
+  `shepherd question`. `POST /v1/desk/turn` takes `reply_to`. `GET /v1/waiting` gains kind
+  `question` and `counts.questions`.
+- New route `POST /v1/update/upgrade`, an `upgrade` object in `GET /v1/update`, the
+  commands `shepherd update upgrade [--now]` and `/update upgrade [now]`, and config key
+  `update.auto` (default `false`).
+- `next_add` from the front desk now stores source `chat`, and takes `propose` (with
+  `shepherd next add --propose`, desk only) to put an item up for approval as before.
+- New config keys `watch.fix_tries` (default 2, `0` off) and `watch.review_threads`
+  (default on), under `defaults` or a repo. The fix budget is now shared by failed
+  pipelines and review threads.
+- New command `shepherd links` and MCP tool `links_thread`, which turn a discussion id
+  into its note URL.
+- Appended store migrations add `lane_forge.threads_seen` and relabel planned `desk`
+  items as `chat`. They apply when the daemon starts, and a binary refuses a store
+  migrated by a newer one.
+
 ### Added
 
 - Clickable GitLab links in reports: agents' briefs and the desk's instruction require links for merge requests, pipelines, jobs and review threads (a thread links to its first note), Shepherd's own watcher messages emit them, and `shepherd links` (MCP tool `links_thread`) turns a discussion id into its note URL. See [docs/links.md](docs/links.md).
