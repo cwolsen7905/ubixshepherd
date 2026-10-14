@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, waitingOnYou } from '../api/client'
 import type { Waiting, WaitingItem } from '../api/types'
 import { href, refocus } from '../router'
+import { showInThread, stepIndex, waitingKey } from '../model/waitingStep'
 import { LaneApprove } from './LaneApprove'
 import './WaitingOnYou.css'
 
@@ -13,12 +14,10 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   mr: 'merge request',
   ship: 'to ship',
   next: 'next up',
+  question: 'question',
 }
 
-/** A stable key for an item: the daemon's list has no ids of its own. */
-function keyOf(it: WaitingItem): string {
-  return `${it.kind}:${it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}`
-}
+const keyOf = waitingKey
 
 /** A click on the link to the hash already shown fires no hashchange: ask the page to focus again. */
 function again(to: string) {
@@ -39,6 +38,7 @@ export function WaitingOnYou() {
   const [approving, setApproving] = useState<string | null>(null)
   const [shipping, setShipping] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, { text: string; bad: boolean }>>({})
+  const [at, setAt] = useState<string | null>(null)
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -86,6 +86,15 @@ export function WaitingOnYou() {
   }
 
   const count = list?.count ?? 0
+  // Up and down step through every waiting item in the thread, read or not.
+  const step = (dir: 'up' | 'down') => {
+    const items = list?.items ?? []
+    const i = stepIndex(items.map(keyOf), at, dir)
+    const it = items[i]
+    if (!it) return
+    setAt(keyOf(it))
+    showInThread(it)
+  }
   if (!list && !error) return null
   if (count === 0 && !open) return null
 
@@ -101,6 +110,16 @@ export function WaitingOnYou() {
       >
         {count} waiting on you
       </button>
+      {count > 0 && (
+        <span className="waiting-step">
+          <button type="button" aria-label="Previous item waiting on you" title="Previous waiting item" onClick={() => step('up')}>
+            ▲
+          </button>
+          <button type="button" aria-label="Next item waiting on you" title="Next waiting item" onClick={() => step('down')}>
+            ▼
+          </button>
+        </span>
+      )}
       {open && (
         <ul id="waiting-panel" className="waiting-panel" aria-label="Waiting on you">
           {error && <li className="waiting-note tone-bad" role="alert">Could not read the list: {error}</li>}
@@ -119,6 +138,9 @@ export function WaitingOnYou() {
                   </span>
                   {it.action === 'answer' && (
                     <a href={href.decisions(it.decision_id)} onClick={() => again(href.decisions(it.decision_id))}>Answer</a>
+                  )}
+                  {it.action === 'reply' && (
+                    <button type="button" onClick={() => showInThread(it)}>Reply</button>
                   )}
                   {it.action === 'review' && (
                     <a href={href.next(it.next_id)} onClick={() => again(href.next(it.next_id))}>Review</a>

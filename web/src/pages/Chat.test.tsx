@@ -73,6 +73,24 @@ describe('ChatPage', () => {
     expect(screen.getByRole('log')).toHaveAttribute('aria-live', 'polite')
   })
 
+  it('shows Reply here and Skip under the desk message that asked an open question, and nowhere else', async () => {
+    const asked = { id: 7, workspace_id: 1, turn: 1, text: 'Ship it?', state: 'open', created: '2026-10-08T10:00:40Z' }
+    vi.stubGlobal('fetch', async (path: string) => {
+      if (path.startsWith('/v1/questions')) return new Response(JSON.stringify({ questions: [asked] }))
+      return new Response('{}', { status: 404 })
+    })
+    try {
+      const turned = history.map((e) => ({ ...e, turn: 1 }))
+      await show(fakeDeskApi({ history: async () => ({ events: turned, more: false }) }))
+      const reply = await screen.findByRole('button', { name: 'Reply here' })
+      expect(reply.closest('.msg-assistant')).toHaveTextContent('Two lanes need you.')
+      expect(screen.getAllByRole('button', { name: 'Skip' })).toHaveLength(1)
+      expect(screen.getByText('what is up?').closest('.msg-user')?.querySelector('.question-actions')).toBeNull()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('draws a partial reply as one growing message and a final one replaces it', async () => {
     const { src } = await show(fakeDeskApi())
     act(() => src.emit('partial', { kind: 'partial', text: 'Looking' }))

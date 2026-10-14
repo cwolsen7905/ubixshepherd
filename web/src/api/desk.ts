@@ -17,9 +17,11 @@ export const deskApi = {
     const q = qs(ws(workspaceId))
     return get<DeskStatus>(`/v1/desk/status${q ? `?${q}` : ''}`)
   },
-  /** `topicId` is the topic the person writes from (the thread's filter): the daemon files the turn under it. */
-  turn: (workspaceId: number, text: string, topicId?: number) =>
-    post<DeskTurnAccepted>('/v1/desk/turn', { ...ws(workspaceId), text, ...(topicId ? { topic_id: topicId } : {}) }),
+  /** `topicId` is the topic the person writes from (the thread's filter): the daemon files the turn under it. `replyTo` is the open desk question the message answers. */
+  turn: (workspaceId: number, text: string, topicId?: number, replyTo?: number) =>
+    post<DeskTurnAccepted>('/v1/desk/turn', {
+      ...ws(workspaceId), text, ...(topicId ? { topic_id: topicId } : {}), ...(replyTo ? { reply_to: replyTo } : {}),
+    }),
   interrupt: (workspaceId: number) => post<{ interrupted: boolean }>('/v1/desk/interrupt', ws(workspaceId)),
   newConversation: (workspaceId: number) => post<{ workspace_id?: number }>('/v1/desk/new', ws(workspaceId)),
   /** An EventSource sends no headers, so it resumes by query: the cookie carries the session. */

@@ -84,6 +84,8 @@ func commands() []command {
 			"shepherd next [list] [--all] [--json] | add \"title\" [--approved] [--repo R] [--plan P] [--lane L] [--note N] | show <id> | approve|defer|drop|done <id> | move <id> top|up|down | link <id> --lane L [--repo R] | update <id> [--title T] [--note N] [--plan P] [--repo R] [--lane L] [--state S] [--move M] | seed [--dry-run]", runNext},
 		{"topic", "The matters the front desk's thread is about: name them, tie work to them, clear what is settled",
 			"shepherd topic [list] [--all] [--json] | show <id|title> | new \"title\" [--summary S] [--lane L|--item N|...] | set <id|title> --turn T|--feed F|--item N|--lane L|--run R|--decision D|--request Q [--summary S] | rename <id> \"title\" | merge <id> <into> | move <id> --lane L|... | clear <id|title> | reopen <id|title>", runTopic},
+		{"question", "What the front desk asked you, tracked until answered or skipped",
+			"shepherd question [list] [--all] [--json] | open \"text\" [--turn T] [--topic N] | answer <id> | skip <id>", runQuestion},
 		{"keep-going", "Let the front desk carry on with what is already approved, within limits, until a decision needs you",
 			"shepherd keep-going on [--cap USD] [--runs N] [--idle HOURS] | off | status   (each takes --json)", runKeepGoing},
 		{"update", "Whether a newer Shepherd release exists, from the daemon's daily check, dismissing its notice, and installing it",

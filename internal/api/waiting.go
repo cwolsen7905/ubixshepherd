@@ -18,12 +18,13 @@ const (
 	WaitingMR       = "mr"       // a lane's merge request held at the require-approval job, or failed
 	WaitingShip     = "ship"     // an open lane with commits not yet pushed
 	WaitingNext     = "next"     // a Next-up item proposed to the person, planned
+	WaitingQuestion = "question" // a question the front desk asked and marked open
 )
 
 // WaitingItem is one thing that needs the person. Action says what they can do about it
 // from the web page: answer (a decision), approve (a merge request, then Shepherd retries
 // its approval job), ship (the lane's unpushed work), review (a Next-up item, on the Next
-// up page) or open (look at the lane: nothing Shepherd can do for them).
+// up page), reply (a desk question, in the thread) or open (look at the lane: nothing Shepherd can do for them).
 type WaitingItem struct {
 	Kind   string `json:"kind"`
 	Action string `json:"action"`
@@ -31,9 +32,13 @@ type WaitingItem struct {
 	Lane   string `json:"lane,omitempty"`
 	LaneID int64  `json:"lane_id,omitempty"`
 	// DecisionID and NextID are set for their kinds; MR is the merge request's number.
-	DecisionID int64  `json:"decision_id,omitempty"`
-	NextID     int64  `json:"next_id,omitempty"`
-	MR         int    `json:"mr,omitempty"`
+	DecisionID int64 `json:"decision_id,omitempty"`
+	NextID     int64 `json:"next_id,omitempty"`
+	MR         int   `json:"mr,omitempty"`
+	// QuestionID and Turn are set for a question: its id, and the desk turn it was asked
+	// in, which is the thread message to scroll to.
+	QuestionID int64  `json:"question_id,omitempty"`
+	Turn       int64  `json:"turn,omitempty"`
 	Title      string `json:"title"`
 	Detail     string `json:"detail,omitempty"`
 	// Since is when it started to wait, as far as Shepherd knows.
@@ -46,6 +51,7 @@ type WaitingCounts struct {
 	MRs       int `json:"mrs"`
 	Ship      int `json:"ship"`
 	Next      int `json:"next"`
+	Questions int `json:"questions"`
 }
 
 // Waiting answers GET /v1/waiting: the items, oldest first, with their counts.
@@ -88,6 +94,8 @@ func (it WaitingItem) Label() string {
 		s = "ship"
 	case WaitingNext:
 		return fmt.Sprintf("next-up item %d", it.NextID)
+	case WaitingQuestion:
+		return fmt.Sprintf("question %d", it.QuestionID)
 	default:
 		s = it.Kind
 	}

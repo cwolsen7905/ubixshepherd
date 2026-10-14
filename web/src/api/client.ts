@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
+  ConfigChange, ConfigDoc, DeskQuestion, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -154,6 +154,14 @@ export const waitingOnYou = {
   list: () => get<Waiting>('/v1/waiting'),
   /** Pushes the lane's committed work and opens or updates its merge request, after Shepherd's own checks. */
   ship: (laneId: number) => post<LaneShipped>(`/v1/lanes/${laneId}/ship`, {}),
+}
+
+/** The front desk's questions to the person: read, and skipped by the person's own click. */
+export const deskQuestions = {
+  list: (state: '' | 'open' | 'answered' | 'skipped' = 'open') =>
+    get<{ questions: DeskQuestion[] }>(`/v1/questions?${qs({ state })}`).then((r) => r.questions),
+  /** Clears it without an answer; the daemon records the skip in the thread. */
+  skip: (id: number) => post<DeskQuestion>(`/v1/questions/${id}/skip`, {}),
 }
 
 /** A failed run's diagnoses and its suggested fixes. */

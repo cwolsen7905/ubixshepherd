@@ -53,6 +53,10 @@ type DeskTurn struct {
 	// TopicID is the topic the person wrote from (the web thread's filter), 0 for none.
 	// Shepherd files the turn under it before the desk sees the turn.
 	TopicID int64 `json:"topic_id,omitempty"`
+	// ReplyTo is the id of an open desk question this message answers (the thread's
+	// "Reply here"): the turn is sent as usual and the question is then marked answered
+	// by it. Unknown or already closed questions are refused before anything is sent.
+	ReplyTo int64 `json:"reply_to,omitempty"`
 }
 
 // DeskTurnAccepted answers POST /v1/desk/turn.

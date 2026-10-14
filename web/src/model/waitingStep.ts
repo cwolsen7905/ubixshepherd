@@ -1,0 +1,76 @@
+// Stepping through what waits on the person: the header counter's up and down arrows pick
+// the next item, and the chat page scrolls to it in the thread and highlights it.
+import type { WaitingItem } from '../api/types'
+
+/** A stable key for an item: the daemon's list has no ids of its own. */
+export function waitingKey(it: WaitingItem): string {
+  return `${it.kind}:${it.question_id ?? it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}`
+}
+
+/**
+ * The index to step to from the item with key `current` (null before the first step).
+ * Down goes to the next item and wraps; up goes to the previous. A current item that left
+ * the list starts from the top (down) or the bottom (up).
+ */
+export function stepIndex(keys: readonly string[], current: string | null, dir: 'up' | 'down'): number {
+  if (keys.length === 0) return -1
+  const at = current === null ? -1 : keys.indexOf(current)
+  if (at < 0) return dir === 'down' ? 0 : keys.length - 1
+  return (at + (dir === 'down' ? 1 : -1) + keys.length) % keys.length
+}
+
+/** Fired on window when an item is to be shown; the chat page takes it up. */
+export const STEP_EVENT = 'shepherd:waiting-step'
+
+let pending: WaitingItem | null = null
+
+/** Asks the chat page to show the item. One that is not mounted yet takes it on mount. */
+export function requestStep(it: WaitingItem) {
+  pending = it
+  window.dispatchEvent(new Event(STEP_EVENT))
+}
+
+/** The item asked for and not yet shown, once. */
+export function takeStep(): WaitingItem | null {
+  const it = pending
+  pending = null
+  return it
+}
+
+/** What the thread shows of the work a feed row reports, for decisions and lanes. */
+export interface StepContext {
+  /** Open decisions' "asked" rows in the thread: decision id to feed row id. */
+  askedRows: ReadonlyMap<number, number>
+  /** Decisions shown as cards of their own below the thread. */
+  unplaced: ReadonlySet<number>
+  /** A lane's latest thread anchor, from the backlog. */
+  laneAnchor(laneId: number): string | undefined
+}
+
+/**
+ * The thread anchor (an id suffix for threadId) that shows the item, or null when the
+ * thread holds no row for it: a Next-up proposal, or work older than the loaded window.
+ */
+export function stepAnchor(it: WaitingItem, ctx: StepContext): string | null {
+  switch (it.kind) {
+    case 'question':
+      return it.question_id ? `q${it.question_id}` : null
+    case 'decision': {
+      const id = it.decision_id ?? 0
+      const row = ctx.askedRows.get(id)
+      if (row) return `f${row}`
+      return ctx.unplaced.has(id) ? `d${id}` : null
+    }
+    case 'mr':
+    case 'ship':
+      return (it.lane_id && ctx.laneAnchor(it.lane_id)) || null
+    default:
+      return null
+  }
+}
+
+/** Opens the chat page when another page is showing, then shows the item there. */
+export function showInThread(it: WaitingItem) {
+  if (!window.location.hash.startsWith('#/chat')) window.location.hash = '#/chat'
+  requestStep(it)
+}

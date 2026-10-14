@@ -250,6 +250,12 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathKeepGoing, desk, s.keepGoing)
 	handle("GET "+api.PathNext, desk, s.listNext)
 	handle("GET "+api.PathWaiting, desk, s.waiting)
+	// Desk questions (docs/desk-questions.md): the desk opens them and marks one answered
+	// in a turn the person started; skipping is the person's (checked in the handler).
+	handle("GET "+api.PathQuestions, desk, s.listQuestions)
+	handle("POST "+api.PathQuestions, desk, s.openQuestion)
+	handle("POST "+api.PathQuestions+"/{id}/answer", desk, s.answerQuestion)
+	handle("POST "+api.PathQuestions+"/{id}/skip", desk, s.skipQuestion)
 	handle("POST "+api.PathNext, desk, s.addNext)
 	handle("GET "+api.PathNext+"/{id}", desk, s.getNext)
 	handle("PATCH "+api.PathNext+"/{id}", desk, s.patchNext)

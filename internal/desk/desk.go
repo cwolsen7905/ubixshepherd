@@ -550,6 +550,9 @@ func (d *Desk) waitingLine() string {
 		o.Log.Warn("desk: read what waits on the person", "workspace", d.ws.Name, "err", err)
 		return ""
 	}
+	if qs, err := o.Store.Questions(ctx, d.ws.ID, store.QuestionOpen); err == nil {
+		w.AddQuestions(qs)
+	}
 	return w.Line()
 }
 

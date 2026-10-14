@@ -11,6 +11,17 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **The front desk's questions to you are tracked and cannot be missed.** The desk marks a
+  question with the new `question_open` tool when a reply asks you something; it then waits
+  in the "Waiting on you" list as kind `question`, in the header, the dock and the desk's
+  `[Waiting on you (N)]` line. The header counter has up and down arrows that step through
+  everything waiting and scroll to and highlight it in the thread. A question's message
+  shows "Reply here" (an inline reply linked to the question) and "Skip". The desk marks
+  one answered with `question_answer` when a main-chat reply plainly covers it. See
+  [docs/desk-questions.md](docs/desk-questions.md). **Interface changes:** new routes
+  `GET|POST /v1/questions`, `POST /v1/questions/{id}/answer` and `/skip`, `reply_to` on
+  `POST /v1/desk/turn`, kind `question` and `counts.questions` in `GET /v1/waiting`, MCP
+  tools `question_open`, `question_answer` and `question_list`, and `shepherd question`.
 - **Fenced code blocks in the web chat have a copy button.** Each block in a desk or agent
   message gets an icon button in its top-right corner that copies the block's text exactly,
   over plain http too, and shows a check for a moment. Inline code is unchanged.

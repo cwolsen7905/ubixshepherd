@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // upgradeSeed is data written once the database is at schema version `at`, using only
@@ -248,6 +250,14 @@ func TestUpgradeFromOlderSchemas(t *testing.T) {
 			}
 			if _, err := again.Lanes(ctx, 1); err != nil {
 				t.Errorf("Lanes after upgrade: %v", err)
+			}
+			// The desk_questions table (the newest migration) takes and closes a row.
+			q, err := again.AddQuestion(ctx, store.Question{WorkspaceID: 1, Turn: 7, Text: "which way?"})
+			if err != nil {
+				t.Fatalf("AddQuestion after upgrade: %v", err)
+			}
+			if _, err := again.CloseQuestion(ctx, q.ID, store.QuestionSkipped, 0); err != nil {
+				t.Errorf("CloseQuestion after upgrade: %v", err)
 			}
 		})
 	}

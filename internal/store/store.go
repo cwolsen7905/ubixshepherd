@@ -948,6 +948,18 @@ type Store interface {
 	// TopicOf returns the link of a thing; ErrNotFound when it is in General.
 	TopicOf(ctx context.Context, kind, ref string) (TopicLink, error)
 
+	// AddQuestion records a question the front desk asked the person, open. Text is
+	// required.
+	AddQuestion(ctx context.Context, q Question) (Question, error)
+	// Question reads one; ErrNotFound for an unknown id.
+	Question(ctx context.Context, id int64) (Question, error)
+	// Questions returns the workspace's questions in state ("" for every state), oldest
+	// first; workspaceID 0 is every workspace.
+	Questions(ctx context.Context, workspaceID int64, state string) ([]Question, error)
+	// CloseQuestion moves an open question to answered or skipped. answeredTurn is the
+	// person's turn that answered it (0 for a skip). ErrConflict when it is not open.
+	CloseQuestion(ctx context.Context, id int64, state string, answeredTurn int64) (Question, error)
+
 	// SpendRollup splits the spend of the days from to to inclusive ("2006-01-02") by repo,
 	// the desk and the rest.
 	SpendRollup(ctx context.Context, from, to string) (SpendRollup, error)
