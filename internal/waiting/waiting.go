@@ -101,7 +101,7 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		return out, err
 	}
 	for _, it := range items {
-		if it.Source == store.NextByPerson || it.State != store.NextPlanned {
+		if it.Source == store.NextByPerson || it.Source == store.NextByChat || it.State != store.NextPlanned {
 			continue
 		}
 		// A linked lane that is open makes the item started: nothing waits on it.

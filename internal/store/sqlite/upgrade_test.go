@@ -59,6 +59,10 @@ var upgradeSeeds = []upgradeSeed{
 	{23, []string{
 		`INSERT INTO next_items (title, repo, state, rank, source, lane_id, created, updated) VALUES ('do it', 'a', 'planned', 1, 'person', 1, '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')`,
 	}},
+	{23, []string{
+		`INSERT INTO next_items (title, repo, state, rank, source, created, updated) VALUES ('from chat', 'a', 'planned', 2, 'desk', '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')`,
+		`INSERT INTO next_items (title, repo, state, rank, source, created, updated) VALUES ('approved earlier', 'a', 'approved', 1, 'desk', '2026-03-01T00:00:00Z', '2026-03-01T00:00:00Z')`,
+	}},
 	{25, []string{
 		`INSERT INTO keep_going (workspace_id, on_, by) VALUES (1, 1, 'me')`,
 	}},
@@ -100,6 +104,8 @@ var upgradeChecks = []upgradeCheck{
 	{17, `SELECT group_concat(run_id || ':' || cost_estimated || ':' || requests || ':' || input_tokens, ',') FROM (SELECT * FROM usage ORDER BY run_id)`, `2:1:0:0,3:0:0:0`},
 	{23, `SELECT title || '|' || repo || '|' || plan || '|' || lane || '|' || lane_id || '|' || mr || '|' || state || '|' || rank || '|' || note || '|' || done_at FROM next_items WHERE id = 1`,
 		`do it|a|||1||planned|1||`},
+	// planned desk items become chat; one the person already moved on keeps its source
+	{23, `SELECT group_concat(id || ':' || source, ',') FROM (SELECT id, source FROM next_items ORDER BY id)`, `1:person,2:chat,3:desk`},
 	{25, `SELECT on_ || '|' || by || '|' || since || '|' || cap_usd || '|' || max_runs FROM keep_going WHERE workspace_id = 1`, `1|me||0.0|0`},
 	{26, `SELECT t.title || '|' || t.status || '|' || t.summary || '|' || t.cleared_at || '|' || t.merged_into || '|' || l.kind || '|' || l.ref FROM topics t JOIN topic_links l ON l.topic_id = t.id`,
 		`t|open|||0|lane|live`},

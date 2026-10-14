@@ -105,10 +105,11 @@ func TestCollectGathersWhatWaitsOnThePerson(t *testing.T) {
 	lane(t, st, byName["agentrepo"], "byagent", 1)
 
 	// 4. Next-up: proposed by the desk and planned waits; the person's own and an
-	// approved one do not.
+	// approved one do not, nor does work the desk registered from chat.
 	for _, it := range []store.NextItem{
 		{Title: "Idea", Source: store.NextByDesk, State: store.NextPlanned},
 		{Title: "Mine", Source: store.NextByPerson, State: store.NextPlanned},
+		{Title: "Agreed in chat", Source: store.NextByChat, State: store.NextPlanned},
 		{Title: "Ok", Source: store.NextByDesk, State: store.NextApproved},
 	} {
 		if _, err := st.AddNextItem(ctx, it); err != nil {

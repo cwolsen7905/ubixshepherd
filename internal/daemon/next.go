@@ -39,7 +39,7 @@ func (s *Server) nextView(ctx context.Context, it store.NextItem) api.NextItemVi
 		ID: it.ID, Title: it.Title, Repo: it.Repo, Plan: it.Plan, Lane: it.Lane,
 		State: it.State, Stored: it.State, Rank: it.Rank, Source: it.Source, Note: it.Note,
 		MR: it.MR, Created: it.Created, Updated: it.Updated, DoneAt: it.DoneAt,
-		Proposed: it.Source != store.NextByPerson && it.State == store.NextPlanned,
+		Proposed: it.Source != store.NextByPerson && it.Source != store.NextByChat && it.State == store.NextPlanned,
 	}
 	if it.LaneID == 0 {
 		return v
@@ -206,7 +206,13 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 	}
 	src := store.NextByPerson
 	if principalOf(r.Context()).Role == RoleDesk {
-		src = store.NextByDesk
+		src = store.NextByChat
+		if req.Propose {
+			src = store.NextByDesk
+		}
+	} else if req.Propose {
+		writeError(w, http.StatusForbidden, errors.New("propose is for the front desk"))
+		return
 	}
 	it, err := s.Store.AddNextItem(r.Context(), store.NextItem{
 		Title: req.Title, Repo: req.Repo, Plan: req.Plan, Lane: req.Lane, Note: req.Note,

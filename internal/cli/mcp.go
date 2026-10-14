@@ -422,6 +422,7 @@ func mcpTools() []mcpTool {
 				"lane":     map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
 				"note":     map[string]any{"type": "string"},
 				"approved": map[string]any{"type": "boolean", "description": "Only when the person approved it in their own words in this turn."},
+				"propose":  map[string]any{"type": "boolean", "description": "Put it up for the person's approval, so it waits in Waiting on you. Leave unset for work agreed in chat: that shows as planned from chat and waits on no one."},
 			}, "title"),
 			args: func(a map[string]any) ([]string, error) {
 				if str(a, "title") == "" {
@@ -435,6 +436,9 @@ func mcpTools() []mcpTool {
 				}
 				if ok, _ := a["approved"].(bool); ok {
 					out = append(out, "--approved")
+				}
+				if ok, _ := a["propose"].(bool); ok {
+					out = append(out, "--propose")
 				}
 				return out, nil
 			},

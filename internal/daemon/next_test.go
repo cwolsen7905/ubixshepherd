@@ -30,9 +30,15 @@ func TestNextItemsApprovalAndDerivedState(t *testing.T) {
 
 	// The desk may add, but not approve or reorder, outside a turn the person started.
 	system, _ := s.MintDesk(false, "")
-	var proposed api.NextItemView
-	if code := call(t, ts, system, "POST", api.PathNext, api.NextAdd{Title: "Idea from chat"}, &proposed); code != http.StatusOK || proposed.Source != store.NextByDesk || !proposed.Proposed {
-		t.Fatalf("desk add: %d %+v", code, proposed)
+	var registered, proposed api.NextItemView
+	if code := call(t, ts, system, "POST", api.PathNext, api.NextAdd{Title: "Agreed in chat"}, &registered); code != http.StatusOK || registered.Source != store.NextByChat || registered.Proposed || registered.State != store.NextPlanned {
+		t.Fatalf("desk add from chat: %d %+v", code, registered)
+	}
+	if code := call(t, ts, system, "POST", api.PathNext, api.NextAdd{Title: "Idea from chat", Propose: true}, &proposed); code != http.StatusOK || proposed.Source != store.NextByDesk || !proposed.Proposed {
+		t.Fatalf("desk propose: %d %+v", code, proposed)
+	}
+	if code := call(t, ts, s.Token, "POST", api.PathNext, api.NextAdd{Title: "mine", Propose: true}, nil); code != http.StatusForbidden {
+		t.Errorf("the person proposed to themself: %d", code)
 	}
 	if code := call(t, ts, system, "POST", api.PathNext, api.NextAdd{Title: "Sneaky", State: store.NextApproved}, nil); code != http.StatusForbidden {
 		t.Errorf("desk added an approved item: %d", code)
@@ -65,7 +71,7 @@ func TestNextItemsApprovalAndDerivedState(t *testing.T) {
 	// The approved item is next; linking it to an open lane makes it started.
 	var l api.NextList
 	call(t, ts, s.Token, "GET", api.PathNext, nil, &l)
-	if l.NextUp != proposed.ID || len(l.Items) != 2 || l.Items[0].ID != proposed.ID {
+	if l.NextUp != proposed.ID || len(l.Items) != 3 || l.Items[0].ID != proposed.ID {
 		t.Fatalf("list order: %+v", l)
 	}
 	if code := call(t, ts, s.Token, "PATCH", api.PathNextItem(proposed.ID), api.NextUpdate{LaneID: &la.ID}, &v); code != http.StatusOK || v.State != store.NextStarted || v.LaneName != "a" || v.Stored != store.NextApproved {
@@ -117,7 +123,7 @@ func TestNextItemsApprovalAndDerivedState(t *testing.T) {
 		}
 	}
 	call(t, ts, s.Token, "GET", api.PathNext+"?all=1", nil, &l)
-	if len(l.Items) != 2 {
+	if len(l.Items) != 3 {
 		t.Errorf("all=1: %+v", l)
 	}
 }
