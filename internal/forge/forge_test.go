@@ -124,3 +124,28 @@ func TestUnreachable(t *testing.T) {
 		}
 	}
 }
+
+func TestGitLabThreads(t *testing.T) {
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		path := args[len(args)-1]
+		if !strings.Contains(path, "merge_requests/7/discussions") {
+			t.Errorf("path = %s", path)
+		}
+		return []byte(`[
+		 {"id":"a1","notes":[{"body":"nil deref","system":false,"resolvable":true,"resolved":false,"author":{"username":"bot"},"position":{"new_path":"x.go","new_line":12}},{"body":"agreed","resolvable":true,"resolved":false,"author":{"username":"me"}}]},
+		 {"id":"r1","notes":[{"body":"done","resolvable":true,"resolved":true,"author":{"username":"bot"}}]},
+		 {"id":"s1","notes":[{"body":"added 1 commit","system":true,"resolvable":false,"author":{"username":"me"}}]},
+		 {"id":"c1","notes":[{"body":"just a comment","resolvable":false,"author":{"username":"me"}}]},
+		 {"id":"g1","notes":[{"body":"general","resolvable":true,"resolved":false,"author":{"username":"bot"}}]}]`), nil
+	}}
+	got, err := g.Threads(context.Background(), 7)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("threads = %+v, %v", got, err)
+	}
+	if got[0].ID != "a1" || got[0].File != "x.go" || got[0].Line != 12 || !strings.Contains(got[0].Body, "bot: nil deref") || !strings.Contains(got[0].Body, "me: agreed") {
+		t.Errorf("first = %+v", got[0])
+	}
+	if got[1].ID != "g1" || got[1].File != "" {
+		t.Errorf("second = %+v", got[1])
+	}
+}

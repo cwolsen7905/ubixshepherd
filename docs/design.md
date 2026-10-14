@@ -410,6 +410,11 @@ talk to each other **through Shepherd**. Only what needs the human reaches the h
 - **Events continue sessions instead of the human.** "The MR merged", "the pipeline failed
   on lint", "the framework tagged v0.45, bump the pin": today the human types these into
   the right window. Shepherd sees them (§3.6, §3.13) and continues the right session.
+  This is a global rule for open lane merge requests: a failed pipeline and unresolved
+  review threads go back to the lane's agent, on a per-request budget
+  (`watch.fix_tries`, default 2, per-repo override). The `require-approval` job is the one
+  thing never handed back, since it needs a human reviewer; agents never resolve threads,
+  approve or merge.
 
 Build order: session continuation for lanes (continue, attach); the three tools for
 launched agents with the brief; routing between sessions; then the one conversation

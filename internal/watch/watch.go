@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
@@ -22,9 +23,9 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/workspace"
 )
 
-// MaxFixTries is how many times Shepherd hands a failed pipeline back to the lane's agent
-// on its own before leaving it to the person.
-const MaxFixTries = 2
+// MaxFixTries is how many times Shepherd hands a failure back to the lane's agent on its
+// own before leaving it to the person, when the config does not say (watch.fix_tries).
+const MaxFixTries = config.DefaultFixTries
 
 // Watcher polls forges for open lanes.
 type Watcher struct {
@@ -142,6 +143,7 @@ func (w *Watcher) Check(ctx context.Context) {
 				continue
 			}
 			host := hostOf(repo)
+			wc := w.conf().Profile(repo.Name).Watch
 			for _, lane := range lanes {
 				if lane.State != store.LaneOpen {
 					continue
@@ -150,7 +152,7 @@ func (w *Watcher) Check(ctx context.Context) {
 					note(fmt.Errorf("forge host %s is unreachable; skipped while backing off", host))
 					break
 				}
-				err := w.checkLane(ctx, f, lane)
+				err := w.checkLane(ctx, f, lane, wc)
 				if err != nil {
 					note(err)
 				}
@@ -210,7 +212,7 @@ func (w *Watcher) feed(ctx context.Context, kind string, ref int64, format strin
 
 // checkLane reads a lane's merge request and acts on what changed. It returns the
 // forge's error, for the backoff; one from a host that answered is logged here.
-func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane) error {
+func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane, wc config.Watch) error {
 	mr, err := f.MRForBranch(ctx, lane.Branch)
 	if err != nil {
 		if !forge.Unreachable(err) {
@@ -229,7 +231,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 	next.MR, next.MRState, next.MRURL = mr.IID, mr.State, mr.URL
 	next.MRCreated, next.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
 	if mr.IID != prev.MR {
-		next.FixTries, next.Pipeline, next.PipelineStatus = 0, 0, ""
+		next.FixTries, next.Pipeline, next.PipelineStatus, next.ThreadsSeen = 0, 0, "", ""
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d %s for lane %s: %s", mr.IID, mr.State, lane.Name, mr.URL)
 	}
 
@@ -239,7 +241,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 		case "success":
 			w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d passed for !%d (lane %s)", p.ID, mr.IID, lane.Name)
 		case "failed":
-			next.FixTries = w.pipelineFailed(ctx, f, lane, mr, p, next.FixTries)
+			next.FixTries = w.pipelineFailed(ctx, f, lane, mr, p, next.FixTries, wc.Tries())
 		case "canceled":
 			w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d was canceled for !%d (lane %s)", p.ID, mr.IID, lane.Name)
 		}
@@ -253,6 +255,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane)
 	}
 
 	w.approval(ctx, f, lane, mr, prev, &next)
+	w.reviewThreads(ctx, f, lane, mr, &next, wc)
 
 	// Act only on a merge seen happening. A request already merged the first time
 	// Shepherd looks (an imported lane, a branch reused after its merge) proves nothing
@@ -304,20 +307,30 @@ func (w *Watcher) merged(ctx context.Context, lane store.Lane, mr *forge.MR) {
 
 // pipelineFailed hands a failed pipeline to the lane's agent while tries remain, and to
 // the person after. It returns the tries used.
-func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, p *forge.Pipeline, tries int) int {
+func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, p *forge.Pipeline, tries, max int) int {
 	jobs, err := f.FailedJobs(ctx, p.ID)
 	if err != nil {
 		w.Log.Error("watch: failed jobs", "lane", lane.Name, "err", err)
 	}
 	var names []string
 	var logs strings.Builder
+	waits := false
 	for _, j := range jobs {
+		if j.Name == forge.RequireApprovalJob {
+			// Needs a human reviewer; no agent can fix it.
+			waits = true
+			continue
+		}
 		names = append(names, j.Name)
 		tail, err := f.JobLog(ctx, j.ID, 60)
 		if err != nil {
 			tail = "(could not read the log: " + err.Error() + ")"
 		}
 		fmt.Fprintf(&logs, "== job %s (%s) ==\n%s\n\n", j.Name, j.URL, tail)
+	}
+	if waits && len(names) == 0 {
+		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d for !%d (lane %s) is held by %s: it needs a reviewer, so it is yours", p.ID, mr.IID, lane.Name, forge.RequireApprovalJob)
+		return tries
 	}
 	what := strings.Join(names, ", ")
 	if what == "" {
@@ -340,7 +353,7 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 	case w.Runner == nil || last == nil:
 		w.feed(ctx, store.FeedPipeline, lane.ID, "lane %s has no agent conversation to hand the failure to; it is yours", lane.Name)
 		return tries
-	case tries >= MaxFixTries:
+	case tries >= max:
 		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline failed again after %d fixes by %s; lane %s is yours now", tries, last.Agent, lane.Name)
 		return tries
 	}
@@ -362,8 +375,19 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 		return tries
 	}
 	tries++
-	w.feed(ctx, store.FeedPipeline, lane.ID, "asked %s to fix it (run %d, try %d of %d); push its fix when it is done", last.Agent, run.ID, tries, MaxFixTries)
+	w.feed(ctx, store.FeedPipeline, lane.ID, "asked %s to fix it (run %d, try %d of %d); push its fix when it is done", last.Agent, run.ID, tries, max)
 	return tries
+}
+
+// conf is the live configuration: the runner's or the fold's, else the defaults.
+func (w *Watcher) conf() config.Config {
+	switch {
+	case w.Runner != nil:
+		return w.Runner.Conf()
+	case w.Fold != nil:
+		return w.Fold.Conf()
+	}
+	return config.Default()
 }
 
 func short(sha string) string {
