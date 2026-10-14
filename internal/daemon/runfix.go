@@ -51,6 +51,12 @@ func (s *Server) fixRun(w http.ResponseWriter, r *http.Request) {
 	if principalOf(r.Context()).Role == RoleDesk {
 		by = dispatch.ByDesk
 	}
+	if by == dispatch.ByDesk {
+		ws, _ := s.workspaceOfLane(r.Context(), run.LaneID)
+		if !s.gate(w, r, ws, s.fixAction(r, run.ID, req.Action), run.LaneID) {
+			return
+		}
+	}
 	res, err := s.Runner.ApplyFix(r.Context(), run.ID, req.Action, by, req.Overrides)
 	if err != nil {
 		s.foldError(w, err)
