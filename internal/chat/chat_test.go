@@ -101,6 +101,8 @@ type fakeAPI struct {
 	runCalls   int
 	spendCalls int
 	sessCalls  int
+	keep       api.KeepGoingStatus
+	keepSets   []api.KeepGoingSet
 }
 
 func (f *fakeAPI) Feed(_ context.Context, after int64) (api.Feed, error) {
@@ -173,6 +175,12 @@ func (f *fakeAPI) SettingInfo(_ context.Context, k string) (api.Setting, error) 
 func (f *fakeAPI) SetSetting(_ context.Context, k, v string) error {
 	f.settings[k] = v
 	return nil
+}
+func (f *fakeAPI) KeepGoing(context.Context, int64) (api.KeepGoingStatus, error) { return f.keep, nil }
+func (f *fakeAPI) SetKeepGoing(_ context.Context, r api.KeepGoingSet) (api.KeepGoingStatus, error) {
+	f.keepSets = append(f.keepSets, r)
+	f.keep = api.KeepGoingStatus{On: r.On, CapUSD: 5, MaxRuns: 2, IdleHours: 4}
+	return f.keep, nil
 }
 func (f *fakeAPI) Redial() error {
 	f.redials++

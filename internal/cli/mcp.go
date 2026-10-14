@@ -700,6 +700,35 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "keep_going",
+			Description: "Keep-going mode: on, off or status. While on, in a [Shepherd] event turn you may start the next approved Next-up item and continue approved next steps, within limits Shepherd enforces (spend cap, concurrent runs, idle time, end of day, starts per lane); a refusal comes back with its reason, relay it. Use on only when the person asks you to keep going, in a turn they started: Shepherd refuses it otherwise. off is always allowed. status says the numbers and what it last did.",
+			InputSchema: obj(map[string]any{
+				"action": map[string]any{"type": "string", "enum": []string{"on", "off", "status"}},
+				"cap":    map[string]any{"type": "number", "description": "on: dollars it may spend this session. Default keep_going.cap."},
+				"runs":   map[string]any{"type": "integer", "description": "on: runs that may run at once. Default keep_going.max_runs."},
+				"idle":   map[string]any{"type": "number", "description": "on: hours with nothing started or answered before it turns off. Default keep_going.idle_hours."},
+			}, "action"),
+			args: func(a map[string]any) ([]string, error) {
+				act := str(a, "action")
+				if act != "on" && act != "off" && act != "status" {
+					return nil, fmt.Errorf("action must be on, off or status")
+				}
+				out := []string{"keep-going", act}
+				if act == "on" {
+					if v, ok := a["cap"].(float64); ok && v > 0 {
+						out = append(out, "--cap", fmt.Sprint(v))
+					}
+					if v, ok := a["runs"].(float64); ok && v > 0 {
+						out = append(out, "--runs", fmt.Sprint(int(v)))
+					}
+					if v, ok := a["idle"].(float64); ok && v > 0 {
+						out = append(out, "--idle", fmt.Sprint(v))
+					}
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "request_list",
 			Description: "Requests between lanes: agents asking each other, through Shepherd, for answers, hand-offs and reviews. needs_routing ones wait for you to say which lane (and agent).",
 			InputSchema: obj(map[string]any{}),

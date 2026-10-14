@@ -497,7 +497,7 @@ func (d *Desk) next() (turn, bool) {
 			for i, p := range d.pending {
 				lines[i], topics[i] = p.text, p.topic
 			}
-			text := digest(lines, d.dropped, d.waitingLine())
+			text := digest(lines, d.dropped, d.waitingLine(), d.keepGoingOn(d.m.ctx))
 			d.pending, d.dropped = nil, 0
 			e, err := d.appendLocked(d.m.ctx, store.DeskEvent{Kind: store.DeskSystem, Text: text, Origin: store.DeskBySystem})
 			d.mu.Unlock()
@@ -524,12 +524,12 @@ func (d *Desk) next() (turn, bool) {
 //
 // It ends with the tagged "Waiting on you (N)" line when anything waits, so the desk can
 // repeat it at the end of its reply; waiting is "" when nothing does.
-func digest(items []string, dropped int, waiting string) string {
+func digest(items []string, dropped int, waiting string, keepGoing bool) string {
 	msg := "[Shepherd] Since your last turn:\n- " + strings.Join(items, "\n- ")
 	if dropped > 0 {
 		msg += fmt.Sprintf("\n(and %d earlier event(s), left out)", dropped)
 	}
-	msg += "\nTell the person briefly what matters and what needs them. Route any request that needs routing. Do not start new work they have not asked for."
+	msg += "\n" + EventInstruction(keepGoing)
 	if waiting != "" {
 		msg += "\n" + waiting + "\nEnd your reply by repeating this line, so the person sees what waits on them."
 	}

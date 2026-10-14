@@ -30,6 +30,14 @@ commands (`/help` lists them), a line that starts with `!` runs as a shell comma
   result. A command does not start a desk turn of its own. Up to the last five commands are
   carried; each is sent once.
 
+## Keep going
+
+`/keep-going on` and `/keep-going off` set keep-going mode through the daemon's endpoint,
+as `/model` sets the model: typing it is a turn the person started, so the daemon accepts
+it. The chat reads the mode with its panel, and the event text it sends the desk follows it
+(see [keep-going.md](keep-going.md)). The desk can also turn the mode on when asked in
+words, and off at any time.
+
 ## What it does not do
 
 - **Interactive programs** (editors, pagers, anything that reads the terminal) are not
