@@ -19,12 +19,15 @@ const (
 	WaitingShip     = "ship"     // an open lane with commits not yet pushed
 	WaitingNext     = "next"     // a Next-up item proposed to the person, planned
 	WaitingQuestion = "question" // a question the front desk asked and marked open
+	WaitingBlocked  = "blocked"  // an open lane whose last run reported blocked, with no run going
+	WaitingScope    = "scope"    // an answered scope-widening decision the lane's scope does not yet show
 )
 
 // WaitingItem is one thing that needs the person. Action says what they can do about it
 // from the web page: answer (a decision), approve (a merge request, then Shepherd retries
 // its approval job), ship (the lane's unpushed work), review (a Next-up item, on the Next
-// up page), reply (a desk question, in the thread) or open (look at the lane: nothing Shepherd can do for them).
+// up page), reply (a desk question, in the thread) or open (look at the lane: nothing Shepherd can do for them). A blocked lane and an
+// unapplied scope widening are shown with open.
 type WaitingItem struct {
 	Kind   string `json:"kind"`
 	Action string `json:"action"`
@@ -52,6 +55,8 @@ type WaitingCounts struct {
 	Ship      int `json:"ship"`
 	Next      int `json:"next"`
 	Questions int `json:"questions"`
+	Blocked   int `json:"blocked"`
+	Scope     int `json:"scope"`
 }
 
 // Waiting answers GET /v1/waiting: the items, oldest first, with their counts.
@@ -92,6 +97,10 @@ func (it WaitingItem) Label() string {
 		s = fmt.Sprintf("MR !%d", it.MR)
 	case WaitingShip:
 		s = "ship"
+	case WaitingBlocked:
+		s = "blocked"
+	case WaitingScope:
+		s = "scope"
 	case WaitingNext:
 		return fmt.Sprintf("next-up item %d", it.NextID)
 	case WaitingQuestion:

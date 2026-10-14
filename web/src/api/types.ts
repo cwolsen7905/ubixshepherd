@@ -855,7 +855,7 @@ export interface UpgradeStatus {
 
 /** One thing that needs the person (internal/api WaitingItem). */
 export interface WaitingItem {
-  kind: 'decision' | 'mr' | 'ship' | 'next' | 'question'
+  kind: 'decision' | 'mr' | 'ship' | 'next' | 'question' | 'blocked' | 'scope'
   /** answer, approve, ship, review, reply or open: what the person can do from here. */
   action: 'answer' | 'approve' | 'ship' | 'review' | 'reply' | 'open'
   repo?: string
@@ -875,7 +875,7 @@ export interface WaitingItem {
 /** GET /v1/waiting: everything that waits on the person's action, oldest first. */
 export interface Waiting {
   count: number
-  counts: { decisions: number; mrs: number; ship: number; next: number; questions?: number }
+  counts: { decisions: number; mrs: number; ship: number; next: number; questions?: number; blocked?: number; scope?: number }
   items: WaitingItem[]
 }
 

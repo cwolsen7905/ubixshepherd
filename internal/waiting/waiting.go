@@ -14,6 +14,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -48,6 +49,7 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 	if err != nil {
 		return out, err
 	}
+	openDecision := map[int64]bool{}
 	for _, d := range ds {
 		it := api.WaitingItem{
 			Kind: api.WaitingDecision, Action: "answer", DecisionID: d.ID,
@@ -56,6 +58,7 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		run, err := st.Run(ctx, d.RunID)
 		if err == nil {
 			if l, ok := laneOf[run.LaneID]; ok {
+				openDecision[l.ID] = true
 				it.Lane, it.LaneID, it.Repo = l.Name, l.ID, repoOf[l.ID].Name
 			} else if workspaceID != 0 {
 				continue
@@ -66,6 +69,18 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		it.Detail = fmt.Sprintf("decision %d: %s", d.ID, it.Title)
 		out.Items = append(out.Items, it)
 		out.Counts.Decisions++
+	}
+
+	// Answered decisions, by the lane their run belongs to, for scope widenings.
+	answered, err := st.Decisions(ctx, store.DecisionAnswered)
+	if err != nil {
+		return out, err
+	}
+	runLane := map[int64]int64{}
+	for _, d := range answered {
+		if run, err := st.Run(ctx, d.RunID); err == nil {
+			runLane[d.RunID] = run.LaneID
+		}
 	}
 
 	laneIDs := make([]int64, 0, len(laneOf))
@@ -90,6 +105,19 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		if running {
 			continue
 		}
+		if it, ok := blockedItem(ctx, st, l, rp, openDecision[l.ID]); ok {
+			out.Items = append(out.Items, it)
+			out.Counts.Blocked++
+		}
+		for _, d := range answered {
+			if runLane[d.RunID] != l.ID {
+				continue
+			}
+			if it, ok := scopeItem(l, rp, d); ok {
+				out.Items = append(out.Items, it)
+				out.Counts.Scope++
+			}
+		}
 		if it, ok := shipItem(ctx, conf, l, rp); ok {
 			out.Items = append(out.Items, it)
 			out.Counts.Ship++
@@ -101,6 +129,13 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		return out, err
 	}
 	for _, it := range items {
+		if it.State == store.NextApproved && it.LaneID != 0 {
+			if wi, ok := closedNextItem(ctx, st, it); ok {
+				out.Items = append(out.Items, wi)
+				out.Counts.Next++
+			}
+			continue
+		}
 		if it.Source == store.NextByPerson || it.Source == store.NextByChat || it.State != store.NextPlanned {
 			continue
 		}
@@ -128,7 +163,7 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 // and no run is working on it. The first is approved from the web page; the second is
 // only shown.
 func mrItem(l store.Lane, rp store.Repo, lf store.LaneForge, running bool) (api.WaitingItem, bool) {
-	if lf.MR == 0 || lf.MRState == "merged" || lf.MRState == "closed" {
+	if lf.MR == 0 || merged(lf) || strings.EqualFold(lf.MRState, "closed") {
 		return api.WaitingItem{}, false
 	}
 	it := api.WaitingItem{Kind: api.WaitingMR, Repo: rp.Name, Lane: l.Name, LaneID: l.ID, MR: lf.MR}
@@ -217,4 +252,155 @@ func oneLine(s string) string {
 		return string(r[:159]) + "…"
 	}
 	return s
+}
+
+// merged says the forge has merged the lane's request: its state, or the merge commit
+// Shepherd recorded, either of which outlives a stale pipeline status.
+func merged(lf store.LaneForge) bool {
+	return strings.EqualFold(lf.MRState, "merged") || lf.MergeSHA != ""
+}
+
+// blockedItem is an open lane, no run going, whose latest run (not dismissed) ended with
+// a report of status blocked as its last word. The agent's summary is shown. A lane
+// with an open decision already shows as that decision.
+func blockedItem(ctx context.Context, st store.Store, l store.Lane, rp store.Repo, hasDecision bool) (api.WaitingItem, bool) {
+	if hasDecision {
+		return api.WaitingItem{}, false
+	}
+	runs, err := st.Runs(ctx, l.ID, "", 1)
+	if err != nil || len(runs) == 0 || runs[0].Dismissed != nil {
+		return api.WaitingItem{}, false
+	}
+	evs, err := st.Events(ctx, runs[0].ID)
+	if err != nil {
+		return api.WaitingItem{}, false
+	}
+	for i := len(evs) - 1; i >= 0; i-- {
+		e := evs[i]
+		if e.Kind != dispatch.EventReport {
+			continue
+		}
+		if e.Status != "blocked" {
+			return api.WaitingItem{}, false
+		}
+		sum := oneLine(e.Text)
+		return api.WaitingItem{
+			Kind: api.WaitingBlocked, Action: "open", Repo: rp.Name, Lane: l.Name, LaneID: l.ID,
+			Title:  fmt.Sprintf("run %d reported blocked: %s", runs[0].ID, sum),
+			Detail: fmt.Sprintf("run %d blocked: %s", runs[0].ID, sum),
+			Since:  firstTime(e.Created, l.Created),
+		}, true
+	}
+	return api.WaitingItem{}, false
+}
+
+// scopeItem is an answered decision on an open lane whose question asked to widen the
+// lane's scope: it mentions scope and names repo paths the lane's scope does not cover,
+// and the answer is an affirmative (leads with yes, approve, ok, ...). Free text is read
+// no further than that, so a hedged answer is not taken as approval; the signal clears
+// the moment the scope covers every named path.
+func scopeItem(l store.Lane, rp store.Repo, d store.Decision) (api.WaitingItem, bool) {
+	if !strings.Contains(strings.ToLower(d.Question), "scope") || !affirmative(d.Answer) {
+		return api.WaitingItem{}, false
+	}
+	var missing []string
+	for _, p := range pathsIn(d.Question) {
+		if !scope.Any(l.Scope, p) {
+			missing = append(missing, p)
+		}
+	}
+	if len(missing) == 0 {
+		return api.WaitingItem{}, false
+	}
+	list := strings.Join(missing, ", ")
+	since := d.Created
+	if d.Answered != nil {
+		since = *d.Answered
+	}
+	return api.WaitingItem{
+		Kind: api.WaitingScope, Action: "open", Repo: rp.Name, Lane: l.Name, LaneID: l.ID, DecisionID: d.ID,
+		Title:  oneLine(fmt.Sprintf("approved scope widening not applied: %s", list)),
+		Detail: oneLine(fmt.Sprintf("decision %d approved widening scope to %s; lane scope is still %s", d.ID, list, strings.Join(l.Scope, ", "))),
+		Since:  since,
+	}, true
+}
+
+var negations = []string{"no", "n", "don't", "dont", "deny", "denied", "reject", "rejected", "decline", "never", "keep", "stay", "not"}
+var affirmatives = []string{"yes", "y", "yep", "yeah", "approve", "approved", "ok", "okay", "go", "widen", "allow", "allowed", "agreed", "agree", "sure", "granted", "accept", "accepted", "do-it", "proceed"}
+
+func affirmative(answer string) bool {
+	words := strings.Fields(strings.ToLower(strings.Trim(answer, " \t\n*_`\"'.!")))
+	if len(words) == 0 {
+		return false
+	}
+	for _, w := range words {
+		if w == "not" || w == "don't" || w == "dont" {
+			return false
+		}
+	}
+	first := strings.Trim(words[0], ",.:;!*`\"'")
+	for _, n := range negations {
+		if first == n {
+			return false
+		}
+	}
+	for _, a := range affirmatives {
+		if first == a {
+			return true
+		}
+	}
+	return false
+}
+
+// pathsIn returns the repo-relative paths a question names: tokens with a slash or a
+// file extension, trimmed of quoting and punctuation, without URLs.
+func pathsIn(q string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, tok := range strings.Fields(q) {
+		tok = strings.Trim(tok, "`'\"()[],;:!?*")
+		tok = strings.TrimRight(tok, ".")
+		if tok == "" || strings.Contains(tok, "://") || strings.HasPrefix(tok, "/") || strings.HasPrefix(tok, "~") {
+			continue
+		}
+		tok = strings.TrimPrefix(tok, "./")
+		if !strings.Contains(tok, "/") && !(strings.Contains(tok, ".") && len(tok) > 3 && !strings.HasSuffix(tok, ".")) {
+			continue
+		}
+		if strings.ContainsAny(tok, "@=<>") || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		out = append(out, tok)
+	}
+	return out
+}
+
+// closedNextItem is an approved Next-up item whose linked lane closed without the
+// forge's merge. Shepherd's own record of a close can be stale after a squash merge, so
+// the forge's merge state and the recorded merge commit both clear it; so does a lane
+// that is still open (the item is started).
+func closedNextItem(ctx context.Context, st store.Store, it store.NextItem) (api.WaitingItem, bool) {
+	l, err := st.Lane(ctx, it.LaneID)
+	if err != nil || l.State != store.LaneClosed {
+		return api.WaitingItem{}, false
+	}
+	lf, _ := st.LaneForge(ctx, l.ID)
+	if merged(lf) {
+		return api.WaitingItem{}, false
+	}
+	since := firstTime(ptrTime(l.Closed), it.Updated, it.Created)
+	return api.WaitingItem{
+		Kind: api.WaitingNext, Action: "review", Repo: it.Repo, Lane: l.Name, LaneID: l.ID, NextID: it.ID,
+		Title:  oneLine(it.Title),
+		Detail: fmt.Sprintf("approved, but lane %s closed without a merge: %s", l.Name, oneLine(it.Title)),
+		Since:  since,
+	}, true
+}
+
+func ptrTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
