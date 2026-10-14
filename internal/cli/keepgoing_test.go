@@ -41,3 +41,48 @@ func TestKeepGoingCLI(t *testing.T) {
 		t.Error("an unknown subcommand was accepted")
 	}
 }
+
+// The keep_going tool maps onto the CLI command, and keeps off allowed and the flags to on.
+func TestKeepGoingTool(t *testing.T) {
+	var tool mcpTool
+	for _, tl := range mcpTools() {
+		if tl.Name == "keep_going" {
+			tool = tl
+		}
+	}
+	if tool.args == nil {
+		t.Fatal("no keep_going tool")
+	}
+	for _, c := range []struct {
+		in   map[string]any
+		want string
+	}{
+		{map[string]any{"action": "status"}, "keep-going status"},
+		{map[string]any{"action": "off", "cap": 9.0}, "keep-going off"},
+		{map[string]any{"action": "on", "cap": 2.5, "runs": 1.0, "idle": 3.0}, "keep-going on --cap 2.5 --runs 1 --idle 3"},
+	} {
+		got, err := tool.args(c.in)
+		if err != nil || strings.Join(got, " ") != c.want {
+			t.Errorf("args(%v) = %v, %v; want %q", c.in, got, err, c.want)
+		}
+	}
+	if _, err := tool.args(map[string]any{"action": "sideways"}); err == nil {
+		t.Error("an unknown action was accepted")
+	}
+
+	h := newHarness(t, "", false)
+	root, _ := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"keep_going","arguments":{"action":"status"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"keep_going","arguments":{"action":"off"}}}`,
+	)
+	for i, r := range resps {
+		if text, isErr := toolText(t, r); isErr || !strings.Contains(text, "keep-going: off") {
+			t.Errorf("call %d: %v %s", i, isErr, text)
+		}
+	}
+}

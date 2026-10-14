@@ -138,6 +138,24 @@ operator's. Each widening is logged by the daemon and put in the feed as "lane X
 widened by desk: +globs (decision N); scope is now ...". The desk should pass only the
 paths the person's answer approved, and the person can check them against the feed.
 
+## Keep going
+
+[keep-going.md](keep-going.md) describes a mode that lets the desk carry on with what is
+already approved. The desk's part:
+
+- **The tool.** `keep_going` takes `on`, `off` or `status` (and, for `on`, `cap`, `runs`
+  and `idle`) and maps onto `shepherd keep-going`, which calls `GET/POST /v1/keep-going`.
+  `on` is refused in a turn Shepherd started and for an agent's token, the rule
+  `decision_answer` follows; `off` is always allowed.
+- **The text.** The sentence a `[Shepherd]` event turn ends with comes from one function,
+  `EventInstruction`, which reads the flag from the store: "Do not start new work they have
+  not asked for" when off, and the keep-going sentence when on. The standing `Brief` gets a
+  paragraph on the mode and what it never covers, so a session started before the flag
+  changed still knows the rules.
+- **The limits are the daemon's.** The brief says the mode; spend, runs, idle time, end of
+  day and starts per lane are checked in Go, and a refusal comes back as a tool result with
+  its reason, which the desk relays.
+
 ## Filing turns under topics
 
 The desk's token is minted for the turn it serves, so the daemon knows which turn is in

@@ -15,6 +15,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
+	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -34,6 +35,8 @@ type API interface {
 	SettingInfo(ctx context.Context, key string) (api.Setting, error)
 	SetSetting(ctx context.Context, key, value string) error
 	SpendToday(ctx context.Context) (api.SpendToday, error)
+	KeepGoing(ctx context.Context, workspaceID int64) (api.KeepGoingStatus, error)
+	SetKeepGoing(ctx context.Context, req api.KeepGoingSet) (api.KeepGoingStatus, error)
 	AddSpend(ctx context.Context, sp store.Spend) error
 	Sessions(ctx context.Context, repoID int64) ([]api.SessionView, error)
 	AskSession(ctx context.Context, id, question string) (convo.Answer, error)
@@ -91,6 +94,8 @@ type Model struct {
 	api       API
 	desk      Desk
 	workspace store.Workspace
+	// keepOn is keep-going mode as the panel last read it; it picks the event text.
+	keepOn bool
 
 	// ModelFlag is the --model the chat was started with; it wins over the rest.
 	ModelFlag string
@@ -214,6 +219,7 @@ type panelMsg struct {
 	requests        []api.RequestView
 	approvals       int
 	waiting         api.Waiting
+	keepOn          bool
 	spend           api.SpendToday
 	sessions        []api.SessionView
 	panelUpdated    bool
@@ -278,6 +284,29 @@ func (m *Model) loadModel(show bool) tea.Cmd {
 		}
 		return modelMsg{setting: s, show: show}
 	}
+}
+
+// keepGoingMsg is the result of /keep-going: the mode as the daemon now holds it.
+type keepGoingMsg struct{ st api.KeepGoingStatus }
+
+// setKeepGoing turns keep-going mode on or off through the daemon's endpoint, as the
+// person typed it: this is a turn they started, so the daemon accepts it.
+func (m *Model) setKeepGoing(on bool) tea.Cmd {
+	return func() tea.Msg {
+		st, err := m.api.SetKeepGoing(m.ctx, api.KeepGoingSet{WorkspaceID: m.workspace.ID, On: on})
+		if err != nil {
+			return errorMsg{err}
+		}
+		return keepGoingMsg{st}
+	}
+}
+
+func keepGoingText(st api.KeepGoingStatus) string {
+	if !st.On {
+		return "Keep-going is off."
+	}
+	return fmt.Sprintf("Keep-going is on: up to $%.2f, %d runs at once, off after %.4g idle hours or at the end of the day. /keep-going off stops it.",
+		st.CapUSD, st.MaxRuns, st.IdleHours)
 }
 
 // setModel stores the /model override ("" clears it), then reads it back to show.
@@ -405,6 +434,8 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		// An older daemon without the endpoint reads as off, the cautious text.
+		kg, _ := m.api.KeepGoing(m.ctx, m.workspace.ID)
 		var ss []api.SessionView
 		if includeSessions {
 			ss, err = m.api.Sessions(m.ctx, 0)
@@ -414,7 +445,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		}
 		pm := panelMsg{
 			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), waiting: wt, spend: sp, sessions: ss,
-			panelUpdated: true, sessionsUpdated: includeSessions,
+			panelUpdated: true, sessionsUpdated: includeSessions, keepOn: kg.On,
 		}
 		if includeSessions {
 			if st, ok := m.loadUpdate(); ok {
@@ -631,6 +662,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			m.lanes, m.runs, m.decisions, m.requests = msg.lanes, msg.runs, msg.decisions, msg.requests
 			m.approvals = msg.approvals
 			m.waiting = msg.waiting
+			m.keepOn = msg.keepOn
 			if _, ok := m.focusedDecision(); !ok && m.focusDecision != 0 {
 				// Answered elsewhere: the keys go back to the input.
 				m.focusInput()
@@ -686,6 +718,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, waitShell(m.shellCh))
 	case shellDoneMsg:
 		m.onShellDone(msg)
+	case keepGoingMsg:
+		m.keepOn = msg.st.On
+		m.add(Line{Kind: KindInfo, Text: keepGoingText(msg.st)})
 	case modelMsg:
 		m.model = msg.setting
 		if msg.show {
@@ -796,6 +831,7 @@ func (m *Model) handle(text string) tea.Cmd {
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
 			"/decisions   decisions waiting for you\n/next   Next-up items waiting for your approval\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
+			"/keep-going on|off   let the desk carry on with what is already approved, within limits (shepherd keep-going status shows them)\n" +
 			"/model [<name>|reset]   the desk's model: show it, set it, or go back to config.yaml\n" +
 			"/update dismiss   hide the new-release notice until a newer release appears\n" +
 			"/update upgrade [now]   install the new release; the daemon restarts onto it when no agent is running, or at once (interrupting them) with now\n" +
@@ -820,6 +856,11 @@ func (m *Model) handle(text string) tea.Cmd {
 			return m.setModel(f[1])
 		}
 		m.add(Line{Kind: KindError, Text: "usage: /model [<name>|reset]"})
+	case "/keep-going":
+		if len(f) == 2 && (f[1] == "on" || f[1] == "off") {
+			return m.setKeepGoing(f[1] == "on")
+		}
+		m.add(Line{Kind: KindError, Text: "usage: /keep-going on|off"})
 	case "/update":
 		if len(f) == 2 && f[1] == "dismiss" {
 			return m.dismissUpdate()
@@ -1115,7 +1156,7 @@ func (m *Model) onFeed(f api.Feed) tea.Cmd {
 // brief continues the desk with the events waiting for it.
 func (m *Model) brief() tea.Cmd {
 	msg := "[Shepherd] Since your last turn:\n- " + strings.Join(m.pending, "\n- ") +
-		"\nTell the person briefly what matters and what needs them. Route any request that needs routing. Do not start new work they have not asked for."
+		"\n" + desk.EventInstruction(m.keepOn)
 	if line := m.waiting.Line(); line != "" {
 		msg += "\n" + line + "\nEnd your reply by repeating this line, so the person sees what waits on them."
 	}

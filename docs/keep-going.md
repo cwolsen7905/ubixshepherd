@@ -3,7 +3,9 @@
 Status: **proposed**, approved in outline by the maintainer (2026-10-11), with the
 defaults in section 4. Merge request 1 of section 7 (Core) is built: the store, the
 daemon's limits and `Allow`, `GET/POST /v1/keep-going`, `shepherd keep-going` and the
-`keep_going:` config. The desk tool, the web switch and the feed kind are not.
+`keep_going:` config. Merge request 2 (Desk) is built except the daemon's gate in the
+lane and run tools: the `keep_going` tool, the one-place event text and brief paragraph,
+and the terminal `/keep-going`. The web switch and the feed kind are not.
 Implementation is four merge requests, each its own lane (section 7).
 
 ## The problem
