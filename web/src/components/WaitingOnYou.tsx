@@ -15,6 +15,8 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   ship: 'to ship',
   next: 'next up',
   question: 'question',
+  blocked: 'blocked',
+  scope: 'scope',
 }
 
 const keyOf = waitingKey
