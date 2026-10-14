@@ -9,8 +9,65 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+## [0.5.0-beta.1] - 2026-10-14
+
+A beta of uBixShepherd with a keep-going mode that lets the front desk carry on with
+what is already approved, a Waiting on you list that now also shows blocked lanes and
+unapplied scope widenings, tracked questions from the desk to the person, review threads
+handed back to a lane's agent, GitLab links in reports, and a daemon upgrade from the
+update notice. Nothing is removed or changed incompatibly.
+
+### Interface changes
+
+- Keep-going mode: new routes `GET /v1/keep-going?workspace_id=N` and `POST /v1/keep-going`,
+  the command `shepherd keep-going on [--cap USD] [--runs N] [--idle HOURS]`, `off` and
+  `status`, the MCP tool `keep_going` (`on`, `off`, `status`) and `/keep-going on|off` in
+  `shepherd chat`. A new `keep_going` section in `config.yaml` takes `cap` (default 5
+  dollars), `max_runs` (2), `idle_hours` (4), `day_end` (local midnight, `HH:MM`) and
+  `lane_starts` (3 a lane a day). A person-started turn, the CLI and the web UI are not
+  limited by it; an event-turn desk that opens a lane, starts or continues a run or takes
+  a fix is refused with a 403 and its reason when the mode is off or a limit is reached.
+  An appended store migration adds the mode's row and per-lane start counts.
+- `GET /v1/waiting` gains kinds `blocked` (an open lane whose last run reported blocked,
+  with no run going) and `scope` (an answered scope-widening decision the lane's scope
+  does not yet cover), both with action `open`. An approved Next-up item whose lane closed
+  without a merge is listed too.
+- New routes `GET|POST /v1/questions`, `POST /v1/questions/{id}/answer` and `/skip`, with
+  MCP tools `question_open`, `question_answer` and `question_list` and the command
+  `shepherd question`. `POST /v1/desk/turn` takes `reply_to`. `GET /v1/waiting` gains kind
+  `question` and `counts.questions`.
+- New route `POST /v1/update/upgrade`, an `upgrade` object in `GET /v1/update`, the
+  commands `shepherd update upgrade [--now]` and `/update upgrade [now]`, and config key
+  `update.auto` (default `false`).
+- `next_add` from the front desk now stores source `chat`, and takes `propose` (with
+  `shepherd next add --propose`, desk only) to put an item up for approval as before.
+- New config keys `watch.fix_tries` (default 2, `0` off) and `watch.review_threads`
+  (default on), under `defaults` or a repo. The fix budget is now shared by failed
+  pipelines and review threads.
+- New command `shepherd links` and MCP tool `links_thread`, which turn a discussion id
+  into its note URL.
+- Appended store migrations add `lane_forge.threads_seen` and relabel planned `desk`
+  items as `chat`. They apply when the daemon starts, and a binary refuses a store
+  migrated by a newer one.
+
 ### Added
 
+- **Keep-going mode lets the front desk carry on with what is already approved.** Until
+  now every `[Shepherd]` event turn told the desk not to start work it had not been asked
+  for, so it reported and waited even when the next step was obvious. With the mode on,
+  the desk may start the next approved Next-up item, continue an approved next step and
+  follow up a failed pipeline, within limits the daemon enforces and not the prompt: a
+  spend cap, concurrent runs, idle time, end of day and starts per lane per day. It
+  turns itself off when a limit is reached and records why. It never answers a decision,
+  approves, merges, tags or deploys, and only the person turns it on. The mode is per
+  workspace, lives in the store and survives a restart. The desk's "do not start new
+  work" sentence now comes from one function that reads the flag. The web switch and the
+  `keep_going` feed kind are not built yet. See [docs/keep-going.md](docs/keep-going.md).
+- **Waiting on you lists blocked lanes and unapplied scope widenings.** A lane whose last
+  run reported blocked, an answered scope-widening decision the lane's scope does not
+  cover, and an approved Next-up item whose lane closed without a merge now wait on the
+  person. A merge request the forge merged never lists, whatever its pipeline status. See
+  [docs/waiting-on-you.md](docs/waiting-on-you.md).
 - Clickable GitLab links in reports: agents' briefs and the desk's instruction require links for merge requests, pipelines, jobs and review threads (a thread links to its first note), Shepherd's own watcher messages emit them, and `shepherd links` (MCP tool `links_thread`) turns a discussion id into its note URL. See [docs/links.md](docs/links.md).
 - **Shepherd sends unresolved review threads back to the lane's agent, and the fix budget
   is configurable.** The watcher reads an open lane merge request's unresolved threads
