@@ -20,8 +20,12 @@ const (
 // Next item sources: who put an item on the list.
 const (
 	NextByPerson = "person"
-	NextByDesk   = "desk"
-	NextByAgent  = "agent"
+	// NextByDesk is an item the desk put up for the person's approval: it waits on them.
+	NextByDesk = "desk"
+	// NextByChat is work the desk registered from chat on the person's agreement:
+	// planned, and not waiting on them.
+	NextByChat  = "chat"
+	NextByAgent = "agent"
 )
 
 // NextStates are the states an item can be stored in, in list order.

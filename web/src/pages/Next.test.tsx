@@ -39,6 +39,7 @@ const everything: NextList = {
     nextItem({ id: 1, title: 'First approved', rank: 1 }),
     nextItem({ id: 2, title: 'Second approved', rank: 2 }),
     nextItem({ id: 3, title: 'Idea', rank: 3, state: 'planned', stored_state: 'planned', proposed: true, source: 'agent' }),
+    nextItem({ id: 6, title: 'Agreed', rank: 4, state: 'planned', stored_state: 'planned', source: 'chat' }),
     nextItem({ id: 4, title: 'Later', rank: 4, state: 'deferred', stored_state: 'deferred' }),
     nextItem({ id: 5, title: 'Shipped', rank: 5, state: 'done', stored_state: 'done', mr: '!40', mr_state: 'merged' }),
   ],
@@ -55,7 +56,7 @@ const matrixList: NextList = {
   }),
 }
 
-function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }, load = vi.fn(async (all: boolean): Promise<NextList> => (all ? everything : { ...everything, items: everything.items.slice(0, 4) }))) {
+function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }, load = vi.fn(async (all: boolean): Promise<NextList> => (all ? everything : { ...everything, items: everything.items.slice(0, 5) }))) {
   render(
     <LiveProvider live={live()}>
       <NextPage load={load} api={api} />
@@ -119,6 +120,9 @@ describe('NextPage', () => {
     expect(within(first).getByText('next')).toBeInTheDocument()
     expect(screen.getByText('Second approved').closest('li')).not.toHaveAttribute('aria-current')
     expect(screen.getByText('proposed')).toBeInTheDocument()
+    const chat = screen.getByText('Agreed').closest('li') as HTMLElement
+    expect(within(chat).getByText('chat')).toBeInTheDocument()
+    expect(within(chat).queryByText('proposed')).toBeNull()
     expect(screen.getByRole('heading', { name: /Approved/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Deferred/ })).toBeInTheDocument()
     expect(screen.queryByText('Shipped')).toBeNull()

@@ -113,10 +113,16 @@ How an item is added:
 
 Agents never approve ([CLAUDE.md](../CLAUDE.md)). Approval is the person's: the CLI, the
 web page, or the desk acting on the person's words in a turn the person started, the same
-rule `decision_answer` follows. Agent-proposed items show as "proposed" until then, and so do items the desk
-registered from chat, because both have source `desk` or `agent` and no approval. A
-separate `chat` source, so that agreed work shows as planned without waiting on the person,
-is a follow-up that needs store, daemon and web changes.
+rule `decision_answer` follows. Agent-proposed items (source `agent`) show as "proposed"
+until then and wait in "Waiting on you".
+
+**The `chat` source.** Work the desk registers from chat on the person's agreement is
+stored with source `chat`: it shows as planned with a "chat" badge and does not count in
+"Waiting on you", because the person already agreed to it in the thread. The desk puts an
+item up for approval instead with `next_add` and `propose` (`shepherd next add --propose`,
+desk only): that stores source `desk`, shown as proposed and waiting. Approving, deferring
+or dropping a chat item is still the person's, and its source stays `chat`. A migration
+relabelled planned `desk` items from before this change as `chat`.
 
 ## 2. States, links and how items move
 

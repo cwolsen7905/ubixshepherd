@@ -412,6 +412,10 @@ var migrations = []string{
 		closed        TEXT NOT NULL DEFAULT ''
 	);
 	CREATE INDEX desk_questions_state ON desk_questions (workspace_id, state);`,
+	// Items the front desk registered from chat before the chat source existed were
+	// stored as 'desk' and counted as waiting on the person. The desk added them as
+	// planned work without being asked, so planned ones are relabelled 'chat'.
+	`UPDATE next_items SET source = 'chat' WHERE source = 'desk' AND state = 'planned';`,
 }
 
 // DB is a SQLite-backed store.Store.

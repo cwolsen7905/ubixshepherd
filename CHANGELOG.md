@@ -11,6 +11,12 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **Work the desk registers from chat is marked as coming from chat and does not wait on
+  you.** `next_add` from the front desk now stores source `chat`: the item shows as planned
+  with a "chat" badge in Next up and is left out of "Waiting on you". The new `propose`
+  option on `next_add` (and `shepherd next add --propose`, desk only) puts an item up for
+  approval as before. A migration relabels planned `desk` items already on the list as
+  `chat`. See [docs/backlog-next.md](docs/backlog-next.md).
 - **The front desk's questions to you are tracked and cannot be missed.** The desk marks a
   question with the new `question_open` tool when a reply asks you something; it then waits
   in the "Waiting on you" list as kind `question`, in the header, the dock and the desk's

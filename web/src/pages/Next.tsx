@@ -274,6 +274,9 @@ function NextRow({
           <span className="next-id faint">#{it.id}</span> {it.title}
           {isNext && <span className="badge tone-accent next-badge">next</span>}
           {it.proposed && <span className="badge tone-warn next-badge" title="Added by an agent or the desk; not yet approved">proposed</span>}
+          {it.source === 'chat' && it.state === 'planned' && (
+            <span className="badge tone-muted next-badge" title="Registered by the front desk from chat; planned, not waiting on you">chat</span>
+          )}
           {it.state === 'started' && <span className="badge tone-accent next-badge">started{it.running ? ', running' : ''}</span>}
           {it.state === 'done' && <span className="badge tone-ok next-badge">done</span>}
         </p>

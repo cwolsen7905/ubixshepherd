@@ -27,6 +27,9 @@ type NextAdd struct {
 	Lane  string `json:"lane,omitempty"`
 	Note  string `json:"note,omitempty"`
 	State string `json:"state,omitempty"`
+	// Propose, from the front desk, puts the item up for the person's approval: it
+	// waits in "Waiting on you". Without it a desk item is work registered from chat.
+	Propose bool `json:"propose,omitempty"`
 }
 
 // NextUpdate is the body of PATCH /v1/next/{id}: nil fields and an empty Move are left

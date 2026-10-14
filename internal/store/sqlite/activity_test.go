@@ -67,9 +67,9 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 	if err := db.PutLaneForge(ctx, store.LaneForge{LaneID: lane, MR: 3, MRState: "opened"}); err != nil {
 		t.Fatal(err)
 	}
-	// Step the schema back over the forge-times migration, which is the ninth to last
-	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated and the approval columns and desk_questions), as a daemon one release old left it.
-	last := len(migrations) - 9
+	// Step the schema back over the forge-times migration, which is the tenth to last
+	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated, the approval columns, desk_questions and the chat relabel), as a daemon one release old left it.
+	last := len(migrations) - 10
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_questions`); err != nil {
 		t.Fatal(err)
 	}

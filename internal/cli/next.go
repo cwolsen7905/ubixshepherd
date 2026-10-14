@@ -27,6 +27,7 @@ func runNext(ctx context.Context, env Env, args []string) error {
 	asJSON := fs.Bool("json", false, "print JSON")
 	all := fs.Bool("all", false, "list: include dropped and done items")
 	approved := fs.Bool("approved", false, "add: start as approved")
+	propose := fs.Bool("propose", false, "add: from the front desk, put it up for approval")
 	repo := fs.String("repo", "", "the repo, by its name in the workspace")
 	plan := fs.String("plan", "", "the plan doc, a path under the repo")
 	lane := fs.String("lane", "", "the lane's name (a hint for add and update; the lane to link for link)")
@@ -77,7 +78,7 @@ func runNext(ctx context.Context, env Env, args []string) error {
 		if len(pos) != 1 {
 			return errUsage
 		}
-		req := api.NextAdd{Title: pos[0], Repo: *repo, Plan: *plan, Lane: *lane, Note: *note}
+		req := api.NextAdd{Title: pos[0], Repo: *repo, Plan: *plan, Lane: *lane, Note: *note, Propose: *propose}
 		if *approved {
 			req.State = store.NextApproved
 		}

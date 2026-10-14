@@ -17,7 +17,7 @@ func TestWaitingListsDecisionsAndProposals(t *testing.T) {
 		t.Fatal(err)
 	}
 	system, _ := s.MintDesk(false, "")
-	if code := call(t, ts, system, "POST", api.PathNext, api.NextAdd{Title: "Idea"}, nil); code != http.StatusOK {
+	if code := call(t, ts, system, "POST", api.PathNext, api.NextAdd{Title: "Idea", Propose: true}, nil); code != http.StatusOK {
 		t.Fatalf("add: %d", code)
 	}
 	var w api.Waiting
