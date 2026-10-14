@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import type { Waiting } from '../api/types'
 import { refocus } from '../router'
 import { WaitingOnYou } from './WaitingOnYou'
+import * as step from '../model/waitingStep'
 
 vi.mock('../router', async (orig) => ({ ...(await orig<typeof import('../router')>()), refocus: vi.fn() }))
 
@@ -94,5 +95,31 @@ describe('WaitingOnYou', () => {
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     await userEvent.click(screen.getByRole('button', { name: 'Ship' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not shipped')
+  })
+
+  it('steps through every waiting item with the arrows, wrapping at the ends', async () => {
+    const withQuestion: Waiting = {
+      count: 2,
+      counts: { decisions: 1, mrs: 0, ship: 0, next: 0, questions: 1 },
+      items: [
+        { kind: 'question', action: 'reply', question_id: 5, turn: 11, title: 'Ship it?' },
+        { kind: 'decision', action: 'answer', decision_id: 4, title: 'Which option?' },
+      ],
+    }
+    daemon(withQuestion)
+    const seen: string[] = []
+    const on = () => void seen.push(step.takeStep()?.kind ?? 'none')
+    window.addEventListener(step.STEP_EVENT, on)
+    render(<WaitingOnYou />)
+    await screen.findByRole('button', { name: '2 waiting on you' })
+    const down = screen.getByRole('button', { name: 'Next item waiting on you' })
+    const up = screen.getByRole('button', { name: 'Previous item waiting on you' })
+    await userEvent.click(down)
+    await userEvent.click(down)
+    await userEvent.click(down)
+    await userEvent.click(up)
+    expect(seen).toEqual(['question', 'decision', 'question', 'decision'])
+    window.removeEventListener(step.STEP_EVENT, on)
+    window.location.hash = ''
   })
 })

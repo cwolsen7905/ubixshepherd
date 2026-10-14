@@ -20,3 +20,13 @@ func TestDeskBriefRegistersAgreedWork(t *testing.T) {
 		}
 	}
 }
+
+// The brief tells the desk to open a question when it asks the person one and to mark
+// it answered only when a main-chat reply plainly covers it.
+func TestDeskBriefTracksQuestions(t *testing.T) {
+	for _, want := range []string{"question_open", "question_answer", "plainly covers it", "never mark one answered on a guess"} {
+		if !strings.Contains(DeskBrief, want) {
+			t.Errorf("DeskBrief lacks %q", want)
+		}
+	}
+}

@@ -15,3 +15,11 @@ func TestDigestEndsWithTheWaitingLine(t *testing.T) {
 		t.Errorf("digest with nothing waiting: %q", none)
 	}
 }
+
+func TestBriefTracksQuestions(t *testing.T) {
+	for _, want := range []string{"question_open", "question_answer", "plainly covers it", "never mark one answered on a guess"} {
+		if !strings.Contains(Brief, want) {
+			t.Errorf("Brief lacks %q", want)
+		}
+	}
+}

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from 'react'
-import type { DecisionView, DeskEvent } from '../api/types'
+import type { DecisionView, DeskEvent, DeskQuestion, WaitingItem } from '../api/types'
 import { Backlog } from '../components/Backlog'
 import { TopicBar } from '../components/TopicBar'
 import { Topics } from '../components/Topics'
@@ -12,7 +12,8 @@ import { DRAFT_EVENT, clearDraft, draftKey, prefillDraft, readDraft, writeDraft 
 import { backlogItems, threadId } from '../model/backlog'
 import { MARKS } from '../model/marks'
 import { inTopic, memberKeys, readTopicFilter, topicByTurn, withTopicFilter, type TopicView } from '../model/topic'
-import { topics as topicsApi } from '../api/client'
+import { deskQuestions, topics as topicsApi } from '../api/client'
+import { STEP_EVENT, stepAnchor, takeStep } from '../model/waitingStep'
 import { href } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type Connection, type DeskSnapshot } from '../state/desk'
@@ -302,6 +303,37 @@ function ChatThread({
   const shown = new Set(items.flatMap((it) => (it.type === 'feed' && it.f.event === 'decision_asked' ? [it.f.ref ?? 0] : [])))
   const unplaced = live.decisions.filter((x) => !shown.has(x.id))
 
+  // The questions the desk asked that are still open: each shows Reply here and Skip under
+  // the desk message of its turn. Read on the waiting list's cadence and after each action.
+  const [questions, setQuestions] = useState<DeskQuestion[]>([])
+  const readQuestions = useCallback(() => {
+    deskQuestions.list('open').then(
+      (qs) => setQuestions(qs),
+      () => {},
+    )
+  }, [])
+  useEffect(() => {
+    const first = window.setTimeout(readQuestions, 0)
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') readQuestions()
+    }, 5000)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(id)
+    }
+  }, [readQuestions])
+  // A question sits under the last desk message of the turn it was asked in.
+  const questionsAt = useMemo(() => {
+    const lastOfTurn = new Map<number, number>()
+    for (const it of items) if (it.type === 'desk' && it.e.kind === 'assistant' && it.e.turn !== undefined) lastOfTurn.set(it.e.turn, it.e.seq)
+    const out = new Map<number, DeskQuestion[]>()
+    for (const q of questions) {
+      const seq = lastOfTurn.get(q.turn)
+      if (seq !== undefined) out.set(seq, [...(out.get(seq) ?? []), q])
+    }
+    return out
+  }, [items, questions])
+
   // The rail's "in thread" links name rows the thread shows; one that is not loaded has none.
   const backlog = useMemo(() => {
     const shownFeed = new Set(items.flatMap((it) => (it.type === 'feed' ? [it.f.id] : [])))
@@ -317,6 +349,36 @@ function ChatThread({
     el.scrollIntoView?.({ block: 'center' })
     setFlash(anchor)
     window.setTimeout(() => setFlash((f) => (f === anchor ? '' : f)), 2500)
+  }, [])
+
+  // The header counter's arrows: show the item the thread holds for it, or say it is not
+  // there and where to act on it.
+  const [stepNote, setStepNote] = useState<WaitingItem | null>(null)
+  const stepRef = useRef<(it: WaitingItem) => void>(() => {})
+  const showStep = (it: WaitingItem) => {
+    const anchor = stepAnchor(it, {
+      askedRows: new Map(items.flatMap((r) => (r.type === 'feed' && r.f.event === 'decision_asked' && r.f.id ? [[r.f.ref ?? 0, r.f.id] as [number, number]] : []))),
+      unplaced: new Set(unplaced.map((x) => x.id)),
+      laneAnchor: (id) => backlog.find((b) => b.laneId === id)?.anchor,
+    })
+    if (anchor && document.getElementById(threadId(anchor))) {
+      setStepNote(null)
+      jump(anchor)
+    } else {
+      setStepNote(it)
+    }
+  }
+  useEffect(() => {
+    stepRef.current = showStep
+  })
+  useEffect(() => {
+    const take = () => {
+      const it = takeStep()
+      if (it) stepRef.current(it)
+    }
+    take()
+    window.addEventListener(STEP_EVENT, take)
+    return () => window.removeEventListener(STEP_EVENT, take)
   }, [])
 
   const follow = useFollowBottom(root, [d.loaded, items.length, d.partial, unplaced.length])
@@ -428,13 +490,35 @@ function ChatThread({
           </p>
         )}
 
+        {stepNote && (
+          <p className="topic-filter" role="status">
+            Not in the loaded thread: {stepNote.title}.{' '}
+            {stepNote.action === 'review' && stepNote.next_id ? <a href={href.next(stepNote.next_id)}>Review</a> : null}
+            {stepNote.lane_id ? <a href={href.lane(stepNote.lane_id)}>Open lane</a> : null}{' '}
+            <button type="button" className="link-button" onClick={() => setStepNote(null)}>
+              Dismiss
+            </button>
+          </p>
+        )}
         <div className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded}>
           {d.loaded && items.length === 0 && d.partial === '' && unplaced.length === 0 && (
             <p className="faint thread-empty">Nothing said yet. Ask the front desk what the flock is doing.</p>
           )}
           {items.map((it) =>
             it.type === 'desk' ? (
-              <DeskRow key={it.key} e={it.e} now={now} topic={it.e.turn === undefined ? undefined : byTurn.get(it.e.turn)} activeTopic={topicId} onTopic={filterTo} />
+              <DeskRow
+                key={it.key}
+                e={it.e}
+                now={now}
+                topic={it.e.turn === undefined ? undefined : byTurn.get(it.e.turn)}
+                activeTopic={topicId}
+                onTopic={filterTo}
+                questions={questionsAt.get(it.e.seq)}
+                flash={flash}
+                thread={thread}
+                topicFilter={topicId}
+                onCleared={readQuestions}
+              />
             ) : (
               <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
             ),
@@ -560,10 +644,16 @@ function Composer({
 }
 
 function DeskRow({
-  e, now, topic, activeTopic = null, onTopic,
+  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared,
 }: {
   e: DeskEvent
   now: number
+  /** Open desk questions asked in this message's turn. */
+  questions?: DeskQuestion[]
+  flash?: string
+  thread?: DeskThread
+  topicFilter?: number | null
+  onCleared?: () => void
   /** The topic this turn is tied to; none, no pill. */
   topic?: TopicView
   activeTopic?: number | null
@@ -581,13 +671,21 @@ function DeskRow({
           <p className="msg-text">{text}</p>
         </div>
       )
-    case 'assistant':
+    case 'assistant': {
+      const asked = questions[0]
       return (
-        <div className="msg msg-assistant">
+        <div
+          id={asked ? threadId(`q${asked.id}`) : undefined}
+          className={`msg msg-assistant${asked ? ' msg-asked' : ''}${asked && flash === `q${asked.id}` ? ' is-flash' : ''}`}
+        >
           <span className="msg-who">Front desk {when}{pill}</span>
           <Markdown text={text} />
+          {thread && questions.map((q) => (
+            <QuestionActions key={q.id} q={q} thread={thread} topicId={topicFilter} onCleared={() => onCleared?.()} />
+          ))}
         </div>
       )
+    }
     case 'system':
       return (
         <details className="trow trow-system">
@@ -644,6 +742,113 @@ function DeskRow({
         </p>
       )
   }
+}
+
+/**
+ * Reply here and Skip under a desk message that asked the person something. Reply opens an
+ * input right here; sending it posts a normal turn linked to the question, which clears it.
+ * Skip clears it without an answer. Once cleared the question is no longer open, so the
+ * buttons go away.
+ */
+export function QuestionActions({
+  q, thread, topicId = null, onCleared,
+}: {
+  q: DeskQuestion
+  thread: DeskThread
+  topicId?: number | null
+  onCleared: () => void
+}) {
+  const [replying, setReplying] = useState(false)
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    if (replying) input.current?.focus()
+  }, [replying])
+
+  const send = async () => {
+    if (busy || !text.trim()) return
+    setBusy(true)
+    setProblem(null)
+    const ok = await thread.send(text, topicId, q.id)
+    setBusy(false)
+    if (ok) {
+      setText('')
+      setReplying(false)
+      onCleared()
+    } else {
+      setProblem('Not sent. The desk may be busy; try again.')
+    }
+  }
+  const skip = async () => {
+    setBusy(true)
+    setProblem(null)
+    try {
+      await deskQuestions.skip(q.id)
+      onCleared()
+    } catch (err) {
+      setProblem(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="question-actions" role="group" aria-label={`Question ${q.id} is waiting on you`}>
+      <span className="question-flag tone-warn">Waiting on you</span>
+      {!replying && (
+        <>
+          <button type="button" className="button" onClick={() => setReplying(true)} disabled={busy}>
+            Reply here
+          </button>
+          <button type="button" className="button" onClick={() => void skip()} disabled={busy}>
+            Skip
+          </button>
+        </>
+      )}
+      {replying && (
+        <form
+          className="question-reply"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void send()
+          }}
+        >
+          <label htmlFor={`question-reply-${q.id}`} className="visually-hidden">
+            Your reply to question {q.id}
+          </label>
+          <textarea
+            id={`question-reply-${q.id}`}
+            ref={input}
+            rows={2}
+            value={text}
+            readOnly={busy}
+            placeholder="Reply to this question. Enter sends, Shift+Enter adds a line."
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                void send()
+              }
+              if (e.key === 'Escape') setReplying(false)
+            }}
+          />
+          <button type="submit" className="button button-primary" disabled={busy || !text.trim()}>
+            {busy ? 'Sending…' : 'Send reply'}
+          </button>
+          <button type="button" className="button" onClick={() => setReplying(false)} disabled={busy}>
+            Cancel
+          </button>
+        </form>
+      )}
+      {problem && (
+        <p className="tone-bad" role="alert">
+          {problem}
+        </p>
+      )}
+    </div>
+  )
 }
 
 const RUN_KINDS = new Set(['run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota'])

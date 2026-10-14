@@ -379,5 +379,11 @@ func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	qs, err := s.Store.Questions(r.Context(), ws, store.QuestionOpen)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	out.AddQuestions(qs)
 	writeJSON(w, http.StatusOK, out)
 }

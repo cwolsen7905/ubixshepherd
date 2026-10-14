@@ -855,14 +855,17 @@ export interface UpgradeStatus {
 
 /** One thing that needs the person (internal/api WaitingItem). */
 export interface WaitingItem {
-  kind: 'decision' | 'mr' | 'ship' | 'next'
-  /** answer, approve, ship, review or open: what the person can do from here. */
-  action: 'answer' | 'approve' | 'ship' | 'review' | 'open'
+  kind: 'decision' | 'mr' | 'ship' | 'next' | 'question'
+  /** answer, approve, ship, review, reply or open: what the person can do from here. */
+  action: 'answer' | 'approve' | 'ship' | 'review' | 'reply' | 'open'
   repo?: string
   lane?: string
   lane_id?: number
   decision_id?: number
   next_id?: number
+  /** A question's id, and the desk turn it was asked in (the thread message to scroll to). */
+  question_id?: number
+  turn?: number
   mr?: number
   title: string
   detail?: string
@@ -872,8 +875,22 @@ export interface WaitingItem {
 /** GET /v1/waiting: everything that waits on the person's action, oldest first. */
 export interface Waiting {
   count: number
-  counts: { decisions: number; mrs: number; ship: number; next: number }
+  counts: { decisions: number; mrs: number; ship: number; next: number; questions?: number }
   items: WaitingItem[]
+}
+
+/** A question the front desk asked the person (internal/store Question). */
+export interface DeskQuestion {
+  id: number
+  workspace_id: number
+  /** The desk turn it was asked in. */
+  turn: number
+  topic_id?: number
+  text: string
+  state: 'open' | 'answered' | 'skipped'
+  answered_turn?: number
+  created: string
+  closed?: string
 }
 
 /** What an explicit lane ship did (POST /v1/lanes/{id}/ship). */

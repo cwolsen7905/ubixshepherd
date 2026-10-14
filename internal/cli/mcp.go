@@ -592,6 +592,45 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name: "question_open",
+			Description: "Mark a question you are asking the person in this reply, so it waits in their \"Waiting on you\" list until they answer it. Call it whenever your reply asks them something that needs their answer, with the question in one or two sentences as you asked it. " +
+				"Do not call it for rhetorical questions or for an agent's decision (decision_list already holds those). One call per question.",
+			InputSchema: obj(map[string]any{
+				"text":  map[string]any{"type": "string", "description": "The question, as you asked it."},
+				"topic": map[string]any{"type": "integer", "description": "The topic it belongs to; the turn's topic by default."},
+			}, "text"),
+			args: func(a map[string]any) ([]string, error) {
+				t := str(a, "text")
+				if strings.TrimSpace(t) == "" {
+					return nil, fmt.Errorf("text is required")
+				}
+				out := []string{"question", "open", t}
+				if v, ok := a["topic"].(float64); ok && v > 0 {
+					out = append(out, "--topic", fmt.Sprint(int64(v)))
+				}
+				return out, nil
+			},
+		},
+		{
+			Name: "question_answer",
+			Description: "Mark an open question answered by the person's message in this turn, when that message plainly answers it (question_list shows the open ones). " +
+				"Only in a turn the person started. Never mark one answered because the matter moved on or you guessed; the person can skip a question themselves.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				return []string{"question", "answer", fmt.Sprint(int64(id))}, nil
+			},
+		},
+		{
+			Name:        "question_list",
+			Description: "The questions you asked the person that are still open.",
+			InputSchema: obj(map[string]any{}),
+			args:        func(map[string]any) ([]string, error) { return []string{"question", "list"}, nil },
+		},
+		{
 			Name:        "session_list",
 			Description: "Conversations the person had with agents outside Shepherd (adopted Claude Code sessions): id, repo, title, dates, branches. Ask one with session_ask.",
 			InputSchema: obj(map[string]any{}),

@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // NextItems reads the next-up list; all adds dropped and done items (GET /v1/next).
@@ -45,4 +47,34 @@ func (c *Client) Waiting(ctx context.Context, workspaceID int64) (api.Waiting, e
 		p += "?workspace_id=" + strconv.FormatInt(workspaceID, 10)
 	}
 	return out, c.do(ctx, http.MethodGet, p, nil, &out)
+}
+
+// Questions lists the front desk's questions to the person (GET /v1/questions);
+// workspaceID 0 is every workspace and state "" every state.
+func (c *Client) Questions(ctx context.Context, workspaceID int64, state string) ([]store.Question, error) {
+	p := api.PathQuestions + "?state=" + url.QueryEscape(state)
+	if workspaceID != 0 {
+		p += "&workspace_id=" + strconv.FormatInt(workspaceID, 10)
+	}
+	var out api.QuestionList
+	err := c.do(ctx, http.MethodGet, p, nil, &out)
+	return out.Questions, err
+}
+
+// OpenQuestion records a question the desk asked (POST /v1/questions).
+func (c *Client) OpenQuestion(ctx context.Context, req api.QuestionOpen) (store.Question, error) {
+	var out store.Question
+	return out, c.do(ctx, http.MethodPost, api.PathQuestions, req, &out)
+}
+
+// AnswerQuestion marks a question answered (POST /v1/questions/{id}/answer).
+func (c *Client) AnswerQuestion(ctx context.Context, id int64, req api.QuestionAnswer) (store.Question, error) {
+	var out store.Question
+	return out, c.do(ctx, http.MethodPost, api.PathQuestion(id)+"/answer", req, &out)
+}
+
+// SkipQuestion clears a question without an answer (POST /v1/questions/{id}/skip).
+func (c *Client) SkipQuestion(ctx context.Context, id int64) (store.Question, error) {
+	var out store.Question
+	return out, c.do(ctx, http.MethodPost, api.PathQuestion(id)+"/skip", struct{}{}, &out)
 }

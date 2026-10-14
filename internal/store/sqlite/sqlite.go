@@ -398,6 +398,20 @@ var migrations = []string{
 	// head pipeline's approval job ('' for none).
 	`ALTER TABLE lane_forge ADD COLUMN approved INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE lane_forge ADD COLUMN require_approval TEXT NOT NULL DEFAULT '';`,
+	// Desk questions: what the front desk asked the person, tracked until answered or
+	// skipped (docs/desk-questions.md). turn is the desk turn it was asked in.
+	`CREATE TABLE desk_questions (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id  INTEGER NOT NULL DEFAULT 0,
+		turn          INTEGER NOT NULL DEFAULT 0,
+		topic_id      INTEGER NOT NULL DEFAULT 0,
+		text          TEXT NOT NULL,
+		state         TEXT NOT NULL DEFAULT 'open',
+		answered_turn INTEGER NOT NULL DEFAULT 0,
+		created       TEXT NOT NULL,
+		closed        TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX desk_questions_state ON desk_questions (workspace_id, state);`,
 }
 
 // DB is a SQLite-backed store.Store.

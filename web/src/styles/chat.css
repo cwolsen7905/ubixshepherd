@@ -94,3 +94,10 @@
   .backlog { grid-row: 1; position: static; max-height: 40vh; border-left: 0; padding-left: 0; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
   .chat-main { grid-row: 2; }
 }
+
+/* A desk message that asked the person something, and its Reply here / Skip. */
+.msg-asked { border-left: 3px solid var(--lantern); padding-left: 8px; }
+.question-actions { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 6px; }
+.question-flag { font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.04em; }
+.question-reply { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }
+.question-reply textarea { flex: 1 1 100%; font: inherit; }
