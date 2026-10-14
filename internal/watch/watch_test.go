@@ -191,7 +191,8 @@ func TestFailedPipelineGoesBackToTheAgent(t *testing.T) {
 	f.settle(t)
 	runs, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10)
 	fix := runs[0]
-	if fix.Parent != first.ID || !strings.Contains(fix.Prompt, "--- FAIL: TestParse (job log)") || !strings.Contains(fix.Prompt, "!7 failed") {
+	if fix.Parent != first.ID || !strings.Contains(fix.Prompt, "--- FAIL: TestParse (job log)") || !strings.Contains(fix.Prompt, "[!7](https://gl/mr/7) failed") ||
+		!strings.Contains(fix.Prompt, "(https://gl/p/100)") || !strings.Contains(fix.Prompt, "[go-check](https://gl/j/1)") {
 		t.Errorf("fix run = %+v", fix)
 	}
 	if !strings.Contains(f.feed(t), "pipeline: pipeline ") || !strings.Contains(f.feed(t), "asked claude to fix it") {

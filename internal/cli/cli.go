@@ -86,6 +86,8 @@ func commands() []command {
 			"shepherd topic [list] [--all] [--json] | show <id|title> | new \"title\" [--summary S] [--lane L|--item N|...] | set <id|title> --turn T|--feed F|--item N|--lane L|--run R|--decision D|--request Q [--summary S] | rename <id> \"title\" | merge <id> <into> | move <id> --lane L|... | clear <id|title> | reopen <id|title>", runTopic},
 		{"question", "What the front desk asked you, tracked until answered or skipped",
 			"shepherd question [list] [--all] [--json] | open \"text\" [--turn T] [--topic N] | answer <id> | skip <id>", runQuestion},
+		{"links", "Clickable forge URLs for merge requests, review threads, pipelines and jobs",
+			"shepherd links thread <mr_iid> <discussion_id> | mr <iid> | pipeline <id> | job <id> [--repo R]", runLinks},
 		{"keep-going", "Let the front desk carry on with what is already approved, within limits, until a decision needs you",
 			"shepherd keep-going on [--cap USD] [--runs N] [--idle HOURS] | off | status   (each takes --json)", runKeepGoing},
 		{"update", "Whether a newer Shepherd release exists, from the daemon's daily check, dismissing its notice, and installing it",

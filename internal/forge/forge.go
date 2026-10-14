@@ -63,6 +63,52 @@ type Thread struct {
 	Line int    `json:"line,omitempty"`
 	// Body is the thread's notes in order, one per line, cleaned and cut short.
 	Body string `json:"body"`
+	// NoteID is the first note's id and URL the link to it (<mr>#note_<id>); GitLab
+	// cannot link a discussion id, only a note.
+	NoteID int64  `json:"note_id,omitempty"`
+	URL    string `json:"url,omitempty"`
+}
+
+// Title is a short link text for the thread: its first note's first line, cut.
+func (t Thread) Title() string {
+	body := t.Body
+	if i := strings.Index(body, "\n"); i >= 0 {
+		body = body[:i]
+	}
+	if i := strings.Index(body, ": "); i >= 0 && i < 40 {
+		body = body[i+2:] // drop the "author: " prefix
+	}
+	body = strings.Join(strings.Fields(body), " ")
+	if r := []rune(body); len(r) > 60 {
+		body = string(r[:60]) + "..."
+	}
+	if body == "" {
+		return "thread"
+	}
+	return body
+}
+
+// Link is the thread as a markdown link with its short id in brackets, or a bare
+// description when no URL is known.
+func (t Thread) Link() string {
+	id := t.ID
+	if len(id) > 8 {
+		id = id[:8]
+	}
+	title := strings.NewReplacer("[", "(", "]", ")").Replace(t.Title())
+	if t.URL == "" {
+		return fmt.Sprintf("%s [%s]", title, id)
+	}
+	return fmt.Sprintf("[%s](%s) [%s]", title, t.URL, id)
+}
+
+// Linker is a Forge that can build links to its merge requests, pipelines and jobs.
+type Linker interface {
+	MRURL(iid int) string
+	PipelineURL(id int64) string
+	JobURL(id int64) string
+	// ThreadURL is the link to the first note of a merge request's discussion.
+	ThreadURL(ctx context.Context, mr int, discussion string) (string, error)
 }
 
 // ThreadReader is a Forge that can list a request's review threads. GitLab can.
@@ -170,6 +216,30 @@ func glab(ctx context.Context, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("glab %s: %w", strings.Join(args, " "), err)
 	}
 	return out, nil
+}
+
+// ProjectURL is the project's web address.
+func (g *GitLab) ProjectURL() string { return "https://" + g.Host + "/" + g.Project }
+
+func (g *GitLab) MRURL(iid int) string {
+	return fmt.Sprintf("%s/-/merge_requests/%d", g.ProjectURL(), iid)
+}
+func (g *GitLab) PipelineURL(id int64) string {
+	return fmt.Sprintf("%s/-/pipelines/%d", g.ProjectURL(), id)
+}
+func (g *GitLab) JobURL(id int64) string { return fmt.Sprintf("%s/-/jobs/%d", g.ProjectURL(), id) }
+
+// ThreadURL asks the forge for the discussion and links its first note.
+func (g *GitLab) ThreadURL(ctx context.Context, mr int, discussion string) (string, error) {
+	var d glDiscussion
+	q := fmt.Sprintf("%s/merge_requests/%d/discussions/%s", g.project(), mr, url.PathEscape(discussion))
+	if err := g.api(ctx, q, &d); err != nil {
+		return "", err
+	}
+	if len(d.Notes) == 0 || d.Notes[0].ID == 0 {
+		return "", fmt.Errorf("discussion %s on !%d has no notes", discussion, mr)
+	}
+	return fmt.Sprintf("%s#note_%d", g.MRURL(mr), d.Notes[0].ID), nil
 }
 
 func (g *GitLab) project() string { return "projects/" + url.PathEscape(g.Project) }
@@ -354,6 +424,7 @@ func Unreachable(err error) bool {
 const MaxThreadBody = 2000
 
 type glNote struct {
+	ID         int64  `json:"id"`
 	Body       string `json:"body"`
 	System     bool   `json:"system"`
 	Resolvable bool   `json:"resolvable"`
@@ -386,6 +457,9 @@ func (g *GitLab) Threads(ctx context.Context, mr int) ([]Thread, error) {
 		}
 		for _, d := range ds {
 			if t, ok := d.thread(); ok {
+				if t.NoteID != 0 {
+					t.URL = fmt.Sprintf("%s#note_%d", g.MRURL(mr), t.NoteID)
+				}
 				out = append(out, t)
 			}
 		}
@@ -411,7 +485,7 @@ func (d glDiscussion) thread() (Thread, bool) {
 		return Thread{}, false
 	}
 	first := d.Notes[0]
-	t := Thread{ID: d.ID, Author: first.Author.Username}
+	t := Thread{ID: d.ID, Author: first.Author.Username, NoteID: first.ID}
 	if p := first.Position; p != nil {
 		t.File, t.Line = p.NewPath, p.NewLine
 		if t.File == "" {

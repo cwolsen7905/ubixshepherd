@@ -66,11 +66,11 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 	max := wc.Tries()
 	switch {
 	case w.Runner == nil || last == nil:
-		w.feed(ctx, store.FeedPipeline, lane.ID, "!%d has %d unresolved review thread(s) and lane %s has no agent conversation to hand them to; they are yours", mr.IID, len(fresh), lane.Name)
+		w.feed(ctx, store.FeedPipeline, lane.ID, "!%d (%s) has %d unresolved review thread(s) and lane %s has no agent conversation to hand them to; they are yours: %s", mr.IID, mr.URL, len(fresh), lane.Name, threadLinks(fresh, byID))
 		record(fresh...)
 		return
 	case next.FixTries >= max:
-		w.feed(ctx, store.FeedPipeline, lane.ID, "!%d has %d new unresolved review thread(s), but %d fixes by %s are spent (watch.fix_tries); they are yours", mr.IID, len(fresh), next.FixTries, last.Agent)
+		w.feed(ctx, store.FeedPipeline, lane.ID, "!%d has %d new unresolved review thread(s), but %d fixes by %s are spent (watch.fix_tries); they are yours: %s", mr.IID, len(fresh), next.FixTries, last.Agent, threadLinks(fresh, byID))
 		record(fresh...)
 		return
 	}
@@ -85,12 +85,12 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 				at = fmt.Sprintf("%s:%d", t.File, t.Line)
 			}
 		}
-		fmt.Fprintf(&list, "== thread %s (%s) ==\n%s\n\n", t.ID, at, t.Body)
+		fmt.Fprintf(&list, "== thread %s (%s) ==\n%s\n\n", t.Link(), at, t.Body)
 	}
-	prompt := fmt.Sprintf("[Shepherd] Your merge request !%d (%s) has unresolved review threads.\n\n%s"+
+	prompt := fmt.Sprintf("[Shepherd] Your merge request [!%d](%s) has unresolved review threads.\n\n%s"+
 		"Address each one within your scope: fix what it asks, run the gate, and commit. "+
 		"Do not resolve the threads, approve or merge: the reviewer resolves them. "+
-		"In your report say, per thread id, what you changed or why you did not. Do not push unless your brief allows it.",
+		"In your report say, per thread, what you changed or why you did not, naming each thread by the clickable link given above (never by its bare id). Do not push unless your brief allows it.",
 		mr.IID, mr.URL, list.String())
 	tries := next.FixTries
 	if lf, err := w.Store.LaneForge(ctx, lane.ID); err == nil {
@@ -109,4 +109,13 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 	next.FixTries = tries + 1
 	record(fresh...)
 	w.feed(ctx, store.FeedPipeline, lane.ID, "asked %s to address %d review thread(s) on !%d (run %d, try %d of %d)", last.Agent, len(fresh), mr.IID, run.ID, next.FixTries, max)
+}
+
+// threadLinks is the threads as markdown links to their first notes, comma separated.
+func threadLinks(ids []string, byID map[string]forge.Thread) string {
+	var out []string
+	for _, id := range ids {
+		out = append(out, byID[id].Link())
+	}
+	return strings.Join(out, ", ")
 }

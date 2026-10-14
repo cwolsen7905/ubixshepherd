@@ -149,3 +149,33 @@ func TestGitLabThreads(t *testing.T) {
 		t.Errorf("second = %+v", got[1])
 	}
 }
+
+func TestThreadLinks(t *testing.T) {
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		path := args[len(args)-1]
+		switch {
+		case strings.Contains(path, "merge_requests/7/discussions/a34c00ffdeadbeef"):
+			return []byte(`{"id":"a34c00ffdeadbeef","notes":[{"id":4242,"body":"x"},{"id":4243,"body":"y"}]}`), nil
+		case strings.Contains(path, "merge_requests/7/discussions"):
+			return []byte(`[{"id":"a34c00ffdeadbeef","notes":[{"id":4242,"body":"nil deref\nmore","resolvable":true,"author":{"username":"bot"}}]}]`), nil
+		}
+		t.Errorf("path = %s", path)
+		return nil, nil
+	}}
+	const want = "https://gl.example.com/group/app/-/merge_requests/7#note_4242"
+	if got, err := g.ThreadURL(context.Background(), 7, "a34c00ffdeadbeef"); err != nil || got != want {
+		t.Errorf("ThreadURL = %q, %v", got, err)
+	}
+	ts, err := g.Threads(context.Background(), 7)
+	if err != nil || len(ts) != 1 || ts[0].URL != want || ts[0].NoteID != 4242 {
+		t.Fatalf("threads = %+v, %v", ts, err)
+	}
+	if got := ts[0].Link(); got != "[nil deref]("+want+") [a34c00ff]" {
+		t.Errorf("Link = %q", got)
+	}
+	if g.MRURL(7) != "https://gl.example.com/group/app/-/merge_requests/7" ||
+		g.PipelineURL(9) != "https://gl.example.com/group/app/-/pipelines/9" ||
+		g.JobURL(3) != "https://gl.example.com/group/app/-/jobs/3" {
+		t.Error("MR, pipeline or job URL")
+	}
+}

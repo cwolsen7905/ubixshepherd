@@ -774,6 +774,37 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "links_thread",
+			Description: "The clickable URL of a GitLab review thread's first note (<mr url>#note_<id>), from the merge request's iid and the thread's discussion id. Use it, with the thread's title as link text, whenever a report names a thread; a discussion id alone is not linkable. Also gives the URL for kind mr, pipeline or job.",
+			InputSchema: obj(map[string]any{
+				"id":         map[string]any{"type": "integer", "description": "The merge request's iid (kind thread or mr), or the pipeline or job id."},
+				"discussion": map[string]any{"type": "string", "description": "The thread's discussion id (kind thread)."},
+				"kind":       map[string]any{"type": "string", "enum": []string{"thread", "mr", "pipeline", "job"}, "description": "Default thread."},
+				"repo":       map[string]any{"type": "string", "description": "Repo name; default the current one."},
+			}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				kind := str(a, "kind")
+				if kind == "" {
+					kind = "thread"
+				}
+				out := []string{"links", kind, fmt.Sprint(int64(id))}
+				if kind == "thread" {
+					if str(a, "discussion") == "" {
+						return nil, fmt.Errorf("discussion is required for a thread")
+					}
+					out = append(out, str(a, "discussion"))
+				}
+				if r := str(a, "repo"); r != "" {
+					out = append(out, "--repo", r)
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "fold_gc",
 			Description: "List worktrees across the workspace that look finished (merged, branch gone, missing) and lanes whose worktree is gone. Changes nothing.",
 			InputSchema: obj(map[string]any{}),

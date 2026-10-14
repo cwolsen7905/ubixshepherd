@@ -138,3 +138,12 @@ func TestDefaultStandardsDir(t *testing.T) {
 		t.Errorf("dir = %s", got)
 	}
 }
+
+func TestBriefCarriesLinkRule(t *testing.T) {
+	for _, tools := range []bool{true, false} {
+		b := Brief("t", "l", "r", "b", "main", "/w", []string{"x"}, "", Powers{}, tools, "", "")
+		if !strings.Contains(b, "#note_<first_note_id>") || !strings.Contains(b, "/-/pipelines/<id>") {
+			t.Errorf("brief (tools=%v) lacks the link rule:\n%s", tools, b)
+		}
+	}
+}

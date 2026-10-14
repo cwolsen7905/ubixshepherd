@@ -547,6 +547,13 @@ func Standing(note, workspace string, p *ProjectContext, repo string) string {
 	return strings.Join(parts, "\n")
 }
 
+// LinkRule is the rule on naming GitLab things in a report, shared by every agent's brief
+// and (in words of its own) the desk's.
+const LinkRule = "When a report, question or message names a GitLab merge request, thread, pipeline or job, give a clickable markdown link, never a bare number or discussion id: " +
+	"<project_url>/-/merge_requests/<iid>, <project_url>/-/pipelines/<id>, <project_url>/-/jobs/<id>. " +
+	"A review thread links to its first note, <project_url>/-/merge_requests/<iid>#note_<first_note_id>, with the thread's title or first line as the link text; " +
+	"the short discussion id may follow in brackets but never stands alone. Run `shepherd links thread <mr_iid> <discussion_id>` (or the links_thread tool) to get a thread's note URL instead of building it by hand."
+
 // Brief wraps a task with what every agent needs to know about its lane, so the same
 // task means the same thing to every provider.
 func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate string, may Powers, tools bool, note, standards string) string {
@@ -602,6 +609,7 @@ Everything else, keep working without asking.
 	} else {
 		b.WriteString("If the task cannot be done inside the scope, stop and say why instead of working around it.\n")
 	}
+	b.WriteString(LinkRule + "\n")
 	b.WriteString("\n")
 	b.WriteString("Task:\n")
 	b.WriteString(task)
