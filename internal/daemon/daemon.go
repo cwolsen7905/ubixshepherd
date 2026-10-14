@@ -608,6 +608,9 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := body.OpenRequest
+	if body.Item != 0 && !s.gate(w, r, s.workspaceOfRepo(r, req.RepoID), KeepStartItem, 0) {
+		return
+	}
 	if body.Item != 0 {
 		if err := s.checkLaneItem(r.Context(), body.Item); err != nil {
 			s.nextError(w, err)
@@ -803,6 +806,10 @@ func (s *Server) repoHook(w http.ResponseWriter, r *http.Request) {
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	var req dispatch.StartRequest
 	if !decode(w, r, &req) {
+		return
+	}
+	ws, _ := s.workspaceOfLane(r.Context(), req.LaneID)
+	if !s.gate(w, r, ws, KeepContinue, req.LaneID) {
 		return
 	}
 	run, err := s.Runner.Start(r.Context(), req)
