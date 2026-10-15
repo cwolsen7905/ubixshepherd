@@ -84,6 +84,14 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('link', { name: 'New project' })).toHaveAttribute('href', '#/settings?scope=new-project')
   })
 
+  it('makes New project the one primary action and says when there are no projects', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectsPage />)
+    expect(screen.getByRole('link', { name: 'New project' })).toHaveClass('ui-btn-primary')
+    expect(await screen.findByText('No projects yet')).toBeInTheDocument()
+    expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(1)
+  })
+
   it('says so when the daemon cannot be read', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }))
     await show(<ProjectsPage />)
@@ -111,6 +119,17 @@ describe('ProjectPage', () => {
     expect(screen.queryByRole('button')).toBeNull()
   })
 
+  it('counts each section with a badge and keeps Edit secondary', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectPage name="shop" />)
+    const waiting = await screen.findByRole('region', { name: /Waiting on you/ })
+    expect(within(waiting).getByRole('heading', { level: 2 })).toHaveTextContent('Waiting on you 2')
+    expect(screen.getByRole('heading', { name: /^Open lanes/ })).toHaveTextContent('Open lanes 1')
+    expect(screen.getByRole('heading', { name: /^Recent runs/ })).toHaveTextContent('Recent runs 1')
+    expect(screen.getByRole('link', { name: 'Edit' })).not.toHaveClass('ui-btn-primary')
+    expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(0)
+  })
+
   it('links a project to its settings, and Unassigned to none', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="shop" />)
@@ -123,6 +142,9 @@ describe('ProjectPage', () => {
     expect(await screen.findByRole('heading', { name: 'Unassigned' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Brief' })).toBeNull()
     expect(screen.getByText('No lane is open.')).toBeInTheDocument()
+    // A zero count is not drawn: the empty state under the heading says so instead.
+    expect(screen.getByRole('heading', { name: /^Open lanes/ })).toHaveTextContent(/^Open lanes$/)
+    expect(screen.getByText('No run yet.')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
   })
 

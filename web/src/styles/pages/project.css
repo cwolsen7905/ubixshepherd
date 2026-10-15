@@ -1,0 +1,44 @@
+/* Projects and a project's page on the kit: a card grid, sentence-case section heads, wide row grids. */
+.projects-page, .project-page { max-width: 72rem; }
+.page-actions { margin: var(--s-2) 0 0; }
+.project-cards {
+  list-style: none; margin: 0 0 0 var(--gutter); padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--s-3);
+}
+.project-card { padding: var(--s-3) var(--s-4); background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); }
+.project-card h2 { margin: 0; font-size: var(--t-lg); font-weight: 600; }
+.project-card h2 a { color: var(--ink); text-decoration: none; }
+.project-card h2 a:hover { text-decoration: underline; }
+.project-repos { margin: var(--s-1) 0 var(--s-2); font-size: var(--t-sm); overflow-wrap: anywhere; }
+.project-counts { display: flex; gap: var(--s-4); margin: 0 0 var(--s-2); }
+.project-counts dt { color: var(--faint); font-size: var(--t-xs); }
+.project-counts dd { margin: 0; font-size: var(--t-lg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.project-spend { margin: var(--s-2) 0 0; font-size: var(--t-sm); color: var(--muted); }
+
+.project-section { margin: 0 0 var(--s-5); }
+.project-section h2 { margin: 0 0 var(--s-1); padding-left: var(--gutter); font-size: var(--t-lg); font-weight: 600; }
+.project-section > p { padding-left: var(--gutter); margin: var(--s-1) 0; }
+.project-row { grid-template-columns: var(--gutter) minmax(9rem, 1.3fr) minmax(5rem, 1fr) minmax(0, 3fr) 3rem; }
+.brief { margin: var(--s-2) 0 var(--s-3) var(--gutter); max-width: var(--measure-read); }
+.brief h3 { margin: 0 0 var(--s-1); font-size: var(--t-sm); font-weight: 600; }
+.brief-text {
+  margin: 0; padding: var(--s-3); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit;
+  background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.brief.is-draft .brief-text { border-style: dashed; }
+
+
+.project-section h2 { display: flex; align-items: baseline; gap: var(--s-2); }
+.project-section .ui-empty { margin-left: var(--gutter); }
+.project-card:hover { border-color: var(--control-border); }
+.project-row { padding-block: var(--s-2); }
+@media (max-width: 760px) {
+  .project-cards { margin-left: 0; grid-template-columns: 1fr; }
+  .project-row { grid-template-columns: var(--gutter) minmax(0, 1fr) 3rem; }
+  .project-row .row-repo, .project-row .row-agent, .project-row .row-mr { display: none; }
+  /* Place the cells: glyph, lane and age on the first line, the detail under the lane. */
+  .project-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .project-row .row-lane { grid-column: 2; grid-row: 1; }
+  .project-row .row-age { grid-column: 3; grid-row: 1; }
+  .project-row .row-detail { grid-column: 2 / 4; grid-row: 2; }
+}

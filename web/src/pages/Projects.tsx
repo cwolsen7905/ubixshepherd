@@ -4,7 +4,9 @@ import { useProjectList } from '../state/projects'
 import { UNASSIGNED } from '../model/projects'
 import { NEW_PROJECT } from '../model/settings'
 import type { ProjectSummary } from '../api/types'
+import { EmptyState, Skeleton } from '../ui'
 import '../styles/projects.css'
+import '../styles/pages/project.css'
 
 export const projectHref = (p: Pick<ProjectSummary, 'name' | 'unassigned'>) => (p.unassigned ? href.unassigned() : href.project(p.name))
 
@@ -17,9 +19,9 @@ export function ProjectsPage() {
       <header className="page-head">
         <h1>Projects</h1>
         <p className="page-sub">Repos grouped as the configuration groups them. Repos in no project are listed as {UNASSIGNED}.</p>
-        <p>
+        <p className="page-actions">
           <a
-            className="button"
+            className="ui-btn ui-btn-primary"
             href={href.settings(NEW_PROJECT)}
             onClick={(e) => {
               e.preventDefault()
@@ -31,12 +33,12 @@ export function ProjectsPage() {
         </p>
       </header>
       {error && <p className="tone-bad">Could not load projects: {error}</p>}
-      {loading && !data && !error && <p className="faint">Loading…</p>}
+      {loading && !data && !error && <Skeleton lines={3} />}
       {data && list.length === 0 && (
-        <p className="empty">
-          No projects are configured and no repo is known. Add a <code>projects:</code> section in Settings or in
-          the configuration file.
-        </p>
+        <EmptyState title="No projects yet">
+          No projects are configured and no repo is known. Add a <code>projects:</code> section in Settings or in the
+          configuration file.
+        </EmptyState>
       )}
       <ul className="project-cards">
         {list.map((p) => (

@@ -9,7 +9,9 @@ import { UNASSIGNED } from '../model/projects'
 import { go, href } from '../router'
 import { useProject } from '../state/projects'
 import type { BriefView, ProjectBrief } from '../api/types'
+import { Badge, EmptyState, Skeleton } from '../ui'
 import '../styles/projects.css'
+import '../styles/pages/project.css'
 
 const NS_PER_MS = 1_000_000
 
@@ -30,7 +32,7 @@ function Brief({ view }: { view: BriefView }) {
           stale={view.stale ? `Older than ${ageOf(view.max_age / NS_PER_MS)}: the focus may have moved.` : ''}
         />
       ) : (
-        <p className="faint">No brief has been approved, so agents in this project are given none.</p>
+        <EmptyState title="No brief has been approved">Agents in this project are given none.</EmptyState>
       )}
       {pending && <BriefText brief={pending} heading={`Draft by ${pending.drafted_by}, not approved`} draft />}
     </section>
@@ -66,7 +68,7 @@ export function ProjectPage({ name }: { name: string | null }) {
             Could not load {name === null ? 'the unassigned repos' : `project ${name}`}: {error}. <a href={href.projects()}>All projects</a>.
           </p>
         ) : (
-          loading && <p className="faint">Loading…</p>
+          loading && <Skeleton lines={3} />
         )}
       </div>
     )
@@ -81,6 +83,7 @@ export function ProjectPage({ name }: { name: string | null }) {
             <>
               {' · '}
               <a
+                className="ui-btn ui-btn-sm"
                 href={href.settings(`project:${name}`)}
                 onClick={(e) => {
                   e.preventDefault()
@@ -102,9 +105,9 @@ export function ProjectPage({ name }: { name: string | null }) {
 
       <section aria-labelledby="project-wait" className="project-section">
         <h2 id="project-wait">
-          Waiting on you <span className="group-count">{data.pending_decisions.length + data.pending_requests.length}</span>
+          Waiting on you <Badge count={data.pending_decisions.length + data.pending_requests.length} tone="attention" />
         </h2>
-        {data.pending_decisions.length + data.pending_requests.length === 0 && <p className="faint">Nothing waits on you here.</p>}
+        {data.pending_decisions.length + data.pending_requests.length === 0 && <EmptyState title="Nothing waits on you here." />}
         <ul className="rows">
           {data.pending_decisions.map((d) => (
             <li key={`d${d.id}`}>
@@ -134,9 +137,9 @@ export function ProjectPage({ name }: { name: string | null }) {
 
       <section aria-labelledby="project-lanes" className="project-section">
         <h2 id="project-lanes">
-          Open lanes <span className="group-count">{data.open_lanes.length}</span>
+          Open lanes <Badge count={data.open_lanes.length} />
         </h2>
-        {data.open_lanes.length === 0 && <p className="faint">No lane is open.</p>}
+        {data.open_lanes.length === 0 && <EmptyState title="No lane is open." />}
         <ul className="rows">
           {data.open_lanes.map((l) => (
             <li key={l.id}>
@@ -157,9 +160,9 @@ export function ProjectPage({ name }: { name: string | null }) {
 
       <section aria-labelledby="project-runs" className="project-section">
         <h2 id="project-runs">
-          Recent runs <span className="group-count">{data.runs.length}</span>
+          Recent runs <Badge count={data.runs.length} />
         </h2>
-        {data.runs.length === 0 && <p className="faint">No run yet.</p>}
+        {data.runs.length === 0 && <EmptyState title="No run yet." />}
         <ul className="rows">
           {data.runs.map((r) => (
             <li key={r.id}>
