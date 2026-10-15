@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, configure, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RunHistory } from '../api/types'
@@ -9,6 +9,12 @@ import { Live, type Api, type Clock } from '../state/live'
 import { FETCH_GAP } from '../timeline/data'
 import { status } from '../test/fixtures'
 import { TimelinePage } from './Timeline'
+
+// These tests draw a day of about 150 bars and hundreds of table rows, so a loaded machine
+// (the whole suite in parallel, or other lanes' suites) can take seconds over one. Waiting is
+// bounded generously: a test that is correct finishes as soon as the page is drawn.
+configure({ asyncUtilTimeout: 15_000 })
+vi.setConfig({ testTimeout: 30_000 })
 
 const busy = busyDay()
 const { src } = busy

@@ -3,6 +3,8 @@ import { clockTime, duration, ESTIMATE_NOTE, runCost } from '../format'
 import { EventGlyph } from './Glyph'
 import { href } from '../router'
 import type { TRun } from '../model/timeline'
+import { taskLine } from '../timeline/task'
+import '../styles/pages/runs.css'
 
 type Key = 'id' | 'agent' | 'lane' | 'state' | 'commits' | 'cost' | 'started' | 'took'
 
@@ -59,7 +61,7 @@ export function TimelineTable({ rows, now }: { rows: Row[]; now: number }) {
   const iso = (ms: number) => new Date(ms).toISOString()
 
   return (
-    <table className="runs tl-table-list">
+    <table className="runs runs-table tl-table-list">
       <caption className="visually-hidden">Runs in the timeline’s range</caption>
       <thead>
         <tr>
@@ -91,7 +93,7 @@ export function TimelineTable({ rows, now }: { rows: Row[]; now: number }) {
             </td>
             <td className="faint" title={iso(run.started)}>{clockTime(iso(run.started), now)}</td>
             <td className="num">{duration(iso(run.started), run.ended !== undefined ? iso(run.ended) : undefined, now)}</td>
-            <td className="run-task" title={run.task}>{run.task}</td>
+            <td className="run-task" title={taskLine(run.task)}>{taskLine(run.task)}</td>
           </tr>
         ))}
       </tbody>
