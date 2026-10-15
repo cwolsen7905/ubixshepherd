@@ -19,6 +19,7 @@ import { useNow } from '../hooks'
 import { href } from '../router'
 import { useLive, useSnapshot } from '../state/context'
 import { laneSource } from '../conversation/api'
+import { LaneArtifactsPanel } from '../artifacts'
 import { Conversation } from '../conversation/Conversation'
 import type { ConversationSource } from '../conversation/types'
 import '../styles/conversation.css'
@@ -41,9 +42,9 @@ interface LaneData {
 /** How often a lane with a running run reads its runs again, for the progress line. */
 export const PROGRESS_POLL = 5000
 
-type Tab = 'overview' | 'conversation' | 'changes'
+type Tab = 'overview' | 'conversation' | 'changes' | 'artifacts'
 
-const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', conversation: 'Conversation', changes: 'Changes' }
+const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', conversation: 'Conversation', changes: 'Changes', artifacts: 'Artifacts' }
 
 const DAEMON_PATH_NOTE = 'The path is on the machine the daemon runs on; the editor opens it on this one.'
 
@@ -203,7 +204,7 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
       )}
 
       <div className="lane-tabs" role="tablist" aria-label="Lane views">
-        {(['overview', 'conversation', 'changes'] as const).map((t) => (
+        {(['overview', 'conversation', 'changes', 'artifacts'] as const).map((t) => (
           <button
             key={t}
             type="button"
@@ -233,6 +234,17 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
       )}
       {tab === 'changes' && !known && (
         <p id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-changes" className="lane-note faint">
+          This lane is closed or not listed by the daemon, so there is no worktree to read.
+        </p>
+      )}
+
+      {tab === 'artifacts' && known && lane.state === 'open' && (
+        <div id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-artifacts">
+          <LaneArtifactsPanel laneId={lane.id} refreshKey={feedLast} />
+        </div>
+      )}
+      {tab === 'artifacts' && !(known && lane.state === 'open') && (
+        <p id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-artifacts" className="lane-note faint">
           This lane is closed or not listed by the daemon, so there is no worktree to read.
         </p>
       )}
