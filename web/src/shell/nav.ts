@@ -65,6 +65,7 @@ export function navCounts(w: Waiting | null): Partial<Record<NavKey, number>> {
 export const COUNT_LABEL: Partial<Record<NavKey, string>> = {
   decisions: 'waiting on you',
   next: 'waiting on your approval',
+  board: 'lanes broken',
 }
 
 export function currentItem(r: Route): NavItem | undefined {

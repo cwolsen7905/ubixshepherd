@@ -22,8 +22,8 @@ function Wordmark() {
   )
 }
 
-/** The workspace: a label showing the current workspace or the count. */
-export function WorkspaceSwitcher({ workspaces }: { workspaces: Status['workspaces'] }) {
+/** The workspace the daemon serves: a name when there is one, a count when there are several. */
+export function WorkspaceLabel({ workspaces }: { workspaces: Status['workspaces'] }) {
   const [first] = workspaces
   if (!first) return null
   if (workspaces.length === 1) {
@@ -71,7 +71,7 @@ export function Sidebar({
     <div className="sidebar-inner">
       <div className="sidebar-top">
         <Wordmark />
-        <WorkspaceSwitcher workspaces={workspaces} />
+        <WorkspaceLabel workspaces={workspaces} />
         <button
           type="button"
           className="search-trigger"
@@ -97,7 +97,7 @@ export function Sidebar({
                     <span className="nav-label">{it.label}</span>
                     {n > 0 && (
                       <span className="nav-count">
-                        <Badge count={n} tone={it.countTone ?? 'attention'} label={COUNT_LABEL[it.key] ?? ''} />
+                        <Badge count={n} tone={it.countTone ?? 'attention'} label={COUNT_LABEL[it.key]} />
                       </span>
                     )}
                   </a>
