@@ -1,6 +1,43 @@
 /* Shepherd's tokens. Fog and slate by day, night pasture by night: calm enough to leave
    open all day, with the one warm colour (the lantern) kept for what waits on the person. */
 
+/* IBM Plex, self-hosted from public/fonts (SIL OFL 1.1, see OFL.txt). Latin subset. */
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-Regular-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-Medium-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/IBMPlexSans-SemiBold-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/IBMPlexMono-Regular-latin.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/IBMPlexMono-Medium-latin.woff2") format("woff2");
+}
+
 :root {
   color-scheme: light dark;
 
@@ -35,12 +72,11 @@
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.14);
   --shadow-2: 0 8px 28px rgb(0 0 0 / 0.28);
 
-  --font-ui: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", system-ui, sans-serif;
-  /* The kit's families. IBM Plex is planned to be bundled (W4.6); until then these fall back
-     to today's stacks, so nothing is fetched from elsewhere. */
-  --font-sans: "IBM Plex Sans", var(--font-ui);
-  --font-code: "IBM Plex Mono", var(--font-mono);
-  --font-mono: "Berkeley Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-ui: "IBM Plex Sans", "Avenir Next", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", system-ui, sans-serif;
+  /* The kit's families: IBM Plex, bundled; the system stacks cover missing glyphs. */
+  --font-sans: var(--font-ui);
+  --font-code: var(--font-mono);
+  --font-mono: "IBM Plex Mono", "Berkeley Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
 
   /* Size. The root size is the one knob: 15px at 1440 wide, rising to 18px by about 2400,
      so every rem below, and the rows and gaps built from them, grow with the display. */
