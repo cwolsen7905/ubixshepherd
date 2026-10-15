@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { go, withOpen, type Open } from '../router'
 import { useMode, type Mode } from './useMode'
+import { LaneInspector } from './lane'
 import '../styles/inspector.css'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -18,6 +19,16 @@ function Placeholder({ open }: { open: Open }) {
       {open.tab ? `, ${open.tab}` : ''}
     </p>
   )
+}
+
+/** What a kind shows: each step adds its `case`; the rest fall back to the placeholder. */
+function InspectorBody({ open }: { open: Open }) {
+  switch (open.kind) {
+    case 'lane':
+      return <LaneInspector open={open} />
+    default:
+      return <Placeholder open={open} />
+  }
 }
 
 /**
@@ -121,7 +132,7 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
                 ×
               </button>
             </header>
-            <Placeholder open={open} />
+            <InspectorBody open={open} />
           </aside>
         </>
       )}
