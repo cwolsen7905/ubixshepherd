@@ -9,14 +9,18 @@ import { href } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread } from '../state/desk'
 
+const defaultMake = (w: number) => new DeskThread(w)
+
 /** A desk question in the inspector: what the desk asked, with Reply and Skip. */
-export function QuestionPane({ id, make = (w: number) => new DeskThread(w) }: { id: number; make?: (workspaceId: number) => DeskThread }) {
+export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (workspaceId: number) => DeskThread }) {
   const snap = useSnapshot()
   const [q, setQ] = useState<DeskQuestion | null | undefined>(undefined)
+  const [failed, setFailed] = useState(false)
   const read = useCallback(() => {
+    setFailed(false)
     deskQuestions.list('open').then(
       (qs) => setQ(qs.find((x) => x.id === id) ?? null),
-      () => {},
+      () => setFailed(true),
     )
   }, [id])
   useEffect(() => {
@@ -25,6 +29,16 @@ export function QuestionPane({ id, make = (w: number) => new DeskThread(w) }: { 
   }, [read])
   const workspaces = snap.status?.workspaces ?? []
   const thread = useMemo(() => (q ? make(workspaces.length > 1 ? q.workspace_id : 0) : null), [q, workspaces.length, make])
+  if (q === undefined && failed) {
+    return (
+      <p className="inspector-body tone-bad" role="alert">
+        Could not read the question.{' '}
+        <button type="button" className="link-button" onClick={read}>
+          Try again
+        </button>
+      </p>
+    )
+  }
   if (q === undefined) return <p className="inspector-body faint">Reading the question…</p>
   if (q === null || !thread) {
     return (
