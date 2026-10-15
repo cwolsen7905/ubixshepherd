@@ -1,0 +1,46 @@
+/* The inspector frame: split at 1440 and up, a drawer between, a bottom sheet below 760.
+   The mode classes come from inspector/useMode.ts, so the widths live in one place. */
+.inspector-frame { display: flex; min-height: 0; }
+.inspector-page { flex: 1 1 auto; min-width: 0; }
+.inspector-frame.is-split .inspector-page { min-width: 40rem; }
+
+.inspector {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  flex-direction: column;
+  animation: inspector-in 150ms ease-out;
+}
+.inspector-split {
+  flex: 0 0 26rem;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow: auto;
+  box-shadow: none;
+  border-width: 0 0 0 1px;
+}
+.inspector-overlay,
+.inspector-sheet { position: fixed; z-index: 40; overflow: auto; }
+.inspector-overlay { top: 0; right: 0; bottom: 0; width: min(28rem, 90vw); }
+.inspector-sheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 85vh;
+  border-radius: 0.75rem 0.75rem 0 0;
+  animation-name: inspector-up;
+}
+.inspector-scrim { position: fixed; inset: 0; z-index: 39; background: rgb(0 0 0 / 0.35); }
+
+.inspector-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--rule); }
+.inspector-head h2 { margin: 0; font-size: var(--t-md); text-transform: capitalize; }
+.inspector-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.inspector-close { background: none; border: 0; font-size: var(--t-lg); cursor: pointer; color: var(--muted); }
+.inspector-body { padding: var(--s-4); margin: 0; }
+
+@keyframes inspector-in { from { transform: translateX(1rem); opacity: 0; } }
+@keyframes inspector-up { from { transform: translateY(1rem); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .inspector { animation: none; } }

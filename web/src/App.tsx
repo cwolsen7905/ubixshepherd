@@ -18,6 +18,7 @@ import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
+import { InspectorFrame } from './inspector/Inspector'
 import { CommandPalette } from './palette/CommandPalette'
 import { WaitingOnYou } from './components/WaitingOnYou'
 import { StatusCounts } from './components/StatusCounts'
@@ -96,6 +97,7 @@ export function App() {
           )
         }
       >
+        <InspectorFrame open={route.open}>
         {route.page === 'board' && (
           <BoardPage
             items={items}
@@ -127,6 +129,7 @@ export function App() {
             Nothing lives at <code>{route.path}</code>. <a href={href.board()}>Go to the board</a>.
           </p>
         )}
+        </InspectorFrame>
       </Shell>
       {help && <Help onClose={() => setHelp(false)} />}
       <CommandPalette />
