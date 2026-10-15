@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Legend } from './Legend'
 
 const KEYS: [string, string][] = [
+  ['Ctrl+K / ⌘K', 'Search or act: go to a page, open a lane, run or decision'],
   ['j / k', 'Move down and up the board'],
   ['Enter', 'Open the lane or decision'],
   ['g b', 'Go to the board'],

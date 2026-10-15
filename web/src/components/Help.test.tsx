@@ -11,3 +11,10 @@ describe('Help', () => {
     expect(Array.from(row?.querySelectorAll('kbd') ?? []).map((key) => key.textContent)).toEqual(['g', 't'])
   })
 })
+
+describe('Help palette key', () => {
+  it('lists the palette key', () => {
+    render(<Help onClose={vi.fn()} />)
+    expect(screen.getByText(/Search or act/)).toBeInTheDocument()
+  })
+})

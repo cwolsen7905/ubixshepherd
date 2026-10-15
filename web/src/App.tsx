@@ -18,6 +18,7 @@ import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
+import { CommandPalette } from './palette/CommandPalette'
 import { WaitingOnYou } from './components/WaitingOnYou'
 import { StatusCounts } from './components/StatusCounts'
 import { statusCounts } from './state/attention'
@@ -127,6 +128,7 @@ export function App() {
         )}
       </Shell>
       {help && <Help onClose={() => setHelp(false)} />}
+      <CommandPalette />
     </>
   )
 }

@@ -1,0 +1,59 @@
+.palette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: min(34rem, 80vw);
+}
+.palette-input {
+  width: 100%;
+  padding: var(--s-2) var(--s-3);
+  font: inherit;
+  color: var(--ink);
+  background: var(--field);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+}
+.palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.palette-option {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr auto;
+  gap: var(--s-2);
+  align-items: baseline;
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.palette-option[aria-selected='true'] {
+  background: var(--field);
+  outline: 2px solid var(--lichen);
+  outline-offset: -2px;
+}
+.palette-group,
+.palette-hint,
+.palette-keys,
+.palette-empty {
+  color: var(--muted);
+  font-size: var(--t-sm, 0.85em);
+}
+.palette-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-problem {
+  color: inherit;
+}
+.palette-keys {
+  margin: 0;
+}
+@media (forced-colors: active) {
+  .palette-option[aria-selected='true'] {
+    outline: 2px solid Highlight;
+  }
+}
