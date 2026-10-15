@@ -23,7 +23,7 @@
 .cv-user-msg { border-left-color: var(--lantern); background: var(--lantern-wash); border-radius: 0 var(--radius) var(--radius) 0; }
 .cv-agent-msg { border-left-color: var(--lichen); }
 .cv-thinking-msg { border-left-color: var(--rule-strong); font-size: var(--t-sm); }
-.cv-who { display: block; font-size: var(--t-xs); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.cv-who { display: block; font-size: var(--t-xs); font-weight: 600; color: var(--muted); }
 .cv-plain { margin: 2px 0 0; white-space: pre-wrap; }
 .cv-clip { margin: 4px 0 0; font-size: var(--t-sm); }
 

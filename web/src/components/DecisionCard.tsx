@@ -8,6 +8,7 @@ import { href } from '../router'
 import { useLive } from '../state/context'
 import '../styles/conversation.css'
 import '../styles/decisions.css'
+import { Button } from '../ui'
 import { Glyph } from './Glyph'
 
 /** A question longer than this (characters or lines) starts clamped, with a "Show all". */
@@ -196,9 +197,9 @@ export function DecisionCard({
             />
           </label>
           <div className="send">
-            <button type="button" className="button button-primary" disabled={!words} onClick={() => void send()}>
+            <Button variant="primary" {...(inlineCard ? { 'aria-disabled': !words } : { disabled: !words })} onClick={() => void send()}>
               {sent.state === 'sending' ? 'Sending…' : inlineCard ? 'Answer' : words ? `Send “${clip(words, 48)}”` : 'Send answer'}
-            </button>
+            </Button>
             {sent.state === 'error' && (
               <span className="tone-bad" role="alert">
                 Not sent: {sent.msg}
