@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, laneClose } from '../api/client'
 import type { LaneReview, LaneView } from '../api/types'
 import { useLive } from '../state/context'
-import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
-import { DeskThread } from '../state/desk'
+import { askToCommit, storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/EmptyState'
 import '../styles/lane-close.css'
@@ -210,18 +209,15 @@ function ArtifactChoices({ laneId, busy, refreshKey, onSettled }: { laneId: numb
             <button
               type="button"
               className="link-button"
-              disabled={busy || asked.has(a.id)}
+              disabled={busy}
               onClick={() =>
                 void run(async () => {
-                  const thread = new DeskThread(a.workspace_id)
-                  const ok = await thread.send(`Commit ${a.path} in the lane's branch, in scope and under the repo's gate.`, undefined, undefined, {
-                    kind: 'artifact',
-                    ids: [a.id],
-                    label: a.path.slice(0, 200),
-                  })
-                  if (!ok) throw new Error(thread.getSnapshot().problem?.message ?? 'The front desk did not take that.')
+                  // Marked asked as soon as the desk takes it, so a retry of the patch cannot ask twice.
+                  if (!asked.has(a.id)) {
+                    await askToCommit(a)
+                    setAsked((x) => new Set(x).add(a.id))
+                  }
                   await storedArtifacts.patch(a.id, { intent: 'commit' })
-                  setAsked((s) => new Set(s).add(a.id))
                 })
               }
             >

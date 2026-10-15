@@ -5,10 +5,9 @@ import { Markdown } from '../conversation/Markdown'
 import { since } from '../format'
 import { useNow } from '../hooks'
 import { href, withOpen } from '../router'
-import { DeskThread } from '../state/desk'
 import { Button, Dialog, EmptyState, Skeleton } from '../ui'
 import { bytes } from './ArtifactViewer'
-import { intentTag, storedArtifacts, storedContentPath, storedText, type StoredArtifact } from './api'
+import { askToCommit, intentTag, storedArtifacts, storedContentPath, storedText, type StoredArtifact } from './api'
 import { diffLines } from './diff'
 import '../styles/pages/artifacts.css'
 
@@ -51,6 +50,8 @@ export function StoredArtifactView({ id, refreshKey, onChanged }: { id: number; 
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
+  // Set as soon as the desk takes the turn, so a retry of a failed patch cannot ask twice.
+  const [asked, setAsked] = useState(false)
 
   const versions = useMemo(
     () => [...(artifact?.versions ?? [])].sort((a, b) => Date.parse(b.seen) - Date.parse(a.seen)),
@@ -92,16 +93,6 @@ export function StoredArtifactView({ id, refreshKey, onChanged }: { id: number; 
       setBusy(false)
     }
   }
-  const askCommit = async () => {
-    const thread = new DeskThread(a.workspace_id)
-    const ok = await thread.send(`Commit ${a.path} in the lane's branch, in scope and under the repo's gate.`, undefined, undefined, {
-      kind: 'artifact',
-      ids: [a.id],
-      label: a.path.slice(0, 200),
-    })
-    if (!ok) throw new Error(thread.getSnapshot().problem?.message ?? 'The front desk did not take that.')
-  }
-
   return (
     <div className="stored-artifact">
       <p className="artifact-head">
@@ -144,15 +135,18 @@ export function StoredArtifactView({ id, refreshKey, onChanged }: { id: number; 
               Keep
             </Button>
             <Button
-              disabled={busy}
+              disabled={busy || (asked && a.intent === 'commit')}
               onClick={() =>
                 void act(async () => {
+                  if (!asked) {
+                    await askToCommit(a)
+                    setAsked(true)
+                  }
                   await storedArtifacts.patch(a.id, { intent: 'commit' })
-                  await askCommit()
                 }, 'Asked the front desk to have the lane’s agent commit it.')
               }
             >
-              Ask to commit
+              {asked ? 'Asked to commit' : 'Ask to commit'}
             </Button>
           </>
         )}

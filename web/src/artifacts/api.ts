@@ -3,6 +3,7 @@
 // so it is read here with fetch, as the lane's is.
 import { ApiError, NetworkError, REQUEST_TIMEOUT, asList, get, patch, post, qs } from '../api/client'
 import type { ArtifactKind, ArtifactText } from '../api/artifacts'
+import { DeskThread } from '../state/desk'
 
 export type Intent = 'commit' | 'keep' | 'scratch' | 'undecided'
 export type ArtifactState = 'live' | 'kept' | 'committed' | 'discarded' | 'gone'
@@ -108,4 +109,18 @@ export function intentTag(a: Pick<StoredArtifact, 'intent' | 'state'>): string {
   if (a.state === 'gone') return 'gone'
   if (a.intent === 'keep') return 'kept local'
   return a.intent
+}
+
+/**
+ * Asks the front desk to have the lane's agent commit the file. Resolves once the desk took
+ * the turn; the caller records the intent after, so a failed send never marks it.
+ */
+export async function askToCommit(a: Pick<StoredArtifact, 'id' | 'path' | 'workspace_id'>): Promise<void> {
+  const thread = new DeskThread(a.workspace_id)
+  const ok = await thread.send(`Commit ${a.path} in the lane's branch, in scope and under the repo's gate.`, undefined, undefined, {
+    kind: 'artifact',
+    ids: [a.id],
+    label: a.path.slice(0, 200),
+  })
+  if (!ok) throw new Error(thread.getSnapshot().problem?.message ?? 'The front desk did not take that.')
 }
