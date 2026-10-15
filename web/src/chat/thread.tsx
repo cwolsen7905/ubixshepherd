@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DecisionView, DeskEvent, DeskQuestion, WaitingItem } from '../api/types'
 import { Backlog } from '../components/Backlog'
+import { ErrorBoundary } from '../components/ErrorBoundary'
 import { TopicBar } from '../components/TopicBar'
 import { Topics } from '../components/Topics'
 import { TopicPill } from '../components/TopicPill'
@@ -381,6 +382,7 @@ function ChatThread({
           />
           <Topics active={topicId} now={now} onFilter={filterTo} />
         </div>
+        <ErrorBoundary region="The conversation">
         <div className="chat-main">
         <TopicBar active={topicId} onFilter={filterTo} />
         {topicId !== null && (
@@ -448,6 +450,7 @@ function ChatThread({
 
         <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} topicId={topicId} onSend={follow.jump} />
         </div>
+        </ErrorBoundary>
       </div>
     </div>
   )
