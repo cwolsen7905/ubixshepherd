@@ -1,4 +1,4 @@
-import { href, parse } from './router'
+import { formatOpen, href, parse, parseOpen, withOpen } from './router'
 
 describe('router', () => {
   it('parses every page and round-trips its href', () => {
@@ -60,5 +60,35 @@ describe('cameFrom', () => {
     window.location.hash = '#/lanes/1'
     await wait()
     expect(cameFrom()).toBeUndefined()
+  })
+})
+
+describe('open=', () => {
+  it('parses kind, id and tab on any route', () => {
+    expect(parse('#/?open=decision:5')).toEqual({ page: 'chat', open: { kind: 'decision', id: 5 } })
+    expect(parse('#/board?open=lane:4/changes&range=week')).toEqual({
+      page: 'board',
+      range: 'week',
+      open: { kind: 'lane', id: 4, tab: 'changes' },
+    })
+    expect(parse('#/runs/3/log?open=run:17/log')).toEqual({ page: 'log', run: 3, open: { kind: 'run', id: 17, tab: 'log' } })
+    expect(parse('#/nope?open=artifact:12')).toEqual({ page: 'missing', path: '/nope', open: { kind: 'artifact', id: 12 } })
+  })
+
+  it('ignores a value it cannot read', () => {
+    for (const bad of ['decision', 'decision:', 'decision:0', 'decision:x', 'bogus:1', 'lane:1/', 'lane:-1', 'decision:99999999999999999999']) {
+      expect(parse(`#/board?open=${bad}`)).toEqual({ page: 'board' })
+    }
+    expect(parseOpen(null)).toBeUndefined()
+  })
+
+  it('round-trips and edits the hash', () => {
+    const o = { kind: 'run', id: 17, tab: 'log' }
+    expect(parseOpen(formatOpen(o))).toEqual(o)
+    expect(withOpen('#/', { kind: 'decision', id: 5 })).toBe('#/?open=decision:5'.replace(':', '%3A'))
+    expect(withOpen('#/board?range=week', o)).toBe('#/board?range=week&open=run%3A17%2Flog')
+    expect(withOpen('#/board?range=week&open=run%3A17', undefined)).toBe('#/board?range=week')
+    expect(withOpen('#/?open=decision:5', undefined)).toBe('#/')
+    expect(parse(withOpen('#/board', o))).toEqual({ page: 'board', open: o })
   })
 })

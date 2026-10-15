@@ -10,7 +10,13 @@ export type UsageRange = 'today' | 'week' | 'month' | 'custom'
 /** The timeline's range: since local midnight, the last 24 hours, or the last 7 days. */
 export type TimelineRange = 'today' | '24h' | 'week'
 
-export type Route =
+/** What the inspector shows: `open=decision:5`, `open=lane:4/changes`, `open=run:17/log`. */
+export type Open = { kind: string; id: number; tab?: string }
+
+/** The kinds the inspector can hold. A bare unknown kind is ignored rather than shown. */
+export const OPEN_KINDS = ['decision', 'question', 'request', 'lane', 'run', 'topic', 'artifact'] as const
+
+type Page =
   | { page: 'board'; range?: Range }
   | { page: 'runs'; range?: Range; agent?: string; lane?: number }
   | { page: 'decisions'; focus?: number }
@@ -27,7 +33,39 @@ export type Route =
   | { page: 'kit' }
   | { page: 'missing'; path: string }
 
+/** Every route can carry an open inspector item. */
+export type Route = Page & { open?: Open }
+
+/** Reads an `open=` value, or undefined when it is not `kind:id[/tab]` of a known kind. */
+export function parseOpen(v: string | null | undefined): Open | undefined {
+  const m = /^([a-z]+):(\d+)(?:\/([a-z0-9-]+))?$/.exec(v ?? '')
+  if (!m || !(OPEN_KINDS as readonly string[]).includes(m[1] as string)) return undefined
+  const id = Number(m[2])
+  if (!Number.isSafeInteger(id) || id <= 0) return undefined
+  return { kind: m[1] as string, id, ...(m[3] ? { tab: m[3] } : {}) }
+}
+
+export function formatOpen(o: Open): string {
+  return `${o.kind}:${o.id}${o.tab ? `/${o.tab}` : ''}`
+}
+
+/** `hash` with its `open=` set, or removed when `o` is undefined. Other parameters are kept. */
+export function withOpen(hash: string, o: Open | undefined): string {
+  const bare = hash.replace(/^#/, '') || '/'
+  const [path = '/', query = ''] = bare.split('?')
+  const q = new URLSearchParams(query)
+  if (o) q.set('open', formatOpen(o))
+  else q.delete('open')
+  return q.size ? `#${path}?${q}` : `#${path}`
+}
+
 export function parse(hash: string): Route {
+  const route = parsePage(hash)
+  const open = parseOpen(new URLSearchParams(hash.split('?')[1] ?? '').get('open'))
+  return open ? { ...route, open } : route
+}
+
+function parsePage(hash: string): Page {
   const [path = '/', query = ''] = (hash.replace(/^#/, '') || '/').split('?')
   const q = new URLSearchParams(query)
   const range = q.get('range') === 'week' ? 'week' : q.get('range') === 'today' ? 'today' : undefined
