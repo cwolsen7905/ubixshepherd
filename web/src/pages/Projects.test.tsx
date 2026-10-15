@@ -84,6 +84,14 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('link', { name: 'New project' })).toHaveAttribute('href', '#/settings?scope=new-project')
   })
 
+  it('makes New project the one primary action and says when there are no projects', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectsPage />)
+    expect(screen.getByRole('link', { name: 'New project' })).toHaveClass('ui-btn-primary')
+    expect(await screen.findByText('No projects yet')).toBeInTheDocument()
+    expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(1)
+  })
+
   it('says so when the daemon cannot be read', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }))
     await show(<ProjectsPage />)
@@ -109,6 +117,15 @@ describe('ProjectPage', () => {
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
     // Read-only: nothing here can approve or edit.
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('counts each section with a badge and keeps Edit secondary', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectPage name="shop" />)
+    const waiting = await screen.findByRole('region', { name: /Waiting on you/ })
+    expect(within(waiting).getByLabelText('2 waiting on you')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Edit' })).not.toHaveClass('ui-btn-primary')
+    expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(0)
   })
 
   it('links a project to its settings, and Unassigned to none', async () => {
