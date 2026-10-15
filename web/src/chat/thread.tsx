@@ -40,9 +40,9 @@ function FeedRow({
       <EventGlyph event={item.event} />
       <div className="trow-body">
         <p className="trow-line">
-          <span>{item.text}</span>{' '}
+          {!decision && <span>{item.text}</span>}{' '}
           {RUN_KINDS.has(item.event) && item.ref ? <a href={href.log(item.ref)}>log</a> : null}{' '}
-          <time dateTime={item.created} title={item.created} className="faint trow-age">{age}</time>
+          {!decision && <time dateTime={item.created} title={item.created} className="faint trow-age">{age}</time>}
         </p>
         {decision && <DecisionCard d={decision} variant="inline" />}
       </div>

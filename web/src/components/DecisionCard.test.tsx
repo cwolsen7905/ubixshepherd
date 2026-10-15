@@ -140,3 +140,20 @@ describe('DecisionCard', () => {
     expect(more).toBeInTheDocument()
   })
 })
+
+describe('the inline decision card', () => {
+  it('has a primary Answer that is not natively disabled and does nothing until there are words', async () => {
+    const user = userEvent.setup()
+    show(decision(), 'inline')
+    const btn = screen.getByRole('button', { name: 'Answer' })
+    expect(btn).toHaveClass('ui-btn-primary')
+    expect(btn).not.toBeDisabled()
+    expect(btn).toHaveAttribute('aria-disabled', 'true')
+    await user.click(btn)
+    expect(screen.queryByText(/^Answered/)).toBeNull()
+  })
+  it('names the aside in sentence case', () => {
+    show(decision({ why: 'Because it is yours.' }), 'inline')
+    expect(screen.getByText('Why this is yours')).toBeInTheDocument()
+  })
+})

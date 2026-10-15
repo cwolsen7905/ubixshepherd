@@ -41,3 +41,8 @@
 @media (prefers-reduced-motion: reduce) {
   .decision-slot.is-focus-target { animation: none; background: color-mix(in srgb, var(--lichen) 22%, transparent); }
 }
+
+/* Sentence-case labels and a plain primary Answer (the kit's Button). */
+.decision .decision-aside-h { text-transform: none; letter-spacing: 0; font-size: var(--t-sm); }
+.decision-inline .decision-md.is-clamped { max-height: 9em; }
+.decision .ui-btn-primary[aria-disabled="true"] { background: var(--lichen); border-color: var(--lichen); color: var(--raised); opacity: 0.75; cursor: default; }
