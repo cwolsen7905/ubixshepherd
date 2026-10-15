@@ -70,6 +70,15 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
   }, [open, load, close])
 
   const down = error !== null
+  
+  // Get the forge poll time if available
+  const forgePollTime = data?.status.detail?.forge?.last_poll
+  const forgePollAge = forgePollTime ? since(forgePollTime, now) : null
+  
+  // Text for the status indicator
+  const statusText = down ? 'Daemon offline' : 'Daemon live'
+  const forgeText = forgePollAge ? `, forge ${forgePollAge} ago` : ''
+  
   return (
     <span
       ref={box}
@@ -89,7 +98,8 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
           setOpen(!(open && pinned))
         }}
       >
-        <span aria-hidden="true">{down ? '○' : '●'}</span>
+        <span aria-hidden="true" className="daemon-dot-indicator">{down ? '○' : '●'}</span>
+        <span className="daemon-status-text">{statusText}{forgeText}</span>
         <span className="visually-hidden">{down ? 'Not connected' : 'Connected'}</span>
       </button>
       <div id={id} role="tooltip" className="daemon-pop" hidden={!open}>
