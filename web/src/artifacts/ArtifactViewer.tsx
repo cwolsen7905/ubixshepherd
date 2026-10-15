@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { artifactContentPath, artifactText, type ArtifactInfo, type ArtifactText } from '../api/artifacts'
 import { Markdown } from '../conversation/Markdown'
+import { EmptyState, Skeleton } from '../ui'
 
 /** The human size of a file. */
 export function bytes(n: number): string {
@@ -40,7 +41,9 @@ export function ArtifactViewer({ laneId, artifact, refreshKey }: { laneId: numbe
     return (
       <div className="artifact-view">
         {head}
-        <p className="faint">This file is not readable here: it is too large, a link, or no longer there.</p>
+        <EmptyState title="Not readable here">
+          This file is {bytes(artifact.size)}: it is over the size cap, a link, or no longer there. Open it in the lane's worktree.
+        </EmptyState>
       </div>
     )
   }
@@ -56,7 +59,7 @@ export function ArtifactViewer({ laneId, artifact, refreshKey }: { laneId: numbe
     return (
       <div className="artifact-view">
         {head}
-        <p className="faint">No preview for this kind of file.</p>
+        <EmptyState title="No preview">There is no preview for this kind of file.</EmptyState>
       </div>
     )
   }
@@ -64,8 +67,8 @@ export function ArtifactViewer({ laneId, artifact, refreshKey }: { laneId: numbe
   return (
     <div className="artifact-view">
       {head}
-      {!mine && <p className="faint">Loading…</p>}
-      {mine?.error && <p className="tone-bad">Could not read the file: {mine.error}</p>}
+      {!mine && <Skeleton lines={3} />}
+      {mine?.error && <EmptyState title="Could not read the file">{mine.error}</EmptyState>}
       {mine?.value && (
         <>
           {mine.value.redacted > 0 && (
