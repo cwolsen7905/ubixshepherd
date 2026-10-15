@@ -2,7 +2,7 @@ import { href, type Route } from '../router'
 import { attentionCount, attentionOf } from '../state/attention'
 import type { Waiting } from '../api/types'
 
-export type NavKey = 'inbox' | 'chat' | 'board' | 'next' | 'runs' | 'timeline' | 'projects' | 'usage' | 'settings'
+export type NavKey = 'inbox' | 'chat' | 'board' | 'next' | 'artifacts' | 'runs' | 'timeline' | 'projects' | 'usage' | 'settings'
 
 export interface NavItem {
   key: NavKey
@@ -36,6 +36,7 @@ export const NAV: NavGroup[] = [
     items: [
       { key: 'board', label: 'Board', mark: '◻', to: () => href.board(), current: (r) => r.page === 'board' || r.page === 'lane' },
       { key: 'next', label: 'Next up', mark: 'N', to: () => href.next(), current: (r) => r.page === 'next' },
+      { key: 'artifacts', label: 'Artifacts', mark: 'A', to: () => href.artifacts(), current: (r) => r.page === 'artifacts' },
       { key: 'runs', label: 'Runs', mark: 'R', to: () => href.runs(), current: (r) => r.page === 'runs' || r.page === 'log' },
       { key: 'timeline', label: 'Timeline', mark: 'T', to: () => href.timeline(), current: (r) => r.page === 'timeline' },
     ],
