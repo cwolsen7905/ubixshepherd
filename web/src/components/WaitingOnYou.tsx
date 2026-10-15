@@ -15,6 +15,7 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   question: 'question',
   blocked: 'blocked',
   scope: 'scope',
+  request: 'request',
 }
 
 const keyOf = waitingKey
@@ -119,6 +120,7 @@ export function WaitingOnYou() {
                   {it.action === 'answer' && (
                     <a href={href.decisions(it.decision_id)} onClick={() => again(href.decisions(it.decision_id))}>Answer</a>
                   )}
+                  {it.action === 'route' && <a href={href.decisions()}>Route</a>}
                   {it.action === 'reply' && (
                     <button type="button" onClick={() => showInThread(it)}>Reply</button>
                   )}
