@@ -491,3 +491,27 @@ func TestUpdateSettings(t *testing.T) {
 		t.Errorf("a channel outside the set was accepted: %v", err)
 	}
 }
+
+func TestArtifactsDiscover(t *testing.T) {
+	c, err := Parse([]byte("defaults:\n  artifacts:\n    discover: [\"**/*.md\"]\nrepos:\n  a: {}\n  b:\n    artifacts:\n      discover: [docs/plans/**]\n  c: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := c.Profile("a").Artifacts.Globs(); len(g) != 1 || g[0] != "**/*.md" {
+		t.Errorf("inherited = %v", g)
+	}
+	if g := c.Profile("b").Artifacts.Globs(); len(g) != 1 || g[0] != "docs/plans/**" {
+		t.Errorf("overridden = %v", g)
+	}
+	d, _ := Parse([]byte("repos:\n  a: {}\n"))
+	if g := d.Profile("a").Artifacts.Globs(); len(g) != len(DefaultArtifactGlobs) {
+		t.Errorf("default = %v", g)
+	}
+	for name, in := range map[string]string{
+		"absolute": "[/etc/*.md]", "escapes": "[../x/**]", "empty": "[\"\"]",
+	} {
+		if _, err := Parse([]byte("repos:\n  a:\n    artifacts:\n      discover: " + in + "\n")); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+}
