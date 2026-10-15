@@ -568,6 +568,17 @@ func (c *Client) resolveScope(ctx context.Context) (api.Resolution, error) {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
+	resp, err := c.send(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// send makes the request and returns the answer when it is a 2xx; any other answer is
+// turned into an error. The caller closes the body.
+func (c *Client) send(ctx context.Context, method, path string, body any) (*http.Response, error) {
 	c.mu.RLock()
 	base, token := c.base, c.token
 	c.mu.RUnlock()
@@ -575,13 +586,13 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		rd = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, base+path, rd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	if c.Name != "" {
@@ -593,23 +604,24 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	resp, err := c.http.Do(req)
 	if err != nil {
 		if c.host != "" {
-			return &unreachable{host: c.host, err: err}
+			return nil, &unreachable{host: c.host, err: err}
 		}
 		// A stale runtime file from a daemon that died without cleaning up.
-		return fmt.Errorf("%w (%v)", ErrNoDaemon, err)
+		return nil, fmt.Errorf("%w (%v)", ErrNoDaemon, err)
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized {
-		return &refused{host: c.host}
+		resp.Body.Close()
+		return nil, &refused{host: c.host}
 	}
 	if resp.StatusCode/100 != 2 {
+		defer resp.Body.Close()
 		var e api.Error
 		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
-			return fmt.Errorf("daemon: %s", e.Error)
+			return nil, fmt.Errorf("daemon: %s", e.Error)
 		}
-		return fmt.Errorf("daemon: %s", resp.Status)
+		return nil, fmt.Errorf("daemon: %s", resp.Status)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	return resp, nil
 }
 
 // unreachable is a remote daemon that did not answer through its tunnel. It matches

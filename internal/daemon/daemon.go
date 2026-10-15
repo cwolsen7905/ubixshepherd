@@ -1877,6 +1877,10 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	if s.Runner != nil {
 		// Each run's agent gets its own worker token, never the operator's.
 		s.Runner.SetCredentials(s)
+		if s.Runner.ArtifactSnapshot == nil && s.Fold != nil {
+			// A version a run's end records is copied at once, not at the next sweep.
+			s.Runner.ArtifactSnapshot = s.Fold.SnapshotKnown
+		}
 		s.ReapOrphans(ctx)
 		if err := s.Runner.Recover(ctx); err != nil {
 			return err

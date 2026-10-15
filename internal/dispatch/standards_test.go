@@ -147,3 +147,13 @@ func TestBriefCarriesLinkRule(t *testing.T) {
 		}
 	}
 }
+
+func TestBriefTellsAgentsTheArtifactDirectory(t *testing.T) {
+	b := Brief("t", "l", "r", "b", "main", "/w", []string{"x"}, "", Powers{}, true, "", "")
+	if !strings.Contains(b, ".shepherd/artifacts/") || !strings.Contains(b, "intent keep") {
+		t.Errorf("brief does not name the artifact directory:\n%s", b)
+	}
+	if without := Brief("t", "l", "r", "b", "main", "/w", []string{"x"}, "", Powers{}, false, "", ""); strings.Contains(without, ".shepherd/artifacts/") {
+		t.Errorf("a brief with no tools names a tool that is not there:\n%s", without)
+	}
+}

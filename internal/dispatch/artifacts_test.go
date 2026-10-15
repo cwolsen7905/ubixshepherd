@@ -169,3 +169,27 @@ func TestRunEndRecordsDiscoveredArtifacts(t *testing.T) {
 		t.Errorf("artifact feed lines = %d, want 3", n)
 	}
 }
+
+// The snapshot hook runs after the run end has recorded versions, so a version first
+// seen at the end is already in the store when the copy is taken.
+func TestRunEndSnapshotsAfterRecordingVersions(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t, "ok")
+	var seen int
+	f.runner.ArtifactSnapshot = func(ctx context.Context, laneID int64) {
+		list, _ := f.st.ListArtifacts(ctx, store.ArtifactFilter{LaneID: laneID})
+		for _, a := range list {
+			if full, err := f.st.Artifact(ctx, a.ID); err == nil && len(full.Versions) > 0 {
+				seen += len(full.Versions)
+			}
+		}
+	}
+	writeIn(t, f.lane.Worktree, ".shepherd/artifacts/plan.md", "# plan\n")
+	r, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, r.ID)
+	// The outcome line is written after the snapshot hook has run.
+	waitFeed(t, f, fmt.Sprintf("run %d: claude in lane", r.ID))
+	if seen != 1 {
+		t.Errorf("the snapshot hook saw %d recorded versions, want 1", seen)
+	}
+}

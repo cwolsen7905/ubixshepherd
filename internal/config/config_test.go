@@ -515,3 +515,26 @@ func TestArtifactsDiscover(t *testing.T) {
 		}
 	}
 }
+
+func TestArtifactRetention(t *testing.T) {
+	days, capB := Config{}.ArtifactRetention()
+	if days != 30 || capB != 500<<20 {
+		t.Errorf("defaults = %d days, %d bytes", days, capB)
+	}
+	c, err := Parse([]byte("defaults:\n  artifacts:\n    keep_days: 7\n    cap_mb: 64\nrepos:\n  a: {}\n  b:\n    artifacts:\n      keep_days: 90\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if days, capB = c.ArtifactRetention(); days != 90 || capB != 64<<20 {
+		t.Errorf("configured = %d days, %d bytes; want the longest repo's days and the defaults' cap", days, capB)
+	}
+	if got := c.Profile("a").Artifacts.KeepDays; got != 7 {
+		t.Errorf("repo a keep_days = %d, want the defaults' 7", got)
+	}
+	if _, err := Parse([]byte("repos:\n  a:\n    artifacts:\n      keep_days: -1\n")); err == nil {
+		t.Error("a negative keep_days was accepted")
+	}
+	if _, err := Parse([]byte("defaults:\n  artifacts:\n    cap_mb: -5\n")); err == nil {
+		t.Error("a negative cap_mb was accepted")
+	}
+}
