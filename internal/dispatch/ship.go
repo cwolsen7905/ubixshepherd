@@ -45,6 +45,7 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	if prof.Autonomy.Push != config.Shepherd {
 		return
 	}
+	r.pushTags(ctx, lane, repo, prof)
 	if n, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", pushedRef(ctx, lane)+"..HEAD"); err != nil || n == "0" {
 		return
 	}
@@ -122,6 +123,7 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		return out, refuse("%s has not opted in to Shepherd pushing (its profile's autonomy.push is %q, not %q): push lane %s yourself",
 			repo.Name, prof.Autonomy.Push, config.Shepherd, lane.Name)
 	}
+	tagged := r.pushTags(ctx, lane, repo, prof)
 	if prof.Gate == "" {
 		return out, refuse("%s has no gate: Shepherd pushes only after running the repo's gate itself", repo.Name)
 	}
@@ -140,6 +142,10 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 	}
 	fmt.Sscan(n, &out.Commits)
 	if out.Commits == 0 {
+		if len(tagged) > 0 {
+			out.Message = strings.Join(tagged, "; ")
+			return out, nil
+		}
 		return out, refuse("lane %s has no commits beyond %s: nothing to ship", lane.Name, pushed)
 	}
 	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
