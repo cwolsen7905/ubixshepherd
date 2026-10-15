@@ -419,6 +419,48 @@ var migrations = []string{
 	// The review threads already handed back to a lane's agent for its open request, so a
 	// restart does not hand them back again.
 	`ALTER TABLE lane_forge ADD COLUMN threads_seen TEXT NOT NULL DEFAULT '';`,
+	// Artifacts: files of a lane the person may want to read, their versions and what
+	// they are tied to (docs/design/artifacts.md). intent_by is who chose the intent.
+	`CREATE TABLE artifacts (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER NOT NULL DEFAULT 0,
+		repo_id      INTEGER NOT NULL DEFAULT 0,
+		lane_id      INTEGER NOT NULL,
+		run_id       INTEGER NOT NULL DEFAULT 0,
+		path         TEXT NOT NULL,
+		title        TEXT NOT NULL DEFAULT '',
+		kind         TEXT NOT NULL DEFAULT 'other',
+		source       TEXT NOT NULL,
+		intent       TEXT NOT NULL DEFAULT 'undecided',
+		intent_by    TEXT NOT NULL DEFAULT 'default',
+		state        TEXT NOT NULL DEFAULT 'live',
+		sha256       TEXT NOT NULL DEFAULT '',
+		size         INTEGER NOT NULL DEFAULT 0,
+		pinned       INTEGER NOT NULL DEFAULT 0,
+		created      TEXT NOT NULL,
+		updated      TEXT NOT NULL,
+		closed       TEXT NOT NULL DEFAULT '',
+		UNIQUE (lane_id, path)
+	);
+	CREATE INDEX artifacts_workspace_state ON artifacts (workspace_id, state);
+	CREATE INDEX artifacts_run ON artifacts (run_id);
+	CREATE TABLE artifact_versions (
+		artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+		sha256      TEXT NOT NULL,
+		size        INTEGER NOT NULL DEFAULT 0,
+		run_id      INTEGER NOT NULL DEFAULT 0,
+		seen        TEXT NOT NULL,
+		snapshotted TEXT NOT NULL DEFAULT '',
+		UNIQUE (artifact_id, sha256)
+	);
+	CREATE TABLE artifact_links (
+		artifact_id INTEGER NOT NULL REFERENCES artifacts(id),
+		kind        TEXT NOT NULL,
+		ref         TEXT NOT NULL,
+		created     TEXT NOT NULL,
+		UNIQUE (artifact_id, kind, ref)
+	);
+	CREATE INDEX artifact_links_ref ON artifact_links (kind, ref);`,
 }
 
 // DB is a SQLite-backed store.Store.

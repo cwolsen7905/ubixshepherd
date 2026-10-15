@@ -422,6 +422,10 @@ type Decision struct {
 	AnswerRun int64      `json:"answer_run,omitempty"`
 	Created   time.Time  `json:"created"`
 	Answered  *time.Time `json:"answered,omitempty"`
+	// ArtifactPaths are files the agent asks the person to read with the question
+	// (worktree-relative). They are declared as artifacts and linked to the decision;
+	// this is input only, never stored here.
+	ArtifactPaths []string `json:"artifact_paths,omitempty"`
 }
 
 // Request states.
@@ -513,6 +517,7 @@ const (
 	FeedRelease        = "release"
 	FeedMRApprove      = "mr_approve" // the person approved a merge request from the web
 	FeedPlan           = "plan"       // a next-up item added, approved, deferred, dropped or done
+	FeedArtifact       = "artifact"   // a run produced a file to read, or a new version of one
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's
@@ -1017,6 +1022,28 @@ type Store interface {
 	GateResultFor(ctx context.Context, laneID int64, sha string) (*GateResult, error)
 	// LastGateResult returns the lane's newest gate record, or nil for none.
 	LastGateResult(ctx context.Context, laneID int64) (*GateResult, error)
+
+	// UpsertArtifact records a file of a lane, keyed by lane and path. A new row takes
+	// every field. An existing one keeps its first run, source and created time, takes
+	// a title only if it has none, and takes the incoming intent unless the person set
+	// its own (IntentBy person) or the incoming one is only a default and it already
+	// has an agent's. created says the row was new.
+	UpsertArtifact(ctx context.Context, a Artifact) (art Artifact, created bool, err error)
+	// AddArtifactVersion records a content of an artifact and makes it the artifact's
+	// current one. Added is false when that content is already a version.
+	AddArtifactVersion(ctx context.Context, v ArtifactVersion) (added bool, err error)
+	// Artifact returns one artifact with its versions (newest first) and links, or
+	// ErrNotFound.
+	Artifact(ctx context.Context, id int64) (Artifact, error)
+	// LaneArtifact returns the artifact of a lane at a path, or ErrNotFound.
+	LaneArtifact(ctx context.Context, laneID int64, path string) (Artifact, error)
+	// ListArtifacts returns artifacts newest first, without versions or links.
+	ListArtifacts(ctx context.Context, f ArtifactFilter) ([]Artifact, error)
+	// LinkArtifact ties an artifact to a decision, request or report; a repeat is a
+	// no-op.
+	LinkArtifact(ctx context.Context, l ArtifactLink) error
+	// DecisionArtifacts returns the artifacts linked to a decision.
+	DecisionArtifacts(ctx context.Context, decisionID int64) ([]Artifact, error)
 
 	// LaneForge returns a zero value (with LaneID set) for a lane the forge never saw.
 	LaneForge(ctx context.Context, laneID int64) (LaneForge, error)
