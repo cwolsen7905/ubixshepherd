@@ -5,13 +5,15 @@ import { RangeFilter } from '../components/RangeFilter'
 import { DEFAULT_RANGE, ending, finished, RANGE_PHRASE, rangeStart } from '../model/history'
 import { useHistory } from '../state/history'
 import type { Range } from '../router'
-import { canDismiss, GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
+import { canDismiss, counts, countsText, GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
 import {
-  collapseKey, groupByProject, readCollapsed, readView, summaryText, writeCollapsed, writeView, type BoardView,
+  collapseKey, groupByProject, type ProjectGroup, readCollapsed, readView, summaryText, writeCollapsed, writeView, type BoardView,
 } from '../model/projects'
 import { useProjectList } from '../state/projects'
 import { projectHref } from './Projects'
 import '../styles/projects.css'
+import '../styles/pages/board.css'
+import { Button, Chip, EmptyState } from '../ui'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
@@ -30,6 +32,11 @@ function target(it: BoardItem): string | null {
   if (it.laneId !== undefined) return href.lane(it.laneId)
   return null
 }
+
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** A project with no open lane and nothing on the board has nothing to show: it folds. */
+const isQuiet = (g: ProjectGroup) => g.items.length === 0 && g.summary.open === 0
 
 /** Dismissed runs: how many are hidden, whether they show, and the toggle. */
 export interface DismissedControl {
@@ -61,7 +68,10 @@ export function BoardPage({
   const hasProjects = !!list?.some((p) => !p.unassigned)
   const grouped = hasProjects && (view ?? 'grouped') === 'grouped'
   const groups = useMemo(() => (grouped && list ? groupByProject(items, list) : []), [grouped, list, items])
-  const shown = grouped ? groups.filter((g) => !collapsed.has(collapseKey(g))).reduce((n, g) => n + g.items.length, 0) : items.length
+  const [quietOpen, setQuietOpen] = useState(false)
+  const quiet = useMemo(() => groups.filter(isQuiet), [groups])
+  const active = useMemo(() => groups.filter((g) => !isQuiet(g)), [groups])
+  const shown = grouped ? active.filter((g) => !collapsed.has(collapseKey(g))).reduce((n, g) => n + g.items.length, 0) : items.length
   const total = shown + done.length
   const choose = (v: BoardView) => {
     setView(v)
@@ -115,14 +125,14 @@ export function BoardPage({
       return list ? [{ g, list }] : []
     }).map(({ g, list }) => (
         <section key={g} className={`group group-${g}`} aria-labelledby={`group-${g}`}>
-          <h2 id={`group-${g}`} className="group-head">
+          <h2 id={`group-${g}`} className="section-h group-head">
             <Glyph glyph={GROUP_MARKS[g].glyph} tone={GROUP_MARKS[g].tone} label="" />
-            <span className="group-name">{GROUP_NAMES[g]}</span>
+            <span className="group-name">{sentence(GROUP_NAMES[g])}</span>
             <span className="group-count">{list.length}</span>
             {g === 'done' && (
-              <button type="button" className="link-button" onClick={() => live.clearDone()}>
+              <Button variant="ghost" size="small" onClick={() => live.clearDone()}>
                 Mark all seen <kbd>c</kbd>
-              </button>
+              </Button>
             )}
           </h2>
           <ul className="rows">
@@ -133,7 +143,7 @@ export function BoardPage({
               const dr = it.run
               const body = (
                 <>
-                  <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={GROUP_NAMES[it.group]} />
+                  <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={sentence(GROUP_NAMES[it.group])} />
                   <span className="row-lane">{it.name}</span>
                   <span className="row-agent">{it.agent ?? ''}</span>
                   <span className="row-repo">{it.repo}</span>
@@ -214,42 +224,42 @@ export function BoardPage({
 
   return (
     <div className="board">
-      {hasProjects && (
-        <p className="board-tools">
-          <span>View</span>
-          <button type="button" className="link-button" aria-pressed={grouped} onClick={() => choose('grouped')}>
-            By project
-          </button>
-          <button type="button" className="link-button" aria-pressed={!grouped} onClick={() => choose('flat')}>
-            Flat
-          </button>
-        </p>
-      )}
-      {dismissed && (dismissed.count > 0 || dismissed.show) && (
-        <p className="board-tools">
-          <button type="button" className="link-button" aria-pressed={dismissed.show} onClick={() => dismissed.onShow(!dismissed.show)}>
-            {dismissed.show ? 'Hide dismissed' : 'Show dismissed'}
-            {dismissed.count > 0 ? ` (${dismissed.count})` : ''}
-          </button>
-        </p>
-      )}
+      <header className="page-head">
+        <h1>Board</h1>
+        <p className="page-sub">{countsText(counts(items)) || 'Nothing needs you right now.'}</p>
+        <div className="page-actions">
+          {hasProjects && (
+            <span className="board-view" role="group" aria-label="View">
+              <Chip kind="filter" selected={grouped} onClick={() => choose('grouped')}>
+                By project
+              </Chip>
+              <Chip kind="filter" selected={!grouped} onClick={() => choose('flat')}>
+                Flat
+              </Chip>
+            </span>
+          )}
+          {dismissed && (dismissed.count > 0 || dismissed.show) && (
+            <Chip kind="filter" selected={dismissed.show} onClick={() => dismissed.onShow(!dismissed.show)}>
+              {dismissed.show ? 'Hide dismissed' : 'Show dismissed'}
+              {dismissed.count > 0 ? ` (${dismissed.count})` : ''}
+            </Chip>
+          )}
+        </div>
+      </header>
       {dismissError && <p className="group-note tone-bad">Could not change the run: {dismissError}</p>}
       {items.length === 0 && !grouped && (
-        <div className="empty">
-          <p>Nothing needs you, nothing is running, and nothing finished since you last looked.</p>
-          <p className="faint">
-            Start work from the terminal: <code>shepherd lane run &lt;lane&gt; --agent claude</code>.
-          </p>
-        </div>
+        <EmptyState title="Nothing needs you, nothing is running, and nothing finished since you last looked.">
+          Start work from the terminal: <code>shepherd lane run &lt;lane&gt; --agent claude</code>.
+        </EmptyState>
       )}
       {grouped
-        ? groups.map((g) => {
+        ? active.map((g) => {
             const key = collapseKey(g)
             const open = !collapsed.has(key)
             const id = `project-${g.unassigned ? 'unassigned' : g.name}`
             return (
               <section key={key} className="project-group" aria-labelledby={id}>
-                <h2 id={id} className="project-group-head">
+                <h2 id={id} className="section-h project-group-head">
                   <button type="button" className="project-toggle" aria-expanded={open} onClick={() => toggle(key)}>
                     <span className="caret" aria-hidden="true">
                       {open ? '▾' : '▸'}
@@ -276,6 +286,44 @@ export function BoardPage({
             )
           })
         : renderGroups(items)}
+      {grouped && quiet.length > 0 && (
+        <section className="quiet-projects" aria-label="Quiet projects">
+          <h2 className="section-h">
+            <button
+              type="button"
+              className="project-toggle"
+              aria-expanded={quietOpen}
+              onClick={() => setQuietOpen((o) => !o)}
+            >
+              <span className="caret" aria-hidden="true">
+                {quietOpen ? '▾' : '▸'}
+              </span>
+              {quiet.length} quiet {quiet.length === 1 ? 'project' : 'projects'}
+            </button>
+          </h2>
+          {quietOpen && (
+            <ul className="quiet-list">
+              {quiet.map((g) => {
+                const to = projectHref({ name: g.name, unassigned: g.unassigned })
+                return (
+                  <li key={collapseKey(g)}>
+                    <a
+                      href={to}
+                      onClick={(e) => {
+                        e.preventDefault()
+                        go(to)
+                      }}
+                    >
+                      {g.title}
+                    </a>
+                    <span className="faint">{summaryText(g.summary, (n) => usd(n) || '$0.00')}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </section>
+      )}
       <FinishedSection
         lanes={done}
         range={range}
@@ -308,7 +356,7 @@ function FinishedSection({
   const phrase = RANGE_PHRASE[range]
   return (
     <section className="group group-finished" aria-labelledby="group-finished">
-      <h2 id="group-finished" className="group-head">
+      <h2 id="group-finished" className="section-h group-head">
         <Glyph glyph="−" tone="muted" label="" />
         <span className="group-name">Finished</span>
         <span className="group-count">{lanes.length}</span>

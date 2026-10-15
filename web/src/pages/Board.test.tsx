@@ -178,3 +178,40 @@ describe('BoardPage closing', () => {
     expect(row('docs-pass').getByRole('button', { name: 'Close lane' })).toBeDisabled()
   })
 })
+
+describe('BoardPage quiet projects', () => {
+  const quiet = [
+    project({ name: 'attic', repos: ['old'], lanes: 0, spend_today: 0 }),
+    project({ name: 'barn', repos: ['hay'], lanes: 0, spend_today: 0 }),
+    project({ name: 'idle-lane', repos: ['idle'], lanes: 1, spend_today: 0 }),
+  ]
+
+  it('has one page head and sentence-case group names', async () => {
+    daemon()
+    await show()
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Board')
+    expect(screen.getAllByRole('heading', { level: 2, name: /^Working/ }).length).toBeGreaterThan(0)
+  })
+
+  it('folds projects with no lanes and nothing on the board under one head, and opens it on request', async () => {
+    daemon([project({ lanes: 2 }), ...quiet, unassigned()])
+    await show()
+    const fold = screen.getByRole('button', { name: '2 quiet projects' })
+    expect(fold).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('region', { name: /attic/ })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'attic' })).toBeNull()
+    // A project with an open lane keeps its group even with no row.
+    expect(screen.getByRole('region', { name: /idle-lane/ })).toBeInTheDocument()
+    await userEvent.click(fold)
+    expect(fold).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'attic' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'barn' })).toBeInTheDocument()
+  })
+
+  it('shows no fold when every project has something', async () => {
+    daemon()
+    await show()
+    expect(screen.queryByRole('button', { name: /quiet project/ })).toBeNull()
+  })
+})
