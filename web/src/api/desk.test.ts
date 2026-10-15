@@ -20,10 +20,12 @@ describe('the desk API', () => {
     await deskApi.history(3, 40, 50)
     await deskApi.turn(0, 'hello')
     await deskApi.turn(3, 'hi')
+    await deskApi.turn(0, 'x', undefined, undefined, { kind: 'lane', ids: [4] })
     expect(calls.map(([p]) => p)).toEqual([
       '/v1/desk/history?limit=100',
       '/v1/desk/history?workspace_id=3&before=40&limit=50',
       '/v1/web/session',
+      '/v1/desk/turn',
       '/v1/desk/turn',
       '/v1/desk/turn',
     ])
@@ -31,6 +33,7 @@ describe('the desk API', () => {
     expect((turn?.headers as Record<string, string>)[CSRF_HEADER]).toBe('tok')
     expect(JSON.parse(String(turn?.body))).toEqual({ text: 'hello' })
     expect(JSON.parse(String(calls[4]?.[1]?.body))).toEqual({ workspace_id: 3, text: 'hi' })
+    expect(JSON.parse(String(calls[5]?.[1]?.body))).toEqual({ text: 'x', about: { kind: 'lane', ids: [4] } })
     for (const [p] of calls) expect(p).not.toContain('tok')
   })
 

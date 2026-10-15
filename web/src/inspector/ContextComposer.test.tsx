@@ -37,13 +37,13 @@ function shown(turn = vi.fn().mockResolvedValue({ workspace_id: 1, turn: 9, ahea
 
 describe('ContextComposer', () => {
   beforeEach(() => vi.mocked(topics.list).mockReset().mockResolvedValue({ topics: [topic({ id: 7, links: [{ kind: 'lane', ref: '4', by: 'desk', time: '' }] })] }))
-  it('says what it is about and sends a turn with a reference line, under the entity topic', async () => {
+  it('says what it is about and sends a turn with a structured about, under the entity topic', async () => {
     const user = userEvent.setup()
     const turn = shown()
     expect(screen.getByText('Message the front desk about feat/export-csv (lane 4)')).toBeInTheDocument()
     await screen.findByRole('textbox')
     await user.type(screen.getByRole('textbox'), 'Why is this blocked?{Enter}')
-    expect(turn).toHaveBeenCalledWith(0, 'About feat/export-csv (lane 4):\n\nWhy is this blocked?', 7)
+    expect(turn).toHaveBeenCalledWith(0, 'Why is this blocked?', 7, undefined, { kind: 'lane', ids: [4], label: 'feat/export-csv' })
     expect(await screen.findByText(/Sent to the front desk/)).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveValue('')
   })
@@ -60,8 +60,14 @@ describe('ContextComposer', () => {
     vi.mocked(topics.list).mockResolvedValue({} as never) // a reply without a list is as unreadable as a refusal
     const turn = shown()
     await user.type(screen.getByRole('textbox'), 'hi{Enter}')
-    expect(turn).toHaveBeenCalledWith(0, 'About feat/export-csv (lane 4):\n\nhi')
+    expect(turn).toHaveBeenCalledWith(0, 'hi', undefined, undefined, { kind: 'lane', ids: [4], label: 'feat/export-csv' })
     expect(await screen.findByText(/not filed under one/)).toBeInTheDocument()
+  })
+  it('falls back to the reference line in the text when the about has no ids', async () => {
+    const user = userEvent.setup()
+    const turn = shown(undefined, { kind: 'lane', ids: [], label: 'feat/export-csv' })
+    await user.type(screen.getByRole('textbox'), 'hi{Enter}')
+    expect(turn).toHaveBeenCalledWith(0, 'About feat/export-csv (lane ):\n\nhi')
   })
   it('does not send blank words', () => {
     shown()
