@@ -834,7 +834,7 @@ func strs(a map[string]any, k string) ([]string, error) {
 	return out, nil
 }
 
-const workerInstructions = `You are an agent Shepherd started in a lane. These tools are how you reach Shepherd and the person. ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, production, a scope or design change with no clear default); give options and your recommendation, then end your turn, and you will be continued with the answer. ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review); then end your turn, and you will be continued with the reply. report: progress, done (what you did and how you checked it) or blocked (why). Everything else, keep working without asking.`
+const workerInstructions = `You are an agent Shepherd started in a lane. These tools are how you reach Shepherd and the person. ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, production, a scope or design change with no clear default); give options and your recommendation, then end your turn, and you will be continued with the answer. ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review); then end your turn, and you will be continued with the reply. report: progress, done (what you did and how you checked it) or blocked (why). artifact: a plan, design note or report the person should read; write it in your worktree and declare it with intent commit, keep or scratch. Everything else, keep working without asking.`
 
 func workerTools() []mcpTool {
 	return []mcpTool{
