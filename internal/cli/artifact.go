@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -58,21 +62,30 @@ func declareArtifact(ctx context.Context, env Env, runID int64, d api.ArtifactDe
 // has no artifact methods yet (the lane's scope does not include that package), so the
 // artifact commands call the routes themselves.
 func operatorCall(ctx context.Context, env Env, method, path string, body, out any) error {
+	data, _, err := operatorRaw(ctx, env, method, path, body)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, out)
+}
+
+// operatorRaw is operatorCall without the decoding: the response body and its headers.
+func operatorRaw(ctx context.Context, env Env, method, path string, body any) ([]byte, http.Header, error) {
 	if env.Remote != nil {
-		return fmt.Errorf("artifact commands run on the machine the daemon is on")
+		return nil, nil, fmt.Errorf("artifact commands run on the machine the daemon is on")
 	}
 	if _, err := dial(ctx, env); err != nil {
-		return err
+		return nil, nil, err
 	}
 	rt, err := daemon.ReadRuntime(env.Layout.Runtime())
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	var rd io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		rd = bytes.NewReader(b)
 	}
@@ -80,7 +93,7 @@ func operatorCall(ctx context.Context, env Env, method, path string, body, out a
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, method, "http://"+rt.Addr+path, rd)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+rt.Token)
 	req.Header.Set(api.ClientHeader, env.Client)
@@ -89,17 +102,18 @@ func operatorCall(ctx context.Context, env Env, method, path string, body, out a
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("cannot reach the daemon (%v)", err)
+		return nil, nil, fmt.Errorf("cannot reach the daemon (%v)", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		var e api.Error
 		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
-			return fmt.Errorf("daemon: %s", e.Error)
+			return nil, nil, fmt.Errorf("daemon: %s", e.Error)
 		}
-		return fmt.Errorf("daemon: %s", resp.Status)
+		return nil, nil, fmt.Errorf("daemon: %s", resp.Status)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	data, err := io.ReadAll(resp.Body)
+	return data, resp.Header, err
 }
 
 // shepherd artifact list | show | pin | unpin | gc: what agents wrote for the person to
@@ -109,7 +123,11 @@ func runArtifact(ctx context.Context, env Env, args []string) error {
 		return errUsage
 	}
 	fs := flags("artifact "+args[0], env)
-	lane := fs.Int64("lane", 0, "list: only this lane's artifacts (id)")
+	lane := fs.String("lane", "", "list: only this lane's artifacts (its name, with --repo, or its id)")
+	repo := fs.String("repo", "", "list: only this repo's artifacts, by its name in the workspace")
+	run := fs.Int64("run", 0, "list: only what this run produced (id)")
+	topic := fs.Int64("topic", 0, "list: only this topic's artifacts (id)")
+	version := fs.String("version", "", "cat: a version's sha-256 (or a prefix of it); default the latest")
 	state := fs.String("state", "", "list: live, kept, committed, discarded or gone")
 	asJSON := fs.Bool("json", false, "print JSON")
 	days := fs.Int("keep-days", 0, "gc: days a closed lane's snapshots are kept (default 30)")
@@ -128,9 +146,37 @@ func runArtifact(ctx context.Context, env Env, args []string) error {
 	}
 	switch args[0] {
 	case "list", "ls":
+		f := store.ArtifactFilter{RunID: *run, TopicID: *topic, State: *state}
+		var repoID int64
+		if n, err := strconv.ParseInt(*lane, 10, 64); err == nil {
+			f.LaneID = n
+		} else if *lane != "" || *repo != "" {
+			c, err := dial(ctx, env)
+			if err != nil {
+				return err
+			}
+			h, err := locate(ctx, env, c, *repo)
+			if err != nil {
+				return err
+			}
+			f.WorkspaceID = h.Workspace.ID
+			if *repo != "" && h.Repo != nil {
+				repoID = h.Repo.ID
+			}
+			if *lane != "" {
+				l, err := findLane(ctx, c, h, *lane)
+				if err != nil {
+					return err
+				}
+				f.LaneID = l.ID
+			}
+		}
 		var list []store.Artifact
-		if err := operatorCall(ctx, env, http.MethodGet, api.ArtifactListQuery(store.ArtifactFilter{LaneID: *lane, State: *state}), nil, &list); err != nil {
+		if err := operatorCall(ctx, env, http.MethodGet, api.ArtifactListQuery(f), nil, &list); err != nil {
 			return err
+		}
+		if repoID != 0 {
+			list = slices.DeleteFunc(list, func(a store.Artifact) bool { return a.RepoID != repoID })
 		}
 		if *asJSON {
 			return json.NewEncoder(w).Encode(list)
@@ -140,9 +186,9 @@ func runArtifact(ctx context.Context, env Env, args []string) error {
 			return nil
 		}
 		tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(tw, "ID\tLANE\tSTATE\tINTENT\tPINNED\tPATH")
+		fmt.Fprintln(tw, "ID\tLANE\tRUN\tSTATE\tINTENT\tPINNED\tSIZE\tPATH")
 		for _, a := range list {
-			fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%v\t%s\n", a.ID, a.LaneID, a.State, a.Intent, a.Pinned, a.Path)
+			fmt.Fprintf(tw, "%d\t%d\t%d\t%s\t%s\t%v\t%d\t%s\n", a.ID, a.LaneID, a.RunID, a.State, a.Intent, a.Pinned, a.Size, a.Path)
 		}
 		return tw.Flush()
 	case "show":
@@ -166,6 +212,24 @@ func runArtifact(ctx context.Context, env Env, args []string) error {
 			fmt.Fprintf(w, "  version %s run %d %s\n", v.SHA256[:12], v.RunID, copyd)
 		}
 		return nil
+	case "cat":
+		n, err := id()
+		if err != nil {
+			return err
+		}
+		p := api.PathArtifact(n) + "/content"
+		if *version != "" {
+			p += "?version=" + url.QueryEscape(*version)
+		}
+		data, h, err := operatorRaw(ctx, env, http.MethodGet, p, nil)
+		if err != nil {
+			return err
+		}
+		if kind := h.Get("Content-Type"); !strings.HasPrefix(kind, "text/") && !strings.Contains(kind, "json") && !strings.Contains(kind, "xml") {
+			return fmt.Errorf("artifact %d is %s, not text; the person can open it in the web", n, kind)
+		}
+		_, err = io.WriteString(w, redact.String(string(data)))
+		return err
 	case "pin", "unpin":
 		n, err := id()
 		if err != nil {

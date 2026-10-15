@@ -38,3 +38,11 @@ func TestDeskBriefHasLinkRule(t *testing.T) {
 		}
 	}
 }
+
+func TestDeskBriefMentionsArtifactTools(t *testing.T) {
+	for _, want := range []string{"artifact_list", "artifact_read"} {
+		if !strings.Contains(DeskBrief, want) {
+			t.Errorf("DeskBrief lacks %q", want)
+		}
+	}
+}

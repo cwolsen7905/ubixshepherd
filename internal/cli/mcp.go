@@ -679,6 +679,63 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name: "artifact_list",
+			Description: "Files agents wrote for the person to read (plans, design notes, reports), newest first, with id, lane, run, state, intent and size. Read-only. " +
+				"Filter by repo, lane (name, with repo), run, topic or state; with no filter, the most recent across the workspace. Read one with artifact_read.",
+			InputSchema: obj(map[string]any{
+				"repo":  propRepo,
+				"lane":  map[string]any{"type": "string", "description": "A lane's name (give repo too) or its id."},
+				"run":   map[string]any{"type": "integer", "description": "Only what this run produced."},
+				"topic": map[string]any{"type": "integer", "description": "Only this conversation topic's artifacts (topic_list)."},
+				"state": map[string]any{"type": "string", "enum": []string{"live", "kept", "committed", "discarded", "gone"}},
+			}),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"artifact", "list"}
+				if r := str(a, "repo"); r != "" {
+					out = append(out, "--repo", r)
+				}
+				switch l := a["lane"].(type) {
+				case string:
+					if l != "" {
+						out = append(out, "--lane", l)
+					}
+				case float64:
+					out = append(out, "--lane", fmt.Sprint(int64(l)))
+				}
+				for _, k := range []string{"run", "topic"} {
+					if n, ok := a[k].(float64); ok && n > 0 {
+						out = append(out, "--"+k, fmt.Sprint(int64(n)))
+					}
+				}
+				if s := str(a, "state"); s != "" {
+					out = append(out, "--state", s)
+				}
+				return out, nil
+			},
+			more: "Narrow the list with repo, lane, run, topic or state.",
+		},
+		{
+			Name: "artifact_read",
+			Description: "The text of one artifact (from artifact_list): its latest content, or a version's. Read-only and redacted; a long file keeps its start and end. " +
+				"Use it to summarise a plan or answer a question about a file the person has not committed. Images and binary files are not returned.",
+			InputSchema: obj(map[string]any{
+				"id":      map[string]any{"type": "integer", "description": "The artifact's id from artifact_list."},
+				"version": map[string]any{"type": "string", "description": "A version's sha-256 (or a prefix of it) from artifact_list's show; default the latest."},
+			}, "id"),
+			args: func(a map[string]any) ([]string, error) {
+				id, ok := a["id"].(float64)
+				if !ok {
+					return nil, fmt.Errorf("id must be a number")
+				}
+				out := []string{"artifact", "cat", fmt.Sprint(int64(id))}
+				if v := str(a, "version"); v != "" {
+					out = append(out, "--version", v)
+				}
+				return out, nil
+			},
+			more: "Ask the person to open the artifact in the web for the whole file.",
+		},
+		{
 			Name:        "decision_list",
 			Description: "Questions agents are holding for the person, with their options and recommendations. Bring these to the person; do not answer them yourself.",
 			InputSchema: obj(map[string]any{}),

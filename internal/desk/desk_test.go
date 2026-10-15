@@ -489,3 +489,11 @@ func TestBriefRegistersAgreedWork(t *testing.T) {
 		}
 	}
 }
+
+func TestBriefMentionsArtifactTools(t *testing.T) {
+	for _, want := range []string{"artifact_list", "artifact_read"} {
+		if !strings.Contains(Brief, want) {
+			t.Errorf("Brief lacks %q", want)
+		}
+	}
+}
