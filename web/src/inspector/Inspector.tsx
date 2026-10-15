@@ -4,6 +4,8 @@ import { DecisionPane } from './decisionPane'
 import { QuestionPane } from './questionPane'
 import { useMode, type Mode } from './useMode'
 import { LaneInspector } from './lane'
+import { ContextComposer } from './ContextComposer'
+import { isAboutKind } from '../state/deskAbout'
 import '../styles/inspector.css'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -139,6 +141,7 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
               </button>
             </header>
             <InspectorBody open={open} />
+            {isAboutKind(open.kind) && <ContextComposer about={{ kind: open.kind, ids: [open.id] }} />}
           </aside>
         </>
       )}

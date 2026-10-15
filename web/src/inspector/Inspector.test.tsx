@@ -66,12 +66,16 @@ describe('InspectorFrame', () => {
       const close = screen.getByRole('button', { name: 'Close inspector' })
       expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
       expect(screen.getByText('row').closest('.inspector-page')).toHaveAttribute('inert')
+      // The composer's box is the last stop (Send is disabled while it is empty).
+      const box = screen.getByRole('textbox')
       await user.tab()
       expect(close).toHaveFocus()
+      await user.tab()
+      expect(box).toHaveFocus()
       await user.tab()
       expect(close).toHaveFocus()
       await user.tab({ shift: true })
-      expect(close).toHaveFocus()
+      expect(box).toHaveFocus()
       unmount()
     }
   })

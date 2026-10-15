@@ -14,6 +14,11 @@ export interface About {
   label?: string
 }
 
+/** True for an inspector kind the composer can speak about. */
+export function isAboutKind(k: string): k is AboutKind {
+  return k in WORDS
+}
+
 const WORDS: Record<AboutKind, string> = {
   lane: 'lane', run: 'run', decision: 'decision', question: 'question', request: 'request', artifact: 'artifact', topic: 'topic',
 }

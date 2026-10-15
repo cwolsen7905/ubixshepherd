@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
 import type { TopicView } from '../model/topic'
-import { useSnapshot } from '../state/context'
 import { DeskThread } from '../state/desk'
 import { aboutLine, topicFor, withReference, type About } from '../state/deskAbout'
 import '../styles/composer.css'
@@ -20,15 +19,13 @@ export function ContextComposer(props: Props) {
 
 interface Props {
   about: About
+  /** 0 leaves the workspace out, which the daemon takes as its only one. */
   workspaceId?: number
   make?: (workspaceId: number) => DeskThread
 }
 
 function Composer({ about, workspaceId = 0, make = defaultMake }: Props) {
-  const snap = useSnapshot()
-  const multi = (snap.status?.workspaces?.length ?? 0) > 1
-  const ws = multi ? workspaceId : 0
-  const thread = useMemo(() => make(ws), [make, ws])
+  const thread = useMemo(() => make(workspaceId), [make, workspaceId])
   const [text, setText] = useState('')
   const [topics, setTopics] = useState<TopicView[]>([])
   const [sending, setSending] = useState(false)
