@@ -48,3 +48,11 @@ done
 
 CHROME="$chrome" SHOTS_BASE="http://127.0.0.1:$port" SHOTS_OUT="$out" SHOTS_W="$w" SHOTS_H="$h" \
   SHOTS_SCALE="$scale" SHOTS_THEMES="$themes" SHOTS_PAGES="${SHOTS_PAGES:-}" node "$here/shoot.mjs"
+
+# STUB_STRICT answers an unstubbed route with 501; fail the run so a stale stub is not missed.
+missing=$(curl -sf "http://127.0.0.1:$port/__shots/missing" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).missing.join("\n")))')
+if [ -n "$missing" ]; then
+  echo "shots: the stub has no answer for these routes the app called:" >&2
+  echo "$missing" | sed 's/^/  /' >&2
+  exit 1
+fi

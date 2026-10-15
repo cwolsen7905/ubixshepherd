@@ -244,7 +244,7 @@ const decisions = () => NODEC ? [] : BUSY ? busyNow().decisions : [
 |---|---|---|
 | web/orders/table.tsx | 340 | Renders the orders grid, already paginated |
 | web/orders/export.ts | 82 | Stub that returns an empty blob |
-| web/orders/types.ts | 45 | `Order` interface, shared |
+| web/orders/types.ts | 45 | \`Order\` interface, shared |
 
 ### Options
 
@@ -258,8 +258,8 @@ Paginated   O(page)   stepwise  high
 
 ### Recommendation: Stream
 
-1. Chunk size: 64 KB (configurable, default in `web/orders/export.ts`).
-2. Headers: `Content-Disposition: attachment; filename=orders.csv`.
+1. Chunk size: 64 KB (configurable, default in \`web/orders/export.ts\`).
+2. Headers: \`Content-Disposition: attachment; filename=orders.csv\`.
 3. Quoting: RFC 4180 — double-quote fields containing commas, quotes, or newlines.
 4. Backpressure: the response writer already pauses the read loop when the buffer fills.
 
@@ -504,9 +504,9 @@ function nextRoute(req, res, u, p) {
   return true
 }
 
-// Route tracking: log every /v1/ path the client calls so we catch missing stubs.
+// Routes the client called that no stub answers; the catch-all below fills it in.
 const missingRoutes = new Set()
-function track(p) { missingRoutes.add(p) }
+function track() {}
 
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x'), p = u.pathname
@@ -570,11 +570,12 @@ http.createServer((req, res) => {
   // GET /v1/waiting: everything that waits on the person, with a version that moves.
   if (p === '/v1/waiting') {
     const version = 3
-    return json(res, { version, count: 4, counts: { decisions: 1, mrs: 1, ship: 0, next: 0, questions: 1, blocked: 1 }, items: [
+    return json(res, { version, count: 5, counts: { decisions: 1, mrs: 1, ship: 0, next: 0, questions: 1, blocked: 1, scope: 0, requests: 1 }, items: [
       { kind: 'decision', action: 'answer', repo: 'acme-web', lane: 'feat/export-csv', lane_id: 4, decision_id: 5, title: 'CSV export: stream or buffer?', detail: 'run 17', since: ago(8) },
       { kind: 'mr', action: 'approve', repo: 'acme-api', lane: 'feat/login-sessions', lane_id: 1, mr: 41, title: '!41 pipeline passed', detail: 'waits for merge', since: ago(35) },
       { kind: 'question', action: 'reply', repo: 'acme-api', title: 'Front desk: how is the login MR doing?', detail: 'turn 6', since: ago(4) },
-      { kind: 'blocked', action: 'review', repo: 'acme-api', lane: 'fix/cache-invalidation', lane_id: 2, title: 'Pipeline failed !42', detail: 'agent continued once', since: ago(14) },
+      { kind: 'blocked', action: 'open', repo: 'acme-api', lane: 'fix/cache-invalidation', lane_id: 2, title: 'Pipeline failed !42', detail: 'agent continued once', since: ago(14) },
+      { kind: 'request', action: 'route', repo: 'acme-api', lane: 'refactor/queue-worker', lane_id: 5, request_id: 3, title: 'Which lane owns the shared retry helper in internal/retry?', detail: 'from opencode', since: ago(5) },
     ]})
   }
 
@@ -663,6 +664,21 @@ http.createServer((req, res) => {
       }
     })
     return true
+  }
+
+  // GET /v1/lanes/{id}/approval: a lane's merge request, as the approval control shows it.
+  if ((m = p.match(/^\/v1\/lanes\/(\d+)\/approval$/))) {
+    track('/v1/lanes/{id}/approval')
+    return json(res, { supported: true, mr: 41, mr_url: 'https://git.example/acme/acme-api/-/merge_requests/41', mr_state: 'opened', sha: 'abc123', approved: false, pipeline: 310 })
+  }
+
+  // POST /v1/fold/review: judge a repo's worktrees (no apply).
+  if (p === '/v1/fold/review') {
+    track('/v1/fold/review')
+    return json(res, [
+      { branch: 'feat/export-csv', worktree: '/work/acme-web-feat-export-csv', lane: 'feat/export-csv', verdict: 'live', why: 'a run is in progress' },
+      { branch: 'chore/old-spike', worktree: '/work/acme-web-old-spike', verdict: 'finished', why: 'clean, and every commit is in dev', in_base: true },
+    ])
   }
 
   // POST /v1/lanes/{id}/close: close a lane.
@@ -770,9 +786,12 @@ http.createServer((req, res) => {
     return json(res, { etag: 'shot-etag', diff: '--- a/config.yaml\n+++ b/config.yaml\n@@ -1 +1 @@\n-reload: false\n+reload: true', reloaded: true })
   }
 
+  // GET /__shots/missing: the unstubbed /v1 routes called so far, for shots.sh to fail on.
+  if (p === '/__shots/missing') return json(res, { missing: [...missingRoutes].sort() })
+
   // Catch-all for /v1/: log and return empty (strict mode fails).
   if (p.startsWith('/v1/')) {
-    track(p)
+    missingRoutes.add(p)
     if (process.env.STUB_STRICT === '1') {
       console.error(`shots: missing stub for ${p}`)
       return json(res, { error: `no stub for ${p}` }, 501)
