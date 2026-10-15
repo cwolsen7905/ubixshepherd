@@ -181,4 +181,20 @@ describe('the decision in the inspector', () => {
     expect(await screen.findByText(/Answered/)).toBeInTheDocument()
     expect(onSent).toHaveBeenCalledTimes(1)
   })
+
+  it('leaves Cmd+Enter in a box outside the card alone', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <textarea aria-label="composer" />
+        <DecisionCard d={decision({ options: ['Stream', 'Buffer'] })} variant="pane" focused />
+      </LiveProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    await user.click(screen.getByLabelText('composer'))
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(answer).not.toHaveBeenCalled()
+  })
 })

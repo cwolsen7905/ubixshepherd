@@ -111,6 +111,9 @@ export function DecisionCard({
     if (!focused) return
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented) {
+        // A box elsewhere on the page (the composer) keeps its own Cmd+Enter.
+        const t = e.target
+        if (t instanceof HTMLElement && t !== document.body && !ref.current?.contains(t) && t.closest('textarea, input, [contenteditable]')) return
         e.preventDefault()
         void sendRef.current()
       }
