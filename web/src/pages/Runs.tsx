@@ -7,7 +7,7 @@ import { useNow } from '../hooks'
 import { DEFAULT_RANGE, mergeHistories, RANGES, RANGE_PHRASE, rangeStart } from '../model/history'
 import { go, href, type Range } from '../router'
 import { useHistory } from '../state/history'
-import { taskLine } from '../timeline/task'
+import { taskLine, taskText } from '../timeline/task'
 import { Button, EmptyState } from '../ui'
 import '../styles/pages/runs.css'
 
@@ -126,7 +126,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
                 <td className="num" title={costNote(r)}>{runCost(r)}</td>
                 <td className="faint" title={r.started}>{clockTime(r.started, now)}</td>
                 <td className="num">{duration(r.started, r.ended, now)}</td>
-                <td className="run-task" title={taskLine(r.task)}>{taskLine(r.task)}</td>
+                <td className="run-task" title={taskText(r.task)}>{taskLine(r.task)}</td>
               </tr>
             ))}
           </tbody>

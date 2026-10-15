@@ -68,7 +68,7 @@ describe('the Runs page task column', () => {
     const cell = rows[0]?.querySelector('.run-task') as HTMLElement
     expect(cell).toHaveTextContent('Fix the login redirect')
     expect(cell).not.toHaveTextContent('You are working for')
-    expect(cell).toHaveAttribute('title', 'Fix the login redirect')
+    expect(cell).toHaveAttribute('title', 'Fix the login redirect\nand cover it with a test')
     expect(rows[1]?.querySelector('.run-task')).toHaveTextContent('Bump the modules')
   })
 

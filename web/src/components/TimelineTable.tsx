@@ -3,7 +3,7 @@ import { clockTime, duration, ESTIMATE_NOTE, runCost } from '../format'
 import { EventGlyph } from './Glyph'
 import { href } from '../router'
 import type { TRun } from '../model/timeline'
-import { taskLine } from '../timeline/task'
+import { taskLine, taskText } from '../timeline/task'
 import '../styles/pages/runs.css'
 
 type Key = 'id' | 'agent' | 'lane' | 'state' | 'commits' | 'cost' | 'started' | 'took'
@@ -93,7 +93,7 @@ export function TimelineTable({ rows, now }: { rows: Row[]; now: number }) {
             </td>
             <td className="faint" title={iso(run.started)}>{clockTime(iso(run.started), now)}</td>
             <td className="num">{duration(iso(run.started), run.ended !== undefined ? iso(run.ended) : undefined, now)}</td>
-            <td className="run-task" title={taskLine(run.task)}>{taskLine(run.task)}</td>
+            <td className="run-task" title={taskText(run.task)}>{taskLine(run.task)}</td>
           </tr>
         ))}
       </tbody>
