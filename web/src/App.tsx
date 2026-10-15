@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { boardItems, dismissedCount } from './model/board'
+import { boardItems, counts as boardCounts, dismissedCount } from './model/board'
 import { useKeys } from './hooks'
 import { go, href, useRoute } from './router'
 import { useSnapshot } from './state/context'
@@ -37,8 +37,8 @@ export function App() {
   const hidden = useMemo(() => dismissedCount(snap.lanes, snap.runs), [snap.lanes, snap.runs])
   const [help, setHelp] = useState(false)
   const pending = useRef('')
-
-  useAttentionChrome(snap.waiting)
+  const paletteRef = useRef(null)
+  const boardBroken = boardCounts(items).broken
 
   useKeys(
     {
@@ -83,6 +83,8 @@ export function App() {
         waiting={snap.waiting}
         workspaces={snap.status?.workspaces ?? []}
         footer={footer}
+        boardBroken={boardBroken}
+        paletteOpen={() => paletteRef.current?.open()}
         headActions={
           <>
             <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
@@ -132,7 +134,7 @@ export function App() {
         </InspectorFrame>
       </Shell>
       {help && <Help onClose={() => setHelp(false)} />}
-      <CommandPalette />
+      <CommandPalette ref={paletteRef} />
     </>
   )
 }
