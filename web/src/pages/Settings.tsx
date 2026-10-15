@@ -6,10 +6,14 @@ import {
   problemsFor, projectRepos, removeProject, revert, scopes, setValue, show, unsetValue, type Draft, type Scope,
 } from '../model/settings'
 import { go, href } from '../router'
+import { Button, Chip } from '../ui'
 import '../styles/settings.css'
 
 /** The word a person types to confirm a change that gives agents more power. */
 export const CONFIRM_WORD = 'confirm'
+
+const RISK_HINT = 'Raising this gives agents more power; saving asks you to confirm.'
+const RESTART_HINT = 'Applies when the daemon next starts.'
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
@@ -85,11 +89,19 @@ function Field({ scope, field, draft, onDraft, problems }: FieldProps) {
   const inherited = scope.inherits
   const mine = problemsFor(problems, full)
   return (
-    <div className={`field${st.set ? ' is-set' : ''}${st.dirty ? ' is-dirty' : ''}`}>
+    <div className={`field${st.set ? ' is-set' : ''}${st.dirty ? ' is-dirty' : ''}${field.kind === 'list' || field.kind === 'map' || field.kind === 'json' ? ' field-wide' : ''}`}>
       <div className="field-head">
         <label htmlFor={id}>{field.label}</label>
-        {field.risk && <span className="tag tag-risk" title="Raising this gives agents more power; saving asks you to confirm">power</span>}
-        {field.restart && <span className="tag" title="Applies when the daemon next starts">restart</span>}
+        {field.risk && (
+          <span className="tag-risk" title={RISK_HINT}>
+            <Chip>Power</Chip><span className="visually-hidden"> {RISK_HINT}</span>
+          </span>
+        )}
+        {field.restart && (
+          <span title={RESTART_HINT}>
+            <Chip>Restart</Chip><span className="visually-hidden"> {RESTART_HINT}</span>
+          </span>
+        )}
         <label className="override">
           <input type="checkbox" checked={st.set} 
             aria-label={`${inherited ? 'Override' : 'Set'} ${field.label}`}
@@ -105,7 +117,7 @@ function Field({ scope, field, draft, onDraft, problems }: FieldProps) {
           <span>{inherited ? 'Override' : 'Set'}</span>
         </label>
         {st.dirty && (
-          <button type="button" className="link" onClick={() => onDraft(revert(draft, path))}>Undo</button>
+          <Button variant="ghost" size="small" onClick={() => onDraft(revert(draft, path))}>Undo</Button>
         )}
       </div>
       <div className="field-body">
@@ -140,7 +152,7 @@ function RepoPicker({ project, doc, draft, added, repos, onDraft }: {
   const names = [...new Set([...repos, ...mine])].sort()
   const saved = new Set(asList(doc.projects[project]?.raw.repos))
   return (
-    <fieldset className="field repo-picker">
+    <fieldset className="field field-wide repo-picker">
       <legend>Repos</legend>
       {names.length === 0 && <p className="faint">No repo is configured yet. Add one first.</p>}
       <ul>
@@ -175,7 +187,7 @@ const asList = (v: unknown): string[] => (Array.isArray(v) ? v.map(String) : [])
 function DeleteProject({ name, repos, onDelete }: { name: string; repos: string[]; onDelete: () => void }) {
   const [asking, setAsking] = useState(false)
   if (!asking) {
-    return <button type="button" className="danger" onClick={() => setAsking(true)}>Delete project…</button>
+    return <Button variant="danger" onClick={() => setAsking(true)}>Delete project…</Button>
   }
   return (
     <div className="banner tone-warn" role="group" aria-label={`Delete project ${name}`}>
@@ -185,8 +197,8 @@ function DeleteProject({ name, repos, onDelete }: { name: string; repos: string[
         and intake rules go with it, and a rule in another project that names it will stop the save until it is changed.
         Nothing is written until you review and save.
       </p>
-      <button type="button" className="danger" onClick={onDelete}>Delete {name}</button>{' '}
-      <button type="button" onClick={() => setAsking(false)}>Cancel</button>
+      <Button variant="danger" onClick={onDelete}>Delete {name}</Button>{' '}
+      <Button onClick={() => setAsking(false)}>Cancel</Button>
     </div>
   )
 }
@@ -238,13 +250,13 @@ function Review({
       )}
       <div className="actions">
         {canWrite ? (
-          <button type="button" className="primary" onClick={onSave} disabled={saving || !preview.diff || problems.length > 0 || !confirmed}>
+          <Button variant="primary" onClick={onSave} disabled={saving || !preview.diff || problems.length > 0 || !confirmed}>
             {saving ? 'Saving…' : 'Save and reload'}
-          </button>
+          </Button>
         ) : (
           <span className="faint">This session cannot save; the diff is what a save would write.</span>
         )}
-        <button type="button" onClick={onClose}>Keep editing</button>
+        <Button onClick={onClose}>Keep editing</Button>
       </div>
     </section>
   )
@@ -404,7 +416,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
             }}>
               <label className="visually-hidden" htmlFor="new-repo">Repo name</label>
               <input id="new-repo" value={newRepo} placeholder="add a repo" onChange={(e) => setNewRepo(e.target.value)} />
-              <button type="submit">Add</button>
+              <Button type="submit" size="small">Add</Button>
             </form>
           )}
           {nav('Projects', 'project:')}
@@ -429,7 +441,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
               <label className="visually-hidden" htmlFor="new-project">Project name</label>
               <input id="new-project" ref={projectBox} value={newProject} placeholder="add a project" aria-invalid={projectProblem !== null}
                 onChange={(e) => setNewProject(e.target.value)} />
-              <button type="submit">Add</button>
+              <Button type="submit" size="small">Add</Button>
             </form>
           )}
           {projectProblem && <p className="field-problem" role="alert">{projectProblem}</p>}
@@ -449,7 +461,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
           {stale && (
             <p className="banner tone-bad" role="alert">
               config.yaml changed on disk since it was read. Nothing was saved.{' '}
-              <button type="button" onClick={load}>Reload it</button>, then review your changes again.
+              <Button size="small" onClick={load}>Reload it</Button>, then review your changes again.
             </p>
           )}
           {notice && <p className={`banner tone-${notice.tone === 'ok' ? 'ok' : 'bad'}`} role="status">{notice.text}</p>}
@@ -457,6 +469,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
           {[...groups].map(([g, fields]) => (
             <fieldset key={g} className="group">
               {g && <legend>{g}</legend>}
+              <div className="field-grid">
               {fields.map((f) =>
                 isProject && f.key.join('.') === 'repos' ? (
                   <RepoPicker key="repos" project={projectName} doc={doc} draft={draft} added={addedProjects} repos={Object.keys(doc.repos).concat(added)} onDraft={onDraft} />
@@ -464,6 +477,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
                   <Field key={f.key.join('.')} scope={scope} field={f} draft={draft} onDraft={onDraft} problems={problems} />
                 ),
               )}
+              </div>
             </fieldset>
           ))}
           {isProject && !readOnly && (
@@ -480,8 +494,9 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
           )}
           <div className="actions sticky">
             <span className="faint">{ops.length === 0 ? 'No changes' : `${ops.length} change${ops.length === 1 ? '' : 's'}`}</span>
-            <button type="button" className="primary" disabled={ops.length === 0 || busy} onClick={review}>Review changes</button>
-            <button type="button" disabled={ops.length === 0} onClick={() => onDraft({})}>Discard</button>
+            {/* One primary per view: Save and reload takes it once the review is open. */}
+            <Button variant={preview ? 'secondary' : 'primary'} disabled={ops.length === 0 || busy} onClick={review}>Review changes</Button>
+            <Button variant="ghost" disabled={ops.length === 0} onClick={() => onDraft({})}>Discard</Button>
           </div>
           {preview && (
             <Review preview={preview} risky={risky} typed={typed} onTyped={setTyped} onSave={save} onClose={() => setPreview(null)}

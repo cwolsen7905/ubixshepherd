@@ -124,6 +124,28 @@ describe('SettingsPage projects', () => {
 describe('SettingsPage', () => {
   afterEach(() => vi.unstubAllGlobals())
 
+  it('lays fields in a two-column grid and keeps one primary button', async () => {
+    daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '+  x: 1\n' }) : undefined))
+    const user = userEvent.setup()
+    const { container } = render(<SettingsPage scope="project:shop" />)
+    await screen.findByRole('group', { name: /Repos/ })
+    expect(container.querySelector('.field-grid')).not.toBeNull()
+    expect(container.querySelector('.repo-picker')).toHaveClass('field-wide')
+    expect(container.querySelectorAll('.ui-btn-primary')).toHaveLength(1)
+    await user.click(within(container.querySelector('.repo-picker') as HTMLElement).getByRole('checkbox', { name: 'docs' }))
+    await user.click(screen.getByRole('button', { name: 'Review changes' }))
+    await screen.findByRole('button', { name: 'Save and reload' })
+    expect(container.querySelectorAll('.ui-btn-primary')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Review changes' })).not.toHaveClass('ui-btn-primary')
+  })
+
+  it('explains the Power tag in text, not only in a tooltip', async () => {
+    daemon(doc())
+    render(<SettingsPage scope="repo:api" />)
+    await screen.findByLabelText('Push')
+    expect(screen.getByText(/Raising this gives agents more power/)).toBeInTheDocument()
+  })
+
   it('shows an inherited value greyed until it is overridden', async () => {
     daemon(doc())
     const user = userEvent.setup()

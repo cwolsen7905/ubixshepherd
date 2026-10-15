@@ -10,6 +10,7 @@ import {
 } from '../model/usage'
 import { go, href, type UsageRange } from '../router'
 import { useSnapshot } from '../state/context'
+import { EmptyState } from '../ui'
 import '../styles/usage.css'
 
 /** The money of a set of records: dollars, with Copilot's credits beside them; "$0.00" for none. */
@@ -93,7 +94,8 @@ function GroupTable({
   )
 }
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: ReactNode }) {
+/** The stat tile: a label, one number and a line under it. Every figure on the page is one. */
+function StatTile({ label, value, sub }: { label: string; value: string; sub?: ReactNode }) {
   return (
     <div className="tile">
       <dt>{label}</dt>
@@ -112,22 +114,22 @@ function Tiles({ s }: { s: UsageStats }) {
   const share = s.total.cost_usd > 0 ? Math.round((s.desk.cost_usd / s.total.cost_usd) * 100) : 0
   return (
     <dl className="tiles">
-      <Tile
+      <StatTile
         label="Total cost"
         value={cost(s.total)}
         sub={`${s.total.count} records${s.total.estimated_usd ? `, of which ${usd(s.total.estimated_usd)} is an estimate` : ''}`}
       />
-      <Tile
+      <StatTile
         label="Desk vs agents"
         value={`${usd(s.desk.cost_usd)} / ${usd(s.runs.cost_usd)}`}
         sub={s.total.cost_usd > 0 ? `the desk is ${share}% of dollars` : 'front desk / agent runs'}
       />
-      <Tile
+      <StatTile
         label="Runs and turns"
         value={`${s.runs.count} / ${s.desk.count}`}
         sub={`agent runs / desk turns, ${measured} measured`}
       />
-      <Tile
+      <StatTile
         label="Over 200k"
         value={String(over)}
         sub={`of ${measured} measured; peak ${tokens(peak)}${over === 0 && measured > 0 ? ', a 200k window held all of it' : ''}`}
@@ -214,7 +216,9 @@ export function UsagePage({ range = DEFAULT_USAGE_RANGE, from, to }: { range?: U
       </div>
 
       {error && <p className="tone-bad">Could not load usage: {error}</p>}
-      {data && data.total.count === 0 && <p className="faint">No run or desk turn was recorded in this range.</p>}
+      {data && data.total.count === 0 && (
+        <EmptyState title="Nothing recorded">No run or desk turn was recorded in this range.</EmptyState>
+      )}
       {data && data.total.count > 0 && (
         <>
           <Tiles s={data} />
