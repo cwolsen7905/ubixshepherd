@@ -58,6 +58,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
   // Proposed items wait on the person and lead; the rest keep the person's order.
   const proposed = useMemo(() => items.filter((it) => it.proposed && it.stored_state === 'planned'), [items])
   const queue = useMemo(() => sections.map((s) => ({ ...s, items: s.items.filter((it) => !proposed.includes(it)) })), [sections, proposed])
+  const queueItems = useMemo(() => queue.flatMap((s) => s.items), [queue])
   const hiddenClosed = closed ? 0 : closedCount(items)
   const repos = useMemo(() => [...new Set(snap.lanes.map((l) => l.repo))].sort(), [snap.lanes])
   const workspace = deskWorkspace(snap.status?.workspaces ?? [])
@@ -79,11 +80,11 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     go(href.chat())
   }
 
-  const renderRow = (it: NextItem) => (
+  const renderRow = (peers: NextItem[]) => (it: NextItem) => (
     <NextRow
       key={it.id}
       it={it}
-      all={items}
+      all={peers}
       isNext={list?.next_up === it.id}
       focused={lit === it.id}
       now={now}
@@ -138,7 +139,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
             Waiting on you <span className="faint">{proposed.length}</span>
           </h2>
           <p className="faint next-group-sub">Added by an agent or the desk. Approve, defer or drop each one.</p>
-          <ol className="next-rows">{proposed.map(renderRow)}</ol>
+          <ol className="next-rows">{proposed.map(renderRow(proposed))}</ol>
         </section>
       )}
 
@@ -153,7 +154,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
                 <h3 id={`next-${s.state}-h`} className="next-section-h">
                   {NEXT_SECTION_NAMES[s.state]} <span className="faint">{s.items.length}</span>
                 </h3>
-                <ol className="next-rows" aria-labelledby={`next-${s.state}-h`}>{s.items.map(renderRow)}</ol>
+                <ol className="next-rows" aria-labelledby={`next-${s.state}-h`}>{s.items.map(renderRow(queueItems))}</ol>
               </div>
             ),
           )}

@@ -220,6 +220,24 @@ describe('NextPage', () => {
     expect(api.update).toHaveBeenCalledWith(3, { state: 'approved' })
   })
 
+  it('does not count a proposed item above the queue when enabling move up', async () => {
+    const list: NextList = {
+      next_up: 0,
+      items: [
+        nextItem({ id: 1, title: 'Idea', rank: 1, state: 'planned', stored_state: 'planned', proposed: true, source: 'agent' }),
+        nextItem({ id: 2, title: 'Agreed plan', rank: 2, state: 'planned', stored_state: 'planned' }),
+      ],
+    }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    await screen.findByText('Agreed plan')
+    expect(screen.getByRole('button', { name: 'Move Agreed plan up' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Move Idea down' })).toBeDisabled()
+  })
+
   it('says so when nothing is planned', async () => {
     render(
       <LiveProvider live={live()}>
