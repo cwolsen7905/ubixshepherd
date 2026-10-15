@@ -3,6 +3,7 @@ import { useSnapshot } from '../state/context'
 import { DeskThread } from '../state/desk'
 import { Markdown } from '../chat/md'
 import { ChatThread } from '../chat/thread'
+import '../styles/chat.css'
 
 /** The URL as an anchor target when it is http or https; null for anything else. */
 export { safeHref } from '../chat/md'
