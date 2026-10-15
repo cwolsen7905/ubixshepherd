@@ -38,3 +38,8 @@
 .requests-sub { padding-left: var(--gutter); margin-bottom: var(--s-2); }
 .request-msg { white-space: pre-wrap; }
 
+
+/* The run's tabs, in the page and the inspector. */
+.run-pane .lane-tabs { padding-left: 0; }
+.run-inspector-sub { margin: 0 0 var(--s-3); }
+.run-asked { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }

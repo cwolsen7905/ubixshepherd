@@ -15,11 +15,13 @@ interface Props {
   /** Bumps when something about the lane changed (a feed item), to read now. */
   refreshKey?: number
   pollMs?: number
+  /** Show only this run's part of the thread. */
+  run?: number
   now: number
 }
 
 /** A lane's whole dialogue as one thread, followed live while a run is going. */
-export function Conversation({ source, refreshKey = 0, pollMs = POLL_MS, now }: Props) {
+export function Conversation({ source, refreshKey = 0, pollMs = POLL_MS, run, now }: Props) {
   const [items, setItems] = useState<Item[]>([])
   const [loaded, setLoaded] = useState(false)
   const [running, setRunning] = useState(false)
@@ -74,8 +76,8 @@ export function Conversation({ source, refreshKey = 0, pollMs = POLL_MS, now }: 
     [source],
   )
 
-  const shown = useMemo(() => items.filter((it) => thinking || it.kind !== 'thinking'), [items, thinking])
-  const hidden = items.length - shown.length
+  const shown = useMemo(() => items.filter((it) => (run === undefined || it.run === run) && (thinking || it.kind !== 'thinking')), [items, thinking, run])
+  const hidden = items.filter((it) => run === undefined || it.run === run).length - shown.length
   const follow = useFollowBottom(root, [items.length, thinking])
 
   return (
