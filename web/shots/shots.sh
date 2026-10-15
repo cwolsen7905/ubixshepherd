@@ -38,7 +38,7 @@ if [ -z "${SHOTS_NO_BUILD:-}" ] || [ ! -f "$web/dist/index.html" ]; then
 fi
 
 mkdir -p "$out"
-node "$here/stub-daemon.mjs" "$web/dist" "$port" >/dev/null &
+STUB_STRICT=1 node "$here/stub-daemon.mjs" "$web/dist" "$port" >/dev/null &
 stub=$!
 trap 'kill $stub 2>/dev/null || true' EXIT
 for _ in $(seq 1 50); do
