@@ -5,7 +5,7 @@ import { go, href, useRoute } from './router'
 import { useSnapshot } from './state/context'
 import { BoardPage } from './pages/Board'
 import { ChatPage } from './pages/Chat'
-import { DecisionsPage } from './pages/Decisions'
+import { InboxPage } from './pages/Inbox'
 import { NextPage } from './pages/Next'
 import { LanePage } from './pages/Lane'
 import { LogPage } from './pages/Log'
@@ -20,7 +20,6 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
 import { InspectorFrame } from './inspector/Inspector'
 import { CommandPalette, type PaletteHandle } from './palette/CommandPalette'
-import { WaitingOnYou } from './components/WaitingOnYou'
 import { StatusCounts } from './components/StatusCounts'
 import { statusCounts } from './state/attention'
 import { UpdateNotice } from './components/UpdateNotice'
@@ -88,10 +87,7 @@ export function App() {
         boardBroken={boardBroken}
         paletteOpen={() => paletteRef.current?.open()}
         headActions={
-          <>
-            <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
-            <WaitingOnYou />
-          </>
+          <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
         }
         banner={
           snap.error && (
@@ -122,7 +118,7 @@ export function App() {
         {route.page === 'runs' && <RunsPage range={route.range} agent={route.agent} lane={route.lane} />}
         {route.page === 'timeline' && <TimelinePage range={route.range} agent={route.agent} />}
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
-        {route.page === 'decisions' && <DecisionsPage focus={route.focus} />}
+        {route.page === 'inbox' && <InboxPage kind={route.kind} />}
         {route.page === 'next' && <NextPage />}
         {route.page === 'chat' && <ChatPage />}
         {route.page === 'settings' && <SettingsPage scope={route.scope} />}

@@ -5,7 +5,7 @@ export function routeName(r: Route): string {
   switch (r.page) {
     case 'board': return 'Board'
     case 'runs': return 'Runs'
-    case 'decisions': return 'Decisions'
+    case 'inbox': return 'Inbox'
     case 'usage': return 'Usage'
     case 'timeline': return 'Timeline'
     case 'next': return 'Next'

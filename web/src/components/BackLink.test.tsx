@@ -38,7 +38,7 @@ describe('routeName', () => {
     expect(routeName(parse(href.board('week')))).toBe('Board')
     expect(routeName(parse(href.lane(4)))).toBe('Lane 4')
     expect(routeName(parse(href.log(9)))).toBe('Run 9')
-    expect(routeName(parse(href.decisions(2)))).toBe('Decisions')
+    expect(routeName(parse(href.decisions(2)))).toBe('Inbox')
     expect(routeName(parse(href.project('shop')))).toBe('shop')
   })
 })

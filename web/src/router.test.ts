@@ -1,11 +1,16 @@
-import { formatOpen, href, parse, parseOpen, withOpen } from './router'
+import { canonical, formatOpen, href, parse, parseOpen, withOpen } from './router'
 
 describe('router', () => {
   it('parses every page and round-trips its href', () => {
     expect(parse('')).toEqual({ page: 'chat' })
     expect(parse(href.board())).toEqual({ page: 'board' })
-    expect(parse(href.decisions())).toEqual({ page: 'decisions' })
-    expect(parse(href.decisions(9))).toEqual({ page: 'decisions', focus: 9 })
+    expect(parse(href.inbox())).toEqual({ page: 'inbox' })
+    expect(parse(href.inbox('mr'))).toEqual({ page: 'inbox', kind: 'mr' })
+    // the old Decisions page redirects to the Inbox filtered to decisions
+    expect(parse('#/decisions')).toEqual({ page: 'inbox', kind: 'decision' })
+    expect(parse('#/decisions?d=9')).toEqual({ page: 'inbox', kind: 'decision', open: { kind: 'decision', id: 9 } })
+    expect(canonical('#/decisions?d=9')).toBe('#/inbox?kind=decision&open=decision%3A9')
+    expect(canonical('#/board')).toBe('#/board')
     expect(parse(href.projects())).toEqual({ page: 'projects' })
     expect(parse(href.project('shop'))).toEqual({ page: 'project', name: 'shop' })
     expect(parse(href.project('a b/c'))).toEqual({ page: 'project', name: 'a b/c' })
