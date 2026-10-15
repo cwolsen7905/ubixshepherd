@@ -113,4 +113,15 @@ describe('the run page', () => {
     expect(await screen.findByRole('link', { name: 'Ship it?' })).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
+
+  it('keeps the log readable and offers a retry when the run read fails', async () => {
+    vi.stubGlobal('fetch', async (u: string) =>
+      u.includes('/log')
+        ? new Response(JSON.stringify({ offset: 9, data: 'still here', size: 9, done: true }), { status: 200 })
+        : new Response('{}', { status: 500 }),
+    )
+    render(<RunInspector id={10} />)
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    vi.unstubAllGlobals()
+  })
 })

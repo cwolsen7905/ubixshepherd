@@ -20,11 +20,19 @@ export function runTab(tab: string | undefined): RunTab {
 /** Reads a run, and again every few seconds while it runs. `reload` reads it now. */
 export function useRun(id: number) {
   const [run, setRun] = useState<RunView | null>(null)
+  const [failed, setFailed] = useState<string | null>(null)
   const [tick, setTick] = useState(0)
   const running = run?.state === 'running'
   useEffect(() => {
     let current = true
-    api.run(id).then((r) => current && setRun(r), () => {})
+    api.run(id).then(
+      (r) => {
+        if (!current) return
+        setRun(r)
+        setFailed(null)
+      },
+      (e) => current && setFailed(e instanceof Error ? e.message : String(e)),
+    )
     return () => {
       current = false
     }
@@ -34,7 +42,7 @@ export function useRun(id: number) {
     const t = window.setInterval(() => setTick((n) => n + 1), 3000)
     return () => window.clearInterval(t)
   }, [running])
-  return { run, reload: () => setTick((n) => n + 1) }
+  return { run, error: failed, reload: () => setTick((n) => n + 1) }
 }
 
 /** The run's four views, shared by the inspector and the run page. */
@@ -61,7 +69,7 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
       </div>
       <div id="run-panel" role="tabpanel" aria-labelledby={`run-tab-${tab}`}>
         {tab === 'conversation' && <Conversation source={source} run={run.id} now={now} />}
-        {tab === 'log' && <LogTab run={run} onDone={onDone} />}
+        {tab === 'log' && <LogTab id={run.id} state={run.state} onDone={onDone} />}
         {tab === 'changes' && <RunChanges run={run} now={now} />}
         {tab === 'asked' && <Asked runId={run.id} />}
       </div>
@@ -71,13 +79,23 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
 
 /** The inspector's body for `open=run:N[/tab]`: a short header, then the run's views. */
 export function RunInspector({ id, tab }: { id: number; tab?: string }) {
-  const { run, reload } = useRun(id)
+  const { run, error, reload } = useRun(id)
   const [picked, setPicked] = useState<RunTab>(runTab(tab))
   const [seen, setSeen] = useState(tab)
   // The address leads: Back and a pasted link change the tab.
   if (seen !== tab) {
     setSeen(tab)
     setPicked(runTab(tab))
+  }
+  if (!run && error) {
+    return (
+      <div className="inspector-body">
+        <p className="tone-bad">Could not read run {id}: {error}</p>
+        <button type="button" className="link-button" onClick={reload}>
+          Retry
+        </button>
+      </div>
+    )
   }
   if (!run) return <p className="inspector-body faint">Reading run {id}…</p>
   const current = picked

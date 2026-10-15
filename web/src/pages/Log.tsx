@@ -66,7 +66,7 @@ function useRunLog(id: number) {
 export function LogPage({ run: id }: { run: number }) {
   const live = useLive()
   const now = useNow(5000)
-  const { run, reload } = useRun(id)
+  const { run, error, reload } = useRun(id)
   const [tab, setTab] = useState<RunTab>('conversation')
 
   useEffect(() => {
@@ -108,14 +108,23 @@ export function LogPage({ run: id }: { run: number }) {
 
       {run?.diagnosis && <RunFailure run={run} onFixed={reload} />}
 
-      {run && <RunPane run={run} tab={tab} onTab={setTab} onDone={reload} />}
+      {error && (
+        <p className="tone-bad">
+          Could not read the run: {error}.{' '}
+          <button type="button" className="link-button" onClick={reload}>
+            Retry
+          </button>
+        </p>
+      )}
+
+      {run ? <RunPane run={run} tab={tab} onTab={setTab} onDone={reload} /> : <LogTab id={id} onDone={reload} />}
     </div>
   )
 }
 
 /** The raw log with its search, follow and tool-call controls. */
-export function LogTab({ run, onDone }: { run: RunView; onDone?: () => void }) {
-  const { text, done, error } = useRunLog(run.id)
+export function LogTab({ id, state, onDone }: { id: number; state?: string; onDone?: () => void }) {
+  const { text, done, error } = useRunLog(id)
   const [follow, setFollow] = useState(true)
   const [query, setQuery] = useState('')
   const [hit, setHit] = useState(0)
@@ -135,7 +144,7 @@ export function LogTab({ run, onDone }: { run: RunView; onDone?: () => void }) {
   const hits = useMemo(() => (q ? countHits(text.toLowerCase(), q) : 0), [text, q])
 
   // Following keeps the end of the log in view; scrolling up stops it.
-  const running = run.state === 'running' && !done
+  const running = state === 'running' && !done
   useEffect(() => {
     if (follow && running && !q) end.current?.scrollIntoView?.({ block: 'end' })
   }, [text, follow, running, q])
