@@ -16,18 +16,20 @@ const { src } = busy
 /** The daemon's reads, and what the page asked of the history. */
 function daemon(o: { history?: Partial<RunHistory>; fail?: boolean; none?: boolean } = {}) {
   const seen: URL[] = []
+  const closed = o.none ? [] : src.closedLanes
+  const answered = o.none ? [] : src.answered
   vi.stubGlobal('fetch', async (path: string) => {
     const url = new URL(path, 'http://x')
     seen.push(url)
     if (o.fail && url.pathname.startsWith('/v1/history')) return new Response(JSON.stringify({ error: 'boom' }), { status: 500 })
     if (url.pathname === '/v1/history/runs') {
       const since = Date.parse(url.searchParams.get('since') ?? '')
-      const runs = (o.none ? [] : src.historyRuns ?? []).filter((r) => Date.parse(r.started) >= since)
+      const runs = o.none ? [] : (src.historyRuns ?? []).filter((r) => Date.parse(r.started) >= since)
       const body: RunHistory = { runs, count: runs.length, cost_usd: 1, credits: 0, agents: [], lanes: [], ...o.history }
       return new Response(JSON.stringify(body), { status: 200 })
     }
-    if (url.pathname === '/v1/history/lanes') return new Response(JSON.stringify(o.none ? [] : src.closedLanes), { status: 200 })
-    if (url.pathname === '/v1/decisions') return new Response(JSON.stringify(o.none ? [] : src.answered), { status: 200 })
+    if (url.pathname === '/v1/history/lanes') return new Response(JSON.stringify(closed), { status: 200 })
+    if (url.pathname === '/v1/decisions') return new Response(JSON.stringify(answered), { status: 200 })
     return new Response('{}', { status: 404 })
   })
   return seen

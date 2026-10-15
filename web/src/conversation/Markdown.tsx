@@ -113,7 +113,7 @@ export function blocks(src: string): Block[] {
       continue
     }
     // Blockquote
-    const bq = /^\>\s?(.*)$/.exec(line)
+    const bq = /^>\s?(.*)$/.exec(line)
     if (bq) {
       flush()
       flushList()

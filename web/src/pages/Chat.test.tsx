@@ -492,16 +492,16 @@ describe('Markdown', () => {
     const { container } = render(<Markdown text={'before\n\n---\n\nafter'} />)
     const hrs = container.querySelectorAll('.md-hr')
     expect(hrs).toHaveLength(1)
-    expect(hrs[0]!.tagName).toBe('HR')
+    expect(hrs.item(0)?.tagName).toBe('HR')
   })
 
   it('renders task lists', () => {
     const { container } = render(<Markdown text={'- [ ] pending\n- [x] done\n- [ ] also pending'} />)
     const checkboxs = Array.from(container.querySelectorAll('.md-task input[type="checkbox"]'))
     expect(checkboxs).toHaveLength(3)
-    expect(checkboxs[0]!.hasAttribute('checked')).toBe(false)
-    expect(checkboxs[1]!.hasAttribute('checked')).toBe(true)
-    expect(checkboxs[2]!.hasAttribute('checked')).toBe(false)
+    expect(checkboxs.at(0)?.hasAttribute('checked')).toBe(false)
+    expect(checkboxs.at(1)?.hasAttribute('checked')).toBe(true)
+    expect(checkboxs.at(2)?.hasAttribute('checked')).toBe(false)
   })
 
   it('renders all new block types together', () => {
