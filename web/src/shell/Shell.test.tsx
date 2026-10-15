@@ -114,7 +114,7 @@ describe('Shell', () => {
     expect(screen.getByRole('complementary')).toBeInTheDocument()
     // The skip link first, then the views, then the footer, then the page head.
     const seen: string[] = []
-    for (let i = 0; i < 14; i++) {
+    for (let i = 0; i < 15; i++) {
       await userEvent.tab()
       seen.push(document.activeElement?.textContent?.trim() ?? '')
     }
