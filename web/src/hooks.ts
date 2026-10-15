@@ -32,3 +32,17 @@ export function useKeys(keys: Record<string, (e: KeyboardEvent) => void>, deps: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 }
+
+/** Cmd+K or Ctrl+K, which works while typing: it is how the palette opens. */
+export function usePaletteKey(toggle: () => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        toggle()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [toggle])
+}
