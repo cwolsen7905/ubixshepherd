@@ -17,6 +17,7 @@ export function routeName(r: Route): string {
     case 'lane': return `Lane ${r.id}`
     case 'log': return `Run ${r.run}`
     case 'missing': return 'Board'
+    case 'kit': return 'Kit'
   }
 }
 

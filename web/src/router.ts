@@ -24,6 +24,7 @@ export type Route =
   | { page: 'settings'; scope?: string }
   | { page: 'lane'; id: number }
   | { page: 'log'; run: number }
+  | { page: 'kit' }
   | { page: 'missing'; path: string }
 
 export function parse(hash: string): Route {
@@ -83,6 +84,7 @@ export function parse(hash: string): Route {
   if (m) return { page: 'lane', id: Number(m[1]) }
   m = /^\/runs\/(\d+)\/log$/.exec(path)
   if (m) return { page: 'log', run: Number(m[1]) }
+  if (path === '/kit' && import.meta.env.DEV) return { page: 'kit' }
   return { page: 'missing', path }
 }
 

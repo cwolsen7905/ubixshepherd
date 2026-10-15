@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, laneClose } from '../api/client'
 import type { LaneReview, LaneView } from '../api/types'
 import { useLive } from '../state/context'
+import { Button } from '../ui/Button'
+import { EmptyState } from '../ui/EmptyState'
 import '../styles/lane-close.css'
 
 /** The least time between two reviews of the same repos: each one refreshes the remote. */
@@ -111,18 +113,17 @@ export function LaneCloseButton({ lane, running, onClosed }: { lane: LaneView; r
     }
   }
 
-  if (done) return <span className="lane-close-done faint">Lane closed.</span>
+  if (done) return <EmptyState title="Lane closed" />
   return (
     <span className="lane-close">
-      <button
-        type="button"
-        className="lane-close-button"
+      <Button
+        variant="primary"
         disabled={busy || running}
         title={running ? 'A run is going in this lane: stop it first.' : 'Close the lane: remove its worktree if it is clean and its work is in the base.'}
         onClick={() => void close(false)}
       >
         Close lane
-      </button>
+      </Button>
       {failure && <span className="lane-close-note tone-bad" role="alert">Could not close the lane: {failure}</span>}
       {refusal && (
         <span className="lane-close-note" role="alert">
@@ -139,9 +140,9 @@ export function LaneCloseButton({ lane, running, onClosed }: { lane: LaneView; r
         <span className="lane-close-confirm" role="group" aria-label="Confirm closing anyway">
           Closing anyway removes the worktree <code>{lane.worktree}</code> and discards any uncommitted changes in it. The
           branch <code>{lane.branch}</code> is kept unless git can see it merged, so commits on it are not lost.
-          <button type="button" className="lane-close-button danger" disabled={busy || running} onClick={() => void close(true)}>
+          <Button variant="danger" disabled={busy || running} onClick={() => void close(true)}>
             Discard changes and close
-          </button>
+          </Button>
           <button type="button" className="link-button" onClick={() => setConfirming(false)}>
             Keep the lane
           </button>

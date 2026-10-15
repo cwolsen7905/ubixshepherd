@@ -67,7 +67,7 @@ describe('LaneCloseButton', () => {
     const calls = daemon(() => closed())
     const onClosed = await mountButton(lane())
     await userEvent.click(screen.getByRole('button', { name: 'Close lane' }))
-    expect(await screen.findByText('Lane closed.')).toBeInTheDocument()
+    expect(await screen.findByText('Lane closed')).toBeInTheDocument()
     const post = calls.find((c) => c.path === '/v1/lanes/1/close')
     expect(post?.body).toEqual({ force: false })
     expect(onClosed).toHaveBeenCalled()
@@ -94,7 +94,7 @@ describe('LaneCloseButton', () => {
     expect(confirm).toHaveTextContent('/tmp/acme-api')
     expect(confirm).toHaveTextContent('branch feat/login is kept unless git can see it merged')
     await userEvent.click(screen.getByRole('button', { name: 'Discard changes and close' }))
-    expect(await screen.findByText('Lane closed.')).toBeInTheDocument()
+    expect(await screen.findByText('Lane closed')).toBeInTheDocument()
     expect(calls.filter((c) => c.path.endsWith('/close')).map((c) => c.body)).toEqual([{ force: false }, { force: true }])
   })
 

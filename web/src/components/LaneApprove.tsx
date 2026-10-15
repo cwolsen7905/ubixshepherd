@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, laneApprove } from '../api/client'
 import type { LaneApproval, LaneApproved } from '../api/types'
 import { shortSha } from '../format'
+import { Button } from '../ui/Button'
+import { EmptyState } from '../ui/EmptyState'
 import '../styles/lane-approve.css'
 
 /** The least time between two reads the feed triggers. */
@@ -49,11 +51,11 @@ export function LaneApprove({ laneId, refreshKey }: { laneId: number; refreshKey
   }, [read, refreshKey])
 
   if (!view) {
-    return readError ? <p className="lane-approve faint">Merge request state is not available: {readError}</p> : null
+    return readError ? <EmptyState title="Merge request state unavailable" /> : null
   }
   if (!view.supported) {
     return (
-      <p className="lane-approve faint">
+      <EmptyState title="Merge request not supported">
         {view.reason}
         {view.mr_url && (
           <>
@@ -61,10 +63,10 @@ export function LaneApprove({ laneId, refreshKey }: { laneId: number; refreshKey
             <a href={view.mr_url} target="_blank" rel="noreferrer">Open the merge request</a>
           </>
         )}
-      </p>
+      </EmptyState>
     )
   }
-  if (!view.mr) return <p className="lane-approve faint">This lane has no merge request yet.</p>
+  if (!view.mr) return <EmptyState title="No merge request yet" />
 
   const open = view.mr_state === 'opened'
   const sha = view.sha ?? ''
@@ -108,17 +110,17 @@ export function LaneApprove({ laneId, refreshKey }: { laneId: number; refreshKey
         {sha && <span className="faint">head <code>{shortSha(sha)}</code></span>}
       </p>
       {open && !view.approved && !confirming && (
-        <button type="button" className="lane-approve-button" disabled={busy || !sha} onClick={() => setConfirming(true)}>
+        <Button variant="primary" disabled={busy || !sha} onClick={() => setConfirming(true)}>
           Approve !{view.mr}…
-        </button>
+        </Button>
       )}
       {open && confirming && (
         <p className="lane-approve-confirm" role="group" aria-label="Confirm approval">
           Approve !{view.mr} at <code>{shortSha(sha)}</code>? This is your sign-off on the forge, for exactly this head. If the
           require-approval job has failed, it is retried so the pipeline can pass.
-          <button type="button" className="lane-approve-button" disabled={busy} onClick={() => void approve()}>
+          <Button variant="primary" disabled={busy} onClick={() => void approve()}>
             Approve at {shortSha(sha)}
-          </button>
+          </Button>
           <button type="button" className="link-button" disabled={busy} onClick={() => setConfirming(false)}>
             Not yet
           </button>
