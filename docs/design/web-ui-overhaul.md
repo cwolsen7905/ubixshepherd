@@ -2,7 +2,8 @@
 
 Status: **decided**, and **in build**. The maintainer approved the plan and the mockup on
 2026-10-14 and took every recommended default (see [Decided questions](#decided-questions)).
-Steps N1 to N7, N10, N11, N23, N24 and N26 are merged to `dev`; N12 is in progress (see
+Steps N1 to N8, N10 to N12, N14 to N19, N22, N23, N24 and N26 are merged to `dev`; N13 and N25 are in
+build in their own lanes, N20 is queued after !244, and N21 has not started (see
 [Status and remaining work](#status-and-remaining-work)). The artifact feature has its own
 design, [artifacts.md](artifacts.md).
 
@@ -31,7 +32,7 @@ commit, driven in headless Chrome against the screenshot stub, shots in
 The two lanes that held `web/**` when the audit was made, `feat/web-keep-going-switch` and
 `fix/chat-copy-button`, have both merged, so the shell and the chat are free. The audit
 below is as of `2a9ca59`; the step list that follows carries the status of each step as of
-2026-10-15, after N12 started. The item table keeps its audit-time wording except where a
+2026-10-15, with `dev` at `ccc3298`. The item table keeps its audit-time wording except where a
 merged step changed it (marked with the step and its merge request).
 
 ### Regression: the counts across the top
@@ -61,29 +62,30 @@ something the item names did not. Evidence is the file or commit on `dev`.
 | W0.5 Tokens and kit | partly | `web/src/ui/*` and the surface tokens in `web/src/styles/theme.css`. N5 adopted `Button` and `EmptyState` on the lane close and approve controls and routed the dev-only `#/kit` page; `Chip`, `Tabs`, `Dialog`, `Toast` and the pages themselves wait for N13 |
 | W1.1 `/v1/waiting` covers requests | done | `internal/waiting/**` (53c2b3a), `request` kind and `version` on the list |
 | W1.2 One attention store | done | `web/src/state/attention.ts`, `web/src/state/live.ts`; title, favicon, sidebar and `WaitingOnYou` read it and none polls. N11 (!225) moved the chat's backlog head and the topic waits onto the same list |
-| W1.3 Sidebar shell | partly | `web/src/shell/*`, `web/src/styles/layout/shell.css`: sidebar, page head, collapse at 1280, sheet at 760, spend, daemon, update notice, help. The counts above landed as N1, the footer status words as N3 (!222), the keep-going switch has merged and N7 (!223) renamed Chat to Conversation. Missing, all N8: the palette trigger; the workspace switcher (a label only); the "Inbox" name (still "Decisions"); glyphs as marks (single letters now) |
-| W1.4 Command palette | done | N4: `web/src/palette/**`, `Cmd+K` and `Ctrl+K`, the keys list updated in `web/src/components/Help.tsx`. The sidebar trigger is N8 |
-| W2.1 Inspector frame, `open=` | in progress | N12: no `web/src/inspector/` or `open=` on `dev` yet |
-| W2.2 Decisions in the thread and strip | partly | N10 dropped the duplicate "decision asked" row, made Answer primary and folded the long body behind "Show all". Still missing: the compact card, the pending strip and the decision in the inspector (N14) |
-| W2.3 Run inspector | not started | `web/src/pages/Log.tsx` is still the only run view |
-| W2.4 Lane inspector, tab in the address | not started | `web/src/pages/Lane.tsx` tab is local state; no `#/lanes/4/changes` |
-| W2.5 Context composer | not started | |
-| W2.6 Rows open the inspector | not started | |
-| W2.7 Structured `about` on a desk turn | not started | |
-| W3.1 Inbox page | not started | `#/decisions` is still the Decisions page; the head dropdown still covers the thread and Answer still leaves the chat |
-| W3.2 Seen and missed | not started | no unseen state; `web/src/model/backlog.ts` and `board.ts` only carry the old dismissals |
-| W3.3 Thread calm | not started | the page still scrolls the window (N10 unclipped the rail head); topics show twice; tool calls and wakes are not folded |
-| W4.1 Board | not started | `web/src/pages/Board.tsx`: no "quiet projects" fold; Close lane is a bare button under every row |
-| W4.2 Project, Projects | not started | |
-| W4.3 Next up | not started | |
-| W4.4 Settings, Usage | not started | |
-| W4.5 Runs, Timeline | not started | |
+| W1.3 Sidebar shell | done | `web/src/shell/*`, `web/src/styles/layout/shell.css`: sidebar, page head, collapse at 1280, sheet at 760, spend, daemon, update notice, help. N1 added the counts, N3 (!222) the footer status words, the keep-going switch (!207) the switch, N7 (!223) the Conversation name, N8 (!237) the Board count, glyph marks, the search trigger and the Inbox name (N19, !240). The workspace entry is a read-only label, not a switcher; the workspace switcher in the mockup is not built |
+| W1.4 Command palette | done | N4 (!220): `web/src/palette/**`, `Cmd+K` and `Ctrl+K`, the keys list updated in `web/src/components/Help.tsx`; the sidebar trigger came with N8 (!237) |
+| W2.1 Inspector frame, `open=` | done | N12 (!233): `web/src/inspector/Inspector.tsx`, `open=` on every route in `web/src/router.ts`, split pane, overlay and sheet modes, the shell inert behind a modal inspector |
+| W2.2 Decisions in the thread and strip | done | N10 (!219) dropped the duplicate "decision asked" row and made Answer primary; N14 (!238) added the compact card, the pending strip with `]` and `[`, and the decision and question panes in the inspector |
+| W2.3 Run inspector | done | N15 (!235): `web/src/inspector/runPane.tsx`, a run's conversation, log, changes and questions as tabs, "Open as page" to `Log.tsx` |
+| W2.4 Lane inspector, tab in the address | done | N16 (!236): `web/src/inspector/lane.tsx`, tab in the address (`open=lane:4/changes`), Artifacts tab inside it, "Open as page" to `Lane.tsx` |
+| W2.5 Context composer | done | N17 (!239): `web/src/inspector/ContextComposer.tsx` at the inspector's foot, a desk turn with a reference line, filed under the entity's topic |
+| W2.6 Rows open the inspector | partly | The Inbox rows open it (N19, !240) and the thread strip does (N14). Left: Board, Runs, Timeline, Next up, Project and the backlog rail rows (N21, after N13) |
+| W2.7 Structured `about` on a desk turn | done | N22 (!241): `POST /v1/desk/turn` takes a structured `about`, the desk redacts its label and treats ids as hints, and the context composer sends it (`web/src/state/deskAbout.ts`) |
+| W3.1 Inbox page | done | N19 (!240): `web/src/pages/Inbox.tsx`, `#/decisions` redirects to it, the head dropdown is gone, the sidebar entry is Inbox |
+| W3.2 Seen and missed | not started | N20: no unseen state on `dev` |
+| W3.3 Thread calm | done | N18 (!242): the thread has its own scroll region, events are grouped (`web/src/chat/group.ts`), tool calls and wakes fold, and topics sit in the chips row. !243 fixed the decision pane to one full-width column. Run start and end are not paired |
+| W3.4 Conversation reply row (item 68) | open | !244 (`fix/conversation-reply-row`): keeps a question's row findable after it is answered and links a reply to it; not on `dev` yet |
+| W4.1 Board | not started | N13: no page lane has merged; the Board lane is not yet open |
+| W4.2 Project, Projects | not started | N13: no page lane has merged |
+| W4.3 Next up | in build | N13: lane `feat/web-page-next-up`, not merged |
+| W4.4 Settings, Usage | not started | N13: no page lane has merged |
+| W4.5 Runs, Timeline | not started | N13: no page lane has merged |
 | W4.6 Typeface | done | N2: IBM Plex Sans and Mono bundled under `web/public/fonts/`, `@font-face` and the font tokens in `web/src/styles/theme.css` |
 | A1 Read-only discovery | done | `internal/fold/artifacts.go`, `internal/api/lane_artifacts.go` (64d80cb): `GET /v1/lanes/{id}/artifacts` and `.../artifacts/content`, `artifacts.discover` in `internal/config/config.go` |
-| A2 Viewer | built (page form) | N6 (!218): `web/src/artifacts/**` and the Artifacts tab on `web/src/pages/Lane.tsx`. The inspector form waits for N16 |
-| A3 Store and declaration | built | N23 (!221): store tables, worker tool, `ask_human` artifacts, feed kind, brief sentence |
-| A4 Snapshots and close | built | N24 (!224, follow-ups !226): snapshots, `info/exclude`, close behaviour, retention and `gc`; `artifacts.cap_mb` and a merged-lane waiting item came with the follow-ups |
-| A5 Artifacts page, versions | not started | N25 |
+| A2 Viewer | built | N6 (!212, !218): `web/src/artifacts/**`, the Artifacts tab on the lane page, and in the lane inspector since N16 (!236) |
+| A3 Store and declaration | built | N23 (!213, !221): store tables, worker tool, `ask_human` artifacts, feed kind, brief sentence |
+| A4 Snapshots and close | built | N24 (!224, follow-ups !226): snapshots, `info/exclude`, close behaviour, retention and `gc`; `artifacts.cap_mb` and a merged-lane waiting item came with the follow-ups; !234 wired the retention and the waiting item into the daemon |
+| A5 Artifacts page, versions | in build | N25: lane `feat/web-artifacts-page`, not merged |
 | A6 Desk tools | built | N26 (!227): `artifact_list` and `artifact_read` |
 
 ### Visible gaps no item covers
@@ -116,31 +118,31 @@ and nothing else touches it.
 
 | # | Step | Item | Scope | Depends on |
 |---|---|---|---|---|
-| N1 | *merged.* **Status counts in the page head**: running, waiting on you, blocked or failed, needs routing; see below | new | `web/src/components/StatusCounts*`, `web/src/state/attention*`, `web/src/App.tsx` (the `headActions` hunk only) | none |
-| N2 | *merged.* Bundle IBM Plex Sans and Mono (latin woff2 and the licence), `@font-face`, point `--font-ui` and `--font-mono` at them | W4.6 | `web/src/styles/theme.css`, `web/public/fonts/**`, `web/index.html` | none |
+| N1 | *merged (!211).* **Status counts in the page head**: running, waiting on you, blocked or failed, needs routing; see below | new | `web/src/components/StatusCounts*`, `web/src/state/attention*`, `web/src/App.tsx` (the `headActions` hunk only) | none |
+| N2 | *merged (!214).* Bundle IBM Plex Sans and Mono (latin woff2 and the licence), `@font-face`, point `--font-ui` and `--font-mono` at them | W4.6 | `web/src/styles/theme.css`, `web/public/fonts/**`, `web/index.html` | none |
 | N3 | *merged (!222).* Footer status as words: "Daemon live", "forge polled 41s ago", with the popover behind it | new (G4) | `web/src/components/DaemonStatus*`, `web/src/styles/layout/daemon.css` | none |
-| N4 | *merged.* Command palette: `⌘K` and `Ctrl+K`, go to a page, open a lane, run, decision or topic by name or number, "answer next"; update the keys list. No sidebar trigger yet | W1.4 | `web/src/palette/**`, `web/src/hooks.ts`, `web/src/components/Help*`, `web/src/App.tsx` (one mount) | N1 |
-| N5 | *merged.* Kit adoption pass one: `Button` for the page-level buttons (Close lane, Approve), `EmptyState`, a primary-per-view rule in the kit's docs, and the dev-only `#/kit` route | W0.5 | `web/src/ui/**`, `web/src/components/LaneClose*`, `web/src/components/LaneApprove*`, `web/src/styles/layout/controls.css`, `web/src/router.ts` (the `kit` route) | none |
+| N4 | *merged (!220).* Command palette: `⌘K` and `Ctrl+K`, go to a page, open a lane, run, decision or topic by name or number, "answer next"; update the keys list. No sidebar trigger yet | W1.4 | `web/src/palette/**`, `web/src/hooks.ts`, `web/src/components/Help*`, `web/src/App.tsx` (one mount) | N1 |
+| N5 | *merged (!216).* Kit adoption pass one: `Button` for the page-level buttons (Close lane, Approve), `EmptyState`, a primary-per-view rule in the kit's docs, and the dev-only `#/kit` route | W0.5 | `web/src/ui/**`, `web/src/components/LaneClose*`, `web/src/components/LaneApprove*`, `web/src/styles/layout/controls.css`, `web/src/router.ts` (the `kit` route) | none |
 | N6 | *merged (!218).* Artifacts on the lane page: an Artifacts tab listing a lane's artifacts with the rendered file below it (markdown, text, images), a reusable viewer for the inspector | A2 (page form) | `web/src/artifacts/**`, `web/src/pages/Lane.tsx`, `web/src/api/artifacts*`, `web/src/styles/pages/lane.css` | none |
 | N7 | *merged (!223).* Home is the conversation: `#/` is the chat, the board moves to `#/board` and old links redirect; the Chat entry becomes Conversation | decided Q3 | `web/src/router.ts`, `web/src/router.test.ts`, `web/src/shell/nav.ts`, `web/src/App.tsx` (the routes hunk) | keep-going switch merged, N4 |
-| N8 | Sidebar polish: Board's broken count, glyph marks, the "Search or act" trigger, the workspace switcher, footer ordering | W1.3 | `web/src/shell/**`, `web/src/styles/layout/shell.css` | keep-going switch merged, N4, N7 |
-| N9 | *merged.* Chat on the one renderer is finished by `fix/chat-copy-button`; nothing to do but wait | W0.4 | held by that lane | |
-| N10 | *merged.* Chat quick fixes: unclip the rail head, sentence-case labels, soft message bubbles, drop the duplicate "decision asked" row, a primary Answer, fold the decision card's long body behind "Show all" | G7 to G9 | `web/src/chat/**`, `web/src/pages/Chat.tsx`, `web/src/styles/chat.css`, `web/src/styles/conversation.css`, `web/src/components/DecisionCard*`, `web/src/styles/pages/decisions.css` | N9 |
+| N8 | *merged (!237), except the workspace switcher, which stays a read-only label.* Sidebar polish: Board's broken count, glyph marks, the "Search or act" trigger, the workspace switcher, footer ordering | W1.3 | `web/src/shell/**`, `web/src/styles/layout/shell.css` | keep-going switch merged, N4, N7 |
+| N9 | *merged (!206).* Chat on the one renderer is finished by `fix/chat-copy-button`; nothing to do but wait | W0.4 | held by that lane | |
+| N10 | *merged (!219).* Chat quick fixes: unclip the rail head, sentence-case labels, soft message bubbles, drop the duplicate "decision asked" row, a primary Answer, fold the decision card's long body behind "Show all" | G7 to G9 | `web/src/chat/**`, `web/src/pages/Chat.tsx`, `web/src/styles/chat.css`, `web/src/styles/conversation.css`, `web/src/components/DecisionCard*`, `web/src/styles/pages/decisions.css` | N9 |
 | N11 | *merged (!225; thread boundary !229).* Attention store finishes: the backlog head and the topic waits read the one list, an `ErrorBoundary` around the rail and the thread | W1.2, W0.2 | `web/src/state/**`, `web/src/model/backlog*`, `web/src/components/Backlog*`, `web/src/components/Topics*` | N10 |
-| N12 | ***in progress**.* Inspector frame: `open=` on every route, split pane at 1440, overlay below, sheet below 760, focus handling; mounted as a wrapper inside the page so the shell is untouched | W2.1 | `web/src/router.ts`, `web/src/inspector/**`, `web/src/styles/inspector.css`, `web/src/App.tsx` (one wrapper hunk) | N7, N10 |
-| N13 | Pages on the kit, in parallel: Projects and Unassigned (W4.2), Next up (W4.3), Settings and Usage (W4.4), Runs and Timeline (W4.5), Board with quiet projects folded (W4.1, without inspector links) | W4.1 to W4.5 | one lane each: `web/src/pages/Project*` `web/src/pages/Projects*` `web/src/styles/projects.css`; `web/src/pages/Next*` `web/src/styles/next.css`; `web/src/pages/Settings*` `web/src/pages/Usage*` `web/src/styles/settings.css` `web/src/styles/usage.css`; `web/src/pages/Runs*` `web/src/pages/Timeline*` `web/src/timeline/**`; `web/src/pages/Board*` `web/src/styles/layout/rows.css` | N5 |
-| N14 | Decisions and questions in the inspector, compact card, the pending strip with `]` and `[` | W2.2 | `web/src/chat/**`, `web/src/components/DecisionCard*`, `web/src/inspector/decision*`, `web/src/inspector/question*`, `web/src/model/waitingStep*`, `web/src/styles/chat.css` | N12, N10 |
-| N15 | Run in the inspector (conversation, log, changes, asked) | W2.3 | `web/src/inspector/run*`, `web/src/pages/Log*`, `web/src/conversation/**`, `web/src/styles/pages/log.css` | N12 |
-| N16 | Lane in the inspector, tab in the address, Artifacts tab from N6 | W2.4, A2 | `web/src/inspector/lane*`, `web/src/pages/Lane*`, `web/src/components/Changes*`, `web/src/styles/pages/lane.css`, `web/src/styles/changes.css` | N12, N6 |
-| N17 | Context composer (client only) | W2.5 | `web/src/inspector/ContextComposer*`, `web/src/state/desk*` | N12 |
-| N18 | Thread calm: own scroll region, fixed head and composer, grouped events, folded tool calls, topics folded into the chips | W3.3 | `web/src/chat/**`, `web/src/components/Topics*`, `web/src/components/TopicBar*`, `web/src/styles/chat.css`, `web/src/styles/topics.css` | N14 |
-| N19 | Inbox page, `#/decisions` redirects, the head dropdown goes; the sidebar entry becomes Inbox | W3.1 | `web/src/pages/Inbox*`, `web/src/pages/Decisions*`, `web/src/router.ts`, `web/src/components/WaitingOnYou*`, `web/src/shell/nav.ts` | N14 |
-| N20 | Seen and missed: unseen dots, "while you were away", polite announcements, opt-in notifications | W3.2 | `web/src/state/seen*`, `web/src/chat/**`, `web/src/pages/Settings*` | N19, N18 |
-| N21 | Rows everywhere open the inspector | W2.6 | `web/src/pages/Board*`, `web/src/pages/Runs*`, `web/src/pages/Timeline*`, `web/src/pages/Next*`, `web/src/pages/Project*`, `web/src/components/Backlog*` | N15, N16, N13 |
-| N22 | Structured `about` on `POST /v1/desk/turn` (Go, then the web) | W2.7 | `internal/api/**`, `internal/daemon/**`, `internal/desk/**`, `web/src/inspector/ContextComposer*`, `web/src/api/**` | N17 |
+| N12 | *merged (!233).* Inspector frame: `open=` on every route, split pane at 1440, overlay below, sheet below 760, focus handling; mounted as a wrapper inside the page so the shell is untouched | W2.1 | `web/src/router.ts`, `web/src/inspector/**`, `web/src/styles/inspector.css`, `web/src/App.tsx` (one wrapper hunk) | N7, N10 |
+| N13 | *in build.* No page lane has merged; Next up is in `feat/web-page-next-up`. Pages on the kit, in parallel: Projects and Unassigned (W4.2), Next up (W4.3), Settings and Usage (W4.4), Runs and Timeline (W4.5), Board with quiet projects folded (W4.1, without inspector links) | W4.1 to W4.5 | one lane each: `web/src/pages/Project*` `web/src/pages/Projects*` `web/src/styles/projects.css`; `web/src/pages/Next*` `web/src/styles/next.css`; `web/src/pages/Settings*` `web/src/pages/Usage*` `web/src/styles/settings.css` `web/src/styles/usage.css`; `web/src/pages/Runs*` `web/src/pages/Timeline*` `web/src/timeline/**`; `web/src/pages/Board*` `web/src/styles/layout/rows.css` | N5 |
+| N14 | *merged (!238).* Decisions and questions in the inspector, compact card, the pending strip with `]` and `[` | W2.2 | `web/src/chat/**`, `web/src/components/DecisionCard*`, `web/src/inspector/decision*`, `web/src/inspector/question*`, `web/src/model/waitingStep*`, `web/src/styles/chat.css` | N12, N10 |
+| N15 | *merged (!235).* Run in the inspector (conversation, log, changes, asked) | W2.3 | `web/src/inspector/run*`, `web/src/pages/Log*`, `web/src/conversation/**`, `web/src/styles/pages/log.css` | N12 |
+| N16 | *merged (!236).* Lane in the inspector, tab in the address, Artifacts tab from N6 | W2.4, A2 | `web/src/inspector/lane*`, `web/src/pages/Lane*`, `web/src/components/Changes*`, `web/src/styles/pages/lane.css`, `web/src/styles/changes.css` | N12, N6 |
+| N17 | *merged (!239).* Context composer (client only) | W2.5 | `web/src/inspector/ContextComposer*`, `web/src/state/desk*` | N12 |
+| N18 | *merged (!242; decision pane fix !243).* Thread calm: own scroll region, fixed head and composer, grouped events, folded tool calls, topics folded into the chips | W3.3 | `web/src/chat/**`, `web/src/components/Topics*`, `web/src/components/TopicBar*`, `web/src/styles/chat.css`, `web/src/styles/topics.css` | N14 |
+| N19 | *merged (!240).* Inbox page, `#/decisions` redirects, the head dropdown goes; the sidebar entry becomes Inbox | W3.1 | `web/src/pages/Inbox*`, `web/src/pages/Decisions*`, `web/src/router.ts`, `web/src/components/WaitingOnYou*`, `web/src/shell/nav.ts` | N14 |
+| N20 | *queued after !244.* Seen and missed: unseen dots, "while you were away", polite announcements, opt-in notifications | W3.2 | `web/src/state/seen*`, `web/src/chat/**`, `web/src/pages/Settings*` | N19, N18 |
+| N21 | *not started.* The Inbox and the strip open the inspector already (N14, N19); the page rows do not. Rows everywhere open the inspector | W2.6 | `web/src/pages/Board*`, `web/src/pages/Runs*`, `web/src/pages/Timeline*`, `web/src/pages/Next*`, `web/src/pages/Project*`, `web/src/components/Backlog*` | N15, N16, N13 |
+| N22 | *merged (!241).* Structured `about` on `POST /v1/desk/turn` (Go, then the web) | W2.7 | `internal/api/**`, `internal/daemon/**`, `internal/desk/**`, `web/src/inspector/ContextComposer*`, `web/src/api/**` | N17 |
 | N23 | *merged (!221).* Artifact store, declaration, feed kind and brief | A3 | `internal/store/**`, `internal/cli/**`, `internal/dispatch/**`, `internal/api/**`, `internal/daemon/**` | none (Go) |
 | N24 | *merged (!224, follow-ups !226).* Snapshots, `info/exclude`, close behaviour, retention | A4 | `internal/fold/**`, `internal/daemon/**`, `internal/store/**`, `internal/cli/**`, `internal/git/**` | N23 |
-| N25 | Artifacts page, Produced on runs, close dialog choices, versions | A5 | `web/src/pages/Artifacts*`, `web/src/artifacts/**`, `web/src/inspector/**`, `web/src/components/LaneClose*`, `web/src/router.ts` | N24, N16 |
+| N25 | *in build (`feat/web-artifacts-page`).* Its viewer and lane inspector parts exist (N6, N16). Artifacts page, Produced on runs, close dialog choices, versions | A5 | `web/src/pages/Artifacts*`, `web/src/artifacts/**`, `web/src/inspector/**`, `web/src/components/LaneClose*`, `web/src/router.ts` | N24, N16 |
 | N26 | *merged (!227).* Desk tools `artifact_list` and `artifact_read` | A6 | `internal/cli/**`, `internal/chat/**`, `internal/desk/**` | N23 |
 
 #### N1 in detail: the counts
@@ -173,7 +175,7 @@ Scopes that do not overlap run in parallel. Held lanes aside, the groups are:
 | Wave | Runs together | Why they do not collide |
 |---|---|---|
 | Now (all merged) | N1, N2, N3, N5, N6, N23 | components, theme and fonts, the daemon status piece, the kit and its first adopters, the lane page and a new `web/src/artifacts`, and Go only |
-| Next (N4, N24, N26 merged; N13's lanes open) | N4 (after N1), N13's five page lanes (after N5), N24 (after N23), N26 (after N23) | each page lane owns its own page and stylesheet; N4 owns `palette/**` |
+| Next (N4, N24, N26 merged; N13's Next up lane in build, the others not started) | N4 (after N1), N13's five page lanes (after N5), N24 (after N23), N26 (after N23) | each page lane owns its own page and stylesheet; N4 owns `palette/**` |
 | After `feat/web-keep-going-switch` | N7 then N8 | both edit the shell and the route table, so they are serial |
 | After `fix/chat-copy-button` | N10, then N11 | both edit `web/src/chat/**` and the chat stylesheet |
 | Then | N12, then N14, N15, N16 and N17 together | N14 owns the chat and the decision inspector, N15 the run inspector, N16 the lane inspector, N17 the composer |
