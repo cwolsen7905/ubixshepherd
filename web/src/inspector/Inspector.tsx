@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { go, withOpen, type Open } from '../router'
+import { DecisionPane } from './decisionPane'
+import { QuestionPane } from './questionPane'
 import { useMode, type Mode } from './useMode'
 import { LaneInspector } from './lane'
 import '../styles/inspector.css'
@@ -26,6 +28,10 @@ function InspectorBody({ open }: { open: Open }) {
   switch (open.kind) {
     case 'lane':
       return <LaneInspector open={open} />
+    case 'decision':
+      return <DecisionPane id={open.id} />
+    case 'question':
+      return <QuestionPane id={open.id} />
     default:
       return <Placeholder open={open} />
   }
