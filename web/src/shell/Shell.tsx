@@ -19,6 +19,8 @@ export function Shell({
   headActions,
   banner,
   children,
+  boardBroken = 0,
+  paletteOpen,
 }: {
   route: Route
   waiting: Waiting | null
@@ -27,6 +29,8 @@ export function Shell({
   headActions: ReactNode
   banner?: ReactNode
   children: ReactNode
+  boardBroken?: number
+  paletteOpen?: () => void
 }) {
   const mode = useShellMode()
   // The sheet is open for the route it was opened on: navigating closes it.
@@ -66,7 +70,7 @@ export function Shell({
       </a>
       <aside ref={side} id={sideId} className={`sidebar${sheet ? ' is-sheet' : ''}${open ? ' is-open' : ''}`} hidden={!shown}>
         <ErrorBoundary region="The sidebar">
-          <Sidebar route={route} waiting={waiting} workspaces={workspaces} footer={footer} />
+          <Sidebar route={route} waiting={waiting} workspaces={workspaces} footer={footer} boardBroken={boardBroken} paletteOpen={paletteOpen} />
         </ErrorBoundary>
       </aside>
       {sheet && open && <div className="sheet-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}

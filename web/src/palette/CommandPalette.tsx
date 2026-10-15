@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, forwardRef, useImperativeHandle } from 'react'
 import { deskApi } from '../api/desk'
 import { topics as topicsApi } from '../api/client'
 import { usePaletteKey } from '../hooks'
@@ -8,11 +8,17 @@ import type { TopicView } from '../model/topic'
 import { buildItems, type Item } from './items'
 import { Palette } from './Palette'
 
+export interface PaletteHandle {
+  /** Open the palette. */
+  open: () => void
+}
+
 /**
  * The command palette, mounted once. Cmd+K or Ctrl+K toggles it; topics are read when it
- * opens, the rest comes from the live snapshot.
+ * opens, the rest comes from the live snapshot. Exposes `open` via ref so the sidebar can
+ * trigger it.
  */
-export function CommandPalette() {
+export const CommandPalette = forwardRef<PaletteHandle>(function CommandPalette(_props, ref) {
   const snap = useSnapshot()
   const [open, setOpen] = useState(false)
   const [topics, setTopics] = useState<TopicView[]>([])
@@ -23,6 +29,9 @@ export function CommandPalette() {
     setConfirming(false)
     setProblem('')
   }, [])
+
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), [])
+
   usePaletteKey(useCallback(() => (open ? close() : setOpen(true)), [open, close]))
 
   useEffect(() => {
@@ -88,4 +97,4 @@ export function CommandPalette() {
       problem={problem}
     />
   )
-}
+})

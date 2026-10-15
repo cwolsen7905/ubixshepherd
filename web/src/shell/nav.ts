@@ -7,11 +7,14 @@ export type NavKey = 'decisions' | 'chat' | 'board' | 'next' | 'runs' | 'timelin
 export interface NavItem {
   key: NavKey
   label: string
-  /** One character shown when the sidebar is collapsed to icons. */
+  /** Mark shown in the sidebar: a glyph from the board's glyph language. */
   mark: string
   to: () => string
   /** True when the route belongs under this entry. */
   current: (r: Route) => boolean
+  /** Optional count badge; the tone for the Badge component. */
+  count?: number
+  countTone?: 'neutral' | 'attention' | 'bad' | 'ok'
 }
 
 export interface NavGroup {
@@ -31,7 +34,7 @@ export const NAV: NavGroup[] = [
   {
     name: 'Work',
     items: [
-      { key: 'board', label: 'Board', mark: 'B', to: () => href.board(), current: (r) => r.page === 'board' || r.page === 'lane' },
+      { key: 'board', label: 'Board', mark: '◻', to: () => href.board(), current: (r) => r.page === 'board' || r.page === 'lane' },
       { key: 'next', label: 'Next up', mark: 'N', to: () => href.next(), current: (r) => r.page === 'next' },
       { key: 'runs', label: 'Runs', mark: 'R', to: () => href.runs(), current: (r) => r.page === 'runs' || r.page === 'log' },
       { key: 'timeline', label: 'Timeline', mark: 'T', to: () => href.timeline(), current: (r) => r.page === 'timeline' },
@@ -55,13 +58,14 @@ export const NAV: NavGroup[] = [
 
 /** The count beside each entry, all read from the one attention list. */
 export function navCounts(w: Waiting | null): Partial<Record<NavKey, number>> {
-  return { decisions: inboxCount(w), next: attentionOf(w, 'next').length }
+  return { decisions: inboxCount(w), next: attentionOf(w, 'next').length, board: 0 }
 }
 
 /** What a count means, for the badge's accessible name. */
 export const COUNT_LABEL: Partial<Record<NavKey, string>> = {
   decisions: 'waiting on you',
   next: 'waiting on your approval',
+  board: 'lanes broken',
 }
 
 export function currentItem(r: Route): NavItem | undefined {

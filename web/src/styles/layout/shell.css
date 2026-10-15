@@ -29,6 +29,16 @@
 .sidebar-top { display: grid; gap: var(--s-2); }
 .workspace { margin: 0; font-size: var(--t-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-name { color: var(--ink); }
+.search-trigger {
+  display: grid; grid-template-columns: 1.5rem 1fr auto; align-items: center; gap: var(--s-2);
+  padding: var(--s-1) var(--s-2); border-radius: var(--radius); border: 1px solid var(--control-border);
+  background: var(--field); color: var(--muted); font-size: var(--t-xs); cursor: pointer;
+  margin: 0; width: 100%; text-align: left;
+}
+.search-trigger:hover { background: var(--hover); color: var(--ink); border-color: var(--rule); }
+.search-icon { font-size: var(--t-lg); text-align: center; }
+.search-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-key { font-size: var(--t-2xs); color: var(--faint); white-space: nowrap; }
 
 /* The mark and name, as on ubixsys.com: 600 weight, the product name in the brand blue. */
 .wordmark {
