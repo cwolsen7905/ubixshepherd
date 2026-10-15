@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeskEvent, DeskQuestion } from '../api/types'
-import { questionsByMessage, replyRef } from './reply'
+import { questionsByMessage, replyJumpNote, replyRef } from './reply'
 
 const ev = (seq: number, kind: DeskEvent['kind'], turn?: number) => ({ seq, kind, turn, created: '' }) as DeskEvent
 const q = (id: number, turn: number, state: DeskQuestion['state'] = 'open') => ({ id, turn, state, text: '', workspace_id: 1, created: '' }) as DeskQuestion
@@ -29,5 +29,12 @@ describe('questionsByMessage', () => {
   })
   it('has nothing for a turn that is not loaded', () => {
     expect(questionsByMessage(events, [q(7, 99)]).size).toBe(0)
+  })
+})
+
+describe('replyJumpNote', () => {
+  it('is silent when the row was found and names the question when not', () => {
+    expect(replyJumpNote(4, true)).toBe('')
+    expect(replyJumpNote(4, false)).toContain('Question 4')
   })
 })

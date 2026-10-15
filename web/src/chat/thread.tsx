@@ -19,7 +19,7 @@ import { useFollowBottom, Countdown, useThread, CONNECTION } from './md'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
 import { QuestionActions } from './questions'
-import { questionsByMessage, replyRef } from './reply'
+import { questionsByMessage, replyJumpNote, replyRef } from './reply'
 import { PendingStrip } from './strip'
 import { Markdown } from './md'
 import { clipHead } from './md'
@@ -295,10 +295,15 @@ function ChatThread({
 
   // The questions the desk asked that are still open: each shows Reply here and Skip under
   // the desk message of its turn. Read on the waiting list's cadence and after each action.
-  const [questions, setQuestions] = useState<DeskQuestion[]>([])
+  const [openQs, setOpenQs] = useState<DeskQuestion[]>([])
+  // Answered ones are read only for a reply in the thread that names one not yet known, so
+  // the poll stays the size of the waiting list however long the history grows.
+  const [answered, setAnswered] = useState<DeskQuestion[]>([])
+  const asked = useRef(new Set<number>())
+  const questions = useMemo(() => [...openQs, ...answered.filter((a) => !openQs.some((o) => o.id === a.id))], [openQs, answered])
   const readQuestions = useCallback(() => {
-    deskQuestions.list('').then(
-      (qs) => setQuestions(qs),
+    deskQuestions.list('open').then(
+      (qs) => setOpenQs(qs),
       () => {},
     )
   }, [])
@@ -312,6 +317,19 @@ function ChatThread({
       window.clearInterval(id)
     }
   }, [readQuestions])
+  useEffect(() => {
+    const known = new Set(questions.map((q) => q.id))
+    const missing = items.flatMap((it) => {
+      const ref = it.type === 'desk' && it.e.kind === 'user' ? replyRef(it.e.text ?? '') : null
+      return ref !== null && !known.has(ref) && !asked.current.has(ref) ? [ref] : []
+    })
+    if (missing.length === 0 || openQs.length === 0 && !d.loaded) return
+    missing.forEach((id) => asked.current.add(id))
+    deskQuestions.list('answered').then(
+      (qs) => setAnswered(qs),
+      () => missing.forEach((id) => asked.current.delete(id)),
+    )
+  }, [items, questions, openQs, d.loaded])
   // A question sits under the last desk message of the turn it was asked in.
   const questionsAt = useMemo(() => {
     return questionsByMessage(items.flatMap((it) => (it.type === 'desk' ? [it.e] : [])), questions)
@@ -344,8 +362,7 @@ function ChatThread({
   const [replyNote, setReplyNote] = useState('')
   const jumpToQuestion = useCallback(
     (id: number) => {
-      if (land(`q${id}`)) setReplyNote('')
-      else setReplyNote(`Question ${id} is not in the loaded thread. Load earlier messages to see it.`)
+      setReplyNote(replyJumpNote(id, land(`q${id}`)))
     },
     [land],
   )

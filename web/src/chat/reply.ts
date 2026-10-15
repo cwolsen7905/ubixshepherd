@@ -24,3 +24,8 @@ export function questionsByMessage(events: readonly DeskEvent[], questions: read
   }
   return out
 }
+
+/** What to tell the person after a jump to a question's row: nothing when it landed. */
+export function replyJumpNote(id: number, landed: boolean): string {
+  return landed ? '' : `Question ${id} is not in the loaded thread. Load earlier messages to see it.`
+}
