@@ -148,6 +148,28 @@ export function InboxPage({ kind }: { kind?: string }) {
                 const key = waitingKey(it) + (it.request_id ? `:r${it.request_id}` : '')
                 const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
                 const selected = isOpen(it, open)
+                const actionable = inboxOpen(it) !== null || pageFor(it) !== null
+                if (!actionable) {
+                  // Nothing to open: say what the person does instead.
+                  return (
+                    <li key={key} className="inbox-row">
+                      <div className="inbox-open">
+                        <span className="inbox-kind faint">{KIND_LABEL[it.kind]}</span>
+                        <span className="inbox-title">{inline(splitQuestion(it.title).head || it.title)}</span>
+                        <span className="inbox-meta faint">
+                          {where}
+                          {it.since ? ` · waiting ${since(it.since, now)}` : ''}
+                          {it.kind === 'request' && it.request_id ? (
+                            <>
+                              {' · route it with '}
+                              <code>shepherd request route {it.request_id} --lane &lt;lane&gt;</code>
+                            </>
+                          ) : null}
+                        </span>
+                      </div>
+                    </li>
+                  )
+                }
                 return (
                   <li key={key} className={`inbox-row${waitingKey(it) === at ? ' is-cursor' : ''}`}>
                     <button

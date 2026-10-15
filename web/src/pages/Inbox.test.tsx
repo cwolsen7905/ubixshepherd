@@ -9,13 +9,14 @@ import { InboxPage } from './Inbox'
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
 const waiting: Waiting = {
-  count: 4,
+  count: 5,
   counts: { decisions: 1, mrs: 1, ship: 0, next: 1, blocked: 1 },
   items: [
     { kind: 'decision', action: 'answer', decision_id: 7, lane: 'a', title: 'Which store?' },
     { kind: 'mr', action: 'approve', lane_id: 3, lane: 'b', title: 'Add retries', mr: 12 },
     { kind: 'next', action: 'review', next_id: 5, title: 'Proposed item' },
     { kind: 'blocked', action: 'open', lane_id: 4, lane: 'c', title: 'Lane c is blocked' },
+    { kind: 'request', action: 'route', request_id: 9, title: 'Needs a lane' },
   ],
 }
 
@@ -72,6 +73,12 @@ describe('InboxPage', () => {
     await show()
     await userEvent.click(screen.getByRole('button', { name: /Add retries/ }))
     expect(decodeURIComponent(window.location.hash)).toContain('open=lane:3')
+  })
+
+  it('shows how to route a request that has no lane', async () => {
+    await show()
+    expect(screen.getByText(/shepherd request route 9/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Needs a lane/ })).toBeNull()
   })
 
   it('moves the cursor with j', async () => {
