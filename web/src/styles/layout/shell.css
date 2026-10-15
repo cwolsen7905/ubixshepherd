@@ -98,3 +98,20 @@
   font-family: var(--font-mono); text-align: center;
 }
 
+
+/* The conversation page owns the viewport: the document never scrolls, and the thread and
+   the rail are the scroll regions. `.chat` used to be sized 100dvh minus the bar while the
+   page bar, banner and `.main` padding sat outside that, so the document ran past the
+   viewport by their sum. Here the chain is sized top-down instead and `.chat` fills what is left. */
+.shell:has(.page.chat) { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.shell:has(.page.chat) .shell-body { min-height: 0; height: 100%; overflow: hidden; }
+.shell:has(.page.chat) .page-bar { flex: none; }
+.shell:has(.page.chat) .banner { flex: none; }
+.shell:has(.page.chat) .main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: var(--s-3); overflow: hidden; }
+.shell:has(.page.chat) .main > .page.chat { flex: 1; height: auto; min-height: 0; width: 100%; }
+.shell:has(.page.chat) .chat-layout .chat-rail,
+.shell:has(.page.chat) .chat-layout .backlog { max-height: 100%; top: 0; }
+@media (max-width: 760px) {
+  .shell:has(.page.chat) .chat-layout .chat-rail,
+  .shell:has(.page.chat) .chat-layout .backlog { max-height: 40vh; }
+}
