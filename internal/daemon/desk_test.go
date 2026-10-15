@@ -386,3 +386,29 @@ func TestDeskTurnFiledUnderTheTopicWrittenFrom(t *testing.T) {
 		t.Errorf("the desk was not told:\n%s", r.claudeLog())
 	}
 }
+
+// A turn's structured about is validated and reaches the desk as a reference line.
+func TestDeskTurnAbout(t *testing.T) {
+	r := newDeskRig(t, config.WakeNever, 0)
+	for _, a := range []api.DeskAbout{
+		{Kind: "sheep", IDs: []int64{1}},
+		{Kind: "lane"},
+		{Kind: "lane", IDs: []int64{0}},
+		{Kind: "lane", IDs: []int64{1}, Label: strings.Repeat("x", api.DeskAboutMaxLabel+1)},
+	} {
+		a := a
+		if code := call(t, r.ts, r.s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "hi", About: &a}, nil); code != http.StatusBadRequest {
+			t.Errorf("about %+v: %d, want 400", a, code)
+		}
+	}
+	ch, _ := r.stream(t, api.PathDeskStream+"?after=0", nil)
+	var acc api.DeskTurnAccepted
+	about := &api.DeskAbout{Kind: "lane", IDs: []int64{5, 6}, Label: "feat/x"}
+	if code := call(t, r.ts, r.s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "hi", About: about}, &acc); code != http.StatusAccepted {
+		t.Fatalf("turn: %d", code)
+	}
+	got := until(t, ch, store.DeskTurnEnd)
+	if len(got) == 0 || got[0].kind != store.DeskUser || got[0].data.Text != "[About lane 5, 6 (feat/x)]\n\nhi" {
+		t.Errorf("first event = %+v", got)
+	}
+}

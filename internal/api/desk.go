@@ -1,6 +1,11 @@
 package api
 
-import "github.com/ubixsys/ubixshepherd/internal/store"
+import (
+	"fmt"
+	"strings"
+
+	"github.com/ubixsys/ubixshepherd/internal/store"
+)
 
 // The front desk the daemon runs: one conversation per workspace, kept in the store, that
 // every client follows. Only the operator token may call these. Each takes the workspace
@@ -57,6 +62,62 @@ type DeskTurn struct {
 	// "Reply here"): the turn is sent as usual and the question is then marked answered
 	// by it. Unknown or already closed questions are refused before anything is sent.
 	ReplyTo int64 `json:"reply_to,omitempty"`
+	// About is the entity the message is about (the inspector's composer): the desk is
+	// told of it at the head of the turn so it can name it.
+	About *DeskAbout `json:"about,omitempty"`
+}
+
+// DeskAboutKinds are the entity kinds a turn can be about.
+var DeskAboutKinds = []string{"lane", "run", "decision", "question", "request", "artifact", "topic"}
+
+// DeskAboutMaxIDs and DeskAboutMaxLabel bound a DeskAbout.
+const (
+	DeskAboutMaxIDs   = 20
+	DeskAboutMaxLabel = 200
+)
+
+// DeskAbout names the entity a desk turn is about: a kind and the ids, with the words
+// the person knows it by.
+type DeskAbout struct {
+	Kind  string  `json:"kind"`
+	IDs   []int64 `json:"ids"`
+	Label string  `json:"label,omitempty"`
+}
+
+// Validate refuses an unknown kind, no ids or too many, a non-positive id or a long label.
+func (a DeskAbout) Validate() error {
+	known := false
+	for _, k := range DeskAboutKinds {
+		known = known || k == a.Kind
+	}
+	switch {
+	case !known:
+		return fmt.Errorf("about.kind is one of %s, not %q", strings.Join(DeskAboutKinds, ", "), a.Kind)
+	case len(a.IDs) == 0 || len(a.IDs) > DeskAboutMaxIDs:
+		return fmt.Errorf("about.ids takes 1 to %d ids", DeskAboutMaxIDs)
+	case len([]rune(a.Label)) > DeskAboutMaxLabel:
+		return fmt.Errorf("about.label is at most %d characters", DeskAboutMaxLabel)
+	}
+	for _, id := range a.IDs {
+		if id <= 0 {
+			return fmt.Errorf("about.ids holds positive ids, not %d", id)
+		}
+	}
+	return nil
+}
+
+// Line is the reference the desk reads at the head of a turn: "[About lane 5, 6 (label)]".
+// label is passed in so the caller can redact it.
+func (a DeskAbout) Line(label string) string {
+	ids := make([]string, len(a.IDs))
+	for i, id := range a.IDs {
+		ids[i] = fmt.Sprint(id)
+	}
+	line := a.Kind + " " + strings.Join(ids, ", ")
+	if label = strings.Join(strings.Fields(label), " "); label != "" {
+		line += " (" + label + ")"
+	}
+	return "[About " + line + "]"
 }
 
 // DeskTurnAccepted answers POST /v1/desk/turn.

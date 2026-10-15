@@ -8,7 +8,7 @@ const defaultMake = (w: number) => new DeskThread(w)
 
 /**
  * The inspector's foot: a message to the front desk about the open entity. It speaks to the
- * desk, never to the lane's agent. The turn carries a reference line and is filed under the
+ * desk, never to the lane's agent. The turn carries a structured `about` (the daemon names it to the desk) and is filed under the
  * entity's topic when one links it.
  */
 export function ContextComposer(props: Props) {
@@ -52,7 +52,12 @@ function Composer({ about, workspaceId = 0, make = defaultMake }: Props) {
     } catch {
       unfiled = true
     }
-    const ok = await thread.send(withReference(about, text), topic)
+    // The structured about names the entity to the desk; an About with no ids has nothing
+    // to name, so it falls back to the reference line in the text.
+    const structured = about.ids.length > 0
+    const ok = structured
+      ? await thread.send(text.trim(), topic, undefined, { kind: about.kind, ids: about.ids, ...(about.label ? { label: about.label.slice(0, 200) } : {}) })
+      : await thread.send(withReference(about, text), topic)
     setSending(false)
     if (ok) {
       setText('')

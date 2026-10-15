@@ -1,6 +1,6 @@
 // The front desk's endpoints (internal/api/desk.go). A browser session may call them;
 // workspaceId 0 leaves workspace_id out, which the daemon takes as its only workspace.
-import type { DeskHistory, DeskStatus, DeskTurnAccepted } from './types'
+import type { DeskAbout, DeskHistory, DeskStatus, DeskTurnAccepted } from './types'
 import { get, post, qs } from './client'
 
 export const DESK_STREAM = '/v1/desk/stream'
@@ -17,10 +17,11 @@ export const deskApi = {
     const q = qs(ws(workspaceId))
     return get<DeskStatus>(`/v1/desk/status${q ? `?${q}` : ''}`)
   },
-  /** `topicId` is the topic the person writes from (the thread's filter): the daemon files the turn under it. `replyTo` is the open desk question the message answers. */
-  turn: (workspaceId: number, text: string, topicId?: number, replyTo?: number) =>
+  /** `topicId` is the topic the person writes from (the thread's filter): the daemon files the turn under it. `replyTo` is the open desk question the message answers. `about` is the entity the turn is about: the daemon puts a reference line at the head of the turn. */
+  turn: (workspaceId: number, text: string, topicId?: number, replyTo?: number, about?: DeskAbout) =>
     post<DeskTurnAccepted>('/v1/desk/turn', {
       ...ws(workspaceId), text, ...(topicId ? { topic_id: topicId } : {}), ...(replyTo ? { reply_to: replyTo } : {}),
+      ...(about ? { about } : {}),
     }),
   interrupt: (workspaceId: number) => post<{ interrupted: boolean }>('/v1/desk/interrupt', ws(workspaceId)),
   newConversation: (workspaceId: number) => post<{ workspace_id?: number }>('/v1/desk/new', ws(workspaceId)),

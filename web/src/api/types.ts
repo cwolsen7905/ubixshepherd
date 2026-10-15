@@ -395,6 +395,13 @@ export interface DeskStatus {
   wake: string
 }
 
+/** The entity a desk turn is about (internal/api DeskAbout). */
+export interface DeskAbout {
+  kind: string
+  ids: number[]
+  label?: string
+}
+
 export interface DeskTurnAccepted {
   workspace_id: number
   turn: number
