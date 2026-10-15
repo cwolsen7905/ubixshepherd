@@ -76,6 +76,25 @@ describe('InspectorFrame', () => {
     }
   })
 
+  it('returns focus to a shell element that was inert while the sheet was open', () => {
+    const tree = (o?: typeof open) => (
+      <div>
+        <nav>
+          <button>nav</button>
+        </nav>
+        <InspectorFrame open={o} mode="sheet">
+          <button>row</button>
+        </InspectorFrame>
+      </div>
+    )
+    const { rerender } = render(tree())
+    screen.getByText('nav').focus()
+    rerender(tree(open))
+    expect(screen.getByText('nav').closest('nav')).toHaveAttribute('inert')
+    rerender(tree())
+    expect(screen.getByText('nav')).toHaveFocus()
+  })
+
   it('makes the shell inert around a modal inspector, and restores it', () => {
     const { rerender } = render(
       <div>

@@ -34,19 +34,10 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
   const from = useRef<Element | null>(null)
   const shown = Boolean(open)
 
-  useEffect(() => {
-    if (!shown) return
-    from.current = document.activeElement
-    heading.current?.focus()
-    return () => {
-      const el = from.current
-      from.current = null
-      if (el instanceof HTMLElement && el.isConnected) el.focus()
-    }
-  }, [shown])
-
   // The shell sits outside the frame, so in a modal mode everything beside the dialog's
-  // ancestors goes inert too (the scrim stays live, so a click on it can close).
+  // ancestors goes inert too (the scrim stays live, so a click on it can close). This effect
+  // comes before the focus one: cleanups run in order, so the shell is live again by the time
+  // focus returns to an element in it.
   useEffect(() => {
     if (!shown || !modal) return
     const made: HTMLElement[] = []
@@ -59,6 +50,17 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
     }
     return () => made.forEach((el) => el.removeAttribute('inert'))
   }, [shown, modal])
+
+  useEffect(() => {
+    if (!shown) return
+    from.current = document.activeElement
+    heading.current?.focus()
+    return () => {
+      const el = from.current
+      from.current = null
+      if (el instanceof HTMLElement && el.isConnected) el.focus()
+    }
+  }, [shown])
 
   useEffect(() => {
     if (!shown) return
