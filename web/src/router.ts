@@ -182,6 +182,8 @@ export function useFocusTarget(id: number | undefined, present: boolean, selecto
     done.current = key
     el.scrollIntoView?.({ block: 'center' })
     window.clearTimeout(timer.current)
+    // The pulse must show on the commit that found the element, so this is a deliberate one-shot set.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLit(id)
     timer.current = window.setTimeout(() => setLit(undefined), FOCUS_MS)
   }, [id, present, pulse, selector])

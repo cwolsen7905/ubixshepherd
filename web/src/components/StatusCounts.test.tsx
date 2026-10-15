@@ -5,7 +5,7 @@ describe('StatusCounts', () => {
   it('shows all four, zeros muted, with names a screen reader can read', () => {
     render(<StatusCounts counts={{ running: 2, waiting: 0, broken: 1, routing: 0 }} />)
     expect(screen.getByRole('status', { name: 'Status counts' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '2 running' })).toHaveAttribute('href', '#/')
+    expect(screen.getByRole('link', { name: '2 running' })).toHaveAttribute('href', '#/board')
     expect(screen.getByRole('button', { name: '0 waiting on you' })).toHaveClass('status-zero')
     expect(screen.getByRole('link', { name: '1 broken or blocked' })).not.toHaveClass('status-zero')
     expect(screen.getByRole('link', { name: '0 needing routing' })).toHaveAttribute('href', '#/decisions')

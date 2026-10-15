@@ -65,6 +65,6 @@ describe('CommandPalette', () => {
         }),
     )
     expect(deskApi.newConversation).toHaveBeenCalledWith(0)
-    expect(window.location.hash).toBe('#/chat')
+    expect(window.location.hash).toBe('#/')
   })
 })
