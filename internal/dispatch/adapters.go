@@ -604,6 +604,7 @@ func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate
 - ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, anything in production, a change to scope or design with no clear default). Give options and your recommendation, then end your turn: you will be continued with the answer. Write the question as markdown: a one-line summary first, then short sections or bullets; keep each option to a short phrase.
 - ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review). Then end your turn: you will be continued with the reply.
 - report: say progress, done (with what you did and how you checked it) or blocked (and why).
+- artifact: a plan, design note or report the person should read. Write it in your worktree and declare it with intent commit, keep or scratch; ask_human also takes an artifacts list of files to read with the question.
 Everything else, keep working without asking.
 `)
 	} else {
