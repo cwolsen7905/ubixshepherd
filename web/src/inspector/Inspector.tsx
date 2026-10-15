@@ -52,12 +52,12 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
     const made: HTMLElement[] = []
     for (let el = aside.current; el && el !== document.body; el = el.parentElement) {
       for (const sib of Array.from(el.parentElement?.children ?? [])) {
-        if (sib === el || !(sib instanceof HTMLElement) || sib.inert || sib.classList.contains('inspector-scrim')) continue
-        sib.inert = true
+        if (sib === el || !(sib instanceof HTMLElement) || sib.hasAttribute('inert') || sib.classList.contains('inspector-scrim')) continue
+        sib.setAttribute('inert', '')
         made.push(sib)
       }
     }
-    return () => made.forEach((el) => (el.inert = false))
+    return () => made.forEach((el) => el.removeAttribute('inert'))
   }, [shown, modal])
 
   useEffect(() => {
