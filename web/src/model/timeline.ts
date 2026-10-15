@@ -277,7 +277,7 @@ export function assemble(src: Sources): TimelineData {
       id: r.id, laneId: r.lane_id, agent: r.agent, ...(r.model ? { model: r.model } : {}), state: r.state, started,
       ...(r.ended ? { ended: ms(r.ended) } : {}), commits: r.commits,
       ...(r.cost_usd !== undefined ? { costUsd: r.cost_usd } : {}), ...(r.credits ? { credits: r.credits } : {}), ...(r.cost_estimated ? { costEstimated: true } : {}),
-      task: r.prompt || runs.get(r.id)?.task || '', ...(r.progress ? { progress: r.progress.line } : {}),
+      task: (r.prompt?.trim() ? r.prompt : runs.get(r.id)?.task) || '', ...(r.progress ? { progress: r.progress.line } : {}),
       ...(r.diagnosis ? { diagnosis: r.diagnosis.summary } : {}),
     })
   }

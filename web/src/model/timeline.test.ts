@@ -389,8 +389,10 @@ describe('a run’s task', () => {
     const { src } = busyDay()
     const snap = src.runs[0]!
     const hist = src.historyRuns!.find((h) => h.id === snap.id)!
-    const data = assemble({ ...src, runs: [{ ...snap, prompt: '' }, ...src.runs.slice(1)] })
-    expect(data.runs.find((r) => r.id === snap.id)?.task).toBe(hist.task)
+    for (const prompt of ['', '  \n ']) {
+      const data = assemble({ ...src, runs: [{ ...snap, prompt }, ...src.runs.slice(1)] })
+      expect(data.runs.find((r) => r.id === snap.id)?.task).toBe(hist.task)
+    }
     const gone = assemble({ ...src, runs: src.runs.slice(1) })
     expect(gone.runs.find((r) => r.id === snap.id)?.task).toBe(hist.task)
   })
