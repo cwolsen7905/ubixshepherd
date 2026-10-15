@@ -45,6 +45,16 @@ afterEach(() => {
 })
 
 describe('Shell', () => {
+  it('puts the Keep going switch in the sidebar footer', async () => {
+    setWidth(1440)
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ on: false, spent_usd: 0, cap_usd: 5, runs_now: 0, max_runs: 3 }), { status: 200 })),
+    ))
+    view()
+    expect(await screen.findByRole('switch', { name: 'Keep going' })).toBeInTheDocument()
+    vi.unstubAllGlobals()
+  })
+
   it('takes the nav counts from the attention list', () => {
     setWidth(1440)
     view()
