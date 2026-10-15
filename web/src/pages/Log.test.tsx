@@ -36,7 +36,7 @@ describe('the run page', () => {
         <LogPage run={1} />
       </LiveProvider>,
     )
-    expect(screen.getByRole('link', { name: '← Board' })).toHaveAttribute('href', '#/')
+    expect(screen.getByRole('link', { name: '← Board' })).toHaveAttribute('href', '#/board')
     vi.unstubAllGlobals()
   })
 

@@ -13,7 +13,7 @@ describe('BackLink', () => {
   it('names the board when there is nowhere else to go back to', () => {
     render(<BackLink />)
     const a = screen.getByRole('link', { name: '← Board' })
-    expect(a).toHaveAttribute('href', '#/')
+    expect(a).toHaveAttribute('href', '#/board')
   })
 
   it('goes back to the page it came from, with its filters and scroll, labelled for it', async () => {

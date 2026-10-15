@@ -178,7 +178,7 @@ describe('NextPage', () => {
     const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
     await userEvent.click(within(first).getByRole('button', { name: 'Start' }))
     expect(localStorage.getItem('shepherd.chat.draft.0')).toBe('Open a lane for next-up item 1: First approved')
-    expect(window.location.hash).toBe('#/chat')
+    expect(window.location.hash).toBe('#/')
   })
 
   it('shows matrix rows read-only, blocked first, with no actions', async () => {

@@ -52,7 +52,7 @@ export function readTopicFilter(hash: string): number | null {
 
 /** The hash with the topic filter set, or removed for null; other parts are kept. */
 export function withTopicFilter(hash: string, id: number | null): string {
-  const [path = '#/chat', q = ''] = hash.split('?')
+  const [path = '#/', q = ''] = hash.split('?')
   const params = new URLSearchParams(q)
   if (id === null) params.delete('topic')
   else params.set('topic', String(id))
