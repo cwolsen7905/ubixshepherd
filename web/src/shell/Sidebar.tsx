@@ -1,8 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { href, type Route } from '../router'
 import type { Status, Waiting } from '../api/types'
 import { KeepGoing } from '../components/KeepGoing'
-import { SpendMeter } from '../components/BudgetMeter'
 import { Badge } from '../ui'
 import { COUNT_LABEL, NAV, navCounts } from './nav'
 
@@ -23,14 +22,8 @@ function Wordmark() {
   )
 }
 
-/** The workspace switcher: a clickable button that lists available workspaces. */
-export function WorkspaceSwitcher({
-  workspaces,
-  onSelect,
-}: {
-  workspaces: Status['workspaces']
-  onSelect?: (id: number) => void
-}) {
+/** The workspace: a label showing the current workspace or the count. */
+export function WorkspaceSwitcher({ workspaces }: { workspaces: Status['workspaces'] }) {
   const [first] = workspaces
   if (!first) return null
   if (workspaces.length === 1) {
@@ -41,24 +34,21 @@ export function WorkspaceSwitcher({
     )
   }
   return (
-    <div className="workspace">
-      <button
-        type="button"
-        className="workspace-btn"
-        aria-expanded={false}
-        aria-haspopup="listbox"
-        onClick={() => onSelect?.(first.id)}
-        title={workspaces.map((w) => w.name).join(', ')}
-      >
-        Workspace: <span className="workspace-name">{workspaces.length} workspaces</span>
-      </button>
-    </div>
+    <p className="workspace" title={workspaces.map((w) => w.name).join(', ')}>
+      Workspace: <span className="workspace-name">{workspaces.length} workspaces</span>
+    </p>
   )
+}
+
+/** Detect platform for the search shortcut hint. */
+function isMacOS(): boolean {
+  const [platform] = navigator.userAgentData?.brands ?? []
+  return platform?.includes('Mac') ?? /Mac/.test(navigator.userAgent)
 }
 
 /**
  * The left sidebar: name, workspace, the views in three groups with their counts, then the
- * footer: spend, keep-going, daemon status, update notice. Counts come from the attention
+ * footer: keep-going, daemon status, update notice. Counts come from the attention
  * list (decisions, next); the board count shows broken lanes.
  */
 export function Sidebar({
@@ -76,6 +66,7 @@ export function Sidebar({
   boardBroken: number
   paletteOpen?: () => void
 }) {
+  const [isMac] = useState(isMacOS)
   const counts = navCounts(waiting)
   return (
     <div className="sidebar-inner">
@@ -90,7 +81,7 @@ export function Sidebar({
         >
           <span className="search-icon" aria-hidden="true">⌕</span>
           <span className="search-label">Search or act</span>
-          <kbd className="search-key">⌘K</kbd>
+          <kbd className="search-key">{isMac ? '⌘K' : 'Ctrl K'}</kbd>
         </button>
       </div>
       <nav className="nav" aria-label="Views">
@@ -118,7 +109,6 @@ export function Sidebar({
         ))}
       </nav>
       <div className="sidebar-foot">
-        <SpendMeter spend={{ spent_usd: 0, cap_usd: 0 }} />
         <KeepGoing />
         {footer}
       </div>
