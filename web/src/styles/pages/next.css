@@ -1,0 +1,51 @@
+/* The Next up page on the kit: three groups (waiting on you, the queue, the matrix), wide rows, one primary per row. */
+.next { max-width: 64rem; }
+.next-problem { margin: 0 0 var(--s-3); }
+.next-add { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-3); padding: var(--s-3); background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius); }
+.next-add input[type="text"], .next-link select { font: inherit; min-height: var(--control-h); padding: 0 var(--s-2); border: 1px solid var(--control-border); border-radius: var(--radius); background: var(--raised); color: var(--ink); min-width: 0; }
+.next-add-title { flex: 1 1 18rem; }
+.next-add-title input { width: 100%; }
+.next-add-approve { white-space: nowrap; }
+.next-tools { margin: 0 0 var(--s-4); }
+.next-group { margin: 0 0 var(--s-5); }
+.next-group-h { margin: 0 0 var(--s-1); font-size: var(--t-lg); font-weight: 600; }
+.next-group-sub { margin: 0 0 var(--s-2); font-size: var(--t-sm); }
+.next-waiting .next-group-h { color: var(--lantern-ink); }
+.next-waiting .next-row { border-left: 3px solid var(--lantern); }
+.next-section { margin: 0 0 var(--s-3); }
+.next-section-h { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+.next-matrix-repo { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+.next-rows { list-style: none; margin: 0; padding: 0; }
+.next-row {
+  display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr) auto; gap: var(--s-1) var(--s-2);
+  padding: var(--s-2) var(--s-3); margin: 0 0 var(--s-1);
+  background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.next-row.is-next { border-color: var(--lantern); box-shadow: inset 3px 0 0 var(--lantern); }
+.next-matrix-row { background: transparent; }
+.next-main { min-width: 0; }
+.next-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.next-id { font-weight: 400; }
+.next-meta { display: flex; flex-wrap: wrap; gap: 2px var(--s-3); margin: 2px 0 0; font-size: var(--t-sm); }
+.next-why, .next-note { margin: 2px 0 0; font-size: var(--t-sm); overflow-wrap: anywhere; }
+.next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); justify-content: flex-end; align-self: start; }
+.next-move { min-width: 2rem; }
+.next-link select { min-height: var(--control-h-sm); font-size: var(--t-xs); max-width: 11rem; }
+.state-dropped .next-title, .state-done .next-title { font-weight: 400; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .next-add > label:not(.next-add-approve) { flex: 1 1 100%; }
+  .next-add input[type="text"] { width: 100%; }
+  .next-row { grid-template-columns: var(--gutter) minmax(0, 1fr); }
+  .next-actions { grid-column: 2; justify-content: flex-start; }
+}
+
+/* The item a link pointed at: an accent outline and wash that fades out. */
+.next-row.is-focus-target { outline: 2px solid var(--lichen); outline-offset: -2px; animation: next-focus-fade 4s ease-out forwards; }
+@keyframes next-focus-fade {
+  from, 70% { background: color-mix(in srgb, var(--lichen) 22%, var(--raised)); outline-color: var(--lichen); }
+  to { background: var(--raised); outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .next-row.is-focus-target { animation: none; background: color-mix(in srgb, var(--lichen) 22%, var(--raised)); }
+}

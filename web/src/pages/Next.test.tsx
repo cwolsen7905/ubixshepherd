@@ -197,6 +197,38 @@ describe('NextPage', () => {
     expect(within(todo).getByText('matrix')).toBeInTheDocument()
   })
 
+  it('shows proposed items as waiting on you, apart from the queue and the matrix', async () => {
+    const api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }
+    const load = vi.fn(async (): Promise<NextList> => matrixList)
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={load} api={api} />
+      </LiveProvider>,
+    )
+    await screen.findByText('First approved')
+    const waiting = screen.getByRole('region', { name: /Waiting on you/ })
+    expect(within(waiting).getByText('Idea')).toBeInTheDocument()
+    expect(within(waiting).queryByText('First approved')).toBeNull()
+    const queue = screen.getByRole('region', { name: /Queue/ })
+    expect(within(queue).getByText('First approved')).toBeInTheDocument()
+    expect(within(queue).getByText('Later')).toBeInTheDocument()
+    expect(within(queue).queryByText('Idea')).toBeNull()
+    const matrix = screen.getByRole('region', { name: /From work matrix/ })
+    expect(within(matrix).getByText('Typed work orders')).toBeInTheDocument()
+    expect(within(queue).queryByText('Typed work orders')).toBeNull()
+    await userEvent.click(within(waiting).getByRole('button', { name: 'Approve' }))
+    expect(api.update).toHaveBeenCalledWith(3, { state: 'approved' })
+  })
+
+  it('says so when nothing is planned', async () => {
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => ({ next_up: 0, items: [] })} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    expect(await screen.findByText('Nothing is planned')).toBeInTheDocument()
+  })
+
   it('reads the list again when a plan event arrives on the feed', async () => {
     const load = vi.fn(async (): Promise<NextList> => everything)
     render(

@@ -12,7 +12,8 @@ import {
 import { go, href, useFocusTarget, useRoute } from '../router'
 import { useSnapshot } from '../state/context'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
-import '../styles/next.css'
+import { Button, Chip, EmptyState } from '../ui'
+import '../styles/pages/next.css'
 
 export interface NextApi {
   add: (body: NextAddBody) => Promise<unknown>
@@ -54,6 +55,9 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     sections.some((s) => s.items.some((it) => it.id === focus)),
     nextSelector,
   )
+  // Proposed items wait on the person and lead; the rest keep the person's order.
+  const proposed = useMemo(() => items.filter((it) => it.proposed && it.stored_state === 'planned'), [items])
+  const queue = useMemo(() => sections.map((s) => ({ ...s, items: s.items.filter((it) => !proposed.includes(it)) })), [sections, proposed])
   const hiddenClosed = closed ? 0 : closedCount(items)
   const repos = useMemo(() => [...new Set(snap.lanes.map((l) => l.repo))].sort(), [snap.lanes])
   const workspace = deskWorkspace(snap.status?.workspaces ?? [])
@@ -74,6 +78,21 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     prefillDraft(window.localStorage, draftKey(workspace), startText(it))
     go(href.chat())
   }
+
+  const renderRow = (it: NextItem) => (
+    <NextRow
+      key={it.id}
+      it={it}
+      all={items}
+      isNext={list?.next_up === it.id}
+      focused={lit === it.id}
+      now={now}
+      busy={busy === it.id}
+      lanes={snap.lanes.filter((l) => l.state === 'open' && (!it.repo || l.repo === it.repo))}
+      onUpdate={(b) => act(it.id, () => api.update(it.id, b))}
+      onStart={() => start(it)}
+    />
+  )
 
   const waiting = items.filter((it) => it.stored_state === 'approved' && it.state === 'approved').length
   return (
@@ -108,41 +127,45 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
       </p>
 
       {list !== null && items.length === 0 && matrix.length === 0 && (
-        <p className="empty">Nothing is planned. Add an item above, or run <code>shepherd next seed</code>.</p>
+        <EmptyState title="Nothing is planned">
+          Add an item above, or run <code>shepherd next seed</code>.
+        </EmptyState>
       )}
 
-      {sections.map((s) =>
-        s.items.length === 0 ? null : (
-          <section key={s.state} className={`next-section next-${s.state}`} aria-labelledby={`next-${s.state}-h`}>
-            <h2 id={`next-${s.state}-h`} className="section-h">
-              {NEXT_SECTION_NAMES[s.state]} <span className="faint">{s.items.length}</span>
-            </h2>
-            <ol className="next-rows">
-              {s.items.map((it) => (
-                <NextRow
-                  key={it.id}
-                  it={it}
-                  all={items}
-                  isNext={list?.next_up === it.id}
-                  focused={lit === it.id}
-                  now={now}
-                  busy={busy === it.id}
-                  lanes={snap.lanes.filter((l) => l.state === 'open' && (!it.repo || l.repo === it.repo))}
-                  onUpdate={(b) => act(it.id, () => api.update(it.id, b))}
-                  onStart={() => start(it)}
-                />
-              ))}
-            </ol>
-          </section>
-        ),
+      {proposed.length > 0 && (
+        <section className="next-group next-waiting" aria-labelledby="next-waiting-h">
+          <h2 id="next-waiting-h" className="next-group-h">
+            Waiting on you <span className="faint">{proposed.length}</span>
+          </h2>
+          <p className="faint next-group-sub">Added by an agent or the desk. Approve, defer or drop each one.</p>
+          <ol className="next-rows">{proposed.map(renderRow)}</ol>
+        </section>
+      )}
+
+      {queue.some((s) => s.items.length > 0) && (
+        <section className="next-group next-queue" aria-labelledby="next-queue-h">
+          <h2 id="next-queue-h" className="next-group-h">
+            Queue <span className="faint">{queue.reduce((n, s) => n + s.items.length, 0)}</span>
+          </h2>
+          {queue.map((s) =>
+            s.items.length === 0 ? null : (
+              <div key={s.state} className={`next-section next-${s.state}`}>
+                <h3 id={`next-${s.state}-h`} className="next-section-h">
+                  {NEXT_SECTION_NAMES[s.state]} <span className="faint">{s.items.length}</span>
+                </h3>
+                <ol className="next-rows" aria-labelledby={`next-${s.state}-h`}>{s.items.map(renderRow)}</ol>
+              </div>
+            ),
+          )}
+        </section>
       )}
 
       {matrix.length > 0 && (
-        <section className="next-section next-matrix" aria-labelledby="next-matrix-h">
-          <h2 id="next-matrix-h" className="section-h">
+        <section className="next-group next-matrix" aria-labelledby="next-matrix-h">
+          <h2 id="next-matrix-h" className="next-group-h">
             From work matrix <span className="faint">{matrix.reduce((n, g) => n + g.rows.length, 0)}</span>
           </h2>
-          <p className="faint">
+          <p className="faint next-group-sub">
             Rows with status todo or blocked in each repo's <code>docs/WORK.md</code>. Read from git, not stored here: edit the
             file to change one.
           </p>
@@ -173,8 +196,8 @@ function MatrixItem({ row }: { row: MatrixRow }) {
       <div className="next-main">
         <p className="next-title">
           <span className="next-id faint">{row.row_id}</span> {row.title}
-          {blocked && <span className="badge tone-warn next-badge">blocked</span>}
-          <span className="badge next-badge" title="Read through from docs/WORK.md">matrix</span>
+          {blocked && <Chip>blocked</Chip>}
+          <span title="Read through from docs/WORK.md"><Chip>matrix</Chip></span>
         </p>
         <p className="next-meta faint">
           {row.area && <span>{row.area}</span>}
@@ -233,9 +256,9 @@ function AddForm({ repos, busy, onAdd }: { repos: string[]; busy: boolean; onAdd
       <label className="next-add-approve">
         <input type="checkbox" checked={approve} onChange={(e) => setApprove(e.target.checked)} /> Approved
       </label>
-      <button type="submit" className="button button-primary" disabled={busy || !title.trim()}>
+      <Button type="submit" variant="primary" disabled={busy || !title.trim()}>
         {busy ? 'Adding…' : 'Add'}
-      </button>
+      </Button>
     </form>
   )
 }
@@ -272,13 +295,13 @@ function NextRow({
       <div className="next-main">
         <p className="next-title">
           <span className="next-id faint">#{it.id}</span> {it.title}
-          {isNext && <span className="badge tone-accent next-badge">next</span>}
-          {it.proposed && <span className="badge tone-warn next-badge" title="Added by an agent or the desk; not yet approved">proposed</span>}
+          {isNext && <Chip kind="filter">next</Chip>}
+          {it.proposed && <span title="Added by an agent or the desk; not yet approved"><Chip>proposed</Chip></span>}
           {it.source === 'chat' && it.state === 'planned' && (
-            <span className="badge tone-muted next-badge" title="Registered by the front desk from chat; planned, not waiting on you">chat</span>
+            <span title="Registered by the front desk from chat; planned, not waiting on you"><Chip>chat</Chip></span>
           )}
-          {it.state === 'started' && <span className="badge tone-accent next-badge">started{it.running ? ', running' : ''}</span>}
-          {it.state === 'done' && <span className="badge tone-ok next-badge">done</span>}
+          {it.state === 'started' && <Chip>started{it.running ? ', running' : ''}</Chip>}
+          {it.state === 'done' && <Chip>done</Chip>}
         </p>
         <p className="next-meta faint">
           {it.repo && <span>{it.repo}</span>}
@@ -314,29 +337,29 @@ function NextRow({
       </div>
       <div className="next-actions" role="group" aria-label={`Actions for ${it.title}`}>
         {canStart(it) && (
-          <button type="button" className="button" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
+          <Button variant="primary" size="small" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
             Start
-          </button>
+          </Button>
         )}
         {stateActions(it).map((a) => (
-          <button
+          <Button
             key={a.state}
-            type="button"
-            className={a.state === 'approved' ? 'button button-primary' : 'button'}
+            variant={a.state === 'approved' ? (canStart(it) ? 'secondary' : 'primary') : a.state === 'dropped' ? 'ghost' : 'secondary'}
+            size="small"
             disabled={busy}
             onClick={() => onUpdate({ state: a.state })}
           >
             {a.label}
-          </button>
+          </Button>
         ))}
         {movable && (
           <>
-            <button type="button" className="button next-move" disabled={busy || !canMove(all, it, 'up')} aria-label={`Move ${it.title} up`} onClick={() => onUpdate({ move: 'up' })}>
+            <Button variant="ghost" size="small" className="next-move" disabled={busy || !canMove(all, it, 'up')} aria-label={`Move ${it.title} up`} onClick={() => onUpdate({ move: 'up' })}>
               <span aria-hidden="true">↑</span>
-            </button>
-            <button type="button" className="button next-move" disabled={busy || !canMove(all, it, 'down')} aria-label={`Move ${it.title} down`} onClick={() => onUpdate({ move: 'down' })}>
+              </Button>
+            <Button variant="ghost" size="small" className="next-move" disabled={busy || !canMove(all, it, 'down')} aria-label={`Move ${it.title} down`} onClick={() => onUpdate({ move: 'down' })}>
               <span aria-hidden="true">↓</span>
-            </button>
+              </Button>
           </>
         )}
         {!it.lane_id && movable && lanes.length > 0 && (
