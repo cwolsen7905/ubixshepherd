@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DecisionView, DeskEvent, DeskQuestion, WaitingItem } from '../api/types'
+import type { FeedEntry } from '../model/feed'
 import { Backlog } from '../components/Backlog'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { TopicBar } from '../components/TopicBar'
-import { Topics } from '../components/Topics'
 import { TopicPill } from '../components/TopicPill'
 import { DecisionCard, splitQuestion } from '../components/DecisionCard'
 import { EventGlyph, Glyph } from '../components/Glyph'
@@ -13,10 +13,11 @@ import { inTopic, memberKeys, readTopicFilter, topicByTurn, withTopicFilter, typ
 import { deskQuestions, topics as topicsApi } from '../api/client'
 import { href } from '../router'
 import { useSnapshot } from '../state/context'
-import { DeskThread, SIGN_IN_HINT, timeline } from '../state/desk'
+import { DeskThread, SIGN_IN_HINT, timeline, type ThreadItem } from '../state/desk'
 import { useNow } from '../hooks'
 import { useFollowBottom, Countdown, useThread, CONNECTION } from './md'
 import { Composer } from './composer'
+import { groupThread, rowFeedIds } from './group'
 import { QuestionActions } from './questions'
 import { PendingStrip } from './strip'
 import { Markdown } from './md'
@@ -52,10 +53,84 @@ function FeedRow({
   )
 }
 
+function ToolLine({ text }: { text: string }) {
+  return (
+    <p className="trow trow-tool faint">
+      <Glyph glyph={MARKS.report.glyph} tone="muted" label="tool call" />
+      <span className="mono">{text}</span>
+    </p>
+  )
+}
+
+function WokeNote({ text, when }: { text: string; when: ReactNode }) {
+  return (
+    <details className="trow trow-system">
+      <summary>
+        <Glyph glyph={MARKS.info.glyph} tone="muted" label="note" /> Shepherd woke the front desk {when}
+      </summary>
+      <p className="msg-text">{text}</p>
+    </details>
+  )
+}
+
+/** A turn's tool calls and wake notes, folded: "Show work (N)". */
+function WorkFold({ work, now, open }: { work: DeskEvent[]; now: number; open?: boolean }) {
+  const tools = work.filter((w) => w.kind === 'tool').length
+  const woke = work.length - tools
+  const label = [tools > 0 ? `${tools} tool ${tools === 1 ? 'call' : 'calls'}` : '', woke > 0 ? 'woke the front desk' : ''].filter(Boolean).join(', ')
+  return (
+    <details className="work-fold" open={open}>
+      <summary>
+        <Glyph glyph={MARKS.report.glyph} tone="muted" label="work" /> Show work ({label})
+      </summary>
+      {work.map((w) =>
+        w.kind === 'tool' ? (
+          <ToolLine key={w.seq} text={w.text ?? ''} />
+        ) : (
+          <WokeNote key={w.seq} text={w.text ?? ''} when={<time dateTime={w.created} title={w.created} className="faint trow-age">{since(w.created, now)}</time>} />
+        ),
+      )}
+    </details>
+  )
+}
+
+/** Three or more events between messages as one row: their glyphs, expandable. */
+function UpdatesFold({
+  feed, now, flash, reveal,
+}: {
+  feed: FeedEntry[]
+  now: number
+  flash: string
+  /** An anchor a jump wants shown; the fold holding it opens. */
+  reveal: string
+}) {
+  const [shown, setShown] = useState(false)
+  // A jump to a row inside opens the fold and it stays open; the toggle acts on what shows.
+  if (!shown && reveal !== '' && feed.some((f) => `f${f.id}` === reveal)) setShown(true)
+  const isOpen = shown
+  const id = threadId(`u${feed[0]?.id}`)
+  return (
+    <div id={id} className="updates-fold">
+      <button type="button" className="updates-toggle" aria-expanded={isOpen} onClick={() => setShown(!isOpen)}>
+        <span className="updates-glyphs" aria-hidden="true">
+          {feed.slice(0, 8).map((f) => (
+            <EventGlyph key={f.id} event={f.event} />
+          ))}
+        </span>
+        <span>{feed.length} updates</span>
+        <span className="faint trow-age">{since(feed[feed.length - 1]?.created ?? '', now)}</span>
+      </button>
+      {isOpen && feed.map((f) => <FeedRow key={f.id} item={f} now={now} flash={flash === `f${f.id}`} />)}
+    </div>
+  )
+}
+
 function DeskRow({
-  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared,
+  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared, work = [],
 }: {
   e: DeskEvent
+  /** Tool calls and wake notes of this reply's turn, folded above it. */
+  work?: DeskEvent[]
   now: number
   /** Open desk questions asked in this message's turn. */
   questions?: DeskQuestion[]
@@ -87,6 +162,7 @@ function DeskRow({
           id={asked ? threadId(`q${asked.id}`) : undefined}
           className={`msg msg-assistant${asked ? ' msg-asked' : ''}${asked && flash === `q${asked.id}` ? ' is-flash' : ''}`}
         >
+          {work.length > 0 && <WorkFold work={work} now={now} />}
           <span className="msg-who">Front desk {when}{pill}</span>
           <Markdown text={text} />
           {thread && questions.map((q) => (
@@ -96,21 +172,9 @@ function DeskRow({
       )
     }
     case 'system':
-      return (
-        <details className="trow trow-system">
-          <summary>
-            <Glyph glyph={MARKS.info.glyph} tone="muted" label="note" /> Shepherd woke the front desk {when}
-          </summary>
-          <p className="msg-text">{text}</p>
-        </details>
-      )
+      return <WokeNote text={text} when={when} />
     case 'tool':
-      return (
-        <p className="trow trow-tool faint">
-          <Glyph glyph={MARKS.report.glyph} tone="muted" label="tool call" />
-          <span className="mono">{text}</span>
-        </p>
-      )
+      return <ToolLine text={text} />
     case 'error':
       return (
         <p className="trow tone-bad" role="alert">
@@ -171,7 +235,7 @@ function ChatThread({
   const [confirming, setConfirming] = useState(false)
   const newButton = useRef<HTMLButtonElement>(null)
   const confirmButton = useRef<HTMLButtonElement>(null)
-  const root = useRef<HTMLDivElement>(null)
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
 
   const all = useMemo(() => timeline(d.events, live.feed), [d.events, live.feed])
   // The topic filter is a view over the one thread, kept in the hash so it can be linked
@@ -209,6 +273,7 @@ function ChatThread({
     const members = memberKeys(topic)
     return all.filter((it) => inTopic(it, members))
   }, [all, topic, topicId])
+  const rows = useMemo(() => groupThread(items), [items])
   const open = useMemo(() => new Map(live.decisions.map((x) => [x.id, x])), [live.decisions])
   // Open decisions whose "asked" row is not in the loaded thread still wait on the person.
   const shown = new Set(items.flatMap((it) => (it.type === 'feed' && it.f.event === 'decision_asked' ? [it.f.ref ?? 0] : [])))
@@ -254,13 +319,35 @@ function ChatThread({
     )
   }, [items, live])
   const [flash, setFlash] = useState('')
-  const jump = useCallback((anchor: string) => {
+  // A jump to a row folded into an "N updates" row asks that fold to open, then scrolls.
+  const [reveal, setReveal] = useState('')
+  const inFold = useCallback(
+    (anchor: string) => rows.some((r) => r.type === 'updates' && rowFeedIds(r).some((id) => `f${id}` === anchor)),
+    [rows],
+  )
+  const land = useCallback((anchor: string) => {
     const el = document.getElementById(threadId(anchor))
-    if (!el) return
+    if (!el) return false
     el.scrollIntoView?.({ block: 'center' })
     setFlash(anchor)
     window.setTimeout(() => setFlash((f) => (f === anchor ? '' : f)), 2500)
+    return true
   }, [])
+  const jump = useCallback(
+    (anchor: string) => {
+      if (!land(anchor) && inFold(anchor)) setReveal(anchor)
+    },
+    [land, inFold],
+  )
+  useEffect(() => {
+    if (reveal === '') return
+    const at = window.setTimeout(() => land(reveal), 0)
+    const done = window.setTimeout(() => setReveal(''), 2500)
+    return () => {
+      window.clearTimeout(at)
+      window.clearTimeout(done)
+    }
+  }, [reveal, land])
 
   // The header counter's arrows: show the item the thread holds for it, or say it is not
   // there and where to act on it.
@@ -272,7 +359,7 @@ function ChatThread({
       unplaced: new Set(unplaced.map((x) => x.id)),
       laneAnchor: (id) => backlog.find((b) => b.laneId === id)?.anchor,
     })
-    if (anchor && document.getElementById(threadId(anchor))) {
+    if (anchor && (document.getElementById(threadId(anchor)) || inFold(anchor))) {
       setStepNote(null)
       jump(anchor)
     } else {
@@ -292,7 +379,7 @@ function ChatThread({
     return () => window.removeEventListener(STEP_EVENT, take)
   }, [])
 
-  const follow = useFollowBottom(root, [d.loaded, items.length, d.partial, unplaced.length])
+  const follow = useFollowBottom(scroller, [d.loaded, items.length, d.partial, unplaced.length])
   useEffect(() => {
     if (confirming) confirmButton.current?.focus()
   }, [confirming])
@@ -302,7 +389,7 @@ function ChatThread({
   const stopped = d.connection === 'signed-out' || d.connection === 'refused'
 
   return (
-    <div ref={root} className="page chat">
+    <div className="page chat">
       <header className="page-head chat-head">
         <h1>Chat</h1>
         <p className={`chat-conn live-dot ${conn.cls}`} role="status">
@@ -381,7 +468,6 @@ function ChatThread({
             onJump={jump}
             onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
           />
-          <Topics active={topicId} now={now} onFilter={filterTo} />
         </div>
         <ErrorBoundary region="The conversation">
         <div className="chat-main">
@@ -412,14 +498,20 @@ function ChatThread({
             </button>
           </p>
         )}
-        <div className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded}>
+        <div ref={setScroller} className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded} tabIndex={0}>
+          <div className="thread-body">
           {d.loaded && items.length === 0 && d.partial === '' && unplaced.length === 0 && (
             <p className="faint thread-empty">Nothing said yet. Ask the front desk what the flock is doing.</p>
           )}
-          {items.map((it) =>
-            it.type === 'desk' ? (
+          {rows.map((r) => {
+            if (r.type === 'updates') return <UpdatesFold key={r.key} feed={r.feed} now={now} flash={flash} reveal={reveal} />
+            if (r.type === 'work') return <WorkFold key={r.key} work={r.work} now={now} />
+            const it: ThreadItem = r.type === 'reply' ? { type: 'desk', key: r.key, e: r.e } : r.it
+            const work = r.type === 'reply' ? r.work : undefined
+            return it.type === 'desk' ? (
               <DeskRow
                 key={it.key}
+                work={work}
                 e={it.e}
                 now={now}
                 topic={it.e.turn === undefined ? undefined : byTurn.get(it.e.turn)}
@@ -433,8 +525,8 @@ function ChatThread({
               />
             ) : (
               <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
-            ),
-          )}
+            )
+          })}
           {unplaced.map((x) => (
             <div key={`d${x.id}`} id={threadId(`d${x.id}`)} className={`trow trow-decision${flash === `d${x.id}` ? ' is-flash' : ''}`}>
               <Glyph glyph={MARKS.decision_asked.glyph} tone="warn" label="decision waiting" />
@@ -447,6 +539,7 @@ function ChatThread({
               <Markdown text={d.partial} />
             </div>
           )}
+                  </div>
         </div>
 
         <PendingStrip />

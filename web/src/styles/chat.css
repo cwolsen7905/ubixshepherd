@@ -4,8 +4,10 @@
 .page.chat { max-width: var(--measure-chat); }
 /* Messages fill the thread column here; conversation.css keeps its readable cap on the lane and run pages. */
 .page.chat .cv-msg, .page.chat .cv-tool { max-width: none; }
-.chat { display: flex; flex-direction: column; min-height: calc(100vh - var(--bar-h) - 60px); }
-.chat-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
+/* The page does not scroll the window: the head and composer are fixed and the thread is the
+   one scroll region, so follow-bottom and "Jump to latest" act on a single element. */
+.chat { display: flex; flex-direction: column; height: calc(100vh - var(--bar-h)); height: calc(100dvh - var(--bar-h)); overflow: hidden; }
+.chat-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
 .chat-conn { margin: 0; font-size: var(--t-sm); }
 .chat-ws { display: flex; align-items: center; gap: 6px; font-size: var(--t-sm); }
 .chat-ws select { font: inherit; color: inherit; background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius); padding: 2px 6px; }
@@ -15,7 +17,18 @@
 .chat-problem { margin: 0 0 8px; padding: 6px 10px; background: var(--broken-wash); border-radius: var(--radius); font-size: var(--t-sm); }
 .chat-notice { margin: 0 0 6px; font-size: var(--t-sm); }
 
-.thread { flex: 1; padding-bottom: 16px; }
+.thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 16px; }
+.thread:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* Prose keeps a readable measure; code and tables may use the full width. */
+.thread .md p, .thread .md li, .thread .msg-text { max-width: 100ch; }
+
+/* Folded rows: a run of events as "N updates", and a turn's work under its reply. */
+.updates-fold { margin: 2px 0; font-size: var(--t-sm); color: var(--muted); }
+.updates-toggle { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+.updates-toggle:hover { color: var(--ink); }
+.updates-glyphs { display: inline-flex; gap: 2px; }
+.work-fold { margin: 0 0 4px; font-size: var(--t-sm); color: var(--muted); }
+.work-fold summary { cursor: pointer; }
 .thread-empty { padding-left: var(--gutter); }
 
 .msg { margin: 10px 0 10px var(--gutter); padding: 8px 12px; overflow-wrap: anywhere; border-radius: var(--radius-lg); max-width: calc(100% - var(--gutter)); }
@@ -61,7 +74,7 @@
 .decision-inline .decision-q { font-size: var(--t-md); }
 
 .composer {
-  position: sticky; bottom: 0; z-index: 2;
+  flex: none; z-index: 2;
   padding: 10px 0 12px; background: var(--field); border-top: 1px solid var(--rule);
 }
 .composer textarea {
@@ -81,8 +94,8 @@
 
 /* The backlog rail: beside the thread on a wide screen (about 65/35, the rail 18 to 30rem),
    above it on a narrow one. */
-.chat-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(18rem, 35%, 30rem); gap: 0 20px; flex: 1; }
-.chat-main { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
+.chat-layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(18rem, 35%, 30rem); gap: 0 20px; flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+.chat-main { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .backlog { grid-column: 2; grid-row: 1; align-self: start; position: sticky; top: calc(var(--bar-h) + var(--s-4)); max-height: calc(100vh - var(--bar-h) - var(--s-4) - 16px); overflow-y: auto; font-size: var(--t-sm); border-left: 1px solid var(--rule); padding-left: 12px; }
 .backlog-head { margin: 0 0 6px; font-size: inherit; }
 .backlog-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; width: 100%; padding: 2px 0; font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; }
@@ -100,7 +113,7 @@
 .is-flash { background: color-mix(in srgb, var(--lantern) 18%, transparent); transition: background 0.4s; }
 
 @media (max-width: 760px) {
-  .chat-layout { grid-template-columns: minmax(0, 1fr); }
+  .chat-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
   .chat-main, .backlog { grid-column: 1; }
   .backlog { grid-row: 1; position: static; max-height: 40vh; border-left: 0; padding-left: 0; border-bottom: 1px solid var(--rule); margin-bottom: 8px; }
   .chat-main { grid-row: 2; }

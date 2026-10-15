@@ -12,6 +12,7 @@ const POLL = 15_000
 export const IDLE_KEY = 'shepherd.topics.idle.open'
 
 export type LoadTopics = (all: boolean) => Promise<TopicList>
+const defaultLoad: LoadTopics = (all) => topicsApi.list(all)
 export type ChangeTopic = (id: number, body: TopicUpdateBody) => Promise<unknown>
 export type AddTopic = (title: string) => Promise<unknown>
 
@@ -51,7 +52,7 @@ interface TopicsProps {
 }
 
 function TopicsView({
-  active, now, onFilter, load = (all) => topicsApi.list(all), change = topicsApi.update, add = topicsApi.add,
+  active, now, onFilter, load = defaultLoad, change = topicsApi.update, add = topicsApi.add,
 }: TopicsProps) {
   const attention = useAttention()
   const [list, setList] = useState<TopicView[] | null>(null)
