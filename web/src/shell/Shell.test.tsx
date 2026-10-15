@@ -59,7 +59,7 @@ describe('Shell', () => {
     setWidth(1440)
     view()
     const nav = screen.getByRole('navigation', { name: 'Views' })
-    expect(within(nav).getByRole('link', { name: /Decisions/ })).toHaveTextContent('2')
+    expect(within(nav).getByRole('link', { name: /Inbox/ })).toHaveTextContent('4')
     expect(within(nav).getByRole('link', { name: /Next up/ })).toHaveTextContent('1')
     expect(within(nav).getByRole('link', { name: /Board/ })).not.toHaveTextContent(/\d/)
   })
@@ -67,7 +67,7 @@ describe('Shell', () => {
   it('shows no counts before the list loads', () => {
     setWidth(1440)
     view(null)
-    expect(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('link', { name: /Decisions/ })).not.toHaveTextContent(/\d/)
+    expect(within(screen.getByRole('navigation', { name: 'Views' })).getByRole('link', { name: /Inbox/ })).not.toHaveTextContent(/\d/)
   })
 
   it('marks the current page', () => {
@@ -120,7 +120,7 @@ describe('Shell', () => {
     }
     const at = (re: RegExp) => seen.findIndex((t) => re.test(t))
     expect(at(/Skip to the page/)).toBe(0)
-    expect(at(/Decisions/)).toBeLessThan(at(/^help$/))
+    expect(at(/Inbox/)).toBeLessThan(at(/^help$/))
     expect(at(/^help$/)).toBeLessThan(at(/^waiting$/))
   })
 

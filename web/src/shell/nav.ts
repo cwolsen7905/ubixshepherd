@@ -1,8 +1,8 @@
 import { href, type Route } from '../router'
-import { attentionOf, inboxCount } from '../state/attention'
+import { attentionCount, attentionOf } from '../state/attention'
 import type { Waiting } from '../api/types'
 
-export type NavKey = 'decisions' | 'chat' | 'board' | 'next' | 'runs' | 'timeline' | 'projects' | 'usage' | 'settings'
+export type NavKey = 'inbox' | 'chat' | 'board' | 'next' | 'runs' | 'timeline' | 'projects' | 'usage' | 'settings'
 
 export interface NavItem {
   key: NavKey
@@ -27,7 +27,7 @@ export const NAV: NavGroup[] = [
   {
     name: 'Primary',
     items: [
-      { key: 'decisions', label: 'Decisions', mark: 'D', to: () => href.decisions(), current: (r) => r.page === 'decisions' },
+      { key: 'inbox', label: 'Inbox', mark: 'I', to: () => href.inbox(), current: (r) => r.page === 'inbox' },
       { key: 'chat', label: 'Conversation', mark: 'C', to: () => href.chat(), current: (r) => r.page === 'chat' },
     ],
   },
@@ -58,12 +58,12 @@ export const NAV: NavGroup[] = [
 
 /** The count beside each entry, all read from the one attention list. */
 export function navCounts(w: Waiting | null): Partial<Record<NavKey, number>> {
-  return { decisions: inboxCount(w), next: attentionOf(w, 'next').length, board: 0 }
+  return { inbox: attentionCount(w), next: attentionOf(w, 'next').length, board: 0 }
 }
 
 /** What a count means, for the badge's accessible name. */
 export const COUNT_LABEL: Partial<Record<NavKey, string>> = {
-  decisions: 'waiting on you',
+  inbox: 'waiting on you',
   next: 'waiting on your approval',
   board: 'lanes broken',
 }

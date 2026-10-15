@@ -92,3 +92,21 @@ export function openKey(items: readonly WaitingItem[], open: Open | undefined): 
   })
   return hit ? waitingKey(hit) : null
 }
+
+/**
+ * The next waiting item to move to from the inspector's open item (or the first when none is
+ * open) after `dir`, never the item `skip` names. Used by the strip's keys and after an answer.
+ */
+export function neighbour(items: readonly WaitingItem[], from: string | null, dir: 'up' | 'down', skip?: string): WaitingItem | undefined {
+  const rest = skip ? items.filter((it) => waitingKey(it) !== skip) : items
+  if (rest.length === 0) return undefined
+  const keys = rest.map(waitingKey)
+  // An answered item left the list: continue from where it stood, so "next" is its successor.
+  let start = from
+  if (from !== null && !keys.includes(from)) {
+    const at = items.findIndex((it) => waitingKey(it) === from)
+    start = at > 0 ? waitingKey(items[at - 1] as WaitingItem) : null
+    if (start !== null && !keys.includes(start)) start = null
+  }
+  return rest[stepIndex(keys, start, dir)]
+}

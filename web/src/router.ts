@@ -19,7 +19,7 @@ export const OPEN_KINDS = ['decision', 'question', 'request', 'lane', 'run', 'to
 type Page =
   | { page: 'board'; range?: Range }
   | { page: 'runs'; range?: Range; agent?: string; lane?: number }
-  | { page: 'decisions'; focus?: number }
+  | { page: 'inbox'; kind?: string }
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
   | { page: 'timeline'; range?: TimelineRange; agent?: string }
   | { page: 'next'; focus?: number }
@@ -59,7 +59,24 @@ export function withOpen(hash: string, o: Open | undefined): string {
   return q.size ? `#${path}?${q}` : `#${path}`
 }
 
+/**
+ * The hash the app shows for `hash`: the old Decisions page lives on as the Inbox filtered
+ * to decisions, and `?d=` becomes an open inspector item.
+ */
+export function canonical(hash: string): string {
+  const bare = hash.replace(/^#/, '')
+  const [path = '', query = ''] = bare.split('?')
+  if (path !== '/decisions') return hash
+  const q = new URLSearchParams(query)
+  const d = Number(q.get('d'))
+  const out = new URLSearchParams({ kind: 'decision' })
+  const open = q.get('open') ?? (d > 0 ? `decision:${d}` : '')
+  if (open) out.set('open', open)
+  return `#/inbox?${out}`
+}
+
 export function parse(hash: string): Route {
+  hash = canonical(hash)
   const route = parsePage(hash)
   const open = parseOpen(new URLSearchParams(hash.split('?')[1] ?? '').get('open'))
   return open ? { ...route, open } : route
@@ -80,10 +97,7 @@ function parsePage(hash: string): Page {
       ...(lane > 0 ? { lane } : {}),
     }
   }
-  if (path === '/decisions') {
-    const d = Number(q.get('d'))
-    return d > 0 ? { page: 'decisions', focus: d } : { page: 'decisions' }
-  }
+  if (path === '/inbox') return q.get('kind') ? { page: 'inbox', kind: q.get('kind') as string } : { page: 'inbox' }
   if (path === '/usage') {
     const r = q.get('range')
     const usageRange = r === 'today' || r === 'week' || r === 'month' || r === 'custom' ? r : undefined
@@ -136,6 +150,8 @@ export const href = {
     if (o.lane) q.set('lane', String(o.lane))
     return q.size ? `#/runs?${q}` : '#/runs'
   },
+  inbox: (kind?: string) => (kind ? `#/inbox?kind=${encodeURIComponent(kind)}` : '#/inbox'),
+  /** Old links keep working: `#/decisions` redirects to the Inbox. */
   decisions: (focus?: number) => (focus ? `#/decisions?d=${focus}` : '#/decisions'),
   usage: (o: { range?: UsageRange; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams()
@@ -169,6 +185,11 @@ function subscribe(fn: () => void) {
 
 export function useRoute(): Route {
   const hash = useSyncExternalStore(subscribe, () => window.location.hash)
+  // Replace, not push: Back must not return to the address that redirected.
+  useEffect(() => {
+    const to = canonical(hash)
+    if (to !== hash) window.history.replaceState(null, '', to)
+  }, [hash])
   return parse(hash)
 }
 
