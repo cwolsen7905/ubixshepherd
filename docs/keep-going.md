@@ -5,7 +5,8 @@ defaults in section 4. Merge request 1 of section 7 (Core) is built: the store, 
 daemon's limits and `Allow`, `GET/POST /v1/keep-going`, `shepherd keep-going` and the
 `keep_going:` config. Merge request 2 (Desk) is built except the daemon's gate in the
 lane and run tools: the `keep_going` tool, the one-place event text and brief paragraph,
-and the terminal `/keep-going`. The web switch and the feed kind are not.
+and the terminal `/keep-going`. The web switch (sidebar footer), the `keep_going` feed
+kind, a feed item per autonomous action and `status`'s recent actions are built.
 Implementation is four merge requests, each its own lane (section 7).
 
 ## The problem

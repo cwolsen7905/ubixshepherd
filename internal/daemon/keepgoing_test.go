@@ -109,7 +109,7 @@ func TestKeepGoingSpendCapTurnsItOff(t *testing.T) {
 	if d.OK || row.On || row.ReasonOff != store.KeepOffCap || row.By != store.KeepByLimit {
 		t.Fatalf("at the cap: %+v, row %+v", d, row)
 	}
-	if f := keepFeed(t, s); len(f) != 2 || !strings.Contains(f[1], "spend cap") {
+	if f := keepFeed(t, s); len(f) != 3 || !strings.Contains(f[2], "spend cap") {
 		t.Errorf("feed: %q", f)
 	}
 }
@@ -391,5 +391,22 @@ func TestKeepGoingConfigReload(t *testing.T) {
 	}
 	if st, _ := s.KeepGoing().Status(ctx, ws.ID); st.CapUSD != 9 {
 		t.Errorf("a refused reload changed the cap: %v", st.CapUSD)
+	}
+}
+
+func TestKeepGoingActionsReachFeedAndStatus(t *testing.T) {
+	s, _, _, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	if d := s.KeepGoing().Allow(ctx, ws.ID, KeepFix, lane.ID); !d.OK {
+		t.Fatalf("allow: %+v", d)
+	}
+	f := keepFeed(t, s)
+	if len(f) != 2 || !strings.Contains(f[1], "followed up a failed pipeline") {
+		t.Fatalf("feed: %q", f)
+	}
+	st, err := s.KeepGoing().Status(ctx, ws.ID)
+	if err != nil || len(st.Recent) != 2 || st.Recent[1].Lane != lane.ID {
+		t.Fatalf("recent: %+v, %v", st.Recent, err)
 	}
 }

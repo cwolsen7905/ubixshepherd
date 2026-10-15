@@ -36,7 +36,7 @@ func TestEventKindIsClosed(t *testing.T) {
 	for _, e := range []string{EventLaneOpened, EventLaneClosed, EventRunStarted, EventRunEnded, EventReport,
 		EventDecisionAsked, EventDecisionAnswer, EventRequest, EventRequestAttention, EventMR,
 		EventRunPassed, EventRunFailed, EventRunInterrupted, EventRunQuota, EventCommit, EventGate,
-		EventPipeline, EventBudget, EventTag, EventRelease, EventPlan, EventMRApprove, EventArtifact, EventConfig, EventDeskRotated, EventInfo} {
+		EventPipeline, EventBudget, EventTag, EventRelease, EventPlan, EventMRApprove, EventArtifact, EventConfig, EventDeskRotated, EventKeepGoing, EventInfo} {
 		valid[e] = true
 	}
 	for k := range eventKinds {

@@ -22,6 +22,8 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	plan               a next-up item was added, approved, deferred, dropped or finished
 //	mr_approve         the person approved a merge request from the web
 //	artifact           a run produced a file to read, or changed one (Ref is the artifact)
+//	keep_going         keep-going mode went on or off (with its reason), or took an
+//	                   autonomous action, or handed a lane back
 //	mr, budget, tag, release, config, desk_rotated
 //	info               anything else, and any kind a newer daemon adds
 const (
@@ -50,6 +52,7 @@ const (
 	EventArtifact         = "artifact" // a run produced a file to read, or a new version of one
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
+	EventKeepGoing        = "keep_going"   // keep-going mode on, off, or an autonomous action
 	EventInfo             = "info"         // anything else, such as a session note
 )
 
@@ -82,6 +85,7 @@ var eventKinds = map[string]string{
 	store.FeedMRApprove:      EventMRApprove,
 	store.FeedArtifact:       EventArtifact,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
+	"keep_going":             EventKeepGoing,   // the daemon's own kind (daemon.FeedKeepGoing)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)
 }
 
