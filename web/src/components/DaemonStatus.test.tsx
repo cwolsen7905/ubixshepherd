@@ -21,7 +21,7 @@ const loaded = (d: StatusDetail = detail(), session: Loaded['session'] = { role:
 function setup(props: Partial<React.ComponentProps<typeof DaemonStatus>> = {}) {
   const load = vi.fn(() => Promise.resolve(loaded()))
   render(<DaemonStatus error={null} downSince={null} ready lastEvent="2026-10-10T11:58:30Z" load={load} now={NOW} {...props} />)
-  return { load, dot: screen.getByRole('button', { name: /connected/i }), pop: () => screen.getByRole('tooltip', { hidden: true }) }
+  return { load, dot: screen.getByRole('button', { name: /daemon/i }), pop: () => screen.getByRole('tooltip', { hidden: true }) }
 }
 
 describe('DaemonStatus', () => {
@@ -84,7 +84,7 @@ describe('DaemonStatus', () => {
     const user = userEvent.setup()
     const down = NOW - 3 * 60_000
     const { load, pop } = setup({ error: 'the daemon could not be reached', downSince: down })
-    expect(screen.getByRole('button', { name: /not connected/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /unreachable/i })).toBeInTheDocument()
     await user.tab()
     expect(pop()).toBeVisible()
     expect(pop().textContent).toMatch(/Offline since .*\(3m ago\)\. Retrying\./)

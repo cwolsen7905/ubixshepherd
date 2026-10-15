@@ -75,9 +75,14 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
   const forgePollTime = data?.status.detail?.forge?.last_poll
   const forgePollAge = forgePollTime ? since(forgePollTime, now) : null
   
-  // Text for the status indicator
-  const statusText = down ? 'Daemon offline' : 'Daemon live'
-  const forgeText = forgePollAge ? `, forge ${forgePollAge} ago` : ''
+  // Text for the status indicator: offline (error), connecting (not ready), or live
+  const statusText = down ? 'Daemon unreachable' : ready ? 'Daemon live' : 'Daemon connecting'
+  // "forge polled Xs ago" — avoid "polled just now ago"
+  const forgeText = forgePollAge
+    ? forgePollAge === 'just now'
+      ? 'forge polled just now'
+      : `forge polled ${forgePollAge} ago`
+    : ''
   
   return (
     <span
@@ -90,6 +95,7 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
       <button
         type="button"
         className={`live-dot ${down ? 'is-down' : ready ? 'is-up' : ''}`}
+        aria-label={`${statusText}${forgeText ? `, ${forgeText}` : ''}`}
         aria-describedby={id}
         aria-expanded={open}
         onFocus={() => setOpen(true)}
