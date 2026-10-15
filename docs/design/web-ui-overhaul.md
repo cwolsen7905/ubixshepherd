@@ -1,7 +1,8 @@
 # Web UI overhaul: one conversation, everything opens beside it
 
-Status: **proposed**, for the maintainer's review. Nothing here is decided. It changes no
-code. The artifact feature it refers to has its own design, [artifacts.md](artifacts.md).
+Status: **decided**. The maintainer approved the plan and the mockup on 2026-10-14 and took
+every recommended default (see [Decided questions](#decided-questions)). Nothing is built
+yet; this document changes no code. The artifact feature it refers to has its own design, [artifacts.md](artifacts.md).
 
 The web UI (`web/`) grew one feature at a time: the board, then lanes, runs, decisions,
 the chat, topics, Next up, Waiting on you, approvals, the timeline. Each landed as a page
@@ -10,8 +11,8 @@ everything is a page, almost nothing opens in place, the look is uneven, and the
 that matter most (answering, following a link from the thread, reading what an agent
 wrote) take the person away from the conversation. This plan says what is wrong and why,
 the principles for fixing it, the shape it should take, a design system, accessibility
-and keyboard use, merge-request-sized phases with their scopes, risks, and the questions
-only the maintainer can answer.
+and keyboard use, merge-request-sized phases with their scopes, risks, and the maintainer's
+answers to the questions it raised.
 
 It builds on the earlier [UI audit](../ui-audit/README.md), whose layout foundation
 (tokens, `.page`, `.page-split`, shared heads and rows) has landed. The audit's remaining
@@ -272,7 +273,7 @@ acting in full, the **palette** for getting anywhere, and **dialogs** only to co
   no daemon change; a later step adds a structured `about` to `POST /v1/desk/turn` so the
   desk is briefed with ids rather than words and the thread shows a chip. It speaks to
   the **desk**, not to the lane's agent: the one-thread principle holds (design.md §3.1,
-  §3.15). See open question 4.
+  §3.15). Decided in question 4.
 
 ### Decisions and the fast thread
 
@@ -315,7 +316,7 @@ something scrolled past in the thread. For both:
   browser (`localStorage`), cleared when it is opened in the inspector;
 - returning to a hidden tab with new waiting items shows one row at the thread's end,
   "While you were away: 2 decisions, 1 approval", which opens the Inbox;
-- browser notifications are opt-in only (open question 7).
+- browser notifications are opt-in only (decided question 7).
 
 ### Lanes, runs and topics in context
 
@@ -370,10 +371,10 @@ shadows only on things that float (palette, popover, the overlay drawer).
 
 ### Type
 
-- One family for the interface and one for code. Recommended: bundle **IBM Plex Sans**
+- One family for the interface and one for code: bundle **IBM Plex Sans**
   and **IBM Plex Mono** (open licence, woff2 served by the daemon, so the strict CSP
   still loads nothing from elsewhere); the uBix mark's blue already sits in that
-  family's world. The alternative is today's system stack. See open question 6.
+  family's world. Decided (question 6): bundle Plex, in W4.6.
 - Scale (rem at the existing fluid root): 0.75 caption, 0.8125 meta, 0.875 body small,
   1 body, 1.125 card headline, 1.375 page title. Weights 400 and 600 only.
 - Sentence case everywhere: "Front desk", "Why this is yours", "Waiting on you". No
@@ -530,7 +531,7 @@ The audit's remaining items, rebuilt on the kit and the inspector. Each is indep
 | W4.3 | Next up: wide rows, one primary, actions in an overflow menu | `web/src/pages/Next*`, `web/src/styles/next.css` |
 | W4.4 | Settings and Usage: two-column field grid, shared tile | `web/src/pages/Settings*`, `web/src/pages/Usage*`, `web/src/styles/settings.css`, `web/src/styles/usage.css` |
 | W4.5 | Runs and Timeline: task column without boilerplate, wider gutter | `web/src/pages/Runs*`, `web/src/pages/Timeline*`, `web/src/timeline/**` |
-| W4.6 | Typeface (if chosen): bundle the fonts, wire them into the build and the daemon's static files | `web/src/styles/theme.css`, `web/public/fonts/**`, `web/index.html` |
+| W4.6 | Typeface: bundle IBM Plex Sans and Mono, wire them into the build and the daemon's static files | `web/src/styles/theme.css`, `web/public/fonts/**`, `web/index.html` |
 
 ### Phase 5: artifacts
 
@@ -562,39 +563,40 @@ keep-going lane merges
 | A redesign that never finishes, leaving two styles side by side | every item ships on its own and leaves the app consistent; the kit lands before the pages use it; Phase 4 is cleanup, not a second redesign |
 | Conflicts with other lanes, since most features touch `web/**` | W0.3 splits Chat first; scopes are narrow globs; no item starts while another lane holds its files |
 | The inspector squeezes the thread on a 1440 window | split only at 1440 and up with a minimum thread width; below that it overlays; width is the person's to drag |
-| Talking to agents from the inspector erodes the one-thread rule | the context composer speaks to the desk only; direct agent messages are an open question, off by default |
+| Talking to agents from the inspector erodes the one-thread rule | the context composer speaks to the desk only; direct agent messages were decided against (question 4) |
 | A new shell is jarring after daily use | nav names and keys stay; old routes redirect; the change notes in the release say where things went |
 | Fewer polls means slower counts | the attention store reads on every feed movement, which is faster than today's 5 s timers |
 | Accessibility regressions in a custom split pane and focus handling | native `<dialog>` where modal, tests for focus return and roving tabindex, a keyboard-only pass in each item's checklist |
 | Test churn: many tests assert page structure | tests move with the components; the kit's tests replace per-page style checks |
-| A bundled typeface adds weight and a licence file | two families, latin subset, woff2 (about 150 KB); or keep the system stack |
+| A bundled typeface adds weight and a licence file | two families, latin subset, woff2 (about 150 KB), with the licence beside the fonts |
 | The stub drifts again | W0.1 adds a check that every route the client calls has a stub answer |
 
-## Open questions for the maintainer
+## Decided questions
 
-Each has a recommended default; the plan assumes the default until told otherwise.
+Decided by the maintainer on 2026-10-14: every question takes its recommended default.
+The numbers are stable, so other documents and Next-up items can cite them.
 
 1. **Sidebar or top bar?** The sidebar holds the nav, the one count, spend, keep-going and
-   status without crowding, and frees the page head. **Default: sidebar, collapsible.**
+   status without crowding, and frees the page head. **Decided: sidebar, collapsible.**
 2. **Inspector or modals for decisions, runs and lanes?** The inspector keeps the thread
-   live beside what you read; modals hide it. **Default: the inspector (split pane on a
+   live beside what you read; modals hide it. **Decided: the inspector (split pane on a
    wide window, drawer on a narrow one); dialogs only to confirm.**
 3. **Should Conversation be the home page (`#/`) instead of the board?** The person
-   lives in the thread. **Default: yes, with the board at `#/board` and `#/` links
+   lives in the thread. **Decided: yes, with the board at `#/board` and `#/` links
    redirected.**
 4. **Should the context composer reach the lane's agent directly?** It would be faster,
-   but it splits the one thread and bypasses the desk's view of the work. **Default: the
+   but it splits the one thread and bypasses the desk's view of the work. **Decided: the
    desk only; the desk continues the agent when that is what the person meant.**
-5. **Fold the Decisions page into the Inbox?** **Default: yes; `#/decisions` redirects
+5. **Fold the Decisions page into the Inbox?** **Decided: yes; `#/decisions` redirects
    to the Inbox filtered to decisions.**
 6. **Typeface: bundle IBM Plex Sans and Mono, or keep the system stack?** Plex gives one
-   consistent look on every OS at about 150 KB. **Default: bundle Plex (W4.6, last).**
-7. **Browser notifications for new waiting items?** **Default: off; an opt-in in
+   consistent look on every OS at about 150 KB. **Decided: bundle Plex (W4.6, last).**
+7. **Browser notifications for new waiting items?** **Decided: off; an opt-in in
    Settings, enabled only by the person's click.**
 8. **A temporary "new layout" switch during Phases 1 and 2?** It adds a second code path
-   to test. **Default: no switch; each step is small enough to ship directly.**
-9. **Density: one setting or a compact and comfortable choice?** **Default: one
+   to test. **Decided: no switch; each step is small enough to ship directly.**
+9. **Density: one setting or a compact and comfortable choice?** **Decided: one
    density, comfortable in prose and compact in tables and lists.**
 10. **`]` and `[` for next and previous waiting item?** They are free today; on some
     keyboard layouts they need a modifier, so the strip's chips and the palette cover the
-    same step. **Default: yes.**
+    same step. **Decided: yes.**

@@ -1,6 +1,7 @@
 # Artifacts: reading what agents wrote, committed or not
 
-Status: **proposed**, for the maintainer's review. Nothing here is decided or built. It is
+Status: **decided**. The maintainer approved this design on 2026-10-14 with every
+recommended default (see [Decided questions](#decided-questions)). Nothing is built yet. It is
 the artifact part of the [web UI overhaul](web-ui-overhaul.md) and uses its inspector.
 
 ## The problem
@@ -36,9 +37,11 @@ It is not a build output, a log (runs already have one), or a replacement for th
 code changes stay in Changes. A committed markdown file in the lane's diff is also listed
 as an artifact, so it can be read rendered, but its source of truth is the commit.
 
-## Decisions to make
+## Decisions
 
-| # | Choice | Options | Recommendation |
+Decided by the maintainer on 2026-10-14, as recommended.
+
+| # | Choice | Options | Decided |
 |---|---|---|---|
 | 1 | How artifacts are found | declared by the agent / discovered in the worktree / both | Both. Declared is exact; discovery covers agents that forget and works for every CLI |
 | 2 | Where a file not meant for the repo lives | anywhere in the worktree / a Shepherd directory inside the worktree, excluded from git / outside the worktree | `.shepherd/artifacts/` inside the worktree, excluded through the repo's `info/exclude`. Every agent CLI can write inside its worktree; outside needs per-CLI permission flags |
@@ -89,7 +92,7 @@ tool in one sentence. Then:
 
 Writing to `info/exclude` changes the person's repository configuration, if only
 locally; Shepherd does it once per repo, says so in the feed and in `shepherd repo add`,
-and the person can refuse it (open question 2). Whether `git worktree remove` without
+and the person can refuse it (decided question 2). Whether `git worktree remove` without
 `--force` accepts a worktree that holds ignored files is to be confirmed by a test in A4;
 if it does not, close removes the directory itself after the snapshot.
 
@@ -150,7 +153,7 @@ written by a run ──► live (in the worktree, read on demand)
   to commit, discard) instead of the bare `--force` advice. For the automatic close of a
   merged lane, files under `.shepherd/artifacts/` never block; any other undecided file
   keeps the lane open and puts "lane merged, 1 file to keep or discard" in the Inbox
-  (open question 3).
+  (decided question 3).
 - **Retention.** Snapshots of a closed lane are kept for `keep_days` (default 30), pinned
   ones for ever, under a total cap (default 500 MB) that evicts the oldest unpinned first.
   `shepherd artifact gc` and the daemon's daily timer apply it.
@@ -196,7 +199,7 @@ Serving content safely:
   `X-Content-Type-Options: nosniff`, `Content-Security-Policy: sandbox; default-src 'none'`
   and `Content-Disposition: inline`.
 - Text is redacted. Images cannot be, so a discovered image is listed but not
-  snapshotted unless declared or pinned (open question 6).
+  snapshotted unless declared or pinned (decided question 6).
 
 CLI, as clients of the API: `shepherd artifact list|show|cat|pin|gc`, plus the worker's
 `shepherd worker artifact`. Desk tools map onto them: `artifact_list` and
@@ -267,26 +270,29 @@ inside Shepherd) with no migration. A3 and A4 make it reliable and keep files pa
 | Disk growth from snapshots | content addressing, caps per file, `keep_days`, a total cap, `gc` |
 | Discovery is noisy in a repo full of markdown | per-repo globs; only untracked, modified and in-range files are considered, never the whole tree |
 | A served file runs script in the app's origin | text is never served as HTML; strict headers and a sandbox CSP on every content answer; SVG only as an image |
-| Writing `info/exclude` surprises the person | once per repo, announced, refusable, and the alternative (outside the worktree) is open question 2 |
+| Writing `info/exclude` surprises the person | once per repo, announced, refusable, and the alternative (outside the worktree) was weighed in decided question 2 |
 | Automatic close behaves differently with artifacts | only files the agent put in the Shepherd directory are ignored; everything else still holds the lane open and asks |
 | Attribution by "first seen at run end" is wrong when the person edits a file by hand | the version shows the run, and a version with no running agent is marked "changed outside a run" |
 
-## Open questions for the maintainer
+## Decided questions
 
-1. **Declared, discovered or both?** **Default: both.** Discovery alone misses intent;
+Decided by the maintainer on 2026-10-14: every question takes its recommended default.
+The numbers are stable.
+
+1. **Declared, discovered or both?** **Decided: both.** Discovery alone misses intent;
    declaration alone misses agents that forget.
-2. **Where do files not meant for the repo live?** **Default: `.shepherd/artifacts/` in
+2. **Where do files not meant for the repo live?** **Decided: `.shepherd/artifacts/` in
    the worktree, excluded through `info/exclude`.** The alternative, a directory under
    `~/.shepherd` handed to the agent, needs each CLI's permission to write outside its
    worktree (Claude Code's `--add-dir` and the others' equivalents).
-3. **A merged lane with an undecided uncommitted file: close it or ask?** **Default: ask,
+3. **A merged lane with an undecided uncommitted file: close it or ask?** **Decided: ask,
    in the Inbox; files in the Shepherd directory never block.**
-4. **Retention.** **Default: 30 days after close, pinned for ever, 500 MB in total.**
-5. **Default discovery globs.** **Default: markdown and images anywhere, plus the
+4. **Retention.** **Decided: 30 days after close, pinned for ever, 500 MB in total.**
+5. **Default discovery globs.** **Decided: markdown and images anywhere, plus the
    Shepherd directory; replaceable per repo.**
-6. **Discovered images, which cannot be redacted: snapshot them?** **Default: no, unless
+6. **Discovered images, which cannot be redacted: snapshot them?** **Decided: no, unless
    declared or pinned; they are still viewable while the lane is open.**
-7. **Should the front desk be able to produce artifacts?** It has no worktree. **Default:
+7. **Should the front desk be able to produce artifacts?** It has no worktree. **Decided:
    not in this design; its answers stay in the thread.**
-8. **Should "commit" ever be done by Shepherd rather than the lane's agent?** **Default:
+8. **Should "commit" ever be done by Shepherd rather than the lane's agent?** **Decided:
    no; Shepherd does not author commits, and the agent commits under the repo's gate.**
