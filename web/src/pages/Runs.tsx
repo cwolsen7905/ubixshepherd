@@ -7,6 +7,9 @@ import { useNow } from '../hooks'
 import { DEFAULT_RANGE, mergeHistories, RANGES, RANGE_PHRASE, rangeStart } from '../model/history'
 import { go, href, type Range } from '../router'
 import { useHistory } from '../state/history'
+import { taskLine, taskText } from '../timeline/task'
+import { Button, EmptyState } from '../ui'
+import '../styles/pages/runs.css'
 
 /** A run's state as the feed event that reports it, for its glyph. */
 const STATE_EVENT: Record<RunRecord['state'], string> = {
@@ -81,18 +84,18 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
           </select>
         </label>
         {(agent || lane > 0) && (
-          <a className="link-button" href={href.runs({ range })}>
+          <Button variant="ghost" size="small" onClick={() => go(href.runs({ range }))}>
             Clear filters
-          </a>
+          </Button>
         )}
       </div>
 
       {error && <p className="tone-bad">Could not load runs: {error}</p>}
       {data && data.runs.length === 0 && (
-        <p className="faint">{agent || lane > 0 ? 'No run matches these filters' : 'No run started'} in {label.toLowerCase()}.</p>
+        <EmptyState title={`${agent || lane > 0 ? 'No run matches these filters' : 'No run started'} in ${label.toLowerCase()}.`} />
       )}
       {data && data.runs.length > 0 && (
-        <table className="runs history-runs">
+        <table className="runs history-runs runs-table">
           <thead>
             <tr>
               <th scope="col"><span className="visually-hidden">State</span></th>
@@ -123,7 +126,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
                 <td className="num" title={costNote(r)}>{runCost(r)}</td>
                 <td className="faint" title={r.started}>{clockTime(r.started, now)}</td>
                 <td className="num">{duration(r.started, r.ended, now)}</td>
-                <td className="run-task" title={r.task}>{r.task}</td>
+                <td className="run-task" title={taskText(r.task)}>{taskLine(r.task)}</td>
               </tr>
             ))}
           </tbody>

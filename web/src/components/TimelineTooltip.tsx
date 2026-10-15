@@ -3,6 +3,7 @@ import { clockTime, duration, runCost, usd } from '../format'
 import {
   agentClass, runPhrase, type DecisionMark, type MergeMark, type SpendStep, type TRun,
 } from '../model/timeline'
+import { taskLine } from '../timeline/task'
 
 /** What the pointer or focus is on. */
 export type Tip =
@@ -46,7 +47,7 @@ function RunTip({ tip, now }: { tip: Extract<Tip, { kind: 'run' }>; now: number 
       <Row value={String(r.commits)} label={r.commits === 1 ? 'commit' : 'commits'} />
       {r.progress && <p className="tl-tip-line">{r.progress}</p>}
       {r.diagnosis && <p className="tl-tip-line tl-tip-bad">{r.diagnosis}</p>}
-      {r.task && <p className="tl-tip-task">{r.task}</p>}
+      {taskLine(r.task) && <p className="tl-tip-task">{taskLine(r.task)}</p>}
       <p className="tl-tip-where">
         {tip.repo} / {tip.lane}
       </p>

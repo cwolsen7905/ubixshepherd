@@ -1,0 +1,14 @@
+/* The runs table, on the Runs page and in the Timeline's table view: a wider glyph rail and
+   column gap, and a task column that takes the rest of the row, one line, full text on hover. */
+.runs-table { table-layout: auto; }
+.runs-table th { white-space: nowrap; }
+.runs-table td { padding-right: var(--s-4); }
+.runs-table td:first-child, .runs-table th:first-child { width: calc(var(--gutter) * 1.5); padding-right: 0; }
+.runs-table .run-task { min-width: 14rem; max-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.runs-table .run-lane { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; }
+.runs-table .num { padding-right: var(--s-4); }
+.runs-page .filters { align-items: center; }
+@media (max-width: 760px) {
+  .runs-table td { padding-right: var(--s-2); }
+  .runs-table .run-task { min-width: 9rem; }
+}

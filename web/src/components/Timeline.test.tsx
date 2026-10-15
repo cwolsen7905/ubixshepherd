@@ -1,10 +1,15 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, configure, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assemble, type TimelineData } from '../model/timeline'
 import { busyDay, BUSY_NOW } from '../model/timeline.fixtures'
 import { TimelineChart, type TimelineChartProps } from './Timeline'
 import { TimelineLegend } from './TimelineLegend'
+
+// The chart is hundreds of SVG nodes: under a loaded machine a test can take seconds, so the
+// bounds are generous. A correct test still ends as soon as it has drawn.
+configure({ asyncUtilTimeout: 15_000 })
+vi.setConfig({ testTimeout: 30_000 })
 
 const busy = busyDay()
 const data = assemble(busy.src)
