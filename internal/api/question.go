@@ -66,5 +66,5 @@ func (w *Waiting) AddQuestions(qs []store.Question) {
 		w.Counts.Questions++
 	}
 	sort.SliceStable(w.Items, func(i, j int) bool { return w.Items[i].Since.Before(w.Items[j].Since) })
-	w.Count = len(w.Items)
+	w.Seal()
 }
