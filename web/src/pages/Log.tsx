@@ -123,7 +123,8 @@ export function LogPage({ run: id }: { run: number }) {
 }
 
 /** The raw log with its search, follow and tool-call controls. */
-export function LogTab({ id, state, onDone }: { id: number; state?: string; onDone?: () => void }) {
+/** `active` is false while the tab is hidden: it keeps reading but leaves keys and scroll alone. */
+export function LogTab({ id, state, active = true, onDone }: { id: number; state?: string; active?: boolean; onDone?: () => void }) {
   const { text, done, error } = useRunLog(id)
   const [follow, setFollow] = useState(true)
   const [query, setQuery] = useState('')
@@ -146,8 +147,8 @@ export function LogTab({ id, state, onDone }: { id: number; state?: string; onDo
   // Following keeps the end of the log in view; scrolling up stops it.
   const running = state === 'running' && !done
   useEffect(() => {
-    if (follow && running && !q) end.current?.scrollIntoView?.({ block: 'end' })
-  }, [text, follow, running, q])
+    if (active && follow && running && !q) end.current?.scrollIntoView?.({ block: 'end' })
+  }, [text, follow, running, q, active])
   useEffect(() => {
     const onScroll = () => {
       const bottom = end.current?.getBoundingClientRect().bottom ?? 0
@@ -178,17 +179,19 @@ export function LogTab({ id, state, onDone }: { id: number; state?: string; onDo
   }, [q, jump])
 
   useKeys(
-    {
-      '/': (e) => {
-        e.preventDefault()
-        search.current?.focus()
-      },
-      f: () => setFollow((f) => !f),
-      t: () => setOpenAll((o) => !o),
-      n: () => jump(hit + 1),
-      N: () => jump(hit - 1),
-    },
-    [hit, jump],
+    active
+      ? {
+          '/': (e) => {
+            e.preventDefault()
+            search.current?.focus()
+          },
+          f: () => setFollow((f) => !f),
+          t: () => setOpenAll((o) => !o),
+          n: () => jump(hit + 1),
+          N: () => jump(hit - 1),
+        }
+      : {},
+    [hit, jump, active],
   )
 
   return (

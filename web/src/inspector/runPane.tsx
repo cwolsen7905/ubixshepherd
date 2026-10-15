@@ -68,8 +68,14 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
         ))}
       </div>
       <div id="run-panel" role="tabpanel" aria-labelledby={`run-tab-${tab}`}>
-        {tab === 'conversation' && <Conversation source={source} run={run.id} now={now} />}
-        {tab === 'log' && <LogTab id={run.id} state={run.state} onDone={onDone} />}
+        {/* The thread and the log stay mounted while hidden, so switching tabs does not read
+            the log again or lose its search, follow and expanded calls. */}
+        <div hidden={tab !== 'conversation'}>
+          <Conversation source={source} run={run.id} now={now} />
+        </div>
+        <div hidden={tab !== 'log'}>
+          <LogTab id={run.id} state={run.state} active={tab === 'log'} onDone={onDone} />
+        </div>
         {tab === 'changes' && <RunChanges run={run} now={now} />}
         {tab === 'asked' && <Asked runId={run.id} />}
       </div>
@@ -123,12 +129,21 @@ function Asked({ runId }: { runId: number }) {
   const [error, setError] = useState(false)
   useEffect(() => {
     let current = true
-    api.runEvents(runId).then(
-      (e) => current && setList(Array.isArray(e.decisions) ? e.decisions : []),
-      () => current && setError(true),
-    )
+    const read = () =>
+      api.runEvents(runId).then(
+        (e) => {
+          if (!current) return
+          setList(Array.isArray(e.decisions) ? e.decisions : [])
+          setError(false)
+        },
+        () => current && setError(true),
+      )
+    void read()
+    // An answer given elsewhere shows here without reopening the tab.
+    const t = window.setInterval(() => void read(), 5000)
     return () => {
       current = false
+      window.clearInterval(t)
     }
   }, [runId])
   if (error) return <p className="tone-bad">Could not read what this run asked.</p>
@@ -139,7 +154,7 @@ function Asked({ runId }: { runId: number }) {
       {list.map((d) => (
         <li key={d.id}>
           <a href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>{d.question.split('\n')[0]}</a>
-          <span className="faint"> {d.state === 'open' ? 'waiting on you' : `answered: ${d.answer ?? ''}`}</span>
+          <span className="faint"> {d.state === 'open' ? 'waiting on you' : d.answer ? `answered: ${d.answer}` : 'answered'}</span>
         </li>
       ))}
     </ol>
