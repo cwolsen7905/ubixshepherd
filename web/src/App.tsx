@@ -19,6 +19,8 @@ import { DaemonStatus } from './components/DaemonStatus'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
 import { WaitingOnYou } from './components/WaitingOnYou'
+import { StatusCounts } from './components/StatusCounts'
+import { statusCounts } from './state/attention'
 import { UpdateNotice } from './components/UpdateNotice'
 import { Shell } from './shell/Shell'
 import { useAttentionChrome } from './shell/useAttentionChrome'
@@ -78,7 +80,12 @@ export function App() {
         waiting={snap.waiting}
         workspaces={snap.status?.workspaces ?? []}
         footer={footer}
-        headActions={<WaitingOnYou />}
+        headActions={
+          <>
+            <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
+            <WaitingOnYou />
+          </>
+        }
         banner={
           snap.error && (
             <div className="banner tone-bad" role="alert">

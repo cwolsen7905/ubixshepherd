@@ -2,6 +2,7 @@
 // store holds (GET /v1/waiting), so the title, favicon, sidebar, backlog head and topic
 // chips cannot disagree.
 import type { Waiting, WaitingItem } from '../api/types'
+import { boardItems, counts, type BoardInput } from '../model/board'
 
 /** How many things wait on the person; 0 until the list has loaded. */
 export function attentionCount(w: Waiting | null): number {
@@ -27,4 +28,45 @@ export function attentionForLane(w: Waiting | null, repo: string, lane: string):
 export function attentionTitle(w: Waiting | null): string {
   const n = attentionCount(w)
   return n > 0 ? `${n} waiting on you` : ''
+}
+
+/** The numbers of the page head's strip; the sidebar and title read the same parts. */
+export interface StatusCounts {
+  /** Lanes with a run in flight: the board's working group. */
+  running: number
+  /** Everything that waits on the person: the head badge, the title, the favicon. */
+  waiting: number
+  /** The board's broken group plus blocked items, one per lane. */
+  broken: number
+  /** Requests no rule could route. */
+  routing: number
+}
+
+/** The part of the snapshot the counts read. */
+export type StatusInput = Omit<BoardInput, 'showDismissed'> & { waiting: Waiting | null; showDismissed?: boolean }
+
+/** The status counts, from the one list and the board's own rules. */
+export function statusCounts(snap: StatusInput): StatusCounts {
+  const items = boardItems(snap)
+  const n = counts(items)
+  // A lane that both failed and is blocked counts once.
+  const lanes = new Set<string>()
+  for (const it of items) if (it.group === 'broken') lanes.add(it.laneId ? `id:${it.laneId}` : `name:${it.repo}:${it.name}`)
+  for (const it of attentionOf(snap.waiting, 'blocked')) {
+    const id = it.lane_id ?? snap.lanes.find((l) => l.name === it.lane && (!it.repo || l.repo === it.repo))?.id
+    lanes.add(id ? `id:${id}` : `name:${it.repo ?? ''}:${it.lane ?? it.title}`)
+  }
+  return {
+    running: n.working,
+    waiting: attentionCount(snap.waiting),
+    broken: lanes.size,
+    routing: attentionOf(snap.waiting, 'request').length,
+  }
+}
+
+/** The Decisions entry's badge title: the parts of its count. */
+export function inboxTitle(w: Waiting | null): string {
+  const d = attentionOf(w, 'decision').length
+  const r = attentionOf(w, 'request').length
+  return `${d} decision${d === 1 ? '' : 's'}, ${r} request${r === 1 ? '' : 's'} needing routing`
 }
