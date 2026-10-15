@@ -29,11 +29,6 @@
 .sidebar-top { display: grid; gap: var(--s-2); }
 .workspace { margin: 0; font-size: var(--t-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-name { color: var(--ink); }
-.workspace-btn {
-  background: none; border: 0; color: var(--muted); font: inherit; cursor: pointer;
-  margin: 0; padding: 0; text-align: inherit; width: 100%;
-}
-.workspace-btn:hover { color: var(--ink); }
 .search-trigger {
   display: grid; grid-template-columns: 1.5rem 1fr auto; align-items: center; gap: var(--s-2);
   padding: var(--s-1) var(--s-2); border-radius: var(--radius); border: 1px solid var(--control-border);

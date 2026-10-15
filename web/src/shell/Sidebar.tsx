@@ -40,10 +40,9 @@ export function WorkspaceSwitcher({ workspaces }: { workspaces: Status['workspac
   )
 }
 
-/** Detect platform for the search shortcut hint. */
+/** Detect platform for the search shortcut hint: Cmd on Apple platforms, Ctrl elsewhere. */
 function isMacOS(): boolean {
-  const [platform] = navigator.userAgentData?.brands ?? []
-  return platform?.includes('Mac') ?? /Mac/.test(navigator.userAgent)
+  return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 }
 
 /**

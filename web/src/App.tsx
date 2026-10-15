@@ -19,7 +19,7 @@ import { DaemonStatus } from './components/DaemonStatus'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
 import { InspectorFrame } from './inspector/Inspector'
-import { CommandPalette } from './palette/CommandPalette'
+import { CommandPalette, type PaletteHandle } from './palette/CommandPalette'
 import { WaitingOnYou } from './components/WaitingOnYou'
 import { StatusCounts } from './components/StatusCounts'
 import { statusCounts } from './state/attention'
@@ -37,8 +37,10 @@ export function App() {
   const hidden = useMemo(() => dismissedCount(snap.lanes, snap.runs), [snap.lanes, snap.runs])
   const [help, setHelp] = useState(false)
   const pending = useRef('')
-  const paletteRef = useRef(null)
+  const paletteRef = useRef<PaletteHandle>(null)
   const boardBroken = boardCounts(items).broken
+
+  useAttentionChrome(snap.waiting)
 
   useKeys(
     {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, forwardRef } from 'react'
+import { useCallback, useEffect, useMemo, useState, forwardRef, useImperativeHandle } from 'react'
 import { deskApi } from '../api/desk'
 import { topics as topicsApi } from '../api/client'
 import { usePaletteKey } from '../hooks'
@@ -18,7 +18,7 @@ export interface PaletteHandle {
  * opens, the rest comes from the live snapshot. Exposes `open` via ref so the sidebar can
  * trigger it.
  */
-export const CommandPalette = forwardRef<PaletteHandle, {}>(function CommandPalette(_props, ref) {
+export const CommandPalette = forwardRef<PaletteHandle>(function CommandPalette(_props, ref) {
   const snap = useSnapshot()
   const [open, setOpen] = useState(false)
   const [topics, setTopics] = useState<TopicView[]>([])
@@ -30,15 +30,7 @@ export const CommandPalette = forwardRef<PaletteHandle, {}>(function CommandPale
     setProblem('')
   }, [])
 
-  // Expose `open` via imperative handle.
-  useEffect(() => {
-    if (ref && typeof ref === 'function') {
-      ref({ open: () => setOpen(true) })
-    } else if (ref) {
-      ref.current = { open: () => setOpen(true) }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref])
+  useImperativeHandle(ref, () => ({ open: () => setOpen(true) }), [])
 
   usePaletteKey(useCallback(() => (open ? close() : setOpen(true)), [open, close]))
 
