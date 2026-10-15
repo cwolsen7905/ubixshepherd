@@ -99,7 +99,7 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
         {tab === 'conversation' && <Conversation source={source} refreshKey={feedLast} now={now} />}
         {tab === 'changes' && (
           <>
-            <LaneApprove laneId={lane.id} refreshKey={feedLast} />
+            {lane.state === 'open' && <LaneApprove laneId={lane.id} refreshKey={feedLast} />}
             <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={null} refreshKey={feedLast} now={now} />
           </>
         )}
