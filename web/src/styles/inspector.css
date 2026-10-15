@@ -1,8 +1,11 @@
 /* The inspector frame: split at 1440 and up, a drawer between, a bottom sheet below 760.
    The mode classes come from inspector/useMode.ts, so the widths live in one place. */
-.inspector-frame { display: flex; min-height: 0; }
-.inspector-page { flex: 1 1 auto; min-width: 0; }
-.inspector-frame.is-split .inspector-page { min-width: 40rem; }
+/* With nothing open (or a drawer or sheet, which are fixed) the wrappers add no box, so
+   the page lays out as if they were not there. Only the split pane needs a row. */
+.inspector-frame,
+.inspector-page { display: contents; }
+.inspector-frame.is-split { display: flex; min-height: 0; }
+.inspector-frame.is-split .inspector-page { display: block; flex: 1 1 auto; min-width: 40rem; }
 
 .inspector {
   background: var(--raised);

@@ -76,7 +76,7 @@ describe('open=', () => {
   })
 
   it('ignores a value it cannot read', () => {
-    for (const bad of ['decision', 'decision:', 'decision:0', 'decision:x', 'bogus:1', 'lane:1/', 'lane:-1']) {
+    for (const bad of ['decision', 'decision:', 'decision:0', 'decision:x', 'bogus:1', 'lane:1/', 'lane:-1', 'decision:99999999999999999999']) {
       expect(parse(`#/board?open=${bad}`)).toEqual({ page: 'board' })
     }
     expect(parseOpen(null)).toBeUndefined()

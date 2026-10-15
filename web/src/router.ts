@@ -41,7 +41,7 @@ export function parseOpen(v: string | null | undefined): Open | undefined {
   const m = /^([a-z]+):(\d+)(?:\/([a-z0-9-]+))?$/.exec(v ?? '')
   if (!m || !(OPEN_KINDS as readonly string[]).includes(m[1] as string)) return undefined
   const id = Number(m[2])
-  if (id <= 0) return undefined
+  if (!Number.isSafeInteger(id) || id <= 0) return undefined
   return { kind: m[1] as string, id, ...(m[3] ? { tab: m[3] } : {}) }
 }
 
