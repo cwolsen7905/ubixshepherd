@@ -57,7 +57,7 @@ describe('ContextComposer', () => {
   })
   it('sends unfiled, and says so, when the topics cannot be read', async () => {
     const user = userEvent.setup()
-    vi.mocked(topics.list).mockRejectedValue(new Error('down'))
+    vi.mocked(topics.list).mockResolvedValue({} as never) // a reply without a list is as unreadable as a refusal
     const turn = shown()
     await user.type(screen.getByRole('textbox'), 'hi{Enter}')
     expect(turn).toHaveBeenCalledWith(0, 'About feat/export-csv (lane 4):\n\nhi')
