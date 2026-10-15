@@ -249,3 +249,56 @@ func aliased(cols string) string {
 	}
 	return strings.Join(parts, ", ")
 }
+
+func (s *DB) SetArtifactIntent(ctx context.Context, id int64, intent, by string) error {
+	return s.artifactUpdate(ctx, id, `UPDATE artifacts SET intent = ?, intent_by = ?, updated = ? WHERE id = ?`, intent, by, now(), id)
+}
+
+func (s *DB) SetArtifactPinned(ctx context.Context, id int64, pinned bool) error {
+	p := 0
+	if pinned {
+		p = 1
+	}
+	return s.artifactUpdate(ctx, id, `UPDATE artifacts SET pinned = ?, updated = ? WHERE id = ?`, p, now(), id)
+}
+
+func (s *DB) SetArtifactState(ctx context.Context, id int64, state string, closing bool) error {
+	if closing {
+		return s.artifactUpdate(ctx, id, `UPDATE artifacts SET state = ?, closed = CASE WHEN closed = '' THEN ? ELSE closed END, updated = ? WHERE id = ?`,
+			state, now(), now(), id)
+	}
+	return s.artifactUpdate(ctx, id, `UPDATE artifacts SET state = ?, closed = '', updated = ? WHERE id = ?`, state, now(), id)
+}
+
+func (s *DB) MarkVersionSnapshotted(ctx context.Context, artifactID int64, sha string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE artifact_versions SET snapshotted = ? WHERE artifact_id = ? AND sha256 = ? AND snapshotted = ''`,
+		now(), artifactID, sha)
+	return err
+}
+
+func (s *DB) artifactUpdate(ctx context.Context, id int64, q string, args ...any) error {
+	res, err := s.db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *DB) SetArtifactTitle(ctx context.Context, id int64, title string) error {
+	return s.artifactUpdate(ctx, id, `UPDATE artifacts SET title = ?, updated = ? WHERE id = ?`, title, now(), id)
+}
+
+func (s *DB) RenameArtifact(ctx context.Context, id int64, path string) error {
+	a, err := s.Artifact(ctx, id)
+	if err != nil {
+		return err
+	}
+	if other, err := s.LaneArtifact(ctx, a.LaneID, path); err == nil && other.ID != id {
+		return fmt.Errorf("%w: lane already has an artifact at %s", store.ErrConflict, path)
+	}
+	return s.artifactUpdate(ctx, id, `UPDATE artifacts SET path = ?, kind = ?, updated = ? WHERE id = ?`,
+		path, store.ArtifactKindOf(path), now(), id)
+}

@@ -51,6 +51,9 @@ type Fold struct {
 	// ForgeFor, when set, lets import ask the forge whether a branch's merge request has
 	// merged (git alone cannot tell after a squash merge or a history rewrite).
 	ForgeFor func(remote string) (forge.Forge, error)
+	// ArtifactDir is where artifact snapshots are kept (~/.shepherd/artifacts); empty
+	// takes none, and a close then keeps nothing of a lane's artifacts.
+	ArtifactDir string
 
 	cfg   atomic.Pointer[config.Config]
 	mu    sync.Mutex
@@ -191,6 +194,8 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if note := f.ensureHook(ctx, repo.Path, wt); note != "" {
 		out.Notes = append(out.Notes, note)
 	}
+	// Silent here: adding the repo announced it, and a note would repeat on every open.
+	f.ensureExclude(ctx, repo, false)
 	out.Lane, err = f.Store.Lane(ctx, lane.ID)
 	return out, err
 }
@@ -368,13 +373,28 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	res := CloseResult{}
 	_, statErr := os.Stat(lane.Worktree)
 	present := statErr == nil
+	// Snapshot first: whatever the close does next, the artifacts are copied out.
+	if present {
+		if err := f.SnapshotLane(ctx, lane.ID); err != nil {
+			res.Notes = append(res.Notes, "artifact snapshot: "+err.Error())
+		}
+	}
+	letGo := false
 	if present {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
 			return res, err
 		}
 		if dirty != "" && !force {
-			return res, refuse("%s has uncommitted changes:\n%s\ncommit or discard them, or close with --force (which discards them)", lane.Worktree, firstLines(dirty, 10))
+			ignorable, blocking, err := f.closeDirt(ctx, lane)
+			if err != nil {
+				return res, err
+			}
+			if len(blocking) > 0 {
+				return res, refuse("%s has uncommitted changes:\n%s\ncommit or discard them, or close with --force (which discards them)", lane.Worktree,
+					f.blockingWords(ctx, lane, blocking))
+			}
+			letGo = len(ignorable) > 0
 		}
 	}
 
@@ -383,12 +403,9 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 		return res, refuse("branch %s is not in %s as far as git can tell. A squash merge looks like this too: once the MR is merged, close with --force (the branch is kept)", lane.Branch, where)
 	}
 
+	plan := f.planArtifacts(ctx, lane, repo.Path)
 	if present {
-		args := []string{"worktree", "remove", lane.Worktree}
-		if force {
-			args = []string{"worktree", "remove", "--force", lane.Worktree}
-		}
-		if _, err := git.Run(ctx, repo.Path, args...); err != nil {
+		if err := removeWorktree(ctx, repo.Path, lane.Worktree, force || letGo); err != nil {
 			return res, err
 		}
 	} else {
@@ -410,6 +427,7 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneClosed); err != nil {
 		return res, err
 	}
+	f.settleArtifacts(ctx, plan)
 	res.Lane, err = f.Store.Lane(ctx, lane.ID)
 	return res, err
 }
@@ -451,18 +469,32 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 			return res, refuse("branch %s has commits beyond its merged request (head %s): work the merge does not cover", lane.Branch, shortSHA(head))
 		}
 	}
+	plan := artifactPlan{}
 	if _, err := os.Stat(lane.Worktree); err == nil {
+		if err := f.SnapshotLane(ctx, lane.ID); err != nil {
+			res.Notes = append(res.Notes, "artifact snapshot: "+err.Error())
+		}
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
 			return res, err
 		}
+		letGo := false
 		if dirty != "" {
-			return res, refuse("%s has uncommitted changes:\n%s", lane.Worktree, firstLines(dirty, 10))
+			ignorable, blocking, err := f.closeDirt(ctx, lane)
+			if err != nil {
+				return res, err
+			}
+			if len(blocking) > 0 {
+				return res, refuse("lane %s merged, but %s has uncommitted changes:\n%s", lane.Name, lane.Worktree, f.blockingWords(ctx, lane, blocking))
+			}
+			letGo = len(ignorable) > 0
 		}
-		if _, err := git.Run(ctx, repo.Path, "worktree", "remove", lane.Worktree); err != nil {
+		plan = f.planArtifacts(ctx, lane, repo.Path)
+		if err := removeWorktree(ctx, repo.Path, lane.Worktree, letGo); err != nil {
 			return res, err
 		}
 	} else {
+		plan = f.planArtifacts(ctx, lane, repo.Path)
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
 	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
@@ -475,6 +507,7 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneClosed); err != nil {
 		return res, err
 	}
+	f.settleArtifacts(ctx, plan)
 	res.Lane, err = f.Store.Lane(ctx, lane.ID)
 	return res, err
 }

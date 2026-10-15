@@ -211,6 +211,12 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathRuns+"/{id}/artifacts", own, s.withRunner(s.declareArtifact))
 	handle("GET "+api.PathArtifacts, desk|web, s.listArtifacts)
 	handle("GET "+api.PathArtifacts+"/{id}", desk|web, s.getArtifact)
+	handle("GET "+api.PathArtifacts+"/{id}/content", desk|web, s.artifactContent)
+	// The person's own calls: a change of intent, a pin, a move into the Shepherd
+	// directory, a discard, and retention. Never the desk's or an agent's.
+	handle("PATCH "+api.PathArtifacts+"/{id}", web, s.patchArtifact)
+	handle("POST "+api.PathArtifacts+"/{id}/discard", web, s.discardArtifact)
+	handle("POST "+api.PathArtifacts+"/gc", web, s.artifactGC)
 	handle("POST "+api.PathRuns+"/{id}/requests", own, s.withRunner(s.addRequest))
 	handle("GET "+api.PathDecisions, desk, s.listDecisions)
 	// The desk may answer only in a turn the person started: answerDecision checks.

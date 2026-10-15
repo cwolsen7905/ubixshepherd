@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -107,4 +108,60 @@ func Worktrees(ctx context.Context, dir string) ([]Worktree, error) {
 		return nil, errors.New("git worktree list returned nothing")
 	}
 	return wts, nil
+}
+
+// EnsureExclude adds line to the repo's info/exclude, which lives in the git common
+// directory and so covers every worktree of the repo without being committed or pushed.
+// It reports whether it wrote anything (a line already there is left alone) and the
+// file's path.
+func EnsureExclude(ctx context.Context, repo, line string) (added bool, file string, err error) {
+	common, err := Run(ctx, repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err != nil {
+		return false, "", err
+	}
+	file = filepath.Join(common, "info", "exclude")
+	cur, err := os.ReadFile(file)
+	if err != nil && !os.IsNotExist(err) {
+		return false, file, err
+	}
+	for _, l := range strings.Split(string(cur), "\n") {
+		if strings.TrimSpace(l) == line {
+			return false, file, nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+		return false, file, err
+	}
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, file, err
+	}
+	defer f.Close()
+	prefix := ""
+	if len(cur) > 0 && !strings.HasSuffix(string(cur), "\n") {
+		prefix = "\n"
+	}
+	_, err = f.WriteString(prefix + line + "\n")
+	return err == nil, file, err
+}
+
+// DirtyPaths parses `git status --porcelain` output into the changed paths with their
+// two-letter status codes ("??" is untracked). A rename lists its new path.
+func DirtyPaths(porcelain string) map[string]string {
+	out := map[string]string{}
+	for _, l := range strings.Split(porcelain, "\n") {
+		if len(l) < 4 {
+			continue
+		}
+		// Run trims its output, which takes the first line's leading space: " M a" is "M a".
+		code, p := l[:2], l[3:]
+		if l[1] == ' ' && l[2] != ' ' {
+			code, p = " "+l[:1], l[2:]
+		}
+		if i := strings.Index(p, " -> "); i >= 0 {
+			p = p[i+4:]
+		}
+		out[strings.Trim(p, `"`)] = code
+	}
+	return out
 }

@@ -3,6 +3,7 @@ package fold
 import (
 	"context"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -110,6 +111,19 @@ func (f *Fold) Artifacts(ctx context.Context, laneID int64) (LaneArtifacts, erro
 	add(d.Untracked, "untracked")
 	add(d.Uncommitted, "uncommitted")
 	add(d.Committed, "committed")
+	// The Shepherd directory is excluded from git, so the diff never lists it: read it
+	// from disk when the repo's globs take it.
+	var files []DiffFileInfo
+	root := filepath.Join(lane.Worktree, filepath.FromSlash(strings.TrimSuffix(store.ArtifactDir, "/")))
+	filepath.WalkDir(root, func(p string, de fs.DirEntry, err error) error {
+		if err == nil && de.Type().IsRegular() {
+			if rel, err := filepath.Rel(lane.Worktree, p); err == nil {
+				files = append(files, DiffFileInfo{Path: filepath.ToSlash(rel), Status: "A"})
+			}
+		}
+		return nil
+	})
+	add(files, "untracked")
 	return out, nil
 }
 

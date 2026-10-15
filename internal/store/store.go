@@ -1044,6 +1044,20 @@ type Store interface {
 	LinkArtifact(ctx context.Context, l ArtifactLink) error
 	// DecisionArtifacts returns the artifacts linked to a decision.
 	DecisionArtifacts(ctx context.Context, decisionID int64) ([]Artifact, error)
+	// SetArtifactIntent sets an intent and who chose it, unconditionally.
+	SetArtifactIntent(ctx context.Context, id int64, intent, by string) error
+	// SetArtifactPinned pins or unpins an artifact's snapshots against retention.
+	SetArtifactPinned(ctx context.Context, id int64, pinned bool) error
+	// SetArtifactState sets the state; closing stamps Closed when it is not set yet,
+	// and a non-closing state clears it.
+	SetArtifactState(ctx context.Context, id int64, state string, closing bool) error
+	// SetArtifactTitle sets the title unconditionally.
+	SetArtifactTitle(ctx context.Context, id int64, title string) error
+	// RenameArtifact changes an artifact's path, as when a file moves into the Shepherd
+	// directory; ErrConflict when the lane already has an artifact there.
+	RenameArtifact(ctx context.Context, id int64, path string) error
+	// MarkVersionSnapshotted says a copy of the content is stored.
+	MarkVersionSnapshotted(ctx context.Context, artifactID int64, sha string) error
 
 	// LaneForge returns a zero value (with LaneID set) for a lane the forge never saw.
 	LaneForge(ctx context.Context, laneID int64) (LaneForge, error)

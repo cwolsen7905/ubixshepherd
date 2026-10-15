@@ -1,14 +1,17 @@
 package daemon
 
 import (
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -71,5 +74,79 @@ func TestWorkerDeclaresArtifactsAndDecisionLinksThem(t *testing.T) {
 	}
 	if code := call(t, ts, op, "GET", api.PathArtifacts+"?lane_id=x", nil, nil); code != http.StatusBadRequest {
 		t.Errorf("bad filter: %d", code)
+	}
+}
+
+// A declaration copies the file at once; its snapshot is served redacted with the
+// content headers; changing intent, pinning, discarding and retention are the person's.
+func TestArtifactSnapshotsAndPersonsEdits(t *testing.T) {
+	s, ts := newServer(t)
+	a, _, la, _ := twoRuns(t, s)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	s.Fold.ArtifactDir = filepath.Join(t.TempDir(), "artifacts")
+	os.MkdirAll(la.Worktree, 0o755)
+	os.WriteFile(filepath.Join(la.Worktree, "plan.md"), []byte("# plan\napi_key=abcd1234efgh\n"), 0o644)
+	worker, _ := s.MintWorker(a.ID)
+	desk, _ := s.MintDesk(false, "t")
+	op := s.Token
+
+	var got api.ArtifactDeclared
+	if code := call(t, ts, worker, "POST", api.PathRunArtifacts(a.ID), api.ArtifactDeclare{Path: "plan.md", Intent: "keep"}, &got); code != http.StatusOK {
+		t.Fatalf("declare: %d", code)
+	}
+	id := got.Artifact.ID
+	var one store.Artifact
+	call(t, ts, op, "GET", api.PathArtifact(id), nil, &one)
+	if len(one.Versions) != 1 || one.Versions[0].Snapshotted == nil {
+		t.Fatalf("versions = %+v", one.Versions)
+	}
+
+	req, _ := http.NewRequest("GET", ts.URL+api.PathArtifact(id)+"/content?version="+one.Versions[0].SHA256, nil)
+	req.Header.Set("Authorization", "Bearer "+desk)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || strings.Contains(string(body), "abcd1234efgh") || !strings.Contains(string(body), "# plan") ||
+		resp.Header.Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") {
+		t.Errorf("content: %d %q %v", resp.StatusCode, body, resp.Header)
+	}
+
+	// The desk and agents cannot make the person's calls.
+	pin := map[string]any{"pinned": true}
+	for _, tok := range []string{desk, worker} {
+		if code := call(t, ts, tok, "PATCH", api.PathArtifact(id), pin, nil); code != http.StatusForbidden {
+			t.Errorf("patch with a scoped token: %d", code)
+		}
+		if code := call(t, ts, tok, "POST", api.PathArtifact(id)+"/discard", nil, nil); code != http.StatusForbidden {
+			t.Errorf("discard with a scoped token: %d", code)
+		}
+		if code := call(t, ts, tok, "POST", api.PathArtifacts+"/gc", map[string]any{}, nil); code != http.StatusForbidden {
+			t.Errorf("gc with a scoped token: %d", code)
+		}
+	}
+	var patched store.Artifact
+	if code := call(t, ts, op, "PATCH", api.PathArtifact(id), map[string]any{"pinned": true, "intent": "commit"}, &patched); code != http.StatusOK ||
+		!patched.Pinned || patched.Intent != store.ArtifactCommit || patched.IntentBy != store.IntentByPerson {
+		t.Fatalf("patch: %d %+v", code, patched)
+	}
+	if code := call(t, ts, op, "PATCH", api.PathArtifact(id), map[string]any{"intent": "bogus"}, nil); code != http.StatusConflict {
+		t.Errorf("bad intent: %d", code)
+	}
+	var res fold.GCResult
+	if code := call(t, ts, op, "POST", api.PathArtifacts+"/gc", map[string]any{"dry_run": true}, &res); code != http.StatusOK || res.KeptByte == 0 {
+		t.Errorf("gc: %d %+v", code, res)
+	}
+	var gone store.Artifact
+	if code := call(t, ts, op, "POST", api.PathArtifact(id)+"/discard", nil, &gone); code != http.StatusOK || gone.State != store.ArtifactDiscarded {
+		t.Fatalf("discard: %d %+v", code, gone)
+	}
+	if _, err := os.Stat(filepath.Join(la.Worktree, "plan.md")); !os.IsNotExist(err) {
+		t.Error("file left after discard")
+	}
+	if code := call(t, ts, op, "GET", api.PathArtifact(id)+"/content", nil, nil); code != http.StatusNotFound {
+		t.Errorf("content after discard: %d", code)
 	}
 }
