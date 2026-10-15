@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type KeyboardEvent } from 'react'
 import { LaneArtifactsPanel } from '../artifacts'
 import { Changes } from '../components/Changes'
 import { LaneApprove } from '../components/LaneApprove'
@@ -37,6 +37,17 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
 
   const select = (t: LaneTab) => go(withOpen(window.location.hash, { kind: 'lane', id: open.id, ...(t === 'overview' ? {} : { tab: t }) }))
 
+  // Arrows, Home and End move between tabs (the WAI-ARIA tabs pattern); only the selected one is tabbable.
+  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const n = LANE_TABS.length
+    const to = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1
+    if (to < 0) return
+    e.preventDefault()
+    const t = LANE_TABS[to] as LaneTab
+    select(t)
+    document.getElementById(`lane-inspector-tab-${t}`)?.focus()
+  }
+
   if (!lane) {
     return (
       <div className="inspector-body">
@@ -53,7 +64,7 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
         <a href={href.lane(lane.id)}>Open as page</a>
       </p>
       <div className="lane-tabs" role="tablist" aria-label="Lane views">
-        {LANE_TABS.map((t) => (
+        {LANE_TABS.map((t, i) => (
           <button
             key={t}
             type="button"
@@ -62,6 +73,8 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
             className="lane-tab"
             aria-selected={tab === t}
             aria-controls="lane-inspector-panel"
+            tabIndex={tab === t ? 0 : -1}
+            onKeyDown={(e) => onTabKey(e, i)}
             onClick={() => select(t)}
           >
             {TAB_NAMES[t]}
