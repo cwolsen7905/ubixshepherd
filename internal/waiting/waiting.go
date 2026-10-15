@@ -122,6 +122,30 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 			out.Items = append(out.Items, it)
 			out.Counts.Ship++
 		}
+		if lf, _ := st.LaneForge(ctx, l.ID); lf.MR != 0 && (strings.EqualFold(lf.MRState, "merged") || lf.MergeSHA != "") {
+			files, err := st.ListArtifacts(ctx, store.ArtifactFilter{LaneID: l.ID, State: store.ArtifactLive})
+			if err == nil {
+				var undecided []store.Artifact
+				for _, a := range files {
+					if a.Intent == store.ArtifactUndecided && !strings.HasPrefix(a.Path, store.ArtifactDir) {
+						undecided = append(undecided, a)
+					}
+				}
+				if len(undecided) > 0 {
+					noun := "files"
+					if len(undecided) == 1 {
+						noun = "file"
+					}
+					out.Items = append(out.Items, api.WaitingItem{
+						Kind: api.WaitingArtifact, Action: "open", Repo: rp.Name, Lane: l.Name, LaneID: l.ID, MR: lf.MR,
+						Title:  fmt.Sprintf("lane merged, %d %s to keep or discard", len(undecided), noun),
+						Detail: fmt.Sprintf("lane %s merged but stays open for %d undecided %s", l.Name, len(undecided), noun),
+						Since:  firstTime(lf.MRUpdated, l.Created),
+					})
+					out.Counts.Artifacts++
+				}
+			}
+		}
 	}
 
 	items, err := st.NextItems(ctx)
