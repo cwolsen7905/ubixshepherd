@@ -1,0 +1,7 @@
+/* The Board page: the view switch in the page head, and the fold for quiet projects. */
+.board-view { display: inline-flex; gap: var(--s-1); }
+.quiet-projects { padding-left: 0; }
+.quiet-projects .section-h { margin: 0; }
+.quiet-list { list-style: none; margin: var(--s-1) 0 0; padding: 0 var(--pad) 0 var(--gutter); }
+.quiet-list li { display: flex; gap: var(--s-3); align-items: baseline; padding: var(--s-1) 0; font-size: var(--t-sm); }
+.quiet-list a { font-weight: 600; }
