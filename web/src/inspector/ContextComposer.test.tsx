@@ -63,6 +63,12 @@ describe('ContextComposer', () => {
     expect(turn).toHaveBeenCalledWith(0, 'hi', undefined, undefined, { kind: 'lane', ids: [4], label: 'feat/export-csv' })
     expect(await screen.findByText(/not filed under one/)).toBeInTheDocument()
   })
+  it('falls back to the reference line in the text when the about has no ids', async () => {
+    const user = userEvent.setup()
+    const turn = shown(undefined, { kind: 'lane', ids: [], label: 'feat/export-csv' })
+    await user.type(screen.getByRole('textbox'), 'hi{Enter}')
+    expect(turn).toHaveBeenCalledWith(0, 'About feat/export-csv (lane ):\n\nhi')
+  })
   it('does not send blank words', () => {
     shown()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
