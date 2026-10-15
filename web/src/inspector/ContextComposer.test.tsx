@@ -4,7 +4,7 @@ import { topics } from '../api/client'
 import type { TopicView } from '../model/topic'
 import { LiveProvider } from '../state/context'
 import { DeskThread } from '../state/desk'
-import { withReference, topicFor, type About } from '../state/deskAbout'
+import { isAboutKind, withReference, topicFor, type About } from '../state/deskAbout'
 import type { Api, Clock } from '../state/live'
 import { Live } from '../state/live'
 import { fakeDeskApi, spend, status } from '../test/fixtures'
@@ -73,6 +73,11 @@ describe('deskAbout', () => {
   it('writes the reference line', () => {
     expect(withReference({ kind: 'decision', ids: [5] }, ' go ')).toBe('About decision 5:\n\ngo')
   })
+  it('knows only its own kinds', () => {
+    expect(isAboutKind('lane')).toBe(true)
+    expect(isAboutKind('constructor')).toBe(false)
+    expect(isAboutKind('__proto__')).toBe(false)
+  })
   it('picks the open topic that links the entity', () => {
     const l = { by: 'desk' as const, time: '' }
     const ts = [
@@ -83,5 +88,7 @@ describe('deskAbout', () => {
     expect(topicFor({ kind: 'lane', ids: [4] }, ts)).toBe(3)
     expect(topicFor({ kind: 'run', ids: [4] }, ts)).toBeUndefined()
     expect(topicFor({ kind: 'artifact', ids: [4] }, ts)).toBeUndefined()
+    expect(topicFor({ kind: 'topic', ids: [2] }, ts)).toBe(2)
+    expect(topicFor({ kind: 'topic', ids: [1] }, ts)).toBeUndefined()
   })
 })

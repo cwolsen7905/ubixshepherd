@@ -6,6 +6,7 @@ import { useMode, type Mode } from './useMode'
 import { LaneInspector } from './lane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
+import { useSnapshot } from '../state/context'
 import '../styles/inspector.css'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -37,6 +38,14 @@ function InspectorBody({ open }: { open: Open }) {
     default:
       return <Placeholder open={open} />
   }
+}
+
+/** The context composer, labelled with what the person knows the entity by (a lane's branch). */
+function InspectorFoot({ open }: { open: Open }) {
+  const snap = useSnapshot()
+  if (!isAboutKind(open.kind)) return null
+  const label = open.kind === 'lane' ? snap.lanes.find((l) => l.id === open.id)?.branch : undefined
+  return <ContextComposer about={{ kind: open.kind, ids: [open.id], ...(label ? { label } : {}) }} />
 }
 
 /**
@@ -141,7 +150,7 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
               </button>
             </header>
             <InspectorBody open={open} />
-            {isAboutKind(open.kind) && <ContextComposer about={{ kind: open.kind, ids: [open.id] }} />}
+            <InspectorFoot open={open} />
           </aside>
         </>
       )}

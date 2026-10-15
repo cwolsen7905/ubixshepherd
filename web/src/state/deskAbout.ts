@@ -16,7 +16,7 @@ export interface About {
 
 /** True for an inspector kind the composer can speak about. */
 export function isAboutKind(k: string): k is AboutKind {
-  return k in WORDS
+  return Object.prototype.hasOwnProperty.call(WORDS, k)
 }
 
 const WORDS: Record<AboutKind, string> = {
@@ -54,7 +54,7 @@ export function linkKind(k: AboutKind): TopicKind | null {
  * does, and the desk files it as it does any turn. The first match in the daemon's order.
  */
 export function topicFor(a: About, topics: TopicView[]): number | undefined {
-  if (a.kind === 'topic') return a.ids[0]
+  if (a.kind === 'topic') return topics.find((t) => t.status === 'open' && t.id === a.ids[0])?.id
   const kind = linkKind(a.kind)
   if (!kind) return undefined
   const refs = new Set(a.ids.map(String))
