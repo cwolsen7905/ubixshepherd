@@ -3,7 +3,7 @@ import { daemonInfo } from '../api/client'
 import type { NextList, SpendToday, Status, StatusDetail } from '../api/types'
 import { clockTime, since, usd } from '../format'
 import {
-  BACKLOG_MARKS, BACKLOG_NAMES, RAIL_ROWS, backlogCounts, backlogText, readRailOpen, writeRailOpen, type BacklogItem,
+  BACKLOG_MARKS, BACKLOG_NAMES, RAIL_ROWS, backlogCounts, backlogText, backlogWithAttention, readRailOpen, writeRailOpen, type BacklogItem,
 } from '../model/backlog'
 import { budgetUse } from '../model/projects'
 import {
@@ -11,6 +11,8 @@ import {
 } from '../model/next'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { href } from '../router'
+import { useAttention } from '../state/context'
+import { ErrorBoundary } from './ErrorBoundary'
 import { Glyph } from './Glyph'
 import { MrBadge } from './MrBadge'
 import '../styles/next.css'
@@ -56,9 +58,15 @@ function useDetail(load: () => Promise<Status>) {
  * The backlog beside the thread: counts as its header, then the items most urgent first.
  * A row's name leads to its page; "in thread" jumps to where the work last spoke.
  */
-export function Backlog({
-  items, now, spend, onJump, onStart, loadStatus = daemonInfo.status, load = loadNext,
-}: {
+export function Backlog(props: BacklogProps) {
+  return (
+    <ErrorBoundary region="The backlog">
+      <BacklogView {...props} />
+    </ErrorBoundary>
+  )
+}
+
+interface BacklogProps {
   items: BacklogItem[]
   now: number
   spend: SpendToday | null
@@ -67,7 +75,12 @@ export function Backlog({
   onStart?: (text: string) => void
   loadStatus?: () => Promise<Status>
   load?: LoadNext
-}) {
+}
+
+function BacklogView({
+  items, now, spend, onJump, onStart, loadStatus = daemonInfo.status, load = loadNext,
+}: BacklogProps) {
+  const attention = useAttention()
   const [open, setOpen] = useState(startsOpen)
   const [all, setAll] = useState(false)
   const [view, setView] = useState<RailView>(() => readRailView(window.localStorage))
@@ -75,7 +88,7 @@ export function Backlog({
   const detail = useDetail(loadStatus)
   const holds = detail?.quota_holds ?? []
   const forge = detail?.forge
-  const text = backlogText(backlogCounts(items))
+  const text = backlogText(backlogWithAttention(backlogCounts(items), attention))
   const shown = all ? items : items.slice(0, RAIL_ROWS)
   const use = spend && spend.budget > 0 ? budgetUse({ amount: spend.budget, spent: spend.usd, cap: '', period: 'day', since: spend.day }) : null
 
