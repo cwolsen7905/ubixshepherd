@@ -232,8 +232,56 @@ const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
 ]
 
 const decisions = () => NODEC ? [] : BUSY ? busyNow().decisions : [
-  { id: 5, run_id: 17, question: 'The CSV export can stream rows or buffer the whole file first. Which should it do?', options: ['Stream', 'Buffer'], recommendation: 'Stream', why: 'Orders tables reach a million rows; buffering would hold them all in memory. Streaming needs a chunked response, which the gateway already allows.', state: 'open', agent: 'claude', lane: 'feat/export-csv', repo: 'acme-web', created: ago(8) },
-  { id: 4, run_id: 15, question: 'Should session tokens live server side or in a signed cookie?', options: ['Server side, in the store', 'Signed cookie'], recommendation: 'Server side, in the store', why: 'Server-side sessions can be revoked at once.', state: 'answered', answer: 'Server side, in the store', answered: ago(170), agent: 'claude', lane: 'feat/login-sessions', repo: 'acme-api', created: ago(200) },
+  {
+    id: 5, run_id: 17, question: 'The CSV export can stream rows or buffer the whole file first. Which should it do?',
+    options: ['Stream', 'Buffer'], recommendation: 'Stream',
+    why: 'Orders tables reach a million rows; buffering would hold them all in memory.',
+    body: `The export needs to handle three concerns: **memory usage**, **quoting rules**, and **backpressure**.
+
+### Current state
+
+| File | Lines | Notes |
+|---|---|---|
+| web/orders/table.tsx | 340 | Renders the orders grid, already paginated |
+| web/orders/export.ts | 82 | Stub that returns an empty blob |
+| web/orders/types.ts | 45 | `Order` interface, shared |
+
+### Options
+
+\`\`\`
+Option      Memory   UX        Complexity
+─────────────────────────────────────────────
+Stream      O(chunk)  instant   medium
+Buffer      O(n)      on done   low
+Paginated   O(page)   stepwise  high
+\`\`\`
+
+### Recommendation: Stream
+
+1. Chunk size: 64 KB (configurable, default in `web/orders/export.ts`).
+2. Headers: `Content-Disposition: attachment; filename=orders.csv`.
+3. Quoting: RFC 4180 — double-quote fields containing commas, quotes, or newlines.
+4. Backpressure: the response writer already pauses the read loop when the buffer fills.
+
+### Why not buffer?
+
+\`\`\`go
+// Buffering would allocate:
+//   len(orders) * avg(200 bytes) ≈ 200 MB for 1M rows
+// Stream needs: 64 KB + overhead ≈ 0.1 MB
+\`\`\`
+
+### Risks
+
+- [ ] Existing tests for \`export.ts\` expect a synchronous result.
+- [ ] The gateway must support chunked responses (confirmed: it does).
+- [ ] Large exports may time out the browser tab — add a progress indicator.`,
+    state: 'open', agent: 'claude', lane: 'feat/export-csv', repo: 'acme-web', created: ago(8) },
+  {
+    id: 4, run_id: 15, question: 'Should session tokens live server side or in a signed cookie?',
+    options: ['Server side, in the store', 'Signed cookie'], recommendation: 'Server side, in the store',
+    why: 'Server-side sessions can be revoked at once.', body: '',
+    state: 'answered', answer: 'Server side, in the store', answered: ago(170), agent: 'claude', lane: 'feat/login-sessions', repo: 'acme-api', created: ago(200) },
 ]
 const requests = () => NODEC ? [] : BUSY ? busyNow().requests : [
   { id: 3, from_run: 18, kind: 'question', state: 'needs_routing', message: 'Which lane owns the shared retry helper in internal/retry?', depth: 0, from_agent: 'opencode', from_lane: 'refactor/queue-worker', repo: 'acme-api', created: ago(5), updated: ago(5) },
@@ -373,7 +421,7 @@ function laneDiff(id, file) {
       f('internal/auth/old_cookie.go', 'deleted', 0, 58),
     ],
     uncommitted: [f('internal/auth/store.go', 'modified', 9, 3)],
-    untracked: [f('scratch/notes.txt', 'untracked', 0, 0, { size: 412, in_scope: false }), f('internal/auth/fixture.bin', 'untracked', 0, 0, { binary: true, size: 20480 })],
+    untracked: [f('scratch/notes.txt', 'untracked', 0, 0, { size: 412, in_scope: false }), f('docs/plans/export-csv.md', 'untracked', 0, 0, { size: 2800, in_scope: false })],
     out_of_scope: 2,
   }
   if (!file) return base
@@ -456,6 +504,10 @@ function nextRoute(req, res, u, p) {
   return true
 }
 
+// Route tracking: log every /v1/ path the client calls so we catch missing stubs.
+const missingRoutes = new Set()
+function track(p) { missingRoutes.add(p) }
+
 http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x'), p = u.pathname
   if (nextRoute(req, res, u, p)) return
@@ -514,7 +566,219 @@ http.createServer((req, res) => {
       lanes: [...new Map(all.map((r) => [r.lane_id, { id: r.lane_id, repo: r.repo, name: r.lane }])).values()],
     })
   }
-  if (p.startsWith('/v1/')) return json(res, {})
+
+  // GET /v1/waiting: everything that waits on the person, with a version that moves.
+  if (p === '/v1/waiting') {
+    const version = 3
+    return json(res, { version, count: 4, counts: { decisions: 1, mrs: 1, ship: 0, next: 0, questions: 1, blocked: 1 }, items: [
+      { kind: 'decision', action: 'answer', repo: 'acme-web', lane: 'feat/export-csv', lane_id: 4, decision_id: 5, title: 'CSV export: stream or buffer?', detail: 'run 17', since: ago(8) },
+      { kind: 'mr', action: 'approve', repo: 'acme-api', lane: 'feat/login-sessions', lane_id: 1, mr: 41, title: '!41 pipeline passed', detail: 'waits for merge', since: ago(35) },
+      { kind: 'question', action: 'reply', repo: 'acme-api', title: 'Front desk: how is the login MR doing?', detail: 'turn 6', since: ago(4) },
+      { kind: 'blocked', action: 'review', repo: 'acme-api', lane: 'fix/cache-invalidation', lane_id: 2, title: 'Pipeline failed !42', detail: 'agent continued once', since: ago(14) },
+    ]})
+  }
+
+  // GET /v1/questions: front desk questions to the person.
+  if (p === '/v1/questions') {
+    const s = u.searchParams.get('state')
+    const qs = [
+      { id: 1, workspace_id: 1, turn: 6, text: 'How is the login MR doing?', state: 'answered', answered_turn: 10, created: ago(42) },
+      { id: 2, workspace_id: 1, turn: 11, text: 'Should we bump the Go minor version in acme-infra?', state: s === 'answered' ? 'answered' : 'open', created: ago(2) },
+    ]
+    return json(res, s === 'answered' ? qs.filter((q) => q.state === 'answered') : qs.filter((q) => q.state === 'open' || !s))
+  }
+
+  // GET /v1/topics: conversation topics.
+  if (p === '/v1/topics' || p.startsWith('/v1/topics?')) {
+    return json(res, { topics: [
+      { id: 1, title: 'CSV export', status: 'open', summary: 'feat/export-csv', source: 'desk', created: ago(110), updated: ago(8), activity: ago(8), waits: 1, settled: false, links: [
+        { kind: 'lane', ref: 'feat/export-csv', by: 'desk', state: 'open', time: ago(110) },
+        { kind: 'decision', ref: '5', by: 'desk', state: 'open', time: ago(8) },
+        { kind: 'run', ref: '17', by: 'desk', state: 'running', time: ago(9) },
+      ]},
+      { id: 2, title: 'Login sessions', status: 'open', summary: 'feat/login-sessions', source: 'desk', created: ago(420), updated: ago(3), activity: ago(3), waits: 1, settled: false, links: [
+        { kind: 'lane', ref: 'feat/login-sessions', by: 'desk', state: 'open', time: ago(420) },
+        { kind: 'decision', ref: '4', by: 'desk', state: 'answered', time: ago(200) },
+        { kind: 'turn', ref: '6', by: 'desk', time: ago(4) },
+      ]},
+      { id: 3, title: 'Cache invalidation', status: 'cleared', summary: 'fix/cache-invalidation', source: 'desk', created: ago(260), updated: ago(14), activity: ago(14), waits: 0, settled: true, links: [
+        { kind: 'lane', ref: 'fix/cache-invalidation', by: 'desk', state: 'open', time: ago(260) },
+        { kind: 'run', ref: '16', by: 'desk', state: 'succeeded', time: ago(26) },
+      ]},
+    ]})
+  }
+
+  // PATCH /v1/topics/{id}: update a topic.
+  if ((m = p.match(/^\/v1\/topics\/(\d+)$/))) {
+    track('/v1/topics/{id}')
+    return json(res, { id: +m[1], title: 'updated', status: 'open', source: 'person', created: ago(100), updated: new Date().toISOString(), activity: new Date().toISOString(), waits: 0, links: [] })
+  }
+
+  // GET /v1/keep: keep-going status.
+  if (p === '/v1/keep') {
+    const day = busyNow()
+    const flying = day.runs.find((r) => r.state === 'running')
+    return json(res, { enabled: true, run: flying?.id, lane: flying?.lane })
+  }
+
+  // POST /v1/desk/turn: send a front desk turn.
+  if (p === '/v1/desk/turn') {
+    track('/v1/desk/turn')
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      try {
+        const b = JSON.parse(body)
+        return json(res, { workspace_id: b.workspace_id || 1, turn: 200, ahead: 0 })
+      } catch {
+        return json(res, { workspace_id: 1, turn: 200, ahead: 0 })
+      }
+    })
+    return true
+  }
+
+  // POST /v1/runs/{id}/dismiss: dismiss a failed run from the board.
+  if ((m = p.match(/^\/v1\/runs\/(\d+)\/dismiss$/))) {
+    track('/v1/runs/{id}/dismiss')
+    return json(res, { id: +m[1], dismissed: new Date().toISOString() })
+  }
+
+  // POST /v1/runs/{id}/undismiss: restore a dismissed run.
+  if ((m = p.match(/^\/v1\/runs\/(\d+)\/undismiss$/))) {
+    track('/v1/runs/{id}/undismiss')
+    return json(res, { id: +m[1], dismissed: undefined })
+  }
+
+  // POST /v1/decisions/{id}/answer: answer a decision.
+  if ((m = p.match(/^\/v1\/decisions\/(\d+)\/answer$/))) {
+    track('/v1/decisions/{id}/answer')
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      try {
+        const b = JSON.parse(body)
+        return json(res, { id: +m[1], answer: b.answer, state: 'answered', answered: new Date().toISOString() })
+      } catch {
+        return json(res, { id: +m[1], state: 'answered', answered: new Date().toISOString() })
+      }
+    })
+    return true
+  }
+
+  // POST /v1/lanes/{id}/close: close a lane.
+  if ((m = p.match(/^\/v1\/lanes\/(\d+)\/close$/))) {
+    track('/v1/lanes/{id}/close')
+    return json(res, { lane: { id: +m[1], name: 'closed-lane' }, branch_deleted: false, notes: ['lane closed'] })
+  }
+
+  // POST /v1/lanes/{id}/approve: approve a lane's MR.
+  if ((m = p.match(/^\/v1\/lanes\/(\d+)\/approve$/))) {
+    track('/v1/lanes/{id}/approve')
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      const b = body ? JSON.parse(body) : {}
+      return json(res, { supported: true, approved: true, approved_by: ['shots'], sha: b.sha || 'abc123', retried: false })
+    })
+    return true
+  }
+
+  // POST /v1/lanes/{id}/ship: push and open MR for a lane.
+  if ((m = p.match(/^\/v1\/lanes\/(\d+)\/ship$/))) {
+    track('/v1/lanes/{id}/ship')
+    return json(res, { lane: 'shipped-lane', commits: 2, pushed: true, mr: 99, url: 'https://git.example/acme/acme-api/-/merge_requests/99', message: 'shipped' })
+  }
+
+  // POST /v1/topics: add a new topic.
+  if (p === '/v1/topics') {
+    track('/v1/topics')
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => {
+      try {
+        const b = JSON.parse(body)
+        return json(res, { id: 100, title: b.title, status: 'open', source: 'person', created: new Date().toISOString(), updated: new Date().toISOString(), activity: new Date().toISOString(), waits: 0, links: [] })
+      } catch {
+        return json(res, { id: 100, title: 'new', status: 'open', source: 'person', created: new Date().toISOString(), updated: new Date().toISOString(), activity: new Date().toISOString(), waits: 0, links: [] })
+      }
+    })
+    return true
+  }
+
+  // GET /v1/update: release check.
+  if (p === '/v1/update') {
+    return json(res, { enabled: true, channel: 'latest', current: '0.9.0', current_known: false, available: false, dismissed: false, show: false })
+  }
+
+  // POST /v1/update/dismiss: dismiss an update notice.
+  if (p === '/v1/update/dismiss') {
+    track('/v1/update/dismiss')
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => json(res, { enabled: true, current: '0.9.0', current_known: false, dismissed: true, show: false }))
+    return true
+  }
+
+  // POST /v1/update/upgrade: install a new version.
+  if (p === '/v1/update/upgrade') {
+    track('/v1/update/upgrade')
+    let body = ''
+    req.on('data', (c) => (body += c))
+    req.on('end', () => json(res, { enabled: true, current: '1.0.0', current_known: true, available: false, show: false, upgrade: { state: 'restarting', method: 'binary' } }))
+    return true
+  }
+
+  // GET /v1/projects: list projects.
+  if (p === '/v1/projects') {
+    return json(res, { projects: [
+      { name: 'acme-api', unassigned: false, repos: ['acme-api'], lanes: 2, running: 1, decisions: 0, requests: 0, waiting: 1, spend_today: 8.2 },
+      { name: 'acme-web', unassigned: false, repos: ['acme-web'], lanes: 2, running: 1, decisions: 1, requests: 0, waiting: 1, spend_today: 6.1 },
+      { name: 'acme-docs', unassigned: false, repos: ['acme-docs'], lanes: 1, running: 0, decisions: 0, requests: 0, waiting: 0, spend_today: 1.4 },
+    ]})
+  }
+
+  // GET /v1/projects/{name}: project detail.
+  if ((m = p.match(/^\/v1\/projects\/([^/]+)$/))) {
+    track('/v1/projects/{name}')
+    return json(res, { name: decodeURIComponent(m[1]), repos: [decodeURIComponent(m[1])], lanes: 2, running: 1, decisions: 0, requests: 0, waiting: 1, spend_today: 8.2, open_lanes: [], runs: [], pending_decisions: [], pending_requests: [] })
+  }
+
+  // GET /v1/unassigned: unassigned repos.
+  if (p === '/v1/unassigned') {
+    return json(res, { name: 'Unassigned', unassigned: true, repos: ['acme-mobile'], lanes: 0, running: 0, decisions: 0, requests: 0, waiting: 0, spend_today: 0, open_lanes: [], runs: [], pending_decisions: [], pending_requests: [] })
+  }
+
+  // GET /v1/projects/{name}/work: project work matrix.
+  if ((m = p.match(/^\/v1\/projects\/([^/]+)\/work$/))) {
+    track('/v1/projects/{name}/work')
+    return json(res, { project: decodeURIComponent(m[1]), repos: [{ repo: decodeURIComponent(m[1]), found: true, rows: [], warnings: [] }], drift: [] })
+  }
+
+  // GET /v1/usage: usage stats.
+  if (p === '/v1/usage') {
+    return json(res, {
+      from: u.searchParams.get('from') || '2026-10-01', to: u.searchParams.get('to') || '2026-10-14',
+      total: { count: 47, measured: 47, input_tokens: 1200000, cache_read_tokens: 800000, cache_creation_tokens: 200000, output_tokens: 340000, peak_context: 128000, over_200k: 0, compactions: 3, cost_usd: 20.4, credits: 0.4 },
+      runs: { count: 32, measured: 32, input_tokens: 900000, output_tokens: 280000, cost_usd: 14.6 },
+      desk: { count: 15, measured: 15, input_tokens: 300000, output_tokens: 60000, cost_usd: 5.8 },
+    })
+  }
+
+  // PUT /v1/config: save config.
+  if (p === '/v1/config') {
+    track('/v1/config (PUT)')
+    return json(res, { etag: 'shot-etag', diff: '--- a/config.yaml\n+++ b/config.yaml\n@@ -1 +1 @@\n-reload: false\n+reload: true', reloaded: true })
+  }
+
+  // Catch-all for /v1/: log and return empty (strict mode fails).
+  if (p.startsWith('/v1/')) {
+    track(p)
+    if (process.env.STUB_STRICT === '1') {
+      console.error(`shots: missing stub for ${p}`)
+      return json(res, { error: `no stub for ${p}` }, 501)
+    }
+    return json(res, {})
+  }
   const f = path.join(dist, p === '/' ? 'index.html' : p)
   if (f.startsWith(dist) && fs.existsSync(f) && fs.statSync(f).isFile()) {
     res.writeHead(200, { 'content-type': mime[path.extname(f)] ?? 'application/octet-stream' })
@@ -522,3 +786,11 @@ http.createServer((req, res) => {
   }
   res.writeHead(404); res.end()
 }).listen(port, '127.0.0.1', () => console.log(`stub daemon on http://127.0.0.1:${port} serving ${dist}`))
+
+// On exit, report any /v1/ routes the client called but we had no stub for.
+process.on('exit', () => {
+  if (missingRoutes.size > 0) {
+    console.error(`\nshots: unstubbed routes called by the client:`)
+    for (const r of [...missingRoutes].sort()) console.error(`  ${r}`)
+  }
+})
