@@ -135,3 +135,6 @@
 .pending-chip[aria-current='true'] { border-color: var(--lantern); }
 .pending-keys { margin-left: auto; }
 .decision-inline .option { padding: 2px var(--s-2); }
+
+/* The line a reply carries to the question it answers: it jumps to that message. */
+.msg-replyref { display: block; font-size: var(--t-sm); margin: 2px 0 4px; }

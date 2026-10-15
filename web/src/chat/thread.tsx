@@ -19,6 +19,7 @@ import { useFollowBottom, Countdown, useThread, CONNECTION } from './md'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
 import { QuestionActions } from './questions'
+import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
 import { PendingStrip } from './strip'
 import { Markdown } from './md'
 import { clipHead } from './md'
@@ -126,14 +127,16 @@ function UpdatesFold({
 }
 
 function DeskRow({
-  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared, work = [],
+  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared, work = [], onReplyRef,
 }: {
   e: DeskEvent
   /** Tool calls and wake notes of this reply's turn, folded above it. */
   work?: DeskEvent[]
   now: number
-  /** Open desk questions asked in this message's turn. */
+  /** Desk questions asked in this message's turn, of any state: each is an anchor, the open ones carry actions. */
   questions?: DeskQuestion[]
+  /** Scrolls to the row of the question a reply names; false when the thread holds none. */
+  onReplyRef?: (questionId: number) => void
   flash?: string
   thread?: DeskThread
   topicFilter?: number | null
@@ -148,24 +151,35 @@ function DeskRow({
   const when = <time dateTime={e.created} title={e.created} className="faint trow-age">{age}</time>
   const pill = topic && onTopic ? <TopicPill topic={topic} active={activeTopic === topic.id} onFilter={onTopic} /> : null
   switch (e.kind) {
-    case 'user':
+    case 'user': {
+      const ref = replyRef(text)
       return (
         <div className="msg msg-user">
           <span className="msg-who">You {when}{pill}</span>
+          {ref !== null && onReplyRef && (
+            <button type="button" className="link-button msg-replyref" onClick={() => onReplyRef(ref)}>
+              Replying to your question {ref}
+            </button>
+          )}
           <p className="msg-text">{text}</p>
         </div>
       )
+    }
     case 'assistant': {
       const asked = questions[0]
+      const waiting = questions.some((q) => q.state === 'open')
       return (
         <div
           id={asked ? threadId(`q${asked.id}`) : undefined}
-          className={`msg msg-assistant${asked ? ' msg-asked' : ''}${asked && flash === `q${asked.id}` ? ' is-flash' : ''}`}
+          className={`msg msg-assistant${waiting ? ' msg-asked' : ''}${questions.some((q) => flash === `q${q.id}`) ? ' is-flash' : ''}`}
         >
           {work.length > 0 && <WorkFold work={work} now={now} />}
           <span className="msg-who">Front desk {when}{pill}</span>
           <Markdown text={text} />
-          {thread && questions.map((q) => (
+          {questions.slice(1).map((q) => (
+            <span key={`a${q.id}`} id={threadId(`q${q.id}`)} />
+          ))}
+          {thread && questions.filter((q) => q.state === 'open').map((q) => (
             <QuestionActions key={q.id} q={q} thread={thread} topicId={topicFilter} onCleared={() => onCleared?.()} />
           ))}
         </div>
@@ -281,10 +295,15 @@ function ChatThread({
 
   // The questions the desk asked that are still open: each shows Reply here and Skip under
   // the desk message of its turn. Read on the waiting list's cadence and after each action.
-  const [questions, setQuestions] = useState<DeskQuestion[]>([])
+  const [openQs, setOpenQs] = useState<DeskQuestion[]>([])
+  // Answered ones are read only for a reply in the thread that names one not yet known, so
+  // the poll stays the size of the waiting list however long the history grows.
+  const [answered, setAnswered] = useState<DeskQuestion[]>([])
+  const asked = useRef(new Set<number>())
+  const questions = useMemo(() => [...openQs, ...answered.filter((a) => !openQs.some((o) => o.id === a.id))], [openQs, answered])
   const readQuestions = useCallback(() => {
     deskQuestions.list('open').then(
-      (qs) => setQuestions(qs),
+      (qs) => setOpenQs(qs),
       () => {},
     )
   }, [])
@@ -298,16 +317,22 @@ function ChatThread({
       window.clearInterval(id)
     }
   }, [readQuestions])
+  useEffect(() => {
+    const known = new Set(questions.map((q) => q.id))
+    const missing = items.flatMap((it) => {
+      const ref = it.type === 'desk' && it.e.kind === 'user' ? replyRef(it.e.text ?? '') : null
+      return ref !== null && !known.has(ref) && !asked.current.has(ref) ? [ref] : []
+    })
+    if (missing.length === 0 || openQs.length === 0 && !d.loaded) return
+    missing.forEach((id) => asked.current.add(id))
+    closedQuestions(deskQuestions.list).then(
+      (qs) => setAnswered(qs),
+      () => missing.forEach((id) => asked.current.delete(id)),
+    )
+  }, [items, questions, openQs, d.loaded])
   // A question sits under the last desk message of the turn it was asked in.
   const questionsAt = useMemo(() => {
-    const lastOfTurn = new Map<number, number>()
-    for (const it of items) if (it.type === 'desk' && it.e.kind === 'assistant' && it.e.turn !== undefined) lastOfTurn.set(it.e.turn, it.e.seq)
-    const out = new Map<number, DeskQuestion[]>()
-    for (const q of questions) {
-      const seq = lastOfTurn.get(q.turn)
-      if (seq !== undefined) out.set(seq, [...(out.get(seq) ?? []), q])
-    }
-    return out
+    return questionsByMessage(items.flatMap((it) => (it.type === 'desk' ? [it.e] : [])), questions)
   }, [items, questions])
 
   // The rail's "in thread" links name rows the thread shows; one that is not loaded has none.
@@ -333,6 +358,14 @@ function ChatThread({
     window.setTimeout(() => setFlash((f) => (f === anchor ? '' : f)), 2500)
     return true
   }, [])
+  // A reply names its question: scroll to the message that asked it, or say it is not loaded.
+  const [replyNote, setReplyNote] = useState('')
+  const jumpToQuestion = useCallback(
+    (id: number) => {
+      setReplyNote(replyJumpNote(id, land(`q${id}`)))
+    },
+    [land],
+  )
   const jump = useCallback(
     (anchor: string) => {
       if (!land(anchor) && inFold(anchor)) setReveal(anchor)
@@ -488,6 +521,14 @@ function ChatThread({
           </p>
         )}
 
+        {replyNote !== '' && (
+          <p className="topic-filter" role="status">
+            {replyNote}{' '}
+            <button type="button" className="link-button" onClick={() => setReplyNote('')}>
+              Dismiss
+            </button>
+          </p>
+        )}
         {stepNote && (
           <p className="topic-filter" role="status">
             Not in the loaded thread: {stepNote.title}.{' '}
@@ -522,6 +563,7 @@ function ChatThread({
                 thread={thread}
                 topicFilter={topicId}
                 onCleared={readQuestions}
+                onReplyRef={jumpToQuestion}
               />
             ) : (
               <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
