@@ -41,17 +41,19 @@
 :root {
   color-scheme: light dark;
 
-  --field: #eef1f3;      /* page */
+  --field: #eef1f4;      /* page */
   --sheet: #f8fafb;      /* raised: the bar, open panels */
-  --ink: #1e2832;        /* text */
-  --muted: #4a5762;      /* secondary text */
-  --faint: #5b6872;      /* tertiary: ages, labels, timestamps; 4.5:1 on every surface */
-  --rule: #d6dde2;       /* hairlines */
+  --ink: #1c2630;        /* text */
+  --muted: #4a5763;      /* secondary text */
+  --faint: #5d6a75;      /* tertiary: ages, labels, timestamps; 4.5:1 on every surface */
+  --rule: #d5dce2;       /* hairlines */
+  --line: var(--rule);   /* a hairline on a chip or pill */
   --control-border: #7a868f; /* edges of inputs, options and buttons; 3:1 on every surface */
   --rule-strong: var(--control-border); /* conversation.css still reads this one for its rules */
   --hover: #e3e8ec;
 
   --lichen: #3e6e5c;     /* accent: working, links, focus */
+  --lichen-wash: #e1ece6; /* selected rows, picked options */
   --lantern: #9a6200;    /* needs you: fills, bands, borders */
   --lantern-ink: #845300; /* needs you, as text: 4.5:1 on the wash */
   --lantern-wash: #f7ead2;
@@ -78,32 +80,33 @@
   --font-code: var(--font-mono);
   --font-mono: "IBM Plex Mono", "Berkeley Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
 
-  /* Size. The root size is the one knob: 15px at 1440 wide, rising to 18px by about 2400,
-     so every rem below, and the rows and gaps built from them, grow with the display. */
-  --root-min: 15px;
+  /* Size. The root size is the one knob: 14px at 1440 wide (the mockup's body), rising to
+     18px by about 2400, so every rem below, and the rows and gaps built from them, grow
+     with the display. 1rem is 14px at 1440, so a mockup pixel value is px / 14 in rem. */
+  --root-min: 14px;
   --root-max: 18px;
 
   /* Type scale: nothing is set below --t-xs. */
-  --t-2xs: 0.75rem;
-  --t-xs: 0.8125rem;
-  --t-sm: 0.875rem;
-  --t-md: 1rem;
-  --t-lg: 1.1875rem;
-  --t-xl: 1.5rem;
+  --t-2xs: 0.857rem;   /* 12px at 1440: the floor */
+  --t-xs: 0.893rem;    /* 12.5px */
+  --t-sm: 0.929rem;    /* 13px: small text, labels */
+  --t-md: 1rem;        /* 14px: body */
+  --t-lg: 1.0714rem;   /* 15px: a card's question, a section head */
+  --t-xl: 1.1429rem;   /* 16px: a page's h1 */
 
   /* Spacing. */
-  --s-1: 0.25rem;
-  --s-2: 0.5rem;
-  --s-3: 0.75rem;
-  --s-4: 1rem;
-  --s-5: 1.5rem;
-  --s-6: 2.5rem;
+  --s-1: 0.2857rem;    /* 4px at 1440 */
+  --s-2: 0.5714rem;    /* 8 */
+  --s-3: 0.8571rem;    /* 12 */
+  --s-4: 1.1429rem;    /* 16 */
+  --s-5: 1.7143rem;    /* 24 */
+  --s-6: 2.8571rem;    /* 40 */
 
   /* Density: one setting. Comfortable in prose, compact in tables and lists. */
-  --leading-prose: 1.55;
+  --leading-prose: 1.5;
   --leading-compact: 1.35;
   --row-compact: 2rem;   /* a list or table row */
-  --control-h: 2.125rem; /* a button or input; the small size is --control-h-sm */
+  --control-h: 2.0714rem; /* a button or input; the small size is --control-h-sm */
   --control-h-sm: 1.75rem;
   --motion: 150ms;       /* a slide or collapse, always in answer to the person */
 
@@ -111,8 +114,8 @@
   --gutter: 2rem;        /* the glyph rail */
   --pad: 1rem;
   --bar-h: 2.75rem;
-  --radius: 0.375rem;    /* controls, rows, small panels */
-  --radius-lg: 0.625rem; /* dialogs and popovers */
+  --radius: 0.4286rem;    /* controls, rows, small panels */
+  --radius-lg: 0.7143rem; /* dialogs and popovers */
 
   /* The shell: the bar, the banner and every page share one centred box. The widths of
      what sits in it are tokens too: change one here and every page follows. */
@@ -136,26 +139,27 @@
   --shell-edge: max(0px, calc((100% - var(--shell-max)) / 2));
 }
 
-html { font-size: clamp(var(--root-min), 0.65625rem + 0.3125vw, var(--root-max)); }
+html { font-size: clamp(var(--root-min), 0.5rem + 0.41667vw, var(--root-max)); }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --field: #161c22;
+    --field: #151b21;
     --sheet: #1c242b;
-    --ink: #d6dce1;
-    --muted: #a3b2bd;
-    --faint: #8a9aa7;
-    --rule: #2a343d;
-    --control-border: #6f7f8b;
+    --ink: #e3e8ec;
+    --muted: #b3bec7;
+    --faint: #9aa7b1;
+    --rule: #2f3b45;
+    --control-border: #6f7d88;
     --hover: #222c34;
 
-    --lichen: #86bba2;
-    --lantern: #e3aa4f;
-    --lantern-ink: #e3aa4f;
-    --lantern-wash: #2e2617;
-    --broken: #f07d70;
+    --lichen: #7fbfa4;
+    --lichen-wash: #1f3029;
+    --lantern: #e0a43a;
+    --lantern-ink: #f0b85a;
+    --lantern-wash: #33281a;
+    --broken: #f2867a;
     --broken-wash: #33201e;
-    --ok: #7cc492;
+    --ok: #79c08e;
     --surface: #1b232a;
     --raised: #222c34;
     --sunk: #10151a;
@@ -181,7 +185,7 @@ body {
   color: var(--ink);
   font-family: var(--font-ui);
   font-size: var(--t-md);
-  line-height: 1.45;
+  line-height: 1.5;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
@@ -195,7 +199,15 @@ a:hover { text-decoration-color: currentColor; }
   border-radius: var(--radius);
 }
 
-button, input { font: inherit; color: inherit; }
+button, input, textarea, select { font: inherit; color: inherit; }
+
+textarea, select {
+  background: var(--raised);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius);
+  padding: var(--s-2);
+}
+textarea::placeholder { color: var(--faint); opacity: 1; }
 
 code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 

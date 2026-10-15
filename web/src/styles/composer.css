@@ -9,6 +9,6 @@
   background: var(--surface);
 }
 .context-composer-about { font-size: var(--t-sm); color: var(--muted); overflow-wrap: anywhere; }
-.context-composer textarea { width: 100%; resize: vertical; font: inherit; }
+.context-composer textarea { width: 100%; resize: vertical; font: inherit; color: var(--ink); background: var(--raised); border: 1px solid var(--control-border); border-radius: var(--radius); padding: var(--s-2); }
 .context-composer p { margin: 0; }
 .context-composer-bar { display: flex; justify-content: flex-end; }
