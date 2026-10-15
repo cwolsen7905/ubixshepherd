@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -64,4 +65,50 @@ func ArtifactListQuery(f store.ArtifactFilter) string {
 		return PathArtifacts
 	}
 	return PathArtifacts + "?" + q.Encode()
+}
+
+// PathArtifactContent is GET /v1/artifacts/{id}/content: the bytes of a kept or live
+// artifact. version is a sha-256 of a recorded version; "" is the newest.
+func PathArtifactContent(id int64, version string) string {
+	p := PathArtifact(id) + "/content"
+	if version != "" {
+		p += "?version=" + url.QueryEscape(version)
+	}
+	return p
+}
+
+// PathArtifactDiscard is POST /v1/artifacts/{id}/discard: the person's own call.
+func PathArtifactDiscard(id int64) string { return PathArtifact(id) + "/discard" }
+
+// PathArtifactGC is POST /v1/artifacts/gc: apply retention now.
+const PathArtifactGC = PathArtifacts + "/gc"
+
+// ArtifactPatch is the body of PATCH /v1/artifacts/{id}: the person's changes. Move
+// "keep" moves an untracked file into the Shepherd directory.
+type ArtifactPatch struct {
+	Intent *string `json:"intent,omitempty"`
+	Pinned *bool   `json:"pinned,omitempty"`
+	Title  *string `json:"title,omitempty"`
+	Move   string  `json:"move,omitempty"`
+}
+
+// ArtifactGC is the body of POST /v1/artifacts/gc; zero fields take the configured
+// retention (artifacts.keep_days and artifacts.cap_mb).
+type ArtifactGC struct {
+	KeepDays int   `json:"keep_days,omitempty"`
+	CapBytes int64 `json:"cap_bytes,omitempty"`
+	DryRun   bool  `json:"dry_run,omitempty"`
+}
+
+// AddItems puts items that are derived outside the collector into the list, keeps it
+// oldest first and seals it. Artifact items are counted.
+func (w *Waiting) AddItems(items []WaitingItem) {
+	for _, it := range items {
+		if it.Kind == WaitingArtifact {
+			w.Counts.Artifacts++
+		}
+		w.Items = append(w.Items, it)
+	}
+	sort.SliceStable(w.Items, func(i, j int) bool { return w.Items[i].Since.Before(w.Items[j].Since) })
+	w.Seal()
 }

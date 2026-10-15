@@ -91,6 +91,10 @@ type Runner struct {
 	Log             *slog.Logger
 	// ArtifactScan lists a lane's artifact candidates at a run's end; nil scans none.
 	ArtifactScan ArtifactScan
+	// ArtifactSnapshot copies a lane's known artifacts into Shepherd's home; the daemon
+	// sets it to Fold.SnapshotKnown. A run's end calls it after recording versions, so
+	// a version recorded then is copied then, not at the next sweep. Nil copies none.
+	ArtifactSnapshot func(ctx context.Context, laneID int64)
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
@@ -716,6 +720,9 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		r.feed(ctx, store.FeedCommit, run.ID, "run %d: %d commit(s) in lane %s, latest: %s", run.ID, run.Commits, lane.Name, clip(latestSubject(ctx, lane.Worktree), 100))
 	}
 	r.recordRunArtifacts(ctx, run, lane)
+	if r.ArtifactSnapshot != nil && lane.Worktree != "" {
+		r.ArtifactSnapshot(ctx, lane.ID)
+	}
 	switch {
 	case diag.Summary != "" && run.State != store.RunSucceeded:
 		ended += ": " + diag.Summary

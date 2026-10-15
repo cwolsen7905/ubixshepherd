@@ -25,13 +25,14 @@ const (
 	WaitingBlocked  = "blocked"  // an open lane whose last run reported blocked, with no run going
 	WaitingScope    = "scope"    // an answered scope-widening decision the lane's scope does not yet show
 	WaitingRequest  = "request"  // a request between lanes that Shepherd cannot route by rule
+	WaitingArtifact = "artifact" // a merged lane held open by files nobody said to keep, commit or discard
 )
 
 // WaitingItem is one thing that needs the person. Action says what they can do about it
 // from the web page: answer (a decision), approve (a merge request, then Shepherd retries
 // its approval job), ship (the lane's unpushed work), review (a Next-up item, on the Next
-// up page), reply (a desk question, in the thread) or open (look at the lane: nothing Shepherd can do for them). A blocked lane and an
-// unapplied scope widening are shown with open.
+// up page), reply (a desk question, in the thread) or open (look at the lane: nothing Shepherd can do for them). A blocked lane, an
+// unapplied scope widening and a merged lane's undecided files are shown with open.
 type WaitingItem struct {
 	Kind   string `json:"kind"`
 	Action string `json:"action"`
@@ -65,6 +66,8 @@ type WaitingCounts struct {
 	Scope     int `json:"scope"`
 	// Requests counts requests that need routing. Older clients ignore it.
 	Requests int `json:"requests"`
+	// Artifacts counts merged lanes held open by undecided files. Older clients ignore it.
+	Artifacts int `json:"artifacts"`
 }
 
 // Waiting answers GET /v1/waiting: the items, oldest first, with their counts.
@@ -128,6 +131,8 @@ func (it WaitingItem) Label() string {
 		s = "scope"
 	case WaitingRequest:
 		s = fmt.Sprintf("request %d", it.RequestID)
+	case WaitingArtifact:
+		s = "artifacts"
 	case WaitingNext:
 		return fmt.Sprintf("next-up item %d", it.NextID)
 	case WaitingQuestion:

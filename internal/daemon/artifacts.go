@@ -1,9 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -139,21 +142,12 @@ func (s *Server) artifactContent(w http.ResponseWriter, r *http.Request) {
 	w.Write(c.Data)
 }
 
-// ArtifactPatchBody is PATCH /v1/artifacts/{id}: the person's changes. Move "keep" moves
-// an untracked file into the Shepherd directory.
-type ArtifactPatchBody struct {
-	Intent *string `json:"intent,omitempty"`
-	Pinned *bool   `json:"pinned,omitempty"`
-	Title  *string `json:"title,omitempty"`
-	Move   string  `json:"move,omitempty"`
-}
-
 func (s *Server) patchArtifact(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathArtifactID(w, r)
 	if !ok {
 		return
 	}
-	var req ArtifactPatchBody
+	var req api.ArtifactPatch
 	if !decode(w, r, &req) {
 		return
 	}
@@ -180,22 +174,105 @@ func (s *Server) discardArtifact(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a)
 }
 
-// ArtifactGCBody is POST /v1/artifacts/gc; zero fields take the defaults.
-type ArtifactGCBody struct {
-	KeepDays int   `json:"keep_days,omitempty"`
-	CapBytes int64 `json:"cap_bytes,omitempty"`
-	DryRun   bool  `json:"dry_run,omitempty"`
-}
-
+// artifactGC serves POST /v1/artifacts/gc. A field left zero takes the configured
+// retention.
 func (s *Server) artifactGC(w http.ResponseWriter, r *http.Request) {
-	var req ArtifactGCBody
+	var req api.ArtifactGC
 	if !decode(w, r, &req) {
 		return
 	}
-	res, err := s.Fold.ArtifactGC(r.Context(), req.KeepDays, req.CapBytes, req.DryRun, time.Now())
+	days, capBytes := s.LiveConfig().ArtifactRetention()
+	if req.KeepDays > 0 {
+		days = req.KeepDays
+	}
+	if req.CapBytes > 0 {
+		capBytes = req.CapBytes
+	}
+	res, err := s.Fold.ArtifactGC(r.Context(), days, capBytes, req.DryRun, time.Now())
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, res)
+}
+
+// ArtifactRetention applies the snapshots' retention at start and then once a day, with
+// the configured keep_days and cap (read afresh each time, so a reload counts). The
+// process that runs the daemon starts it in a goroutine.
+func (s *Server) ArtifactRetention(ctx context.Context) {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		days, capBytes := s.LiveConfig().ArtifactRetention()
+		if res, err := s.Fold.ArtifactGC(ctx, days, capBytes, false, time.Now()); err != nil {
+			s.Log.Warn("artifact retention", "err", err)
+		} else if res.Expired+res.Evicted+res.Orphans > 0 {
+			s.Log.Info("artifact retention", "expired", res.Expired, "evicted", res.Evicted, "orphans", res.Orphans, "freed_bytes", res.FreedByte)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// mergedArtifactItems are the open lanes whose merge request merged but whose
+// uncommitted files nobody decided (docs/design/artifacts.md §4): the automatic close
+// refuses them, so the lane waits for the person to keep, commit or discard. Files in
+// the Shepherd directory never hold a lane. workspaceID 0 is every workspace.
+func (s *Server) mergedArtifactItems(ctx context.Context, workspaceID int64) ([]api.WaitingItem, error) {
+	list, err := s.Store.ListArtifacts(ctx, store.ArtifactFilter{WorkspaceID: workspaceID, State: store.ArtifactLive, Limit: 1000})
+	if err != nil {
+		return nil, err
+	}
+	byLane := map[int64][]store.Artifact{}
+	var order []int64
+	for _, a := range list {
+		if a.Intent != store.ArtifactUndecided || a.Source == store.ArtifactCommitted || strings.HasPrefix(a.Path, store.ArtifactDir) {
+			continue
+		}
+		if _, ok := byLane[a.LaneID]; !ok {
+			order = append(order, a.LaneID)
+		}
+		byLane[a.LaneID] = append(byLane[a.LaneID], a)
+	}
+	var items []api.WaitingItem
+	for _, id := range order {
+		lane, err := s.Store.Lane(ctx, id)
+		if err != nil || lane.State != store.LaneOpen {
+			continue
+		}
+		lf, err := s.Store.LaneForge(ctx, id)
+		if err != nil || !(strings.EqualFold(lf.MRState, "merged") || lf.MergeSHA != "") {
+			continue
+		}
+		var repo string
+		if rp, err := s.Store.Repo(ctx, lane.RepoID); err == nil {
+			repo = rp.Name
+		}
+		files := byLane[id]
+		paths := make([]string, 0, len(files))
+		for _, a := range files {
+			paths = append(paths, a.Path)
+		}
+		if len(paths) > 5 {
+			paths = append(paths[:5], fmt.Sprintf("and %d more", len(paths)-5))
+		}
+		since := lf.MRUpdated
+		if since.IsZero() {
+			since = files[0].Created
+		}
+		noun := "files"
+		if len(files) == 1 {
+			noun = "file"
+		}
+		items = append(items, api.WaitingItem{
+			Kind: api.WaitingArtifact, Action: "open", Repo: repo, Lane: lane.Name, LaneID: lane.ID, MR: lf.MR,
+			Title:  fmt.Sprintf("lane merged, %d %s to keep or discard", len(files), noun),
+			Detail: fmt.Sprintf("lane %s merged but stays open for %d undecided %s: %s", lane.Name, len(files), noun, strings.Join(paths, ", ")),
+			Since:  since,
+		})
+	}
+	return items, nil
 }

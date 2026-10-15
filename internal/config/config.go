@@ -508,6 +508,39 @@ type Artifacts struct {
 	// artifacts from its changed files. Unset is DefaultArtifactGlobs; a repo's list
 	// replaces them.
 	Discover []string `yaml:"discover,omitempty" json:"discover,omitempty"`
+	// KeepDays is how long the snapshots of a closed lane's artifacts are kept after the
+	// close, pinned ones excepted. 0 is unset, which is DefaultArtifactKeepDays.
+	KeepDays int `yaml:"keep_days,omitempty" json:"keep_days,omitempty"`
+	// CapMB is the total size of every snapshot, in megabytes; past it the oldest
+	// unpinned ones of closed lanes go first. It is a machine total, so the value that
+	// counts is the defaults' (see Config.ArtifactRetention). 0 is DefaultArtifactCapMB.
+	CapMB int `yaml:"cap_mb,omitempty" json:"cap_mb,omitempty"`
+}
+
+// The retention defaults for artifact snapshots (docs/design/artifacts.md §4).
+const (
+	DefaultArtifactKeepDays = 30
+	DefaultArtifactCapMB    = 500
+)
+
+// ArtifactRetention is how long the daemon keeps a closed lane's snapshots and the most
+// it keeps in total. The cap is the defaults' setting. The days are the longest any
+// profile asks for, so no repo's snapshots expire sooner than its own setting says.
+func (c Config) ArtifactRetention() (keepDays int, capBytes int64) {
+	keepDays = c.Defaults.Artifacts.KeepDays
+	for _, p := range c.Repos {
+		if p.Artifacts.KeepDays > keepDays {
+			keepDays = p.Artifacts.KeepDays
+		}
+	}
+	if keepDays <= 0 {
+		keepDays = DefaultArtifactKeepDays
+	}
+	mb := c.Defaults.Artifacts.CapMB
+	if mb <= 0 {
+		mb = DefaultArtifactCapMB
+	}
+	return keepDays, int64(mb) << 20
 }
 
 // DefaultArtifactGlobs are the discovery globs when a repo sets none: markdown and
@@ -916,6 +949,12 @@ func (p Profile) validate(at string) []error {
 			errs = append(errs, fmt.Errorf("%s.artifacts.discover[%d]: %q %s", at, i, g, bad))
 		}
 	}
+	if p.Artifacts.KeepDays < 0 {
+		errs = append(errs, fmt.Errorf("%s.artifacts.keep_days: %d is negative; 0 takes the default of %d", at, p.Artifacts.KeepDays, DefaultArtifactKeepDays))
+	}
+	if p.Artifacts.CapMB < 0 {
+		errs = append(errs, fmt.Errorf("%s.artifacts.cap_mb: %d is negative; 0 takes the default of %d", at, p.Artifacts.CapMB, DefaultArtifactCapMB))
+	}
 	for i, n := range p.Standards {
 		if n == "" || strings.ContainsAny(n, `/\`) || n == "." || n == ".." {
 			errs = append(errs, fmt.Errorf("%s.standards[%d]: %q is not a pack name (a folder under ~/.shepherd/standards)", at, i, n))
@@ -1025,6 +1064,12 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Artifacts.Discover != nil {
 		out.Artifacts.Discover = over.Artifacts.Discover
+	}
+	if over.Artifacts.KeepDays != 0 {
+		out.Artifacts.KeepDays = over.Artifacts.KeepDays
+	}
+	if over.Artifacts.CapMB != 0 {
+		out.Artifacts.CapMB = over.Artifacts.CapMB
 	}
 	if over.Autonomy.Merge != "" {
 		out.Autonomy.Merge = over.Autonomy.Merge
