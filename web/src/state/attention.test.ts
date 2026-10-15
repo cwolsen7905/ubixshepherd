@@ -1,6 +1,6 @@
 import type { Waiting, WaitingItem } from '../api/types'
 import { lane, run } from '../test/fixtures'
-import { inboxTitle, statusCounts, type StatusInput } from './attention'
+import { inboxTitle, statusCounts, topicWaits, type StatusInput } from './attention'
 
 const seen = { until: '2026-10-08T09:00:00Z', keys: new Set<string>() }
 const waiting = (...items: WaitingItem[]): Waiting => ({
@@ -51,5 +51,16 @@ describe('inboxTitle', () => {
   it('names the parts of the count', () => {
     const w = waiting({ kind: 'decision', action: 'answer', title: 'd' }, req(1), req(2))
     expect(inboxTitle(w)).toBe('1 decision, 2 requests needing routing')
+  })
+})
+
+describe('topicWaits', () => {
+  const topic = { waits: 5, links: [{ kind: 'decision', ref: '3' }, { kind: 'lane', ref: '9' }, { kind: 'run', ref: '2' }] }
+  it('counts linked things that are on the list', () => {
+    const w = { count: 1, counts: { decisions: 1, mrs: 0, ship: 0, next: 0 }, items: [{ kind: 'decision', action: 'answer', decision_id: 3, title: 'x' }] } as Waiting
+    expect(topicWaits(topic, w)).toBe(1)
+  })
+  it('keeps the daemon count until the list loads', () => {
+    expect(topicWaits(topic, null)).toBe(5)
   })
 })

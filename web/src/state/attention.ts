@@ -70,3 +70,31 @@ export function inboxTitle(w: Waiting | null): string {
   const r = attentionOf(w, 'request').length
   return `${d} decision${d === 1 ? '' : 's'}, ${r} request${r === 1 ? '' : 's'} needing routing`
 }
+
+/** The part of a topic's links that wait counts read. */
+interface TopicLinks {
+  waits: number
+  links: { kind: string; ref: string; waits?: boolean }[]
+}
+
+/**
+ * How many things under a topic wait on the person, read from the one list: a linked
+ * decision, request or lane that has an item there. Before the list loads the topic's own
+ * count stands, so the chip never shows less than the daemon said.
+ */
+export function topicWaits(t: TopicLinks, w: Waiting | null): number {
+  if (!w) return t.waits
+  const n = (s: string) => Number(s)
+  let waits = 0
+  for (const l of t.links) {
+    const id = n(l.ref)
+    const hit = (w.items ?? []).some((it) =>
+      (l.kind === 'decision' && it.decision_id === id) ||
+      (l.kind === 'request' && it.request_id === id) ||
+      (l.kind === 'lane' && it.lane_id === id) ||
+      (l.kind === 'next_item' && it.next_id === id),
+    )
+    if (hit) waits++
+  }
+  return waits
+}

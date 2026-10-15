@@ -3,6 +3,9 @@ import { topics as topicsApi } from '../api/client'
 import { since } from '../format'
 import { kindName, readFlag, splitTopics, topicHueClass, topicState, writeFlag, type TopicList, type TopicUpdateBody, type TopicView } from '../model/topic'
 import { href } from '../router'
+import { topicWaits } from '../state/attention'
+import { useAttention } from '../state/context'
+import { ErrorBoundary } from './ErrorBoundary'
 import '../styles/topics.css'
 
 const POLL = 15_000
@@ -29,9 +32,15 @@ function linkTarget(kind: string, ref: string): string | null {
  * filters the thread; clear folds a settled matter out of it and reopen brings it back.
  * Nothing here closes a lane or answers a decision.
  */
-export function Topics({
-  active, now, onFilter, load = (all) => topicsApi.list(all), change = topicsApi.update, add = topicsApi.add,
-}: {
+export function Topics(props: TopicsProps) {
+  return (
+    <ErrorBoundary region="The topics">
+      <TopicsView {...props} />
+    </ErrorBoundary>
+  )
+}
+
+interface TopicsProps {
   /** The topic the thread is filtered to, or null. */
   active: number | null
   now: number
@@ -39,7 +48,12 @@ export function Topics({
   load?: LoadTopics
   change?: ChangeTopic
   add?: AddTopic
-}) {
+}
+
+function TopicsView({
+  active, now, onFilter, load = (all) => topicsApi.list(all), change = topicsApi.update, add = topicsApi.add,
+}: TopicsProps) {
+  const attention = useAttention()
   const [list, setList] = useState<TopicView[] | null>(null)
   const [error, setError] = useState('')
   const [tick, setTick] = useState(0)
@@ -80,11 +94,12 @@ export function Topics({
   const opened = (list ?? []).filter((t) => t.status === 'open')
   const cleared = (list ?? []).filter((t) => t.status === 'cleared')
   const { active: live, idle } = splitTopics(opened, now, active)
-  const waiting = opened.reduce((n, t) => n + t.waits, 0)
+  const waits = (t: TopicView) => topicWaits(t, attention)
+  const waiting = opened.reduce((n, t) => n + waits(t), 0)
 
   const row = (t: TopicView) => (
     <TopicRow
-      key={t.id} t={t} now={now} active={active === t.id} expanded={open === t.id} others={opened.filter((o) => o.id !== t.id)}
+      key={t.id} t={t} waits={waits(t)} now={now} active={active === t.id} expanded={open === t.id} others={opened.filter((o) => o.id !== t.id)}
       onFilter={() => onFilter(active === t.id ? null : t.id)}
       onExpand={() => setOpen(open === t.id ? null : t.id)}
       change={(body) => act(change(t.id, body))}
@@ -154,9 +169,10 @@ export function Topics({
 }
 
 function TopicRow({
-  t, now, active, expanded, others, onFilter, onExpand, change,
+  t, waits, now, active, expanded, others, onFilter, onExpand, change,
 }: {
   t: TopicView
+  waits: number
   now: number
   active: boolean
   expanded: boolean
@@ -169,7 +185,7 @@ function TopicRow({
   const [name, setName] = useState(t.title)
   const state = topicState(t)
   return (
-    <li className={`topic-row ${topicHueClass(t.id)}${active ? ' is-active' : ''}${t.waits > 0 ? ' needs-you' : ''}`}>
+    <li className={`topic-row ${topicHueClass(t.id)}${active ? ' is-active' : ''}${waits > 0 ? ' needs-you' : ''}`}>
       {renaming ? (
         <form
           className="topic-rename"
@@ -187,7 +203,7 @@ function TopicRow({
         <button type="button" className="topic-main" aria-pressed={active} onClick={onFilter}>
           <span className="topic-title">{t.title}</span>
           <span className="topic-meta faint">
-            {state && <span className={t.waits > 0 ? 'tone-warn' : ''}>{state} · </span>}
+            {state && <span className={waits > 0 ? 'tone-warn' : ''}>{state} · </span>}
             {since(t.activity, now) ? `${since(t.activity, now)} ago` : 'just now'}
           </span>
         </button>
