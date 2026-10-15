@@ -1,15 +1,22 @@
-# Kelpie's AI review of merge requests (advisory: threads are posted, the job never fails).
-# Pinned to a tag; AI_REVIEW_REF must name the same ref so the scripts match the include.
+# AI review of merge requests, from a reusable template in a sibling project (advisory:
+# threads are posted, the job never fails). Both refs are pinned to the commit of tag
+# v0.1.0-beta.1 so the job that holds the secrets cannot change under us; the template
+# fetches its scripts at AI_REVIEW_REF, so the two must be bumped together.
 # Needs the OPENROUTER_API_KEY and AI_REVIEW_GITLAB_TOKEN group variables; without them the
-# job exits 75 and is allowed to fail. Docs: docs/ai-review.md in ubixsys/ubixkelpie.
+# job exits 75 ("unreviewed"). Template docs: docs/ai-review.md in that project.
 include:
   - project: ubixsys/ubixkelpie
-    ref: v0.1.0-beta.1
+    ref: ff9e4b78a91b006303d09ddcddba5e4bb18d4c87 # v0.1.0-beta.1
     file: ci/ai-review/ai-review.yml
 
 variables:
-  AI_REVIEW_REF: v0.1.0-beta.1
+  AI_REVIEW_REF: ff9e4b78a91b006303d09ddcddba5e4bb18d4c87 # v0.1.0-beta.1
   AI_REVIEW_MODE: advisory
+
+# Advisory means never red: allow_failure here makes that visible in this repo. The template
+# decides where it runs (merge request pipelines targeting dev, not drafts).
+ai-review-mr:
+  allow_failure: true
 
 # The default stages plus approval and promote. The checks stay in the default test stage.
 # approval only runs in merge request pipelines and promote only in dev push pipelines, so
