@@ -110,7 +110,7 @@
 .shell:has(.page.chat) .page-bar { flex: none; }
 .shell:has(.page.chat) .banner { flex: none; }
 .shell:has(.page.chat) .main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-bottom: var(--s-3); overflow: hidden; }
-.shell:has(.page.chat) .main > .page.chat { flex: 1; height: auto; min-height: 0; width: 100%; }
+.shell:has(.page.chat) .main > .page.chat { flex: 1; min-height: 0; width: 100%; }
 .shell:has(.page.chat) .chat-layout > .chat-rail,
 .shell:has(.page.chat) .chat-layout > .backlog { max-height: 100%; top: 0; }
 @media (max-width: 760px) {

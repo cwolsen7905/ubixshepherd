@@ -5,8 +5,9 @@
 /* Messages fill the thread column here; conversation.css keeps its readable cap on the lane and run pages. */
 .page.chat .cv-msg, .page.chat .cv-tool { max-width: none; }
 /* The page does not scroll the window: the head and composer are fixed and the thread is the
-   one scroll region, so follow-bottom and "Jump to latest" act on a single element. */
-.chat { display: flex; flex-direction: column; height: calc(100vh - var(--bar-h)); height: calc(100dvh - var(--bar-h)); overflow: hidden; }
+   one scroll region, so follow-bottom and "Jump to latest" act on a single element. Its height
+   is not set here: layout/shell.css sizes the shell to the viewport and `.chat` fills what is left. */
+.chat { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .chat-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 8px; }
 .chat-conn { margin: 0; font-size: var(--t-sm); }
 .chat-ws { display: flex; align-items: center; gap: 6px; font-size: var(--t-sm); }
