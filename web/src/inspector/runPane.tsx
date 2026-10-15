@@ -5,12 +5,13 @@ import { Conversation } from '../conversation/Conversation'
 import { laneSource } from '../conversation/api'
 import { useNow } from '../hooks'
 import { LogTab, RunChanges } from '../pages/Log'
+import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
 import { href, withOpen } from '../router'
 
-export const RUN_TABS = ['conversation', 'log', 'changes', 'asked'] as const
+export const RUN_TABS = ['conversation', 'log', 'changes', 'asked', 'produced'] as const
 export type RunTab = (typeof RUN_TABS)[number]
 
-const TAB_NAMES: Record<RunTab, string> = { conversation: 'Conversation', log: 'Log', changes: 'Changes', asked: 'Asked' }
+const TAB_NAMES: Record<RunTab, string> = { conversation: 'Conversation', log: 'Log', changes: 'Changes', asked: 'Asked', produced: 'Produced' }
 
 /** A tab name from an `open=run:N/tab` address; anything unknown is the conversation. */
 export function runTab(tab: string | undefined): RunTab {
@@ -78,6 +79,7 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
         </div>
         {tab === 'changes' && <RunChanges run={run} now={now} />}
         {tab === 'asked' && <Asked runId={run.id} />}
+        {tab === 'produced' && <Produced runId={run.id} />}
       </div>
     </div>
   )
@@ -158,5 +160,38 @@ function Asked({ runId }: { runId: number }) {
         </li>
       ))}
     </ol>
+  )
+}
+
+/** What the run declared or first produced: its artifacts, each opening the viewer. */
+function Produced({ runId }: { runId: number }) {
+  const [list, setList] = useState<StoredArtifact[] | null>(null)
+  const [error, setError] = useState(false)
+  useEffect(() => {
+    let current = true
+    storedArtifacts.list({ run_id: runId }).then(
+      (a) => {
+        if (!current) return
+        setList(a)
+        setError(false)
+      },
+      () => current && setError(true),
+    )
+    return () => {
+      current = false
+    }
+  }, [runId])
+  if (error) return <p className="tone-bad">Could not read what this run produced.</p>
+  if (list === null) return <p className="faint">Reading…</p>
+  if (list.length === 0) return <p className="faint">This run produced no artifacts.</p>
+  return (
+    <ul className="artifact-produced">
+      {list.map((a) => (
+        <li key={a.id}>
+          <a href={withOpen(window.location.hash, { kind: 'artifact', id: a.id })}>{a.path}</a>{' '}
+          <span className="faint">{intentTag(a)}</span>
+        </li>
+      ))}
+    </ul>
   )
 }

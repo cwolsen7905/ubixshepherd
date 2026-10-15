@@ -23,6 +23,7 @@ type Page =
   | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
   | { page: 'timeline'; range?: TimelineRange; agent?: string }
   | { page: 'next'; focus?: number }
+  | { page: 'artifacts'; repo?: number; lane?: number; run?: number; topic?: number }
   | { page: 'projects' }
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
@@ -131,6 +132,20 @@ function parsePage(hash: string): Page {
     const item = Number(q.get('item'))
     return item > 0 ? { page: 'next', focus: item } : { page: 'next' }
   }
+  if (path === '/artifacts') {
+    const n = (k: string) => {
+      const v = Number(q.get(k))
+      return Number.isSafeInteger(v) && v > 0 ? v : 0
+    }
+    const [repo, lane, run, topic] = [n('repo'), n('lane'), n('run'), n('topic')]
+    return {
+      page: 'artifacts',
+      ...(repo ? { repo } : {}),
+      ...(lane ? { lane } : {}),
+      ...(run ? { run } : {}),
+      ...(topic ? { topic } : {}),
+    }
+  }
   if (path === '/chat') return { page: 'chat' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
   m = /^\/lanes\/(\d+)$/.exec(path)
@@ -167,6 +182,11 @@ export const href = {
     if (o.range) q.set('range', o.range)
     if (o.agent) q.set('agent', o.agent)
     return q.size ? `#/timeline?${q}` : '#/timeline'
+  },
+  artifacts: (o: { repo?: number; lane?: number; run?: number; topic?: number } = {}) => {
+    const q = new URLSearchParams()
+    for (const k of ['repo', 'lane', 'run', 'topic'] as const) if (o[k]) q.set(k, String(o[k]))
+    return q.size ? `#/artifacts?${q}` : '#/artifacts'
   },
   projects: () => '#/projects',
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,

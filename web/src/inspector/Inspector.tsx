@@ -4,6 +4,7 @@ import { DecisionPane } from './decisionPane'
 import { QuestionPane } from './questionPane'
 import { useMode, type Mode } from './useMode'
 import { LaneInspector } from './lane'
+import { ArtifactInspector } from './artifactPane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
 import { useSnapshot } from '../state/context'
@@ -35,6 +36,8 @@ function InspectorBody({ open }: { open: Open }) {
       return <DecisionPane key={open.id} id={open.id} />
     case 'question':
       return <QuestionPane key={open.id} id={open.id} />
+    case 'artifact':
+      return <ArtifactInspector key={open.id} id={open.id} />
     default:
       return <Placeholder open={open} />
   }

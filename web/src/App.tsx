@@ -22,6 +22,7 @@ import { InspectorFrame } from './inspector/Inspector'
 import { CommandPalette, type PaletteHandle } from './palette/CommandPalette'
 import { StatusCounts } from './components/StatusCounts'
 import { statusCounts } from './state/attention'
+import { ArtifactsPage } from './pages/Artifacts'
 import { UpdateNotice } from './components/UpdateNotice'
 import { Shell } from './shell/Shell'
 import { useAttentionChrome } from './shell/useAttentionChrome'
@@ -54,6 +55,7 @@ export function App() {
       t: () => pending.current === 'g' && go(href.timeline()),
       c: () => pending.current === 'g' && go(href.chat()),
       n: () => pending.current === 'g' && go(href.next()),
+      a: () => pending.current === 'g' && go(href.artifacts()),
     },
     [],
   )
@@ -120,6 +122,7 @@ export function App() {
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'inbox' && <InboxPage kind={route.kind} />}
         {route.page === 'next' && <NextPage />}
+        {route.page === 'artifacts' && <ArtifactsPage repo={route.repo} lane={route.lane} run={route.run} topic={route.topic} />}
         {route.page === 'chat' && <ChatPage />}
         {route.page === 'settings' && <SettingsPage scope={route.scope} />}
         {route.page === 'lane' && <LanePage key={route.id} id={route.id} />}

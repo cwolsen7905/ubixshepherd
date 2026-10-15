@@ -25,6 +25,7 @@ const PAGES: [string, string, string][] = [
   ['Chat', href.chat(), 'conversation desk'],
   ['Board', href.board(), 'lanes'],
   ['Next up', href.next(), 'plan'],
+  ['Artifacts', href.artifacts(), 'files plans reports'],
   ['Runs', href.runs(), 'agents'],
   ['Timeline', href.timeline(), 'history'],
   ['Projects', href.projects(), 'repos'],
