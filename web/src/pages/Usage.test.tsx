@@ -113,7 +113,7 @@ describe('the Usage page', () => {
 
   it('sorts the tables by a clicked column, and flips on a second click', async () => {
     daemon()
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null })
     await show()
     const section = await screen.findByRole('region', { name: 'By agent and model' })
     const names = () => within(section).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0]?.textContent)
@@ -123,7 +123,7 @@ describe('the Usage page', () => {
     await user.click(within(section).getByRole('button', { name: /Peak context/ }))
     expect(names()).toEqual(['copilot', 'claude sonnet-4', 'claude opus-4[1m]'])
     expect(within(section).getByRole('columnheader', { name: /Peak context/ })).toHaveAttribute('aria-sort', 'ascending')
-  }, 20_000)
+  })
 
   it('charts peak context for measured groups only, with the 200k count', async () => {
     daemon()
