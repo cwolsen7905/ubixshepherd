@@ -553,6 +553,11 @@ func (d *Desk) waitingLine() string {
 	if qs, err := o.Store.Questions(ctx, d.ws.ID, store.QuestionOpen); err == nil {
 		w.AddQuestions(qs)
 	}
+	if held, err := waiting.MergedArtifactItems(ctx, o.Store, d.ws.ID); err != nil {
+		o.Log.Warn("desk: merged lanes with artifacts", "workspace", d.ws.Name, "err", err)
+	} else if len(held) > 0 {
+		w.AddItems(held)
+	}
 	return w.Line()
 }
 

@@ -254,3 +254,60 @@ func TestRequestsNeedingRoutingWaitAndVersionMoves(t *testing.T) {
 		t.Errorf("after close: %+v (version %s, empty %s)", after, after.Version, empty.Version)
 	}
 }
+
+// MergedArtifactItems is the one producer of merged-lane artifact items: the daemon's
+// list and the desk's line both add its items, and Collect itself adds none, so each
+// is counted once.
+func TestMergedArtifactItemsAreProducedOnce(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	root := t.TempDir()
+	ws, err := st.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, []store.Repo{{Name: "app", Path: filepath.Join(root, "app")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := st.Repos(ctx, ws.ID)
+	l := lane(t, st, repos[0], "docs", 1)
+	put := func(path, intent string) {
+		t.Helper()
+		if _, _, err := st.UpsertArtifact(ctx, store.Artifact{
+			WorkspaceID: ws.ID, RepoID: l.RepoID, LaneID: l.ID, Path: path, Kind: store.ArtifactMarkdown,
+			Source: store.ArtifactDiscovered, Intent: intent, IntentBy: store.IntentByDefault, SHA256: "ab",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("docs/plan.md", store.ArtifactUndecided)
+	put(".shepherd/artifacts/notes.md", store.ArtifactUndecided)
+	put("docs/kept.md", store.ArtifactKeep)
+	if items, err := MergedArtifactItems(ctx, st, ws.ID); err != nil || len(items) != 0 {
+		t.Fatalf("an unmerged lane waits: %v %v", items, err)
+	}
+	if err := st.PutLaneForge(ctx, store.LaneForge{LaneID: l.ID, MR: 12, MRState: "merged"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := MergedArtifactItems(ctx, st, ws.ID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items = %+v, %v", items, err)
+	}
+	it := items[0]
+	if it.Kind != api.WaitingArtifact || it.LaneID != l.ID || it.MR != 12 || !strings.Contains(it.Detail, "docs/plan.md") ||
+		strings.Contains(it.Detail, "notes.md") || strings.Contains(it.Detail, "kept.md") {
+		t.Errorf("item = %+v", it)
+	}
+	w, err := Collect(ctx, st, config.Config{}, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Counts.Artifacts != 0 {
+		t.Errorf("Collect adds artifact items: %+v", w)
+	}
+	w.AddItems(items)
+	if w.Counts.Artifacts != 1 || !strings.Contains(w.Line(), "docs/plan.md") {
+		t.Errorf("after AddItems: %+v / %q", w.Counts, w.Line())
+	}
+}

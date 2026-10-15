@@ -391,7 +391,7 @@ func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out.AddQuestions(qs)
-	if held, err := s.mergedArtifactItems(r.Context(), ws); err != nil {
+	if held, err := waiting.MergedArtifactItems(r.Context(), s.Store, ws); err != nil {
 		s.Log.Warn("waiting: merged lanes with artifacts", "err", err)
 	} else if len(held) > 0 {
 		out.AddItems(held)
