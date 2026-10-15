@@ -31,7 +31,8 @@ export function parse(hash: string): Route {
   const [path = '/', query = ''] = (hash.replace(/^#/, '') || '/').split('?')
   const q = new URLSearchParams(query)
   const range = q.get('range') === 'week' ? 'week' : q.get('range') === 'today' ? 'today' : undefined
-  if (path === '/') return range ? { page: 'board', range } : { page: 'board' }
+  if (path === '/') return { page: 'chat' }
+  if (path === '/board') return range ? { page: 'board', range } : { page: 'board' }
   if (path === '/runs') {
     const lane = Number(q.get('lane'))
     return {
@@ -89,7 +90,7 @@ export function parse(hash: string): Route {
 }
 
 export const href = {
-  board: (range?: Range) => (range ? `#/?range=${range}` : '#/'),
+  board: (range?: Range) => (range ? `#/board?range=${range}` : '#/board'),
   runs: (o: { range?: Range; agent?: string; lane?: number } = {}) => {
     const q = new URLSearchParams()
     if (o.range) q.set('range', o.range)
@@ -117,7 +118,7 @@ export const href = {
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,
   unassigned: () => '#/unassigned',
   next: (item?: number) => (item ? `#/next?item=${item}` : '#/next'),
-  chat: () => '#/chat',
+  chat: () => '#/',
   settings: (scope?: string) => (scope ? `#/settings?scope=${encodeURIComponent(scope)}` : '#/settings'),
   lane: (id: number) => `#/lanes/${id}`,
   log: (run: number) => `#/runs/${run}/log`,

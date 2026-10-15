@@ -50,6 +50,7 @@ export function App() {
       b: () => pending.current === 'g' && go(href.board()),
       d: () => pending.current === 'g' && go(href.decisions()),
       t: () => pending.current === 'g' && go(href.timeline()),
+      c: () => pending.current === 'g' && go(href.chat()),
       n: () => pending.current === 'g' && go(href.next()),
     },
     [],
