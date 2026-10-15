@@ -16,6 +16,7 @@ variables:
 # Advisory means never red: allow_failure here makes that visible in this repo. The template
 # decides where it runs (merge request pipelines targeting dev, not drafts).
 ai-review-mr:
+  stage: test # the template's stage, one of the stages below
   allow_failure: true
 
 # The default stages plus approval and promote. The checks stay in the default test stage.
