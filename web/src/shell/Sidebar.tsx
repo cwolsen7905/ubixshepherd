@@ -20,7 +20,7 @@ function Wordmark({ workspaces }: { workspaces: Status['workspaces'] }) {
     <a
       className="wordmark"
       href={href.board()}
-      aria-label={`uBixShepherd, ${workspaceName(workspaces)}, go to the board`}
+      aria-label={workspaces.length ? `uBixShepherd, ${workspaceName(workspaces)}, go to the board` : 'uBixShepherd, go to the board'}
       title={workspaces.map((w) => w.name).join(', ') || undefined}
     >
       <svg className="wordmark-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
