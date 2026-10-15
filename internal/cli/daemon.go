@@ -21,6 +21,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/service"
@@ -216,7 +217,13 @@ func daemonServe(ctx context.Context, env Env, restart *bool) error {
 	srv.Fold.Exe = env.Exe
 	srv.Exe = env.Exe
 	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
-	srv.Runner.ArtifactScan = srv.Fold.Artifacts
+	srv.Fold.ArtifactDir = filepath.Join(l.Home, "artifacts")
+	// A run's end copies what its lane's known artifacts hold now, then scans as before.
+	srv.Runner.ArtifactScan = func(ctx context.Context, laneID int64) (fold.LaneArtifacts, error) {
+		srv.Fold.SnapshotKnown(ctx, laneID)
+		return srv.Fold.Artifacts(ctx, laneID)
+	}
+	go artifactRetention(ctx, srv)
 	srv.QuotaHolds = func() []api.QuotaHold { return quotaHolds(srv.Runner) }
 	if cfg.Daemon.Poll != "off" {
 		every, _ := time.ParseDuration(cfg.Daemon.Poll)
@@ -535,4 +542,22 @@ func daemonUninstall(ctx context.Context, env Env) error {
 	}
 	fmt.Fprintf(env.Stdout, "removed %s; the daemon is stopped and will not start at login\n", mgr.File())
 	return nil
+}
+
+// artifactRetention applies the snapshots' retention at start and then once a day.
+func artifactRetention(ctx context.Context, srv *daemon.Server) {
+	t := time.NewTicker(24 * time.Hour)
+	defer t.Stop()
+	for {
+		if res, err := srv.Fold.ArtifactGC(ctx, 0, 0, false, time.Now()); err != nil {
+			srv.Log.Warn("artifact retention", "err", err)
+		} else if res.Expired+res.Evicted+res.Orphans > 0 {
+			srv.Log.Info("artifact retention", "expired", res.Expired, "evicted", res.Evicted, "orphans", res.Orphans, "freed_bytes", res.FreedByte)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }

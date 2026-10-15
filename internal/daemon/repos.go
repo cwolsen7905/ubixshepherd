@@ -217,6 +217,13 @@ func (s *Server) addRepos(w http.ResponseWriter, r *http.Request) {
 			got.Repo = repos[i]
 		}
 		s.Log.Info("repo managed", "workspace", p.ws.Name, "repo", got.Name, "outcome", got.Outcome)
+		// Files agents keep out of git live in the Shepherd directory; excluding it is
+		// a local change to the repo's configuration, so it is said in the feed.
+		if note, err := s.Fold.EnsureExclude(ctx, got.Repo.ID); err != nil {
+			s.Log.Warn("exclude the artifact directory", "repo", got.Name, "err", err)
+		} else if note != "" {
+			s.Log.Info(note, "repo", got.Name)
+		}
 		out.Repos = append(out.Repos, got)
 	}
 	writeJSON(w, http.StatusOK, out)

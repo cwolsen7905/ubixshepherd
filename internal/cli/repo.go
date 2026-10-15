@@ -121,6 +121,7 @@ func repoAdd(ctx context.Context, env Env, args []string) error {
 		if r.Reason != "" {
 			fmt.Fprintf(w, "  note: %s is not a clean first-time candidate (%s); added because you named it\n", r.Name, r.Reason)
 		}
+		fmt.Fprintf(w, "  artifacts: adds /.shepherd/artifacts/ to the repo's .git/info/exclude (local, never committed); refuse with the setting artifacts.exclude.%s=off\n", r.Name)
 		if r.Profile {
 			fmt.Fprintf(w, "  profile: repos.%s in config.yaml\n", r.Name)
 		} else {
