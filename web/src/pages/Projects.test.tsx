@@ -124,6 +124,8 @@ describe('ProjectPage', () => {
     await show(<ProjectPage name="shop" />)
     const waiting = await screen.findByRole('region', { name: /Waiting on you/ })
     expect(within(waiting).getByRole('heading', { level: 2 })).toHaveTextContent('Waiting on you 2')
+    expect(screen.getByRole('heading', { name: /^Open lanes/ })).toHaveTextContent('Open lanes 1')
+    expect(screen.getByRole('heading', { name: /^Recent runs/ })).toHaveTextContent('Recent runs 1')
     expect(screen.getByRole('link', { name: 'Edit' })).not.toHaveClass('ui-btn-primary')
     expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(0)
   })
@@ -140,6 +142,9 @@ describe('ProjectPage', () => {
     expect(await screen.findByRole('heading', { name: 'Unassigned' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Brief' })).toBeNull()
     expect(screen.getByText('No lane is open.')).toBeInTheDocument()
+    // A zero count is not drawn: the empty state under the heading says so instead.
+    expect(screen.getByRole('heading', { name: /^Open lanes/ })).toHaveTextContent(/^Open lanes$/)
+    expect(screen.getByText('No run yet.')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
   })
 
