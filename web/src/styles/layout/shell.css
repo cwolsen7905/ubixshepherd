@@ -103,7 +103,9 @@
    the rail are the scroll regions. `.chat` used to be sized 100dvh minus the bar while the
    page bar, banner and `.main` padding sat outside that, so the document ran past the
    viewport by their sum. Here the chain is sized top-down instead and `.chat` fills what is left. */
-.shell:has(.page.chat) { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+/* position: relative makes the shell the containing block of the visually-hidden live regions,
+   which would otherwise sit absolutely at the document's end and extend its scroll height. */
+.shell:has(.page.chat) { position: relative; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
 .shell:has(.page.chat) .shell-body { min-height: 0; height: 100%; overflow: hidden; }
 .shell:has(.page.chat) .page-bar { flex: none; }
 .shell:has(.page.chat) .banner { flex: none; }
