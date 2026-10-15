@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { api, ApiError, CSRF_HEADER, history, NetworkError, REQUEST_TIMEOUT } from './client'
+import { api, ApiError, CSRF_HEADER, deskQuestions, history, NetworkError, nextUp, projects, REQUEST_TIMEOUT, topics, waitingOnYou } from './client'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -65,5 +65,32 @@ describe('the API client', () => {
     expect(url.searchParams.get('limit')).toBe('1000')
     expect(url.searchParams.get('agent')).toBe('claude')
     expect(url.searchParams.get('lane_id')).toBe('7')
+  })
+})
+
+describe('tolerant list reads', () => {
+  it('reads a missing, null or wrong-typed list as empty', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({})))
+    expect(await api.next()).toMatchObject({ items: [] })
+    expect(await api.feed(0)).toMatchObject({ items: [], last: 0 })
+    expect(await waitingOnYou.list()).toMatchObject({ items: [], count: 0 })
+    expect(await deskQuestions.list()).toEqual([])
+    expect(await topics.list()).toEqual({ topics: [] })
+    expect(await projects.list()).toEqual({ projects: [] })
+    expect(await history.runs(1, 'x')).toMatchObject({ runs: [], agents: [], count: 0 })
+    vi.stubGlobal('fetch', vi.fn(async () => json(null)))
+    expect(await api.lanes(1)).toEqual([])
+    expect(await api.runs()).toEqual([])
+    expect(await api.decisions('open')).toEqual([])
+    expect(await deskQuestions.list()).toEqual([])
+    expect(await waitingOnYou.list()).toMatchObject({ items: [] })
+    vi.stubGlobal('fetch', vi.fn(async () => json({ items: 'oops', topics: 3 })))
+    expect(await nextUp.list()).toMatchObject({ items: [] })
+    expect(await topics.list()).toMatchObject({ topics: [] })
+  })
+
+  it('keeps what a well-formed answer carries', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ items: [{ id: 1 }], next_up: 1 })))
+    expect(await api.next()).toMatchObject({ items: [{ id: 1 }], next_up: 1 })
   })
 })

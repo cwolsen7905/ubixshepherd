@@ -244,4 +244,24 @@ describe('Live', () => {
     b.clearDone()
     expect(new Live(fakeApi().api, c.clock).getSnapshot().seen).toEqual({ until: '2026-10-08T12:01:00.000Z', keys: new Set() })
   })
+
+  it('loads with lists a daemon answered without their fields', async () => {
+    const f = fakeClock()
+    const api = fakeApi({
+      status: async () => ({}) as never,
+      runs: async () => undefined as never,
+      decisions: async () => null as never,
+      requests: async () => ({}) as never,
+      next: async () => ({}) as never,
+      feedLatest: async () => ({}) as never,
+    }).api
+    const live = new Live(api, f.clock)
+    live.start()
+    await settle()
+    const s = live.getSnapshot()
+    expect(s.ready).toBe(true)
+    expect(s.error).toBeNull()
+    expect([s.lanes, s.runs, s.decisions, s.requests, s.next]).toEqual([[], [], [], [], []])
+    live.stop()
+  })
 })

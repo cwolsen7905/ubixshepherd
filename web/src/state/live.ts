@@ -3,8 +3,8 @@
 // a refresh of the lists when something happened; the lists are also refreshed on a
 // slower clock, since the forge's state changes without asking. Both slow down while the
 // tab is hidden. (Server-sent events will replace the feed poll.)
-import { api as realApi, ApiError, SIGN_IN_HINT } from '../api/client'
-import type { DecisionView, LaneView, NextItem, RequestView, RunView, SpendToday, Status } from '../api/types'
+import { api as realApi, ApiError, asList, SIGN_IN_HINT } from '../api/client'
+import type { DecisionView, Feed, LaneView, NextItem, RequestView, RunView, SpendToday, Status } from '../api/types'
 import { noteOutcome, type Seen } from '../model/board'
 import { entries, type FeedEntry } from '../model/feed'
 
@@ -154,13 +154,14 @@ export class Live {
   /** Reads the newest window of the feed, and where to poll from. */
   private async loadFeed() {
     try {
-      const { last } = await this.api.feedLatest()
+      const latest = await this.api.feedLatest()
+      const last = typeof latest?.last === 'number' ? latest.last : 0
       let after = Math.max(0, last - FEED_WINDOW)
       const feed: FeedEntry[] = []
       while (after < last) {
         const page = await this.api.feed(after)
-        if (page.items.length === 0 || page.last <= after) break
-        feed.push(...entries(page).filter((e) => e.id <= last))
+        if (asList(page?.items).length === 0 || page.last <= after) break
+        feed.push(...entriesOf(page).filter((e) => e.id <= last))
         after = page.last
       }
       this.last = last
@@ -176,12 +177,12 @@ export class Live {
     try {
       const page = await this.api.feed(this.last)
       this.ok()
-      if (page.items.length === 0) {
+      if (asList(page?.items).length === 0) {
         if (this.snap.error) this.set({ error: null })
         return
       }
       this.last = page.last
-      const fresh = entries(page)
+      const fresh = entriesOf(page)
       let runs = this.snap.runs
       for (const e of fresh) runs = noteOutcome(runs, e.event, e.ref, e.created)
       this.set({ feed: [...this.snap.feed, ...fresh].slice(-FEED_WINDOW), runs, error: null })
@@ -203,7 +204,7 @@ export class Live {
     try {
       const status = await this.api.status()
       const [laneLists, runs, decisions, requests, nextList, spend] = await Promise.all([
-        Promise.all(status.workspaces.map((w) => this.api.lanes(w.id))),
+        Promise.all(asList<Status['workspaces'][number]>(status?.workspaces).map((w) => this.api.lanes(w.id))),
         this.api.runs(),
         this.api.decisions('open'),
         this.api.requests('needs_routing'),
@@ -211,7 +212,9 @@ export class Live {
         this.api.spend(),
       ])
       this.set({
-        status, lanes: laneLists.flat(), runs, decisions, requests, next: nextList.items, spend,
+        status, lanes: laneLists.flatMap((l) => asList<LaneView>(l)), runs: asList<RunView>(runs),
+        decisions: asList<DecisionView>(decisions), requests: asList<RequestView>(requests),
+        next: asList<NextItem>(nextList?.items), spend: spend ?? null,
         error: null, ready: true, updated: this.clock.now(),
       })
     } catch (e) {
@@ -247,6 +250,11 @@ export class Live {
     await this.refresh()
     return d
   }
+}
+
+/** A feed page's entries, tolerating a page that lacks its items. */
+function entriesOf(page: Feed): FeedEntry[] {
+  return entries({ ...page, items: asList(page?.items) })
 }
 
 function message(e: unknown): string {

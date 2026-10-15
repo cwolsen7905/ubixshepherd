@@ -91,6 +91,50 @@ async function exchange<T>(path: string, init: RequestInit | undefined, token: s
   return (await res.json()) as T
 }
 
+/**
+ * A list field that arrived missing, null or not an array reads as empty. An older daemon, a
+ * partial outage or a stub that has not kept up must not take the app down with a `.filter`.
+ */
+export function asList<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : []
+}
+
+/** A read of a bare JSON array, tolerant of a missing or null body. */
+const getList = <T>(path: string) => get<unknown>(path).then((v) => asList<T>(v))
+
+/** The object a read answered, or an empty one when the body was missing or not an object. */
+function asObject(v: unknown): Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+}
+
+/** The reads whose body wraps lists: each list field is made an array, other fields pass through. */
+export function normalizeNext(v: unknown): NextList {
+  const o = asObject(v)
+  return { ...o, items: asList<NextItem>(o.items), ...(o.matrix === undefined ? {} : { matrix: asList(o.matrix) }) } as NextList
+}
+
+export function normalizeFeed(v: unknown): Feed {
+  const o = asObject(v)
+  return { ...o, items: asList(o.items), last: typeof o.last === 'number' ? o.last : 0, ...(o.events === undefined ? {} : { events: asList<string>(o.events) }) } as Feed
+}
+
+export function normalizeWaiting(v: unknown): Waiting {
+  const o = asObject(v)
+  const items = asList<Waiting['items'][number]>(o.items)
+  return { ...o, items, count: typeof o.count === 'number' ? o.count : items.length, counts: { decisions: 0, mrs: 0, ship: 0, next: 0, ...asObject(o.counts) } } as Waiting
+}
+
+export function normalizeRunHistory(v: unknown): RunHistory {
+  const o = asObject(v)
+  const runs = asList<RunHistory['runs'][number]>(o.runs)
+  return {
+    ...o, runs, agents: asList<string>(o.agents),
+    count: typeof o.count === 'number' ? o.count : runs.length,
+    cost_usd: typeof o.cost_usd === 'number' ? o.cost_usd : 0,
+    credits: typeof o.credits === 'number' ? o.credits : 0,
+  } as RunHistory
+}
+
 export const get = <T>(path: string) => call<T>(path)
 export const post = <T>(path: string, body: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body) })
 export const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) })
@@ -102,8 +146,8 @@ export const RECENT_RUNS = 200
 
 export const api = {
   status: () => get<Status>('/v1/status'),
-  lanes: (workspaceId: number) => get<LaneView[]>(`/v1/lanes?${qs({ workspace_id: workspaceId })}`),
-  runs: (laneId = 0, limit = RECENT_RUNS) => get<RunView[]>(`/v1/runs?${qs({ lane_id: laneId, limit })}`),
+  lanes: (workspaceId: number) => getList<LaneView>(`/v1/lanes?${qs({ workspace_id: workspaceId })}`),
+  runs: (laneId = 0, limit = RECENT_RUNS) => getList<RunView>(`/v1/runs?${qs({ lane_id: laneId, limit })}`),
   run: (id: number) => get<RunView>(`/v1/runs/${id}`),
   /** Clears a failed or stopped run from the board's attention group; nothing is deleted. */
   dismissRun: (id: number) => post<RunView>(`/v1/runs/${id}/dismiss`, {}),
@@ -111,14 +155,14 @@ export const api = {
   runLog: (id: number, offset: number) => get<RunLog>(`/v1/runs/${id}/log?${qs({ offset })}`),
   runEvents: (id: number) => get<RunEvents>(`/v1/runs/${id}/events`),
   /** state "" lists every decision. */
-  decisions: (state: '' | 'open' | 'answered') => get<DecisionView[]>(`/v1/decisions?${qs({ state })}`),
-  requests: (states: string) => get<RequestView[]>(`/v1/requests?${qs({ state: states })}`),
+  decisions: (state: '' | 'open' | 'answered') => getList<DecisionView>(`/v1/decisions?${qs({ state })}`),
+  requests: (states: string) => getList<RequestView>(`/v1/requests?${qs({ state: states })}`),
   /** The open next-up list; the live view counts the items waiting on the person from it. */
-  next: () => get<NextList>('/v1/next'),
+  next: () => get<unknown>('/v1/next').then(normalizeNext),
   spend: () => get<SpendToday>('/v1/spend'),
   /** The newest feed id only. */
-  feedLatest: () => get<Feed>('/v1/feed?after=latest'),
-  feed: (after: number) => get<Feed>(`/v1/feed?${qs({ after })}`),
+  feedLatest: () => get<unknown>('/v1/feed?after=latest').then(normalizeFeed),
+  feed: (after: number) => get<unknown>(`/v1/feed?${qs({ after })}`).then(normalizeFeed),
   /** The person's words, sent only from their own click. */
   answer: (decisionId: number, answer: string) => post<Decision>(`/v1/decisions/${decisionId}/answer`, { answer }),
 }
@@ -139,7 +183,7 @@ export const laneClose = {
    */
   close: (laneId: number, force: boolean) => post<LaneClosed>(`/v1/lanes/${laneId}/close`, { force }),
   /** Every worktree of the repo, judged finished, live or unclear. The daemon refreshes the remote first. */
-  review: (repoId: number) => post<LaneReview[]>('/v1/fold/review', { repo_id: repoId, apply: false }),
+  review: (repoId: number) => post<unknown>('/v1/fold/review', { repo_id: repoId, apply: false }).then((v) => asList<LaneReview>(v)),
 }
 
 /** A lane's merge request approval: read, and given by the person's own click only. */
@@ -151,7 +195,7 @@ export const laneApprove = {
 
 /** Everything that waits on the person's action, and shipping a lane from the list. */
 export const waitingOnYou = {
-  list: () => get<Waiting>('/v1/waiting'),
+  list: () => get<unknown>('/v1/waiting').then(normalizeWaiting),
   /** Pushes the lane's committed work and opens or updates its merge request, after Shepherd's own checks. */
   ship: (laneId: number) => post<LaneShipped>(`/v1/lanes/${laneId}/ship`, {}),
 }
@@ -159,7 +203,7 @@ export const waitingOnYou = {
 /** The front desk's questions to the person: read, and skipped by the person's own click. */
 export const deskQuestions = {
   list: (state: '' | 'open' | 'answered' | 'skipped' = 'open') =>
-    get<{ questions: DeskQuestion[] }>(`/v1/questions?${qs({ state })}`).then((r) => r.questions),
+    get<unknown>(`/v1/questions?${qs({ state })}`).then((r) => asList<DeskQuestion>(asObject(r).questions)),
   /** Clears it without an answer; the daemon records the skip in the thread. */
   skip: (id: number) => post<DeskQuestion>(`/v1/questions/${id}/skip`, {}),
 }
@@ -167,7 +211,7 @@ export const deskQuestions = {
 /** A failed run's diagnoses and its suggested fixes. */
 export const runFailures = {
   /** Newest first, evidence included. */
-  diagnoses: (runId: number) => get<Diagnosis[]>(`/v1/runs/${runId}/diagnoses`),
+  diagnoses: (runId: number) => getList<Diagnosis>(`/v1/runs/${runId}/diagnoses`),
   /** Takes one of the fixes; the person's click only. */
   fix: (runId: number, action: string, overrides?: Record<string, string>) =>
     post<FixResult>(`/v1/runs/${runId}/fix`, { action, ...(overrides ? { overrides } : {}) }),
@@ -194,21 +238,21 @@ export const updateCheck = {
 export const history = {
   /** Closed lanes by default, newest closed first; one lane by id whatever its state. */
   lanes: (workspaceId: number, since: string, state: 'closed' | 'open' | 'all' = 'closed') =>
-    get<LaneRecord[]>(`/v1/history/lanes?${qs({ workspace_id: workspaceId, state, since })}`),
-  lane: (laneId: number) => get<LaneRecord[]>(`/v1/history/lanes?${qs({ lane_id: laneId })}`),
+    getList<LaneRecord>(`/v1/history/lanes?${qs({ workspace_id: workspaceId, state, since })}`),
+  lane: (laneId: number) => getList<LaneRecord>(`/v1/history/lanes?${qs({ lane_id: laneId })}`),
   /** `limit` is how many runs are listed (the daemon's default is 500, its most 1000); the totals cover them all. */
   runs: (workspaceId: number, since: string, agent = '', laneId = 0, limit = 0) =>
-    get<RunHistory>(
+    get<unknown>(
       `/v1/history/runs?${qs({
         workspace_id: workspaceId, since, ...(agent ? { agent } : {}), ...(laneId ? { lane_id: laneId } : {}),
         ...(limit ? { limit } : {}),
       })}`,
-    ),
+    ).then(normalizeRunHistory),
 }
 
 /** Projects with their lanes, runs, spend and brief; read-only. */
 export const projects = {
-  list: () => get<ProjectList>('/v1/projects'),
+  list: () => get<unknown>('/v1/projects').then((v): ProjectList => ({ ...asObject(v), projects: asList(asObject(v).projects) })),
   one: (name: string) => get<ProjectDetail>(`/v1/projects/${encodeURIComponent(name)}`),
   /** The repos that are in no project, as a project's detail. */
   unassigned: () => get<ProjectDetail>('/v1/unassigned'),
@@ -230,7 +274,8 @@ export const config = {
 /** Conversation topics: the matters the thread is about. Renaming, merging and clearing are the person's click only. */
 export const topics = {
   /** all adds cleared topics. */
-  list: (all = false) => get<TopicList>(all ? '/v1/topics?all=1' : '/v1/topics'),
+  list: (all = false) =>
+    get<unknown>(all ? '/v1/topics?all=1' : '/v1/topics').then((v): TopicList => ({ ...asObject(v), topics: asList(asObject(v).topics) })),
   add: (title: string) => post<TopicView>('/v1/topics', { title }),
   update: (id: number, body: TopicUpdateBody) => patch<TopicView>(`/v1/topics/${id}`, body),
 }
@@ -238,7 +283,7 @@ export const topics = {
 /** The next-up list: work planned but not being acted on. Changing a state or the order is the person's click only. */
 export const nextUp = {
   /** all adds dropped and done items. */
-  list: (all = false) => get<NextList>(all ? '/v1/next?all=1' : '/v1/next'),
+  list: (all = false) => get<unknown>(all ? '/v1/next?all=1' : '/v1/next').then(normalizeNext),
   add: (body: NextAddBody) => post<NextItem>('/v1/next', body),
   update: (id: number, body: NextUpdateBody) => patch<NextItem>(`/v1/next/${id}`, body),
 }

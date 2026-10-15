@@ -19,6 +19,7 @@ import { SettingsPage } from './pages/Settings'
 import { TimelinePage } from './pages/Timeline'
 import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
 import { WaitingOnYou } from './components/WaitingOnYou'
 import { UpdateNotice } from './components/UpdateNotice'
@@ -69,6 +70,7 @@ export function App() {
 
   return (
     <div className="app">
+      <ErrorBoundary region="The top bar">
       <header className="bar">
         <a className="wordmark" href={href.board()}>
           <svg className="wordmark-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
@@ -146,6 +148,7 @@ export function App() {
           </button>
         </p>
       </header>
+      </ErrorBoundary>
 
       {snap.error && (
         <div className="banner tone-bad" role="alert">
@@ -153,9 +156,12 @@ export function App() {
         </div>
       )}
 
-      <UpdateNotice />
+      <ErrorBoundary region="The update notice">
+        <UpdateNotice />
+      </ErrorBoundary>
 
       <main className="main">
+        <ErrorBoundary region="This page" resetKey={window.location.hash}>
         {route.page === 'board' && <BoardPage
             items={items}
             range={route.range}
@@ -185,6 +191,7 @@ export function App() {
             Nothing lives at <code>{route.path}</code>. <a href={href.board()}>Go to the board</a>.
           </p>
         )}
+        </ErrorBoundary>
       </main>
 
       {help && <Help onClose={() => setHelp(false)} />}
