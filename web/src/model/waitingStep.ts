@@ -1,6 +1,7 @@
 // Stepping through what waits on the person: the header counter's up and down arrows pick
 // the next item, and the chat page scrolls to it in the thread and highlights it.
 import type { WaitingItem } from '../api/types'
+import type { Open } from '../router'
 
 /** A stable key for an item: the daemon's list has no ids of its own. */
 export function waitingKey(it: WaitingItem): string {
@@ -73,4 +74,21 @@ export function stepAnchor(it: WaitingItem, ctx: StepContext): string | null {
 export function showInThread(it: WaitingItem) {
   if (!window.location.hash.startsWith('#/chat')) window.location.hash = '#/chat'
   requestStep(it)
+}
+
+/** The inspector item that shows a waiting item in full, or null for kinds with no pane yet. */
+export function openTarget(it: WaitingItem): Open | null {
+  if (it.kind === 'decision' && it.decision_id) return { kind: 'decision', id: it.decision_id }
+  if (it.kind === 'question' && it.question_id) return { kind: 'question', id: it.question_id }
+  return null
+}
+
+/** The key of the waiting item the inspector holds, or null when it holds none of them. */
+export function openKey(items: readonly WaitingItem[], open: Open | undefined): string | null {
+  if (!open) return null
+  const hit = items.find((it) => {
+    const t = openTarget(it)
+    return t !== null && t.kind === open.kind && t.id === open.id
+  })
+  return hit ? waitingKey(hit) : null
 }

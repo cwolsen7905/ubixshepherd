@@ -4,11 +4,11 @@ import { Markdown, inline } from '../conversation/Markdown'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { answerKey, clearDraft, readDraft, writeDraft } from '../model/chatDraft'
-import { href } from '../router'
+import { href, withOpen } from '../router'
 import { useLive } from '../state/context'
 import '../styles/conversation.css'
 import '../styles/decisions.css'
-import { Button } from '../ui'
+import { Button, useToast } from '../ui'
 import { Glyph } from './Glyph'
 
 /** A question longer than this (characters or lines) starts clamped, with a "Show all". */
@@ -45,17 +45,22 @@ type Sent = { state: 'idle' } | { state: 'sending' } | { state: 'done'; d: Decis
  * the person's answer. Only the person's own click sends it.
  */
 export function DecisionCard({
-  d, laneId, focused = false, variant = 'page',
+  d, laneId, focused = false, variant = 'page', onSent,
 }: {
   d: DecisionView
   laneId?: number
   focused?: boolean
-  variant?: 'page' | 'inline'
+  /** `inline` is the compact card in the thread; `pane` the full view in the inspector. */
+  variant?: 'page' | 'inline' | 'pane'
+  /** Called once the daemon has taken the answer. */
+  onSent?: (d: Decision) => void
 }) {
   const live = useLive()
+  const toast = useToast()
   const now = useNow()
   const options = d.options ?? []
   const inlineCard = variant === 'inline'
+  const pane = variant === 'pane'
   const draft = answerKey(d.id)
   const [choice, setChoice] = useState('')
   const [own, setOwnText] = useState(() => readDraft(window.localStorage, draft))
@@ -84,21 +89,45 @@ export function DecisionCard({
 
   const words = own.trim() || choice
   const send = async () => {
-    if (!words) return
+    if (!words || sent.state !== 'idle') return
     setSent({ state: 'sending' })
     try {
       const done = await live.answer(d.id, words)
       clearDraft(window.localStorage, draft)
       setSent({ state: 'done', d: done })
+      toast(done.answer_run ? `Answered decision ${d.id}. The agent carries on as run ${done.answer_run}.` : `Answered decision ${d.id}. The agent gets it when its run ends.`, 'ok')
+      onSent?.(done)
     } catch (e) {
       setSent({ state: 'error', msg: e instanceof Error ? e.message : String(e) })
     }
   }
 
-  const { head, body } = splitQuestion(d.question)
+  // Cmd+Enter or Ctrl+Enter sends the card in focus, even while typing in its own box.
+  const sendRef = useRef(send)
+  useEffect(() => {
+    sendRef.current = send
+  })
+  useEffect(() => {
+    if (!focused) return
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented) {
+        // A box elsewhere on the page (the composer) keeps its own Cmd+Enter.
+        const t = e.target
+        if (t instanceof HTMLElement && t !== document.body && !ref.current?.contains(t) && t.closest('textarea, input, [contenteditable]')) return
+        e.preventDefault()
+        void sendRef.current()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focused])
+
+  const { head, body: fullBody } = splitQuestion(d.question)
+  // The compact card is the headline and the options; the body is for the inspector.
+  const body = inlineCard ? (head ? '' : clip(fullBody, 240)) : fullBody
   const long = isLong(body)
   const recIsOption = !!d.recommendation && options.some((o) => o.trim() === d.recommendation?.trim())
-  const Tag = inlineCard ? 'section' : 'article'
+  const Tag = inlineCard || pane ? 'section' : 'article'
   const labelled = head ? { 'aria-labelledby': `${id}-q` } : { 'aria-label': `Decision ${d.id}` }
 
   const content = (
@@ -110,15 +139,16 @@ export function DecisionCard({
         <a href={href.log(d.run_id)}>run {d.run_id}</a>
         <span className="faint">{d.repo}</span>
         <span className="faint">waiting {since(d.created, now)}</span>
-        {inlineCard && <a href={href.decisions(d.id)}>open</a>}
+        {inlineCard && <a href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>open</a>}
       </p>
       {head &&
-        (inlineCard ? (
+        (inlineCard || pane ? (
           <p id={`${id}-q`} className="decision-q">{inline(head)}</p>
         ) : (
           <h2 id={`${id}-q`} className="decision-q">{inline(head)}</h2>
         ))}
-      {body && (
+      {body && inlineCard && <p className="decision-q">{inline(body)}</p>}
+      {body && !inlineCard && (
         <div className="decision-text">
           <div id={`${id}-text`} className={`decision-md${long && !expanded ? ' is-clamped' : ''}`}>
             <Markdown text={body} />
@@ -136,13 +166,13 @@ export function DecisionCard({
           )}
         </div>
       )}
-      {d.why && (
+      {d.why && !inlineCard && (
         <aside className="decision-aside decision-why" aria-label="Why this is your call">
           <span className="decision-aside-h">Why this is yours</span>
           <Markdown text={d.why} />
         </aside>
       )}
-      {d.recommendation && !recIsOption && (
+      {d.recommendation && !recIsOption && !inlineCard && (
         <aside className="decision-aside decision-rec" aria-label="Recommendation">
           <span className="decision-aside-h">Recommended</span>
           <Markdown text={d.recommendation} />
@@ -178,7 +208,7 @@ export function DecisionCard({
                         setOwn('')
                       }}
                     >
-                      {i < 9 && !inlineCard && <kbd aria-hidden="true">{i + 1}</kbd>}
+                      {i < 9 && (!inlineCard || focused) && <kbd aria-hidden="true">{i + 1}</kbd>}
                       <span className="option-text">{inline(o)}</span>
                       {rec && <span className="option-rec">recommended</span>}
                     </button>
@@ -214,10 +244,10 @@ export function DecisionCard({
   return (
     <Tag
       ref={ref as never}
-      className={`decision${inlineCard ? ' decision-inline' : ''}${focused ? ' is-focused' : ''}`}
+      className={`decision${inlineCard ? ' decision-inline' : ''}${pane ? ' decision-pane' : ''}${focused ? ' is-focused' : ''}`}
       {...labelled}
     >
-      {!inlineCard && <Glyph glyph="?" tone="warn" label="decision waiting" />}
+      {!inlineCard && !pane && <Glyph glyph="?" tone="warn" label="decision waiting" />}
       {content}
     </Tag>
   )

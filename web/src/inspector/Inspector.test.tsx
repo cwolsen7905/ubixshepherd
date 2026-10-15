@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { InspectorFrame } from './Inspector'
 import { modeFor } from './useMode'
 
-const open = { kind: 'decision', id: 5 }
+const open = { kind: 'run', id: 5 }
 
 describe('modeFor', () => {
   it('switches at 1440 and 760', () => {
@@ -16,7 +16,7 @@ describe('modeFor', () => {
 
 describe('InspectorFrame', () => {
   beforeEach(() => {
-    window.location.hash = '#/?open=decision:5'
+    window.location.hash = '#/?open=run:5'
   })
 
   it('shows nothing extra when nothing is open', () => {
@@ -27,8 +27,8 @@ describe('InspectorFrame', () => {
 
   it('names what is open and focuses the heading', () => {
     render(<InspectorFrame open={open} mode="split">page</InspectorFrame>)
-    expect(screen.getByText('Open: decision 5')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'decision 5' })).toHaveFocus()
+    expect(screen.getByText('Open: run 5')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'run 5' })).toHaveFocus()
   })
 
   it('returns focus on close and closes on Esc', async () => {

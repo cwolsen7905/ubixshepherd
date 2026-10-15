@@ -32,7 +32,7 @@ const PLAN = [
   '```',
 ].join('\n')
 
-function show(d = decision(), variant: 'page' | 'inline' = 'page') {
+function show(d = decision(), variant: 'page' | 'inline' | 'pane' = 'page') {
   window.localStorage.clear()
   render(
     <LiveProvider live={live()}>
@@ -152,8 +152,49 @@ describe('the inline decision card', () => {
     await user.click(btn)
     expect(screen.queryByText(/^Answered/)).toBeNull()
   })
-  it('names the aside in sentence case', () => {
-    show(decision({ why: 'Because it is yours.' }), 'inline')
+  it('is the headline and the options, with the long body left for the inspector', () => {
+    show(decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] }), 'inline')
+    expect(screen.getByText('Add the decision card to the chat thread')).toBeInTheDocument()
+    expect(screen.queryByText('Steps')).toBeNull()
+    expect(screen.queryByText('Why this is yours')).toBeNull()
+    expect(screen.getByRole('button', { name: /Stream/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'open' }).getAttribute('href')).toContain('open=decision')
+  })
+})
+
+describe('the decision in the inspector', () => {
+  it('shows the body and the why, and sends with Cmd+Enter', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    const onSent = vi.fn()
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <DecisionCard d={decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] })} variant="pane" focused onSent={onSent} />
+      </LiveProvider>,
+    )
     expect(screen.getByText('Why this is yours')).toBeInTheDocument()
+    expect(screen.getByText('Steps')).toBeInTheDocument()
+    await user.keyboard('2')
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(answer).toHaveBeenCalledWith(expect.any(Number), 'Buffer')
+    expect(await screen.findByText(/Answered/)).toBeInTheDocument()
+    expect(onSent).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves Cmd+Enter in a box outside the card alone', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <textarea aria-label="composer" />
+        <DecisionCard d={decision({ options: ['Stream', 'Buffer'] })} variant="pane" focused />
+      </LiveProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    await user.click(screen.getByLabelText('composer'))
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(answer).not.toHaveBeenCalled()
   })
 })
