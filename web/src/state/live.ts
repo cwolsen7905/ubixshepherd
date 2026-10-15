@@ -3,8 +3,8 @@
 // a refresh of the lists when something happened; the lists are also refreshed on a
 // slower clock, since the forge's state changes without asking. Both slow down while the
 // tab is hidden. (Server-sent events will replace the feed poll.)
-import { api as realApi, ApiError, asList, SIGN_IN_HINT } from '../api/client'
-import type { DecisionView, Feed, LaneView, NextItem, RequestView, RunView, SpendToday, Status } from '../api/types'
+import { api as realApi, waitingOnYou, ApiError, asList, SIGN_IN_HINT } from '../api/client'
+import type { DecisionView, Feed, LaneView, NextItem, RequestView, RunView, SpendToday, Status, Waiting } from '../api/types'
 import { noteOutcome, type Seen } from '../model/board'
 import { entries, type FeedEntry } from '../model/feed'
 
@@ -20,6 +20,8 @@ export interface Snapshot {
   /** The open next-up list (dropped and done items left out). */
   next: NextItem[]
   spend: SpendToday | null
+  /** GET /v1/waiting: the one list of what needs the person, null until first read. */
+  waiting: Waiting | null
   /** The newest FEED_WINDOW items, oldest first. */
   feed: FeedEntry[]
   /** The daemon could not be reached, or refused: what it said. */
@@ -45,6 +47,8 @@ export const INTERVALS = {
   feedHidden: 10_000,
   listsVisible: 5000,
   listsHidden: 30_000,
+  /** The attention list is also read this often, feed or no feed. */
+  waitingFloor: 30_000,
 }
 
 /** While the daemon does not answer, both polls back off from here, doubling to the cap. */
@@ -71,6 +75,8 @@ export class Live {
   private listeners = new Set<() => void>()
   private feedTimer: unknown = null
   private listsTimer: unknown = null
+  private waitingTimer: unknown = null
+  private waitingInFlight: Promise<void> | null = null
   private last = -1
   private stopped = true
   private listsInFlight: Promise<void> | null = null
@@ -78,12 +84,19 @@ export class Live {
   private failures = 0
   private readonly api: Api
   private readonly clock: Clock
+  private readonly waitingRead: (() => Promise<Waiting>) | null
 
-  constructor(apiImpl: Api = realApi, clock: Clock = browserClock) {
+  /** `waitingRead` is GET /v1/waiting; a fake api that does not model it leaves the list null. */
+  constructor(
+    apiImpl: Api = realApi,
+    clock: Clock = browserClock,
+    waitingRead: (() => Promise<Waiting>) | null = apiImpl === realApi ? waitingOnYou.list : null,
+  ) {
     this.api = apiImpl
+    this.waitingRead = waitingRead
     this.clock = clock
     this.snap = {
-      status: null, lanes: [], runs: [], decisions: [], requests: [], next: [], spend: null, feed: [],
+      status: null, lanes: [], runs: [], decisions: [], requests: [], next: [], spend: null, waiting: null, feed: [],
       error: null, downSince: null, ready: false, updated: 0, seen: loadSeen(clock.now()),
     }
   }
@@ -108,12 +121,14 @@ export class Live {
     this.stopped = false
     void this.loadFeed().then(() => this.scheduleFeed())
     void this.refresh().then(() => this.scheduleLists())
+    void this.readWaiting().then(() => this.scheduleWaiting())
   }
 
   stop() {
     this.stopped = true
     this.clock.clearTimeout(this.feedTimer)
     this.clock.clearTimeout(this.listsTimer)
+    this.clock.clearTimeout(this.waitingTimer)
   }
 
   /** Poll now, as when the tab becomes visible again. */
@@ -121,6 +136,8 @@ export class Live {
     if (this.stopped) return
     this.clock.clearTimeout(this.feedTimer)
     this.clock.clearTimeout(this.listsTimer)
+    this.clock.clearTimeout(this.waitingTimer)
+    void this.readWaiting().then(() => this.scheduleWaiting())
     void this.pollFeed().then(() => this.scheduleFeed())
     void this.refresh().then(() => this.scheduleLists())
   }
@@ -135,6 +152,29 @@ export class Live {
     if (this.stopped) return
     const ms = this.failures > 0 ? this.retryIn() : this.clock.hidden() ? INTERVALS.listsHidden : INTERVALS.listsVisible
     this.listsTimer = this.clock.setTimeout(() => void this.refresh().then(() => this.scheduleLists()), ms)
+  }
+
+  private scheduleWaiting() {
+    if (this.stopped || !this.waitingRead) return
+    const ms = this.failures > 0 ? this.retryIn() : INTERVALS.waitingFloor
+    this.waitingTimer = this.clock.setTimeout(() => void this.readWaiting().then(() => this.scheduleWaiting()), ms)
+  }
+
+  /** Reads the attention list; concurrent calls share one read. A failed read keeps the last list. */
+  readWaiting(): Promise<void> {
+    const read = this.waitingRead
+    if (!read) return Promise.resolve()
+    this.waitingInFlight ??= read()
+      .then((w) => {
+        // An unchanged version is an unchanged list: keep the object so consumers do not re-render.
+        const cur = this.snap.waiting
+        if (!(cur && w.version && cur.version === w.version)) this.set({ waiting: w })
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.waitingInFlight = null
+      })
+    return this.waitingInFlight
   }
 
   private retryIn() {
@@ -187,6 +227,7 @@ export class Live {
       for (const e of fresh) runs = noteOutcome(runs, e.event, e.ref, e.created)
       this.set({ feed: [...this.snap.feed, ...fresh].slice(-FEED_WINDOW), runs, error: null })
       void this.refresh()
+      void this.readWaiting()
     } catch (e) {
       this.bad(e, true)
     }
@@ -233,7 +274,7 @@ export class Live {
   /** Dismisses a failed or stopped run from the board, then reloads; undismiss reverses it. */
   async dismiss(id: number, dismissed = true) {
     const run = await (dismissed ? this.api.dismissRun(id) : this.api.undismissRun(id))
-    await this.refresh()
+    await Promise.all([this.refresh(), this.readWaiting()])
     return run
   }
 
@@ -247,7 +288,7 @@ export class Live {
   /** Answers a decision with the person's words, then reloads so it leaves the board. */
   async answer(id: number, words: string) {
     const d = await this.api.answer(id, words)
-    await this.refresh()
+    await Promise.all([this.refresh(), this.readWaiting()])
     return d
   }
 }
