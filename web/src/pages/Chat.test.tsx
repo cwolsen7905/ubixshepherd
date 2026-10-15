@@ -284,21 +284,24 @@ describe('ChatPage', () => {
 })
 
 describe('following the bottom', () => {
+  // The thread is its own scroll region: its scrollTop, scrollHeight and clientHeight.
   let height = 2000
   let y = 1300
   const scrollTo = vi.fn()
   const observers: (() => void)[] = []
-  const saved = { scrollTo: window.scrollTo, scrollY: Object.getOwnPropertyDescriptor(window, 'scrollY'), innerHeight: Object.getOwnPropertyDescriptor(window, 'innerHeight') }
+  const proto = HTMLElement.prototype as unknown as Record<string, unknown>
+  const saved = { scrollTo: proto.scrollTo }
+  const log = () => screen.getByRole('log')
 
   beforeEach(() => {
     height = 2000
     y = 1300 // 1300 + 700 is the bottom
     scrollTo.mockClear()
     observers.length = 0
-    window.scrollTo = scrollTo as unknown as typeof window.scrollTo
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, get: () => height })
-    Object.defineProperty(window, 'scrollY', { configurable: true, get: () => y })
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 700 })
+    proto.scrollTo = scrollTo
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => height })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 700 })
+    Object.defineProperty(HTMLElement.prototype, 'scrollTop', { configurable: true, get: () => y, set: () => {} })
     vi.stubGlobal('ResizeObserver', class {
       constructor(cb: () => void) {
         observers.push(cb)
@@ -309,11 +312,10 @@ describe('following the bottom', () => {
   })
   afterEach(() => {
     vi.unstubAllGlobals()
-    window.scrollTo = saved.scrollTo
-    delete (document.documentElement as { scrollHeight?: number }).scrollHeight
-    if (saved.scrollY) Object.defineProperty(window, 'scrollY', saved.scrollY)
-    else delete (window as { scrollY?: number }).scrollY
-    if (saved.innerHeight) Object.defineProperty(window, 'innerHeight', saved.innerHeight)
+    proto.scrollTo = saved.scrollTo
+    delete proto.scrollHeight
+    delete proto.clientHeight
+    delete proto.scrollTop
   })
 
   const grow = (to: number) => {
@@ -323,7 +325,7 @@ describe('following the bottom', () => {
   const scrollTop = (to: number) => {
     y = to
     act(() => {
-      window.dispatchEvent(new Event('scroll'))
+      log().dispatchEvent(new Event('scroll'))
     })
   }
   const last = () => scrollTo.mock.calls.at(-1)?.[0] as { top: number } | undefined
@@ -356,7 +358,7 @@ describe('following the bottom', () => {
     const { src } = await show(fakeDeskApi())
     act(() => src.emit('partial', { kind: 'partial', text: 'a' }))
     act(() => {
-      window.dispatchEvent(new WheelEvent('wheel', { deltaY: -40 }))
+      log().dispatchEvent(new WheelEvent('wheel', { deltaY: -40 }))
     })
     scrollTo.mockClear()
     grow(2500)
@@ -549,7 +551,8 @@ describe('topic bar and rail', () => {
     vi.spyOn(client.topics, 'list').mockResolvedValue({ topics: [topic(1, 'release'), topic(2, 'docs')] })
     await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     const bar = await screen.findByRole('group', { name: 'Filter the thread by topic' })
-    const rail = screen.getByRole('region', { name: 'Topics' })
+    await user.click(within(bar).getByRole('button', { name: 'All topics' }))
+    const rail = within(bar).getByRole('region', { name: 'Topics' })
 
     await user.click(await within(bar).findByRole('button', { name: 'release' }))
     expect(window.location.hash).toBe('#/chat?topic=1')
