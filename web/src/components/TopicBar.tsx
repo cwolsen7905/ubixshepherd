@@ -7,6 +7,9 @@ import '../styles/topics.css'
 const POLL = 15_000
 export const IDLE_KEY = 'shepherd.topicbar.idle.open'
 
+/** One identity for the default loader, so an effect keyed on it is not restarted by a render. */
+const defaultLoad: LoadTopicBar = (all) => topicsApi.list(all)
+
 export type LoadTopicBar = (all: boolean) => Promise<TopicList>
 
 /**
@@ -17,7 +20,7 @@ export type LoadTopicBar = (all: boolean) => Promise<TopicList>
  * panel under the chips: rename, clear, reopen, merge and add live there.
  */
 export function TopicBar({
-  active, onFilter, load = (all) => topicsApi.list(all),
+  active, onFilter, load = defaultLoad,
 }: {
   /** The topic the thread is filtered to, or null for all. */
   active: number | null

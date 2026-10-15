@@ -105,8 +105,9 @@ function UpdatesFold({
   reveal: string
 }) {
   const [shown, setShown] = useState(false)
-  const wanted = reveal !== '' && feed.some((f) => `f${f.id}` === reveal)
-  const isOpen = shown || wanted
+  // A jump to a row inside opens the fold and it stays open; the toggle acts on what shows.
+  if (!shown && reveal !== '' && feed.some((f) => `f${f.id}` === reveal)) setShown(true)
+  const isOpen = shown
   const id = threadId(`u${feed[0]?.id}`)
   return (
     <div id={id} className="updates-fold">

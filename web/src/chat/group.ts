@@ -25,8 +25,8 @@ export function rowFeedIds(r: Row): number[] {
 /**
  * Groups a thread for reading: three or more consecutive feed events (decisions apart)
  * become one row; a desk turn's tool calls and "woke the front desk" notes gather under
- * the reply they produced, or stand as one folded row when no reply followed. Order of
- * messages is kept; nothing is dropped.
+ * the reply they produced when nothing else is drawn between them, or stand as one folded
+ * row where they happened. Order is kept; nothing is dropped.
  */
 export function groupThread(items: ThreadItem[]): Row[] {
   const out: Row[] = []
@@ -45,17 +45,19 @@ export function groupThread(items: ThreadItem[]): Row[] {
 
   for (const it of items) {
     if (it.type === 'feed' && !standalone(it.f)) {
+      flushWork()
       run.push(it.f)
       continue
     }
     flushRun()
+    // Work stays where it happened: anything else that is drawn first closes the open fold.
+    if (work.length > 0 && !(it.type === 'desk' && (it.e.kind === 'tool' || it.e.kind === 'system' || it.e.kind === 'assistant' || it.e.kind === 'turn_start'))) flushWork()
     if (it.type === 'desk' && (it.e.kind === 'tool' || it.e.kind === 'system')) {
       work.push(it.e)
     } else if (it.type === 'desk' && it.e.kind === 'assistant') {
       out.push({ type: 'reply', key: it.key, e: it.e, work })
       work = []
     } else {
-      if (it.type === 'desk' && it.e.kind !== 'turn_start' && it.e.kind !== 'turn_end' && it.e.kind !== 'cost') flushWork()
       out.push({ type: 'item', key: it.key, it })
     }
   }

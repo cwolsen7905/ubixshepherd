@@ -35,4 +35,9 @@ describe('groupThread', () => {
     const rows = groupThread([desk(1, 'user'), desk(2, 'tool'), desk(3, 'tool')])
     expect(rows.map((r) => r.type)).toEqual(['item', 'work'])
   })
+
+  it('keeps work where it happened when something is drawn before the reply', () => {
+    const rows = groupThread([desk(1, 'tool'), feed(2, 'decision_asked'), desk(3, 'assistant')])
+    expect(rows.map((r) => r.type)).toEqual(['work', 'item', 'reply'])
+  })
 })
