@@ -113,6 +113,8 @@ describe('the Usage page', () => {
 
   it('sorts the tables by a clicked column, and flips on a second click', async () => {
     daemon()
+    // delay: null: with fake timers each click otherwise waits out userEvent's per-action delay,
+    // which took this test past the default 5s timeout.
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime, delay: null })
     await show()
     const section = await screen.findByRole('region', { name: 'By agent and model' })
