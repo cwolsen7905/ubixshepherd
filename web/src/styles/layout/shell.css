@@ -3,33 +3,76 @@
 
 .app { min-height: 100vh; display: flex; flex-direction: column; }
 
-/* The bar: name, views, the dock's counts, spend and liveness. */
-.bar {
-  position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; gap: var(--s-5);
-  height: var(--bar-h); padding: 0 calc(var(--shell-edge) + var(--pad));
-  background: var(--sheet);
-  border-bottom: 1px solid var(--rule);
+/* The shell: a sidebar down the left, then the slim page head and the page. */
+.shell { display: grid; grid-template-columns: var(--sidebar-w, 15rem) minmax(0, 1fr); min-height: 100vh; }
+.shell[data-mode="icons"] { --sidebar-w: 3.5rem; }
+.shell[data-mode="sheet"] { grid-template-columns: minmax(0, 1fr); }
+.shell-body { display: flex; flex-direction: column; min-width: 0; }
+
+.skip-link {
+  position: absolute; left: var(--s-2); top: -4rem; z-index: 40;
+  padding: var(--s-2) var(--s-3); background: var(--raised); border: 2px solid var(--focus); border-radius: var(--radius);
 }
-/* The mark and name, as on ubixsys.com: 600 weight, the product name in the brand blue. The
-   mark's foot sits on the text baseline and it stands a little taller than the capitals. */
+.skip-link:focus { top: var(--s-2); }
+
+.sidebar {
+  position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  background: var(--surface); border-right: 1px solid var(--rule);
+}
+.sidebar[hidden] { display: none; }
+.sidebar.is-sheet {
+  position: fixed; inset: 0 auto 0 0; z-index: 30; width: min(18rem, 85vw);
+  box-shadow: var(--shadow-2);
+}
+.sheet-scrim { position: fixed; inset: 0; z-index: 25; background: color-mix(in srgb, var(--field) 60%, transparent); }
+.sidebar-inner { display: flex; flex-direction: column; min-height: 100%; padding: var(--s-3); gap: var(--s-4); }
+.sidebar-top { display: grid; gap: var(--s-2); }
+.workspace { margin: 0; font-size: var(--t-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-name { color: var(--ink); }
+
+/* The mark and name, as on ubixsys.com: 600 weight, the product name in the brand blue. */
 .wordmark {
   display: inline-flex; align-items: baseline; gap: 0.5em;
   font-weight: 600; font-size: var(--t-lg); letter-spacing: -0.01em;
-  text-decoration: none; white-space: nowrap; flex-shrink: 0;
+  text-decoration: none; white-space: nowrap;
 }
 .wordmark b { font-weight: 600; color: var(--brand); }
 .wordmark-mark { width: 0.95em; height: 0.95em; flex: none; border-radius: 1px; }
-.nav { display: flex; gap: var(--s-1); flex-shrink: 0; }
+
+.nav { display: flex; flex-direction: column; gap: var(--s-3); flex: 1; }
+.nav-group { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.nav-group + .nav-group { padding-top: var(--s-3); border-top: 1px solid var(--rule); }
 .nav a {
-  padding: var(--s-1) 0.625rem; border-radius: var(--radius);
+  display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; gap: var(--s-2);
+  padding: var(--s-1) var(--s-2); border-radius: var(--radius);
   text-decoration: none; color: var(--muted); white-space: nowrap;
 }
 .nav a:hover { background: var(--hover); color: var(--ink); }
-.nav a[aria-current="page"] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--lichen); border-radius: 0; }
-.nav-count { margin-left: 0.375rem; font-weight: 600; }
-.bar-counts { flex: 1; display: flex; gap: var(--s-4); margin: 0; font-size: var(--t-sm); white-space: nowrap; overflow: hidden; }
-.bar-meta { display: flex; align-items: center; gap: var(--s-3); margin: 0; color: var(--muted); font-size: var(--t-sm); white-space: nowrap; }
+.nav a[aria-current="page"] { background: var(--sunk); color: var(--ink); font-weight: 600; }
+.nav a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.nav-mark { font-family: var(--font-mono); text-align: center; color: var(--faint); }
+.nav a[aria-current="page"] .nav-mark { color: var(--lichen); }
+.nav-count { display: inline-flex; font-weight: 600; }
+
+.sidebar-foot { display: grid; gap: var(--s-2); font-size: var(--t-sm); color: var(--muted); }
+.foot-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.spend { display: grid; gap: var(--s-1); }
+.spend .meter { width: 100%; }
+.sidebar .daemon-pop { top: auto; bottom: 100%; left: 0; right: auto; width: 20rem; }
+.sidebar .banner { padding: var(--s-2); border: 1px solid var(--rule); border-radius: var(--radius); }
+
+/* The slim page head: the page's name, the waiting list and, in a sheet, the menu button. */
+.page-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: var(--s-3);
+  height: var(--bar-h); padding: 0 calc(var(--shell-edge) + var(--pad));
+  background: var(--surface); border-bottom: 1px solid var(--rule);
+}
+.page-bar-title { flex: 1; font-weight: 600; }
+.page-bar-actions { display: flex; align-items: center; gap: var(--s-3); }
+.menu-button { background: none; border: 1px solid var(--control-border); border-radius: var(--radius); padding: var(--s-1) var(--s-2); color: var(--ink); cursor: pointer; }
+.main:focus { outline: none; }
+
 .faint { color: var(--faint); }
 .live-dot { font-size: var(--t-2xs); }
 .live-dot.is-up { color: var(--ok); }

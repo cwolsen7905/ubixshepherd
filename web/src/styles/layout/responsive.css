@@ -1,15 +1,16 @@
-/* The bar at 1024px: below 1100 the counts go (the dock and the rail already show them),
-   so the name, the views and the spend sit on one line without wrapping. */
-@media (max-width: 1100px) {
-  .bar { gap: var(--s-3); }
-  .bar-counts { display: none; }
-  .bar-meta { margin-left: auto; }
-  .nav a { padding-inline: var(--s-2); }
-}
+/* Collapsed to icons (below 1280px, set by the shell's mode): the mark, with the count as a
+   small badge; each link's title carries the name. */
+.shell[data-mode="icons"] .sidebar-inner { padding-inline: var(--s-2); align-items: center; }
+.shell[data-mode="icons"] .wordmark-text,
+.shell[data-mode="icons"] .workspace,
+.shell[data-mode="icons"] .nav-label,
+.shell[data-mode="icons"] .spend-text,
+.shell[data-mode="icons"] .sidebar .update-notice { display: none; }
+.shell[data-mode="icons"] .nav a { grid-template-columns: 1.5rem; position: relative; justify-items: center; }
+.shell[data-mode="icons"] .nav-count { position: absolute; top: -2px; right: -2px; }
+.shell[data-mode="icons"] .foot-row { flex-direction: column; }
 
 @media (max-width: 760px) {
-  .bar { gap: var(--s-3); }
-  .bar-counts { display: none; }
   .row { grid-template-columns: var(--gutter) minmax(0, 1fr) auto auto; row-gap: 0; padding-block: var(--s-1); }
   .row-agent, .row-repo { display: none; }
   .row > .glyph { grid-row: 1; grid-column: 1; }
@@ -17,7 +18,4 @@
   .row-mr { grid-row: 1; grid-column: 3; }
   .row-age { grid-row: 1; grid-column: 4; }
   .row-detail { grid-row: 2; grid-column: 2 / -1; font-size: var(--t-sm); }
-  .bar-meta > span:first-child { display: none; }
-  .nav a { padding-inline: 0.375rem; }
 }
-
