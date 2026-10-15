@@ -4,6 +4,7 @@ import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { decision, spend, status } from '../test/fixtures'
 import type { Waiting } from '../api/types'
+import { ApiError, waitingOnYou } from '../api/client'
 import { InboxPage } from './Inbox'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -102,6 +103,23 @@ describe('InboxPage', () => {
     await userEvent.click(screen.getByRole('button', { name: /Add retries/ }))
     expect(h).toHaveFocus()
     h.remove()
+  })
+
+  it('ships a lane in place and says what happened', async () => {
+    const ship = vi.spyOn(waitingOnYou, 'ship').mockResolvedValue({ lane: 'd', commits: 1, pushed: true, message: 'Pushed 1 commit.' })
+    await show()
+    await userEvent.click(screen.getByRole('button', { name: 'Ship' }))
+    expect(ship).toHaveBeenCalledWith(6)
+    expect(await screen.findByRole('status')).toHaveTextContent('Pushed 1 commit.')
+    ship.mockRestore()
+  })
+
+  it('shows a refused ship as an alert', async () => {
+    const ship = vi.spyOn(waitingOnYou, 'ship').mockRejectedValue(new ApiError(409, 'gate failed'))
+    await show()
+    await userEvent.click(screen.getByRole('button', { name: 'Ship' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not shipped: gate failed')
+    ship.mockRestore()
   })
 
   it('moves the cursor with j', async () => {
