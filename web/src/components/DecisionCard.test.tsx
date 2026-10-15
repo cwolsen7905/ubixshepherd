@@ -163,6 +163,17 @@ describe('the inline decision card', () => {
 })
 
 describe('the decision in the inspector', () => {
+  it('is a single-column pane: no glyph rail, the whole long body, the recommended option marked', () => {
+    const long = ['Plan headline', ...Array(30).fill('a line of the plan')].join('\n')
+    show(decision({ question: long, options: ['Stream', 'Buffer'], recommendation: 'Buffer' }), 'pane')
+    const card = screen.getByRole('region')
+    expect(card).toHaveClass('decision-pane')
+    expect(card.querySelector('.glyph')).toBeNull()
+    expect(card.querySelector('.is-clamped')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull()
+    expect(within(screen.getByRole('button', { name: /Buffer/ })).getByText('recommended')).toBeInTheDocument()
+  })
+
   it('shows the body and the why, and sends with Cmd+Enter', async () => {
     const user = userEvent.setup()
     const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))

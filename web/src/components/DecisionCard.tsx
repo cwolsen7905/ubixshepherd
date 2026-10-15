@@ -125,7 +125,8 @@ export function DecisionCard({
   const { head, body: fullBody } = splitQuestion(d.question)
   // The compact card is the headline and the options; the body is for the inspector.
   const body = inlineCard ? (head ? '' : clip(fullBody, 240)) : fullBody
-  const long = isLong(body)
+  // The inspector is where the whole body is read, so it is never clamped there.
+  const long = !pane && isLong(body)
   const recIsOption = !!d.recommendation && options.some((o) => o.trim() === d.recommendation?.trim())
   const Tag = inlineCard || pane ? 'section' : 'article'
   const labelled = head ? { 'aria-labelledby': `${id}-q` } : { 'aria-label': `Decision ${d.id}` }
