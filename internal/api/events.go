@@ -21,6 +21,7 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	report, decision_asked, decision_answered, request, request_attention,
 //	plan               a next-up item was added, approved, deferred, dropped or finished
 //	mr_approve         the person approved a merge request from the web
+//	artifact           a run produced a file to read, or changed one (Ref is the artifact)
 //	mr, budget, tag, release, config, desk_rotated
 //	info               anything else, and any kind a newer daemon adds
 const (
@@ -45,7 +46,8 @@ const (
 	EventBudget           = "budget"
 	EventTag              = "tag"
 	EventRelease          = "release"
-	EventPlan             = "plan" // a next-up item added, approved, deferred, dropped or done
+	EventPlan             = "plan"     // a next-up item added, approved, deferred, dropped or done
+	EventArtifact         = "artifact" // a run produced a file to read, or a new version of one
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
 	EventInfo             = "info"         // anything else, such as a session note
@@ -78,6 +80,7 @@ var eventKinds = map[string]string{
 	store.FeedRelease:        EventRelease,
 	store.FeedPlan:           EventPlan,
 	store.FeedMRApprove:      EventMRApprove,
+	store.FeedArtifact:       EventArtifact,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)
 }

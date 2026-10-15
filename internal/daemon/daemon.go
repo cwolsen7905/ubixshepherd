@@ -207,6 +207,10 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathRuns+"/{id}/events", own, s.withRunner(s.addEvent))
 	handle("GET "+api.PathRuns+"/{id}/events", desk|own, s.runEvents)
 	handle("POST "+api.PathRuns+"/{id}/decisions", own, s.withRunner(s.addDecision))
+	// An agent declares a file for the person to read; only the run itself may.
+	handle("POST "+api.PathRuns+"/{id}/artifacts", own, s.withRunner(s.declareArtifact))
+	handle("GET "+api.PathArtifacts, desk|web, s.listArtifacts)
+	handle("GET "+api.PathArtifacts+"/{id}", desk|web, s.getArtifact)
 	handle("POST "+api.PathRuns+"/{id}/requests", own, s.withRunner(s.addRequest))
 	handle("GET "+api.PathDecisions, desk, s.listDecisions)
 	// The desk may answer only in a turn the person started: answerDecision checks.
@@ -1003,10 +1007,23 @@ func (s *Server) addDecision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d.RunID = run.ID
+	// The files named with the question are declared first, so a path that does not
+	// exist is the agent's error and no question is held.
+	paths := d.ArtifactPaths
+	d.ArtifactPaths = nil
+	for _, p := range paths {
+		if _, _, _, err := s.Runner.DeclareArtifact(r.Context(), run.ID, p, "", ""); err != nil {
+			s.foldError(w, err)
+			return
+		}
+	}
 	d, err := s.Runner.Ask(r.Context(), d)
 	if err != nil {
 		s.foldError(w, err)
 		return
+	}
+	if err := s.Runner.LinkDecisionArtifacts(r.Context(), d, paths); err != nil {
+		s.Log.Error("link decision artifacts", "decision", d.ID, "err", err)
 	}
 	writeJSON(w, http.StatusOK, d)
 }
@@ -1565,7 +1582,12 @@ func (s *Server) listDecisions(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
-		out = append(out, api.DecisionView{Decision: d, Agent: run.Agent, Lane: v.Lane, Repo: v.Repo})
+		arts, err := s.Store.DecisionArtifacts(r.Context(), d.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		out = append(out, api.DecisionView{Decision: d, Agent: run.Agent, Lane: v.Lane, Repo: v.Repo, Artifacts: arts})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

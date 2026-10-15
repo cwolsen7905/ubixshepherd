@@ -117,6 +117,10 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 	why := fs.String("why", "", "ask-human: why it is the person's call")
 	kind := fs.String("kind", "question", "ask-shepherd: question, handoff, review or person")
 	lane := fs.String("lane", "", "ask-shepherd: the lane it is for, if known")
+	var artifacts textFlag
+	fs.Var(&artifacts, "artifact", "ask-human: a file of the worktree to read with the question (repeatable)")
+	title := fs.String("title", "", "artifact: a short title")
+	intent := fs.String("intent", "", "artifact: commit, keep or scratch")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
 		return err
@@ -135,11 +139,18 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 		}
 		fmt.Fprintf(env.Stdout, "Recorded (%s). Shepherd checks claims of done against the lane's commits and gate.\n", *status)
 	case "ask-human":
-		d, err := c.Ask(ctx, runID, store.Decision{Question: pos[0], Options: options, Recommendation: *rec, Why: *why})
+		d, err := c.Ask(ctx, runID, store.Decision{Question: pos[0], Options: options, Recommendation: *rec, Why: *why, ArtifactPaths: artifacts})
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(env.Stdout, "Held for the person as decision %d. End your turn now with a one-line summary of where you are; Shepherd continues this conversation with the answer.\n", d.ID)
+	case "artifact":
+		got, err := declareArtifact(ctx, env, runID, api.ArtifactDeclare{Path: pos[0], Title: *title, Intent: *intent})
+		if err != nil {
+			return err
+		}
+		a := got.Artifact
+		fmt.Fprintf(env.Stdout, "Recorded %s as an artifact (%s, %s). The person can read it in Shepherd; declare it again after you change it.\n", a.Path, a.Kind, a.Intent)
 	case "tag-reserve":
 		run, err := c.Run(ctx, runID)
 		if err != nil {
@@ -172,18 +183,28 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 // that do not pass their environment on to MCP servers). It never reads daemon.json:
 // the operator token there is the person's, not an agent's.
 func workerClient(ctx context.Context, env Env) (*client.Client, int64, error) {
-	tok, url := os.Getenv(dispatch.EnvToken), os.Getenv(dispatch.EnvURL)
-	run, _ := strconv.ParseInt(os.Getenv(dispatch.EnvRun), 10, 64)
-	if tok == "" || url == "" || run == 0 {
-		rc, err := dispatch.ReadRunFile(ctx, env.Cwd)
-		if err != nil {
-			return nil, 0, errors.New("these tools are for agents Shepherd started in a lane, and this is not one of them (no run token in SHEPHERD_TOKEN or in this worktree)")
-		}
-		tok, url, run = rc.Token, rc.URL, rc.Run
+	tok, url, run, err := workerCreds(ctx, env)
+	if err != nil {
+		return nil, 0, err
 	}
 	c := client.New(url, tok)
 	c.Name = "worker"
 	return c, run, nil
+}
+
+// workerCreds is the run's token, the daemon's URL and the run id, from the environment
+// or the run file (see workerClient).
+func workerCreds(ctx context.Context, env Env) (tok, url string, run int64, err error) {
+	tok, url = os.Getenv(dispatch.EnvToken), os.Getenv(dispatch.EnvURL)
+	run, _ = strconv.ParseInt(os.Getenv(dispatch.EnvRun), 10, 64)
+	if tok == "" || url == "" || run == 0 {
+		rc, err := dispatch.ReadRunFile(ctx, env.Cwd)
+		if err != nil {
+			return "", "", 0, errors.New("these tools are for agents Shepherd started in a lane, and this is not one of them (no run token in SHEPHERD_TOKEN or in this worktree)")
+		}
+		tok, url, run = rc.Token, rc.URL, rc.Run
+	}
+	return tok, url, run, nil
 }
 
 // shepherd request list | route: requests between lanes, and routing the ones Shepherd

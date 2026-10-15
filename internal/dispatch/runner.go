@@ -89,6 +89,8 @@ type Runner struct {
 	// AskConversation answers a question from an adopted conversation; tests replace it.
 	AskConversation func(ctx context.Context, c store.Conversation, question string) (convo.Answer, error)
 	Log             *slog.Logger
+	// ArtifactScan lists a lane's artifact candidates at a run's end; nil scans none.
+	ArtifactScan ArtifactScan
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
@@ -713,6 +715,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if run.Commits > 0 {
 		r.feed(ctx, store.FeedCommit, run.ID, "run %d: %d commit(s) in lane %s, latest: %s", run.ID, run.Commits, lane.Name, clip(latestSubject(ctx, lane.Worktree), 100))
 	}
+	r.recordRunArtifacts(ctx, run, lane)
 	switch {
 	case diag.Summary != "" && run.State != store.RunSucceeded:
 		ended += ": " + diag.Summary

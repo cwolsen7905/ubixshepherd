@@ -27,7 +27,7 @@ func runTopic(ctx context.Context, env Env, args []string) error {
 	all := fs.Bool("all", false, "list: include cleared topics")
 	summary := fs.String("summary", "", "new or set: a line saying what the topic is about")
 	repo := fs.String("repo", "", "the repo, by its name in the workspace (for --lane by name)")
-	var refs [7]*string
+	refs := make([]*string, len(store.TopicKinds))
 	for i, k := range store.TopicKinds {
 		flagName := strings.ReplaceAll(k, "_", "-")
 		if k == store.TopicNextItem {

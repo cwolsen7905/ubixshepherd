@@ -77,6 +77,10 @@ func (s *Server) topicLinkView(ctx context.Context, l store.TopicLink) (api.Topi
 		if r, err := s.Store.Run(ctx, id); err == nil {
 			v.Label, v.State = fmt.Sprintf("run %d (%s)", r.ID, r.Agent), r.State
 		}
+	case store.TopicArtifact:
+		if a, err := s.Store.Artifact(ctx, id); err == nil {
+			v.Label, v.State, v.Time = a.Path, a.State, later(v.Time, a.Updated)
+		}
 	}
 	return v, closedWork
 }
@@ -292,6 +296,8 @@ func (s *Server) checkTopicRef(ctx context.Context, ref *api.TopicRef) error {
 		_, e = s.Store.Request(ctx, n)
 	case store.TopicRun:
 		_, e = s.Store.Run(ctx, n)
+	case store.TopicArtifact:
+		_, e = s.Store.Artifact(ctx, n)
 	}
 	if e != nil {
 		return fmt.Errorf("%s %d: %w", ref.Kind, n, e)

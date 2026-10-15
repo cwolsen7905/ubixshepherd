@@ -205,6 +205,8 @@ type DecisionView struct {
 	Agent string `json:"agent"`
 	Lane  string `json:"lane"`
 	Repo  string `json:"repo"`
+	// Artifacts are the files the agent linked to the question.
+	Artifacts []store.Artifact `json:"artifacts,omitempty"`
 }
 
 // RunEvents answers GET /v1/runs/{id}/events.
