@@ -14,7 +14,8 @@ const defaultMake = (w: number) => new DeskThread(w)
 /** A desk question in the inspector: what the desk asked, with Reply and Skip. */
 export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (workspaceId: number) => DeskThread }) {
   const snap = useSnapshot()
-  const [q, setQ] = useState<DeskQuestion | null | undefined>(undefined)
+  const [got, setQ] = useState<DeskQuestion | null | undefined>(undefined)
+  const q = got && got.id !== id ? undefined : got
   const [failed, setFailed] = useState(false)
   const read = useCallback(() => {
     setFailed(false)
@@ -28,6 +29,7 @@ export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (w
     return () => window.clearTimeout(first)
   }, [read])
   const workspaces = snap.status?.workspaces ?? []
+  // Never act on a question other than the one asked for, while a new read is in flight.
   const thread = useMemo(() => (q ? make(workspaces.length > 1 ? q.workspace_id : 0) : null), [q, workspaces.length, make])
   if (q === undefined && failed) {
     return (

@@ -29,9 +29,9 @@ function InspectorBody({ open }: { open: Open }) {
     case 'lane':
       return <LaneInspector open={open} />
     case 'decision':
-      return <DecisionPane id={open.id} />
+      return <DecisionPane key={open.id} id={open.id} />
     case 'question':
-      return <QuestionPane id={open.id} />
+      return <QuestionPane key={open.id} id={open.id} />
     default:
       return <Placeholder open={open} />
   }
