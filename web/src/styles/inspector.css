@@ -16,7 +16,7 @@
   animation: inspector-in 150ms ease-out;
 }
 .inspector-split {
-  flex: 0 0 26rem;
+  flex: 0 0 clamp(24rem, 28vw, 34rem);
   position: sticky;
   top: 0;
   align-self: flex-start;
@@ -47,3 +47,8 @@
 @keyframes inspector-in { from { transform: translateX(1rem); opacity: 0; } }
 @keyframes inspector-up { from { transform: translateY(1rem); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .inspector { animation: none; } }
+
+/* Long markdown (tables, code, URLs) in the decision pane wraps or scrolls inside it instead
+   of widening it. Scoped to the card so the lane and run inspectors wrap as before. */
+.decision-pane { min-width: 0; overflow-wrap: anywhere; }
+.decision-pane pre, .decision-pane table { max-width: 100%; overflow-x: auto; }

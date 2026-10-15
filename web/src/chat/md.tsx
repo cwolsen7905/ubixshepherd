@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore, useState } from 'react'
 import { useNow } from '../hooks'
 import type { Connection } from '../state/desk'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
@@ -49,13 +49,14 @@ export function useThread(thread: DeskThread): DeskSnapshot {
 export const NEAR_BOTTOM = 24
 
 /**
- * Keeps the page at the bottom of the conversation while the reader is there. Content
+ * Keeps the thread's own scroll region at the bottom while the reader is there. Content
  * grows without a render of ours (markdown, a decision card, fonts, a streaming reply),
- * so a ResizeObserver on `target` re-pins; `deps` re-pins on our own changes. The reader
- * leaves by scrolling up (scrollY falls, or the wheel goes up) and returns by reaching the
- * bottom. Our own scrolling and content growth never move scrollY up, so neither unpins.
+ * so a ResizeObserver on `el` and its children re-pins; `deps` re-pins on our own
+ * changes. The reader leaves by scrolling up (scrollTop falls, or the wheel goes up) and
+ * returns by reaching the bottom. Our own scrolling and content growth never move
+ * scrollTop up, so neither unpins.
  */
-export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unknown[]) {
+export function useFollowBottom(el: HTMLElement | null, deps: unknown[]) {
   const pinned = useRef(true)
   const lastY = useRef(0)
   const [following, setFollowing] = useState(true)
@@ -67,10 +68,10 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
     }
   }, [])
   const toBottom = useCallback(() => {
-    const el = document.documentElement
-    window.scrollTo({ top: el.scrollHeight })
-    lastY.current = Math.max(0, el.scrollHeight - window.innerHeight)
-  }, [])
+    if (!el) return
+    el.scrollTo?.({ top: el.scrollHeight })
+    lastY.current = Math.max(0, el.scrollHeight - el.clientHeight)
+  }, [el])
   /** Back to the bottom, following again: the reader's own send, or "Jump to latest". */
   const jump = useCallback(() => {
     pin(true)
@@ -78,9 +79,10 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
   }, [pin, toBottom])
 
   useEffect(() => {
+    if (!el) return
     const onScroll = () => {
-      const y = window.scrollY
-      if (window.innerHeight + y >= document.documentElement.scrollHeight - NEAR_BOTTOM) pin(true)
+      const y = el.scrollTop
+      if (el.clientHeight + y >= el.scrollHeight - NEAR_BOTTOM) pin(true)
       else if (y < lastY.current) pin(false)
       lastY.current = y
     }
@@ -90,19 +92,20 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
     const onResize = () => {
       if (pinned.current) toBottom()
     }
-    lastY.current = window.scrollY
-    window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('wheel', onWheel, { passive: true })
+    lastY.current = el.scrollTop
+    el.addEventListener('scroll', onScroll, { passive: true })
+    el.addEventListener('wheel', onWheel, { passive: true })
     window.addEventListener('resize', onResize)
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
-    if (target.current) ro?.observe(target.current)
+    ro?.observe(el)
+    for (const c of Array.from(el.children)) ro?.observe(c)
     return () => {
-      window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('wheel', onWheel)
+      el.removeEventListener('scroll', onScroll)
+      el.removeEventListener('wheel', onWheel)
       window.removeEventListener('resize', onResize)
       ro?.disconnect()
     }
-  }, [target, pin, toBottom])
+  }, [el, pin, toBottom])
 
   useEffect(() => {
     if (pinned.current) toBottom()

@@ -46,3 +46,15 @@
 .decision .decision-aside-h { text-transform: none; letter-spacing: 0; font-size: var(--t-sm); }
 .decision-inline .decision-md.is-clamped { max-height: 9em; }
 .decision .ui-btn-primary[aria-disabled="true"] { background: var(--lichen); border-color: var(--lichen); color: var(--raised); opacity: 0.75; cursor: default; }
+
+/* The inspector's full view: one column (there is no glyph rail to fill the first track),
+   the pane's own width, the body in full and the Send row kept in reach. */
+.decision.decision-pane { display: block; padding: 0; border-top: 0; }
+.decision-pane .decision-body { max-width: none; }
+.decision-pane .decision-md.is-clamped { max-height: none; overflow: visible; }
+.decision-pane .decision-md { overflow-wrap: anywhere; }
+.decision-pane .own textarea { min-height: 4.5rem; }
+.decision-pane .send {
+  position: sticky; bottom: 0; padding: var(--s-2) 0; background: var(--raised);
+  flex-wrap: wrap;
+}
