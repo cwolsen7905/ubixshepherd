@@ -24,11 +24,22 @@
   --brand: #0f62fe;      /* the uBix mark and name: 4.7:1 on the bar */
   --focus: var(--lichen); /* focus ring and halo; one colour, so a theme changes it in one place */
 
+  /* The kit's surfaces (web/src/ui). Four steps, field to raised; --sheet stays for pages not
+     yet moved. Wells are --sunk, floating things are --raised. */
+  --surface: #f9fafb;    /* sidebar, page heads, composer area */
+  --raised: #ffffff;     /* inspector, cards, inputs, dialogs */
+  --sunk: #e4e9ee;       /* selected nav item, your own messages, wells */
+  --kit-field: #eef1f4;  /* the planned page colour; --field itself is unchanged until pages move */
+
   /* Elevation, for what floats: dialogs and popovers. Everything else stays flat. */
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.14);
   --shadow-2: 0 8px 28px rgb(0 0 0 / 0.28);
 
   --font-ui: "Avenir Next", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", system-ui, sans-serif;
+  /* The kit's families. IBM Plex is planned to be bundled (W4.6); until then these fall back
+     to today's stacks, so nothing is fetched from elsewhere. */
+  --font-sans: "IBM Plex Sans", var(--font-ui);
+  --font-code: "IBM Plex Mono", var(--font-mono);
   --font-mono: "Berkeley Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
 
   /* Size. The root size is the one knob: 15px at 1440 wide, rising to 18px by about 2400,
@@ -51,6 +62,14 @@
   --s-4: 1rem;
   --s-5: 1.5rem;
   --s-6: 2.5rem;
+
+  /* Density: one setting. Comfortable in prose, compact in tables and lists. */
+  --leading-prose: 1.55;
+  --leading-compact: 1.35;
+  --row-compact: 2rem;   /* a list or table row */
+  --control-h: 2.125rem; /* a button or input; the small size is --control-h-sm */
+  --control-h-sm: 1.75rem;
+  --motion: 150ms;       /* a slide or collapse, always in answer to the person */
 
   --row: 2.25rem;        /* a board row */
   --gutter: 2rem;        /* the glyph rail */
@@ -101,6 +120,10 @@ html { font-size: clamp(var(--root-min), 0.65625rem + 0.3125vw, var(--root-max))
     --broken: #f07d70;
     --broken-wash: #33201e;
     --ok: #7cc492;
+    --surface: #1b232a;
+    --raised: #222c34;
+    --sunk: #10151a;
+    --kit-field: #151b21;
     --brand: #78a9ff;    /* the logo blue is 3.1:1 on the night bar; this is its lighter step */
   }
 }
