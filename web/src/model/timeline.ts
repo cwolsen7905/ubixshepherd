@@ -180,7 +180,7 @@ export interface TRun {
   credits?: number
   /** costUsd is the agent's own estimate, not a bill. */
   costEstimated?: boolean
-  /** The first line of the prompt. */
+  /** The prompt for snapshot runs; the history task for older runs. */
   task: string
   /** What the run is doing now, while it runs. */
   progress?: string
@@ -277,7 +277,7 @@ export function assemble(src: Sources): TimelineData {
       id: r.id, laneId: r.lane_id, agent: r.agent, ...(r.model ? { model: r.model } : {}), state: r.state, started,
       ...(r.ended ? { ended: ms(r.ended) } : {}), commits: r.commits,
       ...(r.cost_usd !== undefined ? { costUsd: r.cost_usd } : {}), ...(r.credits ? { credits: r.credits } : {}), ...(r.cost_estimated ? { costEstimated: true } : {}),
-      task: firstLine(r.prompt) || runs.get(r.id)?.task || '', ...(r.progress ? { progress: r.progress.line } : {}),
+      task: r.prompt || runs.get(r.id)?.task || '', ...(r.progress ? { progress: r.progress.line } : {}),
       ...(r.diagnosis ? { diagnosis: r.diagnosis.summary } : {}),
     })
   }
