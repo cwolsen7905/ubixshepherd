@@ -76,6 +76,28 @@ describe('InspectorFrame', () => {
     }
   })
 
+  it('makes the shell inert around a modal inspector, and restores it', () => {
+    const { rerender } = render(
+      <div>
+        <nav>shell</nav>
+        <InspectorFrame open={open} mode="sheet">
+          <button>row</button>
+        </InspectorFrame>
+      </div>,
+    )
+    expect(screen.getByText('shell')).toHaveAttribute('inert')
+    expect(document.querySelector('.inspector-scrim')).not.toHaveAttribute('inert')
+    rerender(
+      <div>
+        <nav>shell</nav>
+        <InspectorFrame mode="sheet">
+          <button>row</button>
+        </InspectorFrame>
+      </div>,
+    )
+    expect(screen.getByText('shell')).not.toHaveAttribute('inert')
+  })
+
   it('leaves the page live in split mode', () => {
     render(
       <InspectorFrame open={open} mode="split">

@@ -45,6 +45,21 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
     }
   }, [shown])
 
+  // The shell sits outside the frame, so in a modal mode everything beside the dialog's
+  // ancestors goes inert too (the scrim stays live, so a click on it can close).
+  useEffect(() => {
+    if (!shown || !modal) return
+    const made: HTMLElement[] = []
+    for (let el = aside.current; el && el !== document.body; el = el.parentElement) {
+      for (const sib of Array.from(el.parentElement?.children ?? [])) {
+        if (sib === el || !(sib instanceof HTMLElement) || sib.inert || sib.classList.contains('inspector-scrim')) continue
+        sib.inert = true
+        made.push(sib)
+      }
+    }
+    return () => made.forEach((el) => (el.inert = false))
+  }, [shown, modal])
+
   useEffect(() => {
     if (!shown) return
     const onKey = (e: KeyboardEvent) => {
