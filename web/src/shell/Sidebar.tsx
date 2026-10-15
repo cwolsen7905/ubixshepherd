@@ -2,12 +2,27 @@ import { useState, type ReactNode } from 'react'
 import { href, type Route } from '../router'
 import type { Status, Waiting } from '../api/types'
 import { KeepGoing } from '../components/KeepGoing'
-import { Badge } from '../ui'
-import { COUNT_LABEL, NAV, navCounts } from './nav'
+import { Badge, type BadgeTone } from '../ui'
+import { COUNT_LABEL, NAV, navCounts, type NavKey } from './nav'
 
-function Wordmark() {
+/** Only Inbox is a call to act; Next up is a plain count and Board is broken work (the mockup's three tones). */
+const COUNT_TONE: Partial<Record<NavKey, BadgeTone>> = { next: 'neutral', board: 'bad' }
+
+/** The workspace the daemon serves is the brand: its name, or a count when there are several. */
+function workspaceName(workspaces: Status['workspaces']): string {
+  const [first] = workspaces
+  if (!first) return 'uBixShepherd'
+  return workspaces.length === 1 ? first.name : `${workspaces.length} workspaces`
+}
+
+function Wordmark({ workspaces }: { workspaces: Status['workspaces'] }) {
   return (
-    <a className="wordmark" href={href.board()} aria-label="uBixShepherd, go to the board">
+    <a
+      className="wordmark"
+      href={href.board()}
+      aria-label={`uBixShepherd, ${workspaceName(workspaces)}, go to the board`}
+      title={workspaces.map((w) => w.name).join(', ') || undefined}
+    >
       <svg className="wordmark-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
         <rect width="32" height="32" fill="#0f62fe" />
         <rect x="6" y="6" width="9" height="9" fill="#ffffff" />
@@ -15,28 +30,8 @@ function Wordmark() {
         <rect x="6" y="17" width="9" height="9" fill="#ffffff" opacity="0.55" />
         <rect x="17" y="17" width="9" height="9" fill="#ffffff" />
       </svg>
-      <span className="wordmark-text">
-        uBix<b>Shepherd</b>
-      </span>
+      <span className="wordmark-text">{workspaceName(workspaces)}</span>
     </a>
-  )
-}
-
-/** The workspace the daemon serves: a name when there is one, a count when there are several. */
-export function WorkspaceLabel({ workspaces }: { workspaces: Status['workspaces'] }) {
-  const [first] = workspaces
-  if (!first) return null
-  if (workspaces.length === 1) {
-    return (
-      <p className="workspace" title={first.name}>
-        Workspace: <span className="workspace-name">{first.name}</span>
-      </p>
-    )
-  }
-  return (
-    <p className="workspace" title={workspaces.map((w) => w.name).join(', ')}>
-      Workspace: <span className="workspace-name">{workspaces.length} workspaces</span>
-    </p>
   )
 }
 
@@ -46,9 +41,9 @@ function isMacOS(): boolean {
 }
 
 /**
- * The left sidebar: name, workspace, the views in three groups with their counts, then the
+ * The left sidebar: the workspace as the brand, the views in three groups with their counts, then the
  * footer: keep-going, daemon status, update notice. Counts come from the attention
- * list (decisions, next); the board count shows broken lanes.
+ * list (decisions, next); the board count shows broken lanes, as red text, not a badge.
  */
 export function Sidebar({
   route,
@@ -70,8 +65,7 @@ export function Sidebar({
   return (
     <div className="sidebar-inner">
       <div className="sidebar-top">
-        <Wordmark />
-        <WorkspaceLabel workspaces={workspaces} />
+        <Wordmark workspaces={workspaces} />
         <button
           type="button"
           className="search-trigger"
@@ -97,7 +91,7 @@ export function Sidebar({
                     <span className="nav-label">{it.label}</span>
                     {n > 0 && (
                       <span className="nav-count">
-                        <Badge count={n} tone={it.countTone ?? 'attention'} label={COUNT_LABEL[it.key]} />
+                        <Badge count={n} tone={COUNT_TONE[it.key] ?? it.countTone ?? 'attention'} label={COUNT_LABEL[it.key]} />
                       </span>
                     )}
                   </a>
