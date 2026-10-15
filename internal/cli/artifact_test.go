@@ -93,3 +93,44 @@ func TestWorkerArtifactCommandPostsDeclaration(t *testing.T) {
 		t.Errorf("asked = %+v", asked)
 	}
 }
+
+func operatorTool(t *testing.T, name string) mcpTool {
+	t.Helper()
+	for _, tl := range mcpTools() {
+		if tl.Name == name {
+			return tl
+		}
+	}
+	t.Fatalf("no %s tool", name)
+	return mcpTool{}
+}
+
+// The desk's artifact tools map onto `artifact list` and `artifact cat`, and are
+// read-only: no write command is reachable through them.
+func TestDeskArtifactToolsMapOntoCommands(t *testing.T) {
+	list := operatorTool(t, "artifact_list")
+	args, err := list.args(map[string]any{"repo": "r", "lane": "feat/x", "run": float64(7), "topic": float64(3), "state": "kept"})
+	want := []string{"artifact", "list", "--repo", "r", "--lane", "feat/x", "--run", "7", "--topic", "3", "--state", "kept"}
+	if err != nil || !slices.Equal(args, want) {
+		t.Errorf("artifact_list args = %q, %v", args, err)
+	}
+	args, _ = list.args(map[string]any{"lane": float64(12)})
+	if want := []string{"artifact", "list", "--lane", "12"}; !slices.Equal(args, want) {
+		t.Errorf("lane id args = %q", args)
+	}
+	args, _ = list.args(map[string]any{})
+	if want := []string{"artifact", "list"}; !slices.Equal(args, want) {
+		t.Errorf("bare args = %q", args)
+	}
+	read := operatorTool(t, "artifact_read")
+	args, err = read.args(map[string]any{"id": float64(4), "version": "ab12"})
+	if want := []string{"artifact", "cat", "4", "--version", "ab12"}; err != nil || !slices.Equal(args, want) {
+		t.Errorf("artifact_read args = %q, %v", args, err)
+	}
+	if _, err := read.args(map[string]any{"id": "4"}); err == nil {
+		t.Error("a string id was accepted")
+	}
+	if read.more == "" || list.more == "" {
+		t.Error("a capped artifact tool says nothing about reading more")
+	}
+}

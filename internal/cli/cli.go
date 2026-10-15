@@ -102,7 +102,7 @@ func commands() []command {
 			"shepherd request list [--all] | route <id> --lane L [--agent A] | close <id> [--why TEXT]", runRequest},
 		{"standards", "Standards packs: the rules every agent is told, the same way, and the repo's own that win over them",
 			"shepherd standards list | show [dir] | init   (each takes --json)", runStandards},
-		{"artifact", "Files agents wrote for you: list, show, pin, and apply snapshot retention",
+		{"artifact", "Files agents wrote for you: list, show, cat, pin, and apply snapshot retention",
 			"shepherd artifact list [--lane ID] [--state S] [--json] | show <id> [--json] | pin <id> | unpin <id> | gc [--keep-days N] [--cap-mb N] [--dry-run]", runArtifact},
 		{"agents", "Set up an agent CLI for Shepherd", "shepherd agents setup cursor", runAgents},
 		{"worker", "", "shepherd worker report|ask-human|ask-shepherd (for agents Shepherd starts)", runWorker},
