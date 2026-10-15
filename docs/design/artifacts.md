@@ -1,13 +1,25 @@
 # Artifacts: reading what agents wrote, committed or not
 
 Status: **decided**. The maintainer approved this design on 2026-10-14 with every
-recommended default (see [Decided questions](#decided-questions)). Nothing is built yet. It is
+recommended default (see [Decided questions](#decided-questions)). A1 to A4 and A6 are
+built; see Progress. It is
 the artifact part of the [web UI overhaul](web-ui-overhaul.md) and uses its inspector.
 
-Progress (2026-10-14): A1 is built and merged (`internal/fold/artifacts.go`,
-`internal/api/lane_artifacts.go`); A2 to A6 are not started. The ordered list, with the
-web viewer first on the lane page (N6) and the Go items running in parallel (N23, N24, N26),
-is in [web-ui-overhaul.md](web-ui-overhaul.md#status-and-remaining-work).
+Progress (2026-10-15): A1 (`internal/fold/artifacts.go`, `internal/api/lane_artifacts.go`),
+A2 (!218, the viewer on the lane page as the Artifacts tab; the inspector form waits for the
+inspector), A3 (!221), A4 (!224, follow-ups !226) and A6 (!227) are built and merged. A5, the
+Artifacts page, Produced on runs, the close dialog's choices and the version diff, is not
+started. The ordered list is in
+[web-ui-overhaul.md](web-ui-overhaul.md#status-and-remaining-work).
+
+Where the build differs from the design:
+
+- **`artifacts.cap_mb`** was added beside `keep_days` in the repo profile (default 500, 0
+  takes the default, negative is refused), so the total cap in the retention rule is a
+  setting rather than a constant.
+- **The merged-lane waiting item.** A merged lane held open by undecided files appears as a
+  waiting item (`internal/api/waiting.go`), the Inbox entry decided question 3 asks for.
+- **A2 is the page form.** The viewer is on the lane page, not yet in the lane inspector.
 
 ## The problem
 
@@ -73,6 +85,7 @@ them in its profile:
 artifacts:
   discover: ["docs/plans/**", "**/*.md", ".shepherd/artifacts/**"]
   keep_days: 30
+  cap_mb: 500
 ```
 
 Git-ignored files are never discovered (except the Shepherd directory, which is ignored
@@ -160,7 +173,7 @@ written by a run ──► live (in the worktree, read on demand)
   keeps the lane open and puts "lane merged, 1 file to keep or discard" in the Inbox
   (decided question 3).
 - **Retention.** Snapshots of a closed lane are kept for `keep_days` (default 30), pinned
-  ones for ever, under a total cap (default 500 MB) that evicts the oldest unpinned first.
+  ones for ever, under a total cap (`artifacts.cap_mb`, default 500 MB) that evicts the oldest unpinned first.
   `shepherd artifact gc` and the daemon's daily timer apply it.
 
 ## 5. Data model
@@ -258,11 +271,11 @@ wait for `feat/keep-going-web-feed` to merge, since it holds `internal/api`,
 | Id | Item | Scope | Depends on |
 |---|---|---|---|
 | A1 | Read-only discovery: `GET /v1/lanes/{id}/artifacts` from the diff's untracked, uncommitted and committed lists filtered by globs; `content` for a live file with the caps and headers above; `artifacts.discover` in the repo profile. No store change | `internal/fold/**`, `internal/api/**`, `internal/daemon/**`, `internal/config/**` | keep-going lane |
-| A2 | The viewer in the lane inspector's Artifacts tab; path links in decisions and messages | `web/src/artifacts/**`, `web/src/inspector/artifact*`, `web/src/inspector/lane*`, `web/src/api/**` | A1, W2.4, W0.4 |
-| A3 | Store and declaration: migrations, `shepherd worker artifact` and the worker tool, `ask_human`'s `artifacts`, the run-end scan with attribution, the `artifact` feed kind, the topic link kind, the brief sentence | `internal/store/**`, `internal/cli/**`, `internal/dispatch/**`, `internal/api/**`, `internal/daemon/**` | A1 |
-| A4 | Snapshots and close: snapshot on declare, run end and close; the `info/exclude` line; close and merged-close behaviour; move-to-keep and discard; retention and `shepherd artifact gc` | `internal/fold/**`, `internal/daemon/**`, `internal/store/**`, `internal/cli/**`, `internal/git/**` | A3 |
+| A2 (**built as the Artifacts tab on the lane page (!218); the inspector form follows**) | The viewer in the lane inspector's Artifacts tab; path links in decisions and messages | `web/src/artifacts/**`, `web/src/inspector/artifact*`, `web/src/inspector/lane*`, `web/src/api/**` | A1, W2.4, W0.4 |
+| A3 (**built (!221)**) | Store and declaration: migrations, `shepherd worker artifact` and the worker tool, `ask_human`'s `artifacts`, the run-end scan with attribution, the `artifact` feed kind, the topic link kind, the brief sentence | `internal/store/**`, `internal/cli/**`, `internal/dispatch/**`, `internal/api/**`, `internal/daemon/**` | A1 |
+| A4 (**built (!224, follow-ups !226)**) | Snapshots and close: snapshot on declare, run end and close; the `info/exclude` line; close and merged-close behaviour; move-to-keep and discard; retention and `shepherd artifact gc` | `internal/fold/**`, `internal/daemon/**`, `internal/store/**`, `internal/cli/**`, `internal/git/**` | A3 |
 | A5 | The rest of the web: the Artifacts page, Produced on runs, the close dialog's choices, topic and decision links, versions and the version diff | `web/src/pages/Artifacts*`, `web/src/artifacts/**`, `web/src/inspector/**`, `web/src/components/LaneClose*`, `web/src/router*` | A2, A4 |
-| A6 | Desk tools `artifact_list` and `artifact_read`, and a line in `DeskBrief` | `internal/cli/**`, `internal/chat/**`, `internal/desk/**` | A3 |
+| A6 (**built (!227)**) | Desk tools `artifact_list` and `artifact_read`, and a line in `DeskBrief` | `internal/cli/**`, `internal/chat/**`, `internal/desk/**` | A3 |
 
 A1 and A2 alone answer the person's first ask (read the plan an agent wrote, rendered,
 inside Shepherd) with no migration. A3 and A4 make it reliable and keep files past close.
