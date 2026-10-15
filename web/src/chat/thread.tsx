@@ -19,7 +19,7 @@ import { useFollowBottom, Countdown, useThread, CONNECTION } from './md'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
 import { QuestionActions } from './questions'
-import { questionsByMessage, replyJumpNote, replyRef } from './reply'
+import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
 import { PendingStrip } from './strip'
 import { Markdown } from './md'
 import { clipHead } from './md'
@@ -325,7 +325,7 @@ function ChatThread({
     })
     if (missing.length === 0 || openQs.length === 0 && !d.loaded) return
     missing.forEach((id) => asked.current.add(id))
-    deskQuestions.list('answered').then(
+    closedQuestions(deskQuestions.list).then(
       (qs) => setAnswered(qs),
       () => missing.forEach((id) => asked.current.delete(id)),
     )

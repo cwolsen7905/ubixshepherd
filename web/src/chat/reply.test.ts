@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeskEvent, DeskQuestion } from '../api/types'
-import { questionsByMessage, replyJumpNote, replyRef } from './reply'
+import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
 
 const ev = (seq: number, kind: DeskEvent['kind'], turn?: number) => ({ seq, kind, turn, created: '' }) as DeskEvent
 const q = (id: number, turn: number, state: DeskQuestion['state'] = 'open') => ({ id, turn, state, text: '', workspace_id: 1, created: '' }) as DeskQuestion
@@ -36,5 +36,17 @@ describe('replyJumpNote', () => {
   it('is silent when the row was found and names the question when not', () => {
     expect(replyJumpNote(4, true)).toBe('')
     expect(replyJumpNote(4, false)).toContain('Question 4')
+  })
+})
+
+describe('closedQuestions', () => {
+  it('reads answered and skipped, so a reply to either can find its row', async () => {
+    const asked: string[] = []
+    const got = await closedQuestions(async (state) => {
+      asked.push(state)
+      return [q(state === 'answered' ? 1 : 2, 1, state)]
+    })
+    expect(asked.sort()).toEqual(['answered', 'skipped'])
+    expect(got.map((x) => x.id)).toEqual([1, 2])
   })
 })

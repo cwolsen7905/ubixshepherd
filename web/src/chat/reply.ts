@@ -29,3 +29,9 @@ export function questionsByMessage(events: readonly DeskEvent[], questions: read
 export function replyJumpNote(id: number, landed: boolean): string {
   return landed ? '' : `Question ${id} is not in the loaded thread. Load earlier messages to see it.`
 }
+
+/** The answered and skipped questions, for a reply that names one no longer open. */
+export async function closedQuestions(list: (state: 'answered' | 'skipped') => Promise<DeskQuestion[]>): Promise<DeskQuestion[]> {
+  const [answered, skipped] = await Promise.all([list('answered'), list('skipped')])
+  return [...answered, ...skipped]
+}
