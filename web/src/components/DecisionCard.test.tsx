@@ -163,7 +163,7 @@ describe('the inline decision card', () => {
 })
 
 describe('the decision in the inspector', () => {
-  it('is a single-column pane: no glyph rail, the whole long body, the recommended option marked', () => {
+  it('the pane variant has no glyph rail, shows the whole long body and marks the recommended option', () => {
     const long = ['Plan headline', ...Array(30).fill('a line of the plan')].join('\n')
     show(decision({ question: long, options: ['Stream', 'Buffer'], recommendation: 'Buffer' }), 'pane')
     const card = screen.getByRole('region')
