@@ -4,6 +4,11 @@ Status: **decided**. The maintainer approved this design on 2026-10-14 with ever
 recommended default (see [Decided questions](#decided-questions)). Nothing is built yet. It is
 the artifact part of the [web UI overhaul](web-ui-overhaul.md) and uses its inspector.
 
+Progress (2026-10-14): A1 is built and merged (`internal/fold/artifacts.go`,
+`internal/api/lane_artifacts.go`); A2 to A6 are not started. The ordered list, with the
+web viewer first on the lane page (N6) and the Go items running in parallel (N23, N24, N26),
+is in [web-ui-overhaul.md](web-ui-overhaul.md#status-and-remaining-work).
+
 ## The problem
 
 The person often asks an agent for a plan, a design note or a report, and reads it in a
