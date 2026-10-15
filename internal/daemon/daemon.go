@@ -185,6 +185,8 @@ func (s *Server) Handler() http.Handler {
 	// What a lane holds against its base: a read of the worktree, redacted and bounded.
 	// Not for a worker: an agent reads its own tree itself.
 	handle("GET "+api.PathLanes+"/{id}/diff", desk|web, api.LaneDiff(s.Fold))
+	handle("GET "+api.PathLanes+"/{id}/artifacts", desk|web, api.LaneArtifacts(s.Fold))
+	handle("GET "+api.PathLanes+"/{id}/artifacts/content", desk|web, api.LaneArtifactContent(s.Fold))
 	handle("GET "+api.PathFoldGC, desk, s.foldGC)
 	handle("POST "+api.PathPrePush, worker, s.prePush)
 	handle("POST /v1/repos/{id}/hook", operatorOnly, s.repoHook)

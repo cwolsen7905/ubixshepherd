@@ -498,6 +498,29 @@ type Profile struct {
 	Follows []Follow `yaml:"follows,omitempty" json:"follows,omitempty"`
 	// Watch says what Shepherd's forge watcher hands back to a lane's agent unasked.
 	Watch Watch `yaml:"watch,omitempty" json:"watch"`
+	// Artifacts says which files a lane's agents wrote that the person may want to read.
+	Artifacts Artifacts `yaml:"artifacts,omitempty" json:"artifacts"`
+}
+
+// Artifacts is the artifact discovery setting of a repo.
+type Artifacts struct {
+	// Discover are the globs (repo-relative, as a lane's scope) that pick a lane's
+	// artifacts from its changed files. Unset is DefaultArtifactGlobs; a repo's list
+	// replaces them.
+	Discover []string `yaml:"discover,omitempty" json:"discover,omitempty"`
+}
+
+// DefaultArtifactGlobs are the discovery globs when a repo sets none: markdown and
+// images anywhere, and the directory Shepherd keeps files not meant for the repo in.
+var DefaultArtifactGlobs = []string{"**/*.md", "**/*.markdown", "**/*.png", "**/*.jpg",
+	"**/*.gif", "**/*.webp", "**/*.svg", ".shepherd/artifacts/**"}
+
+// Globs is the effective discovery list.
+func (a Artifacts) Globs() []string {
+	if len(a.Discover) == 0 {
+		return DefaultArtifactGlobs
+	}
+	return a.Discover
 }
 
 // DefaultFixTries is how many times Shepherd hands a merge request's failures (a failed
@@ -888,6 +911,11 @@ func (p Profile) validate(at string) []error {
 	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
 	}
+	for i, g := range p.Artifacts.Discover {
+		if bad := badRepoPath(g); bad != "" {
+			errs = append(errs, fmt.Errorf("%s.artifacts.discover[%d]: %q %s", at, i, g, bad))
+		}
+	}
 	for i, n := range p.Standards {
 		if n == "" || strings.ContainsAny(n, `/\`) || n == "." || n == ".." {
 			errs = append(errs, fmt.Errorf("%s.standards[%d]: %q is not a pack name (a folder under ~/.shepherd/standards)", at, i, n))
@@ -994,6 +1022,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.StandardsWhen != nil {
 		out.StandardsWhen = over.StandardsWhen
+	}
+	if over.Artifacts.Discover != nil {
+		out.Artifacts.Discover = over.Artifacts.Discover
 	}
 	if over.Autonomy.Merge != "" {
 		out.Autonomy.Merge = over.Autonomy.Merge
