@@ -18,6 +18,180 @@ It builds on the earlier [UI audit](../ui-audit/README.md), whose layout foundat
 (tokens, `.page`, `.page-split`, shared heads and rows) has landed. The audit's remaining
 page fixes are folded into Phase 4 here.
 
+## Status and remaining work
+
+Audited on 2026-10-14 against `origin/dev` at `2a9ca59`, after the person ran the web UI
+from `dev` and called it close to the mockup but "still a ways off". The audit read the code
+under `web/src`, the daemon routes the items add, and the running app (built from that
+commit, driven in headless Chrome against the screenshot stub, shots in
+[web-ui-overhaul/shots](web-ui-overhaul/shots) as `dev-2026-10-14-*.png`).
+
+Two lanes are open on `web/**` as this is written, and the steps below keep out of them:
+
+| Lane | Holds | Effect on the list |
+|---|---|---|
+| `feat/web-keep-going-switch` | `web/src/shell/**`, `web/src/components/KeepGoing*` | nothing may edit the shell until it merges (steps N7 and N8) |
+| `fix/chat-copy-button` | `web/src/chat/md*`, `web/src/pages/Chat.tsx`, `web/src/styles/chat.css`, `web/src/styles/conversation.css` | chat steps wait for it (N9 onward); the rest do not |
+
+### Regression: the counts across the top
+
+The old top bar showed `? 2 needs you`, `✗ 1 broken`, `◆ 1 to review`, `● 2 working`,
+live, from the board's grouping (`counts()` in `web/src/model/board.ts`). W1.3 removed the
+bar and did not carry them over: the sidebar shows only a **Decisions** badge (decisions
+plus requests, `inboxCount` in `web/src/state/attention.ts`) and **Next up**, and the page
+head shows one "N waiting on you" badge, so one screen can say "2" and "5" for what
+looks like the same thing. Nothing shows how many runs are going or what is broken. The
+mockup has no top strip either (its Board entry carries a `1 ✗`), so this is a gap in the
+mockup as much as in the build, and the person's ask settles it.
+
+![Dev today: counts gone, 2 beside Decisions, 5 in the head](web-ui-overhaul/shots/dev-2026-10-14-chat.png)
+
+### Item by item
+
+Done means built and merged as the item describes. Partly means something shipped and
+something the item names did not. Evidence is the file or commit on `dev`.
+
+| Item | Status | Evidence and what is missing |
+|---|---|---|
+| W0.1 Stub catches up | done | `web/shots/stub-daemon.mjs` (25ff1f7, 0d8e899): answers the client's routes, fails the run on an unstubbed one |
+| W0.2 Fail soft | done | `web/src/components/ErrorBoundary.tsx` around the sidebar, page, head and footer pieces in `web/src/shell/Shell.tsx` and `web/src/App.tsx`; tolerant list reads (`asList`) in `web/src/api/client.ts`. The rail and the thread have no boundary of their own yet |
+| W0.3 Split Chat | done | `web/src/pages/Chat.tsx` is 47 lines; `web/src/chat/{thread,composer,questions,md,hooks}` |
+| W0.4 One markdown renderer | partly | `web/src/conversation/Markdown.tsx` renders tables, quotes, rules and task lists (960b027) and the decision card uses it; the chat still goes through `web/src/chat/md.tsx`. Being finished by `fix/chat-copy-button` |
+| W0.5 Tokens and kit | partly | `web/src/ui/*` and the surface tokens in `web/src/styles/theme.css`. Only `Badge` is used (`web/src/shell/Sidebar.tsx`); no page uses `Button`, `Chip`, `Tabs`, `Dialog`, `Toast` or `EmptyState`, and `KitPage` is not routed (only its test mounts it) |
+| W1.1 `/v1/waiting` covers requests | done | `internal/waiting/**` (53c2b3a), `request` kind and `version` on the list |
+| W1.2 One attention store | partly | `web/src/state/attention.ts`, `web/src/state/live.ts`; title, favicon, sidebar and `WaitingOnYou` read it and none polls. The chat's backlog head still counts from the board model and the topic chips from the topics read, so those two can disagree with the badge |
+| W1.3 Sidebar shell | partly | `web/src/shell/*`, `web/src/styles/layout/shell.css`: sidebar, page head, collapse at 1280, sheet at 760, spend, daemon, update notice, help. Missing: the counts above; keep-going switch (in flight); the palette trigger; the workspace switcher (a label only); "Inbox" and "Conversation" names (still "Decisions", "Chat"); glyphs as marks (single letters now) |
+| W1.4 Command palette | not started | nothing under `web/src/palette/`; `?` help lists only the old keys (`web/src/components/Help.tsx`) |
+| W2.1 Inspector frame, `open=` | not started | no `web/src/inspector/`; `web/src/router.ts` has no `open=` |
+| W2.2 Decisions in the thread and strip | not started | `web/src/chat/thread.tsx` still renders the full card and the duplicate "decision asked" row; no pending strip; Answer is still grey until a choice is made |
+| W2.3 Run inspector | not started | `web/src/pages/Log.tsx` is still the only run view |
+| W2.4 Lane inspector, tab in the address | not started | `web/src/pages/Lane.tsx` tab is local state; no `#/lanes/4/changes` |
+| W2.5 Context composer | not started | |
+| W2.6 Rows open the inspector | not started | |
+| W2.7 Structured `about` on a desk turn | not started | |
+| W3.1 Inbox page | not started | `#/decisions` is still the Decisions page; the head dropdown still covers the thread and Answer still leaves the chat |
+| W3.2 Seen and missed | not started | no unseen state; `web/src/model/backlog.ts` and `board.ts` only carry the old dismissals |
+| W3.3 Thread calm | not started | the page still scrolls the window; the rail head is clipped under the page head (`.backlog` sticky offset in `web/src/styles/chat.css` still uses the old bar height); topics show twice; tool calls and wakes are not folded |
+| W4.1 Board | not started | `web/src/pages/Board.tsx`: no "quiet projects" fold; Close lane is a bare button under every row |
+| W4.2 Project, Projects | not started | |
+| W4.3 Next up | not started | |
+| W4.4 Settings, Usage | not started | |
+| W4.5 Runs, Timeline | not started | |
+| W4.6 Typeface | partly | `--font-sans` and `--font-code` are declared in `web/src/styles/theme.css` and fall back to the system stacks; no `web/public/fonts/` and nothing uses them (CSP already allows `font-src 'self'`) |
+| A1 Read-only discovery | done | `internal/fold/artifacts.go`, `internal/api/lane_artifacts.go` (64d80cb): `GET /v1/lanes/{id}/artifacts` and `.../artifacts/content`, `artifacts.discover` in `internal/config/config.go` |
+| A2 Viewer | not started | no web code reads the artifact routes |
+| A3 to A6 | not started | no store tables, worker tool, snapshots or desk tools |
+
+### Visible gaps no item covers
+
+What the running UI differs from the mockup in that no W or A item names. In priority
+order; the first is the person's complaint.
+
+| # | Gap | Where it shows | Covered by |
+|---|---|---|---|
+| G1 | **The at-a-glance counts**: running, waiting on you, blocked or failed, needs routing, always on screen | page head | N1 |
+| G2 | Two different numbers for "waiting": the sidebar's Decisions badge counts decisions and requests, the head badge counts everything | sidebar and head together | N1 reconciles them by showing the parts; N8 and W3.1 finish it |
+| G3 | The Board entry has no broken count (the mockup's `1 ✗`), and nav marks are letters, not the glyph language | sidebar | N8 |
+| G4 | The footer shows a dot where the mockup says "Daemon live, forge 41s ago" | sidebar footer | N3 |
+| G5 | Plex is not loaded, so type differs from the mockup everywhere | all pages | N2 |
+| G6 | Buttons: grey outlines everywhere, Answer looks disabled, no primary hierarchy; pages do not use the kit | all pages | N5, N10 and N13 |
+| G7 | Uppercase micro-labels (FRONT DESK, WHY THIS IS YOURS, WAITING ON YOU, TOPICS) and left bars on messages, where the mockup uses sentence case and soft bubbles | chat, decision card | N10 |
+| G8 | The chat rail's head is clipped under the page head; the thread scrolls the window so the composer is not fixed | chat | N10, then W3.3 |
+| G9 | The thread's decision card is the full card, repeated by its feed row | chat | N10 (quick fix), W2.2 |
+| G10 | The Waiting on you dropdown still covers the thread and Answer leaves the chat | head | W2.2, W3.1 |
+| G11 | No "Search or act" box in the sidebar | sidebar | N4 then N8 |
+| G12 | The person still cannot read an artifact: the daemon serves them and nothing in the web asks | lanes | N6 (earlier than W2.4) |
+
+### Ordered work list
+
+Every step is one merge request and ends green on its own (`make check` and `npm run
+check`). Scopes are globs; a lane is opened with exactly these. IDs are new (N for next);
+the plan item each carries is in the second column. `App.tsx` is the one hot file: N1,
+N4, N7 and N12 each edit a different hunk of `web/src/App.tsx`, so they run in that order
+and nothing else touches it.
+
+| # | Step | Item | Scope | Depends on |
+|---|---|---|---|---|
+| N1 | **Status counts in the page head**: running, waiting on you, blocked or failed, needs routing; see below | new | `web/src/components/StatusCounts*`, `web/src/state/attention*`, `web/src/App.tsx` (the `headActions` hunk only) | none |
+| N2 | Bundle IBM Plex Sans and Mono (latin woff2 and the licence), `@font-face`, point `--font-ui` and `--font-mono` at them | W4.6 | `web/src/styles/theme.css`, `web/public/fonts/**`, `web/index.html` | none |
+| N3 | Footer status as words: "Daemon live", "forge polled 41s ago", with the popover behind it | new (G4) | `web/src/components/DaemonStatus*`, `web/src/styles/layout/daemon.css` | none |
+| N4 | Command palette: `⌘K` and `Ctrl+K`, go to a page, open a lane, run, decision or topic by name or number, "answer next"; update the keys list. No sidebar trigger yet | W1.4 | `web/src/palette/**`, `web/src/hooks.ts`, `web/src/components/Help*`, `web/src/App.tsx` (one mount) | N1 |
+| N5 | Kit adoption pass one: `Button` for the page-level buttons (Close lane, Approve), `EmptyState`, a primary-per-view rule in the kit's docs, and the dev-only `#/kit` route | W0.5 | `web/src/ui/**`, `web/src/components/LaneClose*`, `web/src/components/LaneApprove*`, `web/src/styles/layout/controls.css`, `web/src/router.ts` (the `kit` route) | none |
+| N6 | Artifacts on the lane page: an Artifacts tab listing a lane's artifacts with the rendered file below it (markdown, text, images), a reusable viewer for the inspector | A2 (page form) | `web/src/artifacts/**`, `web/src/pages/Lane.tsx`, `web/src/api/artifacts*`, `web/src/styles/pages/lane.css` | none |
+| N7 | Home is the conversation: `#/` is the chat, the board moves to `#/board` and old links redirect; the Chat entry becomes Conversation | decided Q3 | `web/src/router.ts`, `web/src/router.test.ts`, `web/src/shell/nav.ts`, `web/src/App.tsx` (the routes hunk) | keep-going switch merged, N4 |
+| N8 | Sidebar polish: Board's broken count, glyph marks, the "Search or act" trigger, the workspace switcher, footer ordering | W1.3 | `web/src/shell/**`, `web/src/styles/layout/shell.css` | keep-going switch merged, N4, N7 |
+| N9 | Chat on the one renderer is finished by `fix/chat-copy-button`; nothing to do but wait | W0.4 | held by that lane | |
+| N10 | Chat quick fixes: unclip the rail head, sentence-case labels, soft message bubbles, drop the duplicate "decision asked" row, a primary Answer, fold the decision card's long body behind "Show all" | G7 to G9 | `web/src/chat/**`, `web/src/pages/Chat.tsx`, `web/src/styles/chat.css`, `web/src/styles/conversation.css`, `web/src/components/DecisionCard*`, `web/src/styles/pages/decisions.css` | N9 |
+| N11 | Attention store finishes: the backlog head and the topic waits read the one list, an `ErrorBoundary` around the rail and the thread | W1.2, W0.2 | `web/src/state/**`, `web/src/model/backlog*`, `web/src/components/Backlog*`, `web/src/components/Topics*` | N10 |
+| N12 | Inspector frame: `open=` on every route, split pane at 1440, overlay below, sheet below 760, focus handling; mounted as a wrapper inside the page so the shell is untouched | W2.1 | `web/src/router.ts`, `web/src/inspector/**`, `web/src/styles/inspector.css`, `web/src/App.tsx` (one wrapper hunk) | N7, N10 |
+| N13 | Pages on the kit, in parallel: Projects and Unassigned (W4.2), Next up (W4.3), Settings and Usage (W4.4), Runs and Timeline (W4.5), Board with quiet projects folded (W4.1, without inspector links) | W4.1 to W4.5 | one lane each: `web/src/pages/Project*` `web/src/pages/Projects*` `web/src/styles/projects.css`; `web/src/pages/Next*` `web/src/styles/next.css`; `web/src/pages/Settings*` `web/src/pages/Usage*` `web/src/styles/settings.css` `web/src/styles/usage.css`; `web/src/pages/Runs*` `web/src/pages/Timeline*` `web/src/timeline/**`; `web/src/pages/Board*` `web/src/styles/layout/rows.css` | N5 |
+| N14 | Decisions and questions in the inspector, compact card, the pending strip with `]` and `[` | W2.2 | `web/src/chat/**`, `web/src/components/DecisionCard*`, `web/src/inspector/decision*`, `web/src/inspector/question*`, `web/src/model/waitingStep*`, `web/src/styles/chat.css` | N12, N10 |
+| N15 | Run in the inspector (conversation, log, changes, asked) | W2.3 | `web/src/inspector/run*`, `web/src/pages/Log*`, `web/src/conversation/**`, `web/src/styles/pages/log.css` | N12 |
+| N16 | Lane in the inspector, tab in the address, Artifacts tab from N6 | W2.4, A2 | `web/src/inspector/lane*`, `web/src/pages/Lane*`, `web/src/components/Changes*`, `web/src/styles/pages/lane.css`, `web/src/styles/changes.css` | N12, N6 |
+| N17 | Context composer (client only) | W2.5 | `web/src/inspector/ContextComposer*`, `web/src/state/desk*` | N12 |
+| N18 | Thread calm: own scroll region, fixed head and composer, grouped events, folded tool calls, topics folded into the chips | W3.3 | `web/src/chat/**`, `web/src/components/Topics*`, `web/src/components/TopicBar*`, `web/src/styles/chat.css`, `web/src/styles/topics.css` | N14 |
+| N19 | Inbox page, `#/decisions` redirects, the head dropdown goes; the sidebar entry becomes Inbox | W3.1 | `web/src/pages/Inbox*`, `web/src/pages/Decisions*`, `web/src/router.ts`, `web/src/components/WaitingOnYou*`, `web/src/shell/nav.ts` | N14 |
+| N20 | Seen and missed: unseen dots, "while you were away", polite announcements, opt-in notifications | W3.2 | `web/src/state/seen*`, `web/src/chat/**`, `web/src/pages/Settings*` | N19, N18 |
+| N21 | Rows everywhere open the inspector | W2.6 | `web/src/pages/Board*`, `web/src/pages/Runs*`, `web/src/pages/Timeline*`, `web/src/pages/Next*`, `web/src/pages/Project*`, `web/src/components/Backlog*` | N15, N16, N13 |
+| N22 | Structured `about` on `POST /v1/desk/turn` (Go, then the web) | W2.7 | `internal/api/**`, `internal/daemon/**`, `internal/desk/**`, `web/src/inspector/ContextComposer*`, `web/src/api/**` | N17 |
+| N23 | Artifact store, declaration, feed kind and brief | A3 | `internal/store/**`, `internal/cli/**`, `internal/dispatch/**`, `internal/api/**`, `internal/daemon/**` | none (Go) |
+| N24 | Snapshots, `info/exclude`, close behaviour, retention | A4 | `internal/fold/**`, `internal/daemon/**`, `internal/store/**`, `internal/cli/**`, `internal/git/**` | N23 |
+| N25 | Artifacts page, Produced on runs, close dialog choices, versions | A5 | `web/src/pages/Artifacts*`, `web/src/artifacts/**`, `web/src/inspector/**`, `web/src/components/LaneClose*`, `web/src/router.ts` | N24, N16 |
+| N26 | Desk tools `artifact_list` and `artifact_read` | A6 | `internal/cli/**`, `internal/chat/**`, `internal/desk/**` | N23 |
+
+#### N1 in detail: the counts
+
+Placed at the left of the page head's actions, before the Waiting on you badge, in every
+width where the sidebar is full or collapsed; below 760 px they wrap onto a second line of
+the page head as glyph and number only, with the words in the accessible name.
+
+| Chip | Rule | Same number as | Goes to |
+|---|---|---|---|
+| `● N running` | lanes with a run in flight: the board's `working` group (`counts()` in `web/src/model/board.ts`) | the Board's working group | the board |
+| `? N waiting on you` | `attentionCount(waiting)` | the head badge, the title, the favicon | opens the Waiting on you panel |
+| `✗ N broken or blocked` | the board's `broken` group plus `blocked` items from the attention list, deduplicated by lane | the Board's broken group | the board |
+| `! N needs routing` | attention items of kind `request` | the Decisions page's "Requests no rule could route" | `#/decisions` |
+
+- All four are always shown. A zero is muted and keeps its place, so nothing jumps.
+- One selector, `statusCounts(snapshot)` in `web/src/state/attention.ts`, feeds the strip,
+  the title and the sidebar, so the sidebar badge and the strip cannot disagree; the
+  Decisions badge gets a title that names its parts.
+- The strip is one `role="status"` region, updated when the numbers change, not on every
+  poll. Chips are links or buttons, in the tab order, with the glyph and a word.
+- Tests: the selector against fixtures (a lane both failed and blocked counts once; a
+  request counts as routing and as waiting), the strip's render, the narrow layout and the
+  accessible names. No daemon change.
+
+### What can run at once
+
+Scopes that do not overlap run in parallel. Held lanes aside, the groups are:
+
+| Wave | Runs together | Why they do not collide |
+|---|---|---|
+| Now | N1, N2, N3, N5, N6, N23 | components, theme and fonts, the daemon status piece, the kit and its first adopters, the lane page and a new `web/src/artifacts`, and Go only |
+| Next | N4 (after N1), N13's five page lanes (after N5), N24 (after N23), N26 (after N23) | each page lane owns its own page and stylesheet; N4 owns `palette/**` |
+| After `feat/web-keep-going-switch` | N7 then N8 | both edit the shell and the route table, so they are serial |
+| After `fix/chat-copy-button` | N10, then N11 | both edit `web/src/chat/**` and the chat stylesheet |
+| Then | N12, then N14, N15, N16 and N17 together | N14 owns the chat and the decision inspector, N15 the run inspector, N16 the lane inspector, N17 the composer |
+| Last | N18, N19, N20, N21, N22, N25 | N18 and N20 share `web/src/chat/**` (serial); N19 touches the router and the nav; N21 touches the pages N13 just finished |
+
+Things that must stay serial: anything that edits `web/src/App.tsx` (N1, N4, N7, N12),
+anything in `web/src/router.ts` (N5's route, N7, N12, N19, N25), and anything in
+`web/src/chat/**` or `web/src/styles/chat.css` (N10, N11, N14, N18, N20). A lane that
+finds another holding its files should not wait idle: it takes the next row it can.
+
+### What changes in the plan
+
+- W1.3 is split: the counts and the footer words (N1, N3) do not wait for the keep-going
+  switch; the sidebar names, marks and trigger (N8) do.
+- W2.4's Artifacts tab is built first on the lane page (N6), so the person can read an
+  agent's plan in the browser well before the inspector exists; N16 moves the same viewer
+  into the inspector.
+- The page lanes of Phase 4 (N13) no longer wait for the inspector; the inspector links
+  come later in N21.
+- The mockup gains nothing new: the counts strip is the one addition, and it is specified
+  above rather than sketched.
+
 ## How this was reviewed
 
 - Read the app (`web/src`: the router, `App.tsx`, every page, the chat, decision card,
