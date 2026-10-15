@@ -169,6 +169,11 @@ export function backlogCounts(items: BacklogItem[]): Record<BacklogGroup, number
   return n
 }
 
+/** The counts with "needs you" taken from the attention store, as for the board's bar. */
+export function backlogWithAttention(n: Record<BacklogGroup, number>, waiting: { count: number } | null): Record<BacklogGroup, number> {
+  return waiting ? { ...n, needs: waiting.count } : n
+}
+
 /** "2 needs you · 1 broken · 3 idle", the groups that hold anything. */
 export function backlogText(n: Record<BacklogGroup, number>): string {
   return BACKLOG_GROUPS.filter((g) => n[g] > 0).map((g) => `${n[g]} ${BACKLOG_NAMES[g]}`).join(' · ')

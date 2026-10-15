@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ApiError, waitingOnYou } from '../api/client'
-import type { Waiting, WaitingItem } from '../api/types'
+import type { WaitingItem } from '../api/types'
+import { useLive, useSnapshot } from '../state/context'
 import { href, refocus } from '../router'
 import { showInThread, stepIndex, waitingKey } from '../model/waitingStep'
 import { LaneApprove } from './LaneApprove'
 import './WaitingOnYou.css'
-
-/** How often the list is read while the tab is visible. */
-export const POLL_MS = 5000
 
 const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   decision: 'decision',
@@ -17,6 +15,7 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   question: 'question',
   blocked: 'blocked',
   scope: 'scope',
+  request: 'request',
 }
 
 const keyOf = waitingKey
@@ -34,9 +33,10 @@ function again(to: string) {
  * shipping is the person's click on the lane_ship path.
  */
 export function WaitingOnYou() {
-  const [list, setList] = useState<Waiting | null>(null)
+  const live = useLive()
+  // The list is the attention store's: this component does not poll.
+  const list = useSnapshot().waiting
   const [open, setOpen] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [approving, setApproving] = useState<string | null>(null)
   const [shipping, setShipping] = useState<string | null>(null)
   const [notes, setNotes] = useState<Record<string, { text: string; bad: boolean }>>({})
@@ -49,27 +49,7 @@ export function WaitingOnYou() {
     }
   }, [])
 
-  const read = useCallback(async () => {
-    try {
-      const w = await waitingOnYou.list()
-      if (!mounted.current) return
-      setList(w)
-      setError(null)
-    } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : String(e))
-    }
-  }, [])
-
-  useEffect(() => {
-    const first = window.setTimeout(() => void read(), 0)
-    const id = window.setInterval(() => {
-      if (document.visibilityState !== 'hidden') void read()
-    }, POLL_MS)
-    return () => {
-      window.clearTimeout(first)
-      window.clearInterval(id)
-    }
-  }, [read])
+  const read = () => live.readWaiting()
 
   const ship = async (it: WaitingItem) => {
     const key = keyOf(it)
@@ -97,7 +77,7 @@ export function WaitingOnYou() {
     setAt(keyOf(it))
     showInThread(it)
   }
-  if (!list && !error) return null
+  if (!list) return null
   if (count === 0 && !open) return null
 
   return (
@@ -124,9 +104,8 @@ export function WaitingOnYou() {
       )}
       {open && (
         <ul id="waiting-panel" className="waiting-panel" aria-label="Waiting on you">
-          {error && <li className="waiting-note tone-bad" role="alert">Could not read the list: {error}</li>}
-          {count === 0 && !error && <li className="waiting-empty faint">Nothing waits on you.</li>}
-          {list?.items.map((it) => {
+          {count === 0 && <li className="waiting-empty faint">Nothing waits on you.</li>}
+          {list.items.map((it) => {
             const key = keyOf(it)
             const note = notes[key]
             const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
@@ -141,6 +120,7 @@ export function WaitingOnYou() {
                   {it.action === 'answer' && (
                     <a href={href.decisions(it.decision_id)} onClick={() => again(href.decisions(it.decision_id))}>Answer</a>
                   )}
+                  {it.action === 'route' && <a href={href.decisions()}>Route</a>}
                   {it.action === 'reply' && (
                     <button type="button" onClick={() => showInThread(it)}>Reply</button>
                   )}
@@ -159,7 +139,7 @@ export function WaitingOnYou() {
                     </button>
                   ) : null}
                 </div>
-                {it.action === 'approve' && it.lane_id && approving === key && <LaneApprove laneId={it.lane_id} refreshKey={list.count} />}
+                {it.action === 'approve' && it.lane_id && approving === key && <LaneApprove laneId={it.lane_id} refreshKey={list.version ?? list.count} />}
                 {note && (
                   <p className={`waiting-note${note.bad ? ' tone-bad' : ''}`} role={note.bad ? 'alert' : 'status'}>
                     {note.text}

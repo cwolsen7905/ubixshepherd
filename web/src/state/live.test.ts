@@ -1,4 +1,7 @@
-import type { Feed } from '../api/types'
+import type { Feed, Waiting } from '../api/types'
+import { attentionCount, attentionTitle, inboxCount } from './attention'
+import { backlogWithAttention } from '../model/backlog'
+import { withAttention } from '../model/board'
 import { ApiError } from '../api/client'
 import { nextItem } from '../test/fixtures'
 import { awaitingApproval, BACKOFF, INTERVALS, Live, type Api, type Clock } from './live'
@@ -263,5 +266,61 @@ describe('Live', () => {
     expect(s.error).toBeNull()
     expect([s.lanes, s.runs, s.decisions, s.requests, s.next]).toEqual([[], [], [], [], []])
     live.stop()
+  })
+
+  describe('attention store', () => {
+    const item = (id: number, kind: Waiting['items'][number]['kind'] = 'decision') =>
+      ({ kind, action: 'answer', decision_id: id, title: `d${id}` }) as Waiting['items'][number]
+    const list = (version: string, ids: number[]): Waiting => ({
+      count: ids.length, counts: { decisions: ids.length, mrs: 0, ship: 0, next: 0 }, items: ids.map((i) => item(i)), version,
+    })
+
+    it('reads the waiting list on start, when the feed moves, and on the 30 s floor', async () => {
+      const c = fakeClock()
+      const f = fakeApi()
+      const reads = vi.fn(async () => list('v1', [1]))
+      const live = new Live(f.api, c.clock, reads)
+      live.start()
+      await settle()
+      expect(reads).toHaveBeenCalledTimes(1)
+      expect(live.getSnapshot().waiting?.count).toBe(1)
+      expect(c.timers.some((t) => t.ms === INTERVALS.waitingFloor)).toBe(true)
+
+      f.feeds.push({ items: [{ id: 6, kind: 'note', text: 'x', created: '2026-10-08T12:00:05Z' }], events: ['note'], last: 6 })
+      c.fire()
+      await settle()
+      expect(reads.mock.calls.length).toBeGreaterThan(1)
+    })
+
+    it('replaces the list when the version moves and keeps the same object when it does not', async () => {
+      const c = fakeClock()
+      const f = fakeApi()
+      let w = list('v1', [1])
+      const live = new Live(f.api, c.clock, async () => w)
+      live.start()
+      await settle()
+      const first = live.getSnapshot().waiting
+      await live.readWaiting()
+      expect(live.getSnapshot().waiting).toBe(first)
+      w = list('v2', [1, 2])
+      await live.readWaiting()
+      expect(live.getSnapshot().waiting).not.toBe(first)
+      expect(live.getSnapshot().waiting?.count).toBe(2)
+    })
+
+    it('has every count agree: title, favicon, sidebar and backlog head read one list', async () => {
+      const w: Waiting = {
+        count: 3, counts: { decisions: 1, mrs: 0, ship: 0, next: 0, requests: 1, questions: 1 }, version: 'v',
+        items: [item(1), { kind: 'request', action: 'route', request_id: 4, title: 'r' }, { kind: 'question', action: 'reply', question_id: 2, title: 'q' }],
+      }
+      expect(attentionCount(w)).toBe(3)
+      expect(inboxCount(w)).toBe(2)
+      expect(attentionTitle(w)).toBe('3 waiting on you')
+      expect(withAttention({ needs: 0, broken: 0, review: 0, working: 0, done: 0 }, w).needs).toBe(3)
+      expect(backlogWithAttention({ needs: 9, broken: 0, idle: 0, working: 0, review: 0 }, w).needs).toBe(3)
+      // Until the list has loaded the models' own rules stand.
+      expect(withAttention({ needs: 2, broken: 0, review: 0, working: 0, done: 0 }, null).needs).toBe(2)
+      expect(attentionCount(null)).toBe(0)
+    })
   })
 })

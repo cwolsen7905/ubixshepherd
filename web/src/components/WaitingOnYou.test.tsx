@@ -1,8 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement } from 'react'
 import type { Waiting } from '../api/types'
 import { refocus } from '../router'
 import { WaitingOnYou } from './WaitingOnYou'
+import { LiveProvider } from '../state/context'
+import { Live } from '../state/live'
 import * as step from '../model/waitingStep'
 
 vi.mock('../router', async (orig) => ({ ...(await orig<typeof import('../router')>()), refocus: vi.fn() }))
@@ -16,6 +19,10 @@ const list: Waiting = {
     { kind: 'ship', action: 'ship', repo: 'app', lane: 'c', lane_id: 3, title: 'ship 2 commits' },
     { kind: 'next', action: 'review', next_id: 9, title: 'Idea' },
   ],
+}
+
+function renderIn(ui: ReactElement) {
+  return render(<LiveProvider live={new Live()}>{ui}</LiveProvider>)
 }
 
 interface Call { path: string; method?: string }
@@ -40,14 +47,21 @@ afterEach(() => vi.unstubAllGlobals())
 describe('WaitingOnYou', () => {
   it('shows nothing while nothing waits', async () => {
     const calls = daemon({ count: 0, counts: { decisions: 0, mrs: 0, ship: 0, next: 0 }, items: [] })
-    const { container } = render(<WaitingOnYou />)
+    const { container } = renderIn(<WaitingOnYou />)
     await waitFor(() => expect(calls.some((c) => c.path === '/v1/waiting')).toBe(true))
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('does not poll on its own: one read, shared with the store', async () => {
+    const calls = daemon(list)
+    renderIn(<WaitingOnYou />)
+    await screen.findByRole('button', { name: '4 waiting on you' })
+    expect(calls.filter((c) => c.path === '/v1/waiting')).toHaveLength(1)
+  })
+
   it('counts in a badge and lists each item with its action', async () => {
     daemon(list)
-    render(<WaitingOnYou />)
+    renderIn(<WaitingOnYou />)
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     expect(screen.getByText('Which option?')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Answer' })).toHaveAttribute('href', '#/decisions?d=4')
@@ -58,7 +72,7 @@ describe('WaitingOnYou', () => {
 
   it('asks the page to focus again when the link points at the hash already shown', async () => {
     daemon(list)
-    render(<WaitingOnYou />)
+    renderIn(<WaitingOnYou />)
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     const link = screen.getByRole('link', { name: 'Review' })
     vi.mocked(refocus).mockClear()
@@ -72,7 +86,7 @@ describe('WaitingOnYou', () => {
 
   it('opens the approval control, which reads the forge only then', async () => {
     const calls = daemon(list)
-    render(<WaitingOnYou />)
+    renderIn(<WaitingOnYou />)
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     expect(calls.some((c) => c.path.endsWith('/approval'))).toBe(false)
     await userEvent.click(screen.getByRole('button', { name: 'Approve…' }))
@@ -82,7 +96,7 @@ describe('WaitingOnYou', () => {
 
   it('ships the lane on a click and says what happened or why not', async () => {
     const calls = daemon(list, () => new Response(JSON.stringify({ lane: 'c', commits: 2, pushed: true, message: 'pushed 2 commits' })))
-    render(<WaitingOnYou />)
+    renderIn(<WaitingOnYou />)
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     await userEvent.click(screen.getByRole('button', { name: 'Ship' }))
     expect(await screen.findByText('pushed 2 commits')).toBeInTheDocument()
@@ -91,7 +105,7 @@ describe('WaitingOnYou', () => {
 
   it('shows a refusal to ship', async () => {
     daemon(list, () => new Response(JSON.stringify({ error: 'the gate failed' }), { status: 409 }))
-    render(<WaitingOnYou />)
+    renderIn(<WaitingOnYou />)
     await userEvent.click(await screen.findByRole('button', { name: '4 waiting on you' }))
     await userEvent.click(screen.getByRole('button', { name: 'Ship' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not shipped')
@@ -110,7 +124,7 @@ describe('WaitingOnYou', () => {
     const seen: string[] = []
     const on = () => void seen.push(step.takeStep()?.kind ?? 'none')
     window.addEventListener(step.STEP_EVENT, on)
-    render(<WaitingOnYou />)
+    renderIn(<WaitingOnYou />)
     await screen.findByRole('button', { name: '2 waiting on you' })
     const down = screen.getByRole('button', { name: 'Next item waiting on you' })
     const up = screen.getByRole('button', { name: 'Previous item waiting on you' })

@@ -218,6 +218,15 @@ export function counts(items: BoardItem[]): Record<Group, number> {
   return n
 }
 
+/**
+ * The counts with "needs you" taken from the attention store's list, so the bar counts
+ * agree with every other place that counts what waits on the person. Until the list has
+ * loaded the board's own rule stands.
+ */
+export function withAttention(n: Record<Group, number>, waiting: { count: number } | null): Record<Group, number> {
+  return waiting ? { ...n, needs: waiting.count } : n
+}
+
 /** The groups that hold anything, most urgent first: "1 needs you · 2 broken". */
 export function countsText(n: Record<Group, number>): string {
   return GROUPS.filter((g) => n[g] > 0).map((g) => `${n[g]} ${GROUP_NAMES[g]}`).join(' · ')
