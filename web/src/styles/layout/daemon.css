@@ -1,6 +1,11 @@
 /* The liveness dot's popover: what the daemon is and is doing. */
 .daemon-status { position: relative; display: inline-flex; }
-.live-dot { background: none; border: 0; padding: var(--s-1); cursor: pointer; line-height: 1; }
+.live-dot { 
+  background: none; border: 0; padding: var(--s-1); cursor: pointer; line-height: 1;
+  display: flex; align-items: center; gap: var(--s-1);
+}
+.daemon-dot-indicator { font-size: var(--t-2xs); }
+.daemon-status-text { font-size: var(--t-xs); }
 .daemon-pop {
   position: absolute; top: 100%; right: 0; z-index: 10; width: 22rem; max-width: 90vw;
   padding: var(--s-3) var(--s-4); border: 1px solid var(--control-border); border-radius: var(--radius-lg);
