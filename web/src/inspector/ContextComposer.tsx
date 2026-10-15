@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
-import type { TopicView } from '../model/topic'
 import { DeskThread } from '../state/desk'
 import { aboutLine, topicFor, withReference, type About } from '../state/deskAbout'
 import '../styles/composer.css'
@@ -27,23 +26,12 @@ interface Props {
 function Composer({ about, workspaceId = 0, make = defaultMake }: Props) {
   const thread = useMemo(() => make(workspaceId), [make, workspaceId])
   const [text, setText] = useState('')
-  const [topics, setTopics] = useState<TopicView[]>([])
   const [sending, setSending] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [sent, setSent] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)
-  const key = `${about.kind}:${about.ids.join(',')}`
 
-  useEffect(() => {
-    let live = true
-    topicsApi.list().then(
-      (l) => live && setTopics(l.topics),
-      () => live && setTopics([]),
-    )
-    return () => {
-      live = false
-    }
-  }, [key])
   // The `c` key and other callers focus the box by this event.
   useEffect(() => {
     const focus = () => box.current?.focus()
@@ -56,11 +44,20 @@ function Composer({ about, workspaceId = 0, make = defaultMake }: Props) {
     setSending(true)
     setProblem(null)
     setSent(false)
-    const ok = await thread.send(withReference(about, text), topicFor(about, topics))
+    // Read at send time, so a topic made since the box opened counts.
+    let topic: number | undefined
+    let unfiled = false
+    try {
+      topic = topicFor(about, (await topicsApi.list()).topics)
+    } catch {
+      unfiled = true
+    }
+    const ok = await thread.send(withReference(about, text), topic)
     setSending(false)
     if (ok) {
       setText('')
       setSent(true)
+      setNotice(unfiled ? 'Topics could not be read, so this turn is not filed under one.' : null)
     } else {
       setProblem(thread.getSnapshot().problem?.message ?? 'The front desk did not take that. Your words are kept; try again.')
     }
@@ -104,6 +101,7 @@ function Composer({ about, workspaceId = 0, make = defaultMake }: Props) {
       {sent && !problem && (
         <p className="faint" role="status">
           Sent to the front desk. Its reply is in the conversation.
+          {notice ? ` ${notice}` : ''}
         </p>
       )}
       <div className="context-composer-bar">

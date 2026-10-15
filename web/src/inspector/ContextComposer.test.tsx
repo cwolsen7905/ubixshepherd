@@ -55,6 +55,14 @@ describe('ContextComposer', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument()
     expect(screen.getByRole('textbox')).toHaveValue('hello')
   })
+  it('sends unfiled, and says so, when the topics cannot be read', async () => {
+    const user = userEvent.setup()
+    vi.mocked(topics.list).mockRejectedValue(new Error('down'))
+    const turn = shown()
+    await user.type(screen.getByRole('textbox'), 'hi{Enter}')
+    expect(turn).toHaveBeenCalledWith(0, 'About feat/export-csv (lane 4):\n\nhi')
+    expect(await screen.findByText(/not filed under one/)).toBeInTheDocument()
+  })
   it('does not send blank words', () => {
     shown()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
@@ -74,5 +82,6 @@ describe('deskAbout', () => {
     ]
     expect(topicFor({ kind: 'lane', ids: [4] }, ts)).toBe(3)
     expect(topicFor({ kind: 'run', ids: [4] }, ts)).toBeUndefined()
+    expect(topicFor({ kind: 'artifact', ids: [4] }, ts)).toBeUndefined()
   })
 })
