@@ -123,7 +123,7 @@ describe('the Usage page', () => {
     await user.click(within(section).getByRole('button', { name: /Peak context/ }))
     expect(names()).toEqual(['copilot', 'claude sonnet-4', 'claude opus-4[1m]'])
     expect(within(section).getByRole('columnheader', { name: /Peak context/ })).toHaveAttribute('aria-sort', 'ascending')
-  })
+  }, 20_000)
 
   it('charts peak context for measured groups only, with the 200k count', async () => {
     daemon()

@@ -10,6 +10,7 @@
 .add-repo input { min-width: 0; flex: 1; }
 
 .settings-main { max-width: var(--measure-page); }
+.settings-main .group { min-width: 0; }
 .settings-main h1 { margin: 0 0 var(--s-1); font-size: var(--t-xl); font-weight: 600; }
 .settings-main input[type="text"], .settings-main input[type="number"], .settings-main select, .settings-main textarea, .add-repo input {
   font: inherit; color: inherit; padding: 0.1875rem var(--s-2); background: var(--sheet);
@@ -21,6 +22,10 @@
 
 .group { border: 0; border-top: 1px solid var(--rule); margin: var(--s-4) 0 0; padding: var(--s-2) 0 0; }
 .group legend { padding-right: var(--s-2); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+/* Two columns of fields; long ones (lists, maps, JSON, the repo picker) take the row. */
+.field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--s-5); }
+.field-wide { grid-column: 1 / -1; }
+@media (max-width: 760px) { .field-grid { grid-template-columns: minmax(0, 1fr); } }
 .field { padding: var(--s-2) 0 var(--s-2) var(--s-3); border-left: 2px solid transparent; }
 .field.is-dirty { border-left-color: var(--lantern); }
 .field-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--s-2); }
@@ -30,13 +35,10 @@
 .field-hint { font-size: var(--t-xs); }
 .field-help { margin: var(--s-1) 0 0; max-width: var(--measure-read); font-size: var(--t-xs); color: var(--muted); }
 .field-problem { margin: var(--s-1) 0 0; font-size: var(--t-xs); color: var(--broken); }
-.tag { padding: 0 var(--s-1); font-size: var(--t-xs); color: var(--muted); border: 1px solid var(--rule); border-radius: var(--radius); }
-.tag-risk { color: var(--lantern-ink); border-color: var(--lantern); background: var(--lantern-wash); }
-.link { font: inherit; font-size: var(--t-xs); color: var(--lichen); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+.tag-risk .ui-chip { color: var(--lantern-ink); border-color: var(--lantern); background: var(--lantern-wash); }
 
 .actions { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-4) 0; }
 .actions.sticky { position: sticky; bottom: 0; padding: var(--s-2) 0; background: var(--field); border-top: 1px solid var(--rule); }
-.actions .primary { font-weight: 600; }
 
 .review { margin: var(--s-4) 0; padding: var(--s-3) var(--s-4); background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); }
 .review h2 { margin: 0 0 var(--s-2); font-size: var(--t-lg); font-weight: 600; }
@@ -49,4 +51,3 @@
 /* Projects: the repo picker and the delete button. */
 .repo-picker ul { margin: 0; padding: 0; list-style: none; }
 .repo-picker li { padding-block: var(--s-1); }
-.danger { color: var(--bad, #c0392b); }
