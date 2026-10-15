@@ -472,6 +472,63 @@ describe('Markdown', () => {
     expect(container.querySelector('pre code')?.textContent).toBe('<i>raw</i>')
     expect(container.querySelector('i')).toBeNull()
   })
+
+  it('renders tables', () => {
+    const { container } = render(<Markdown text={'| A | B |\n|---|---|\n| 1 | 2 |'} />)
+    expect(container.querySelectorAll('.md-table th')).toHaveLength(2)
+    expect(container.querySelector('.md-table th:nth-child(1)')?.textContent).toBe('A')
+    expect(container.querySelector('.md-table tbody tr')?.querySelectorAll('td')).toHaveLength(2)
+    expect(container.querySelector('.md-table tbody td:nth-child(1)')?.textContent).toBe('1')
+  })
+
+  it('renders blockquotes', () => {
+    const { container } = render(<Markdown text={'> this is a quote\n> with two lines'} />)
+    const bq = container.querySelector('.md-quote')
+    expect(bq).toBeTruthy()
+    expect(bq?.textContent).toBe('this is a quote\nwith two lines')
+  })
+
+  it('renders horizontal rules', () => {
+    const { container } = render(<Markdown text={'before\n\n---\n\nafter'} />)
+    const hrs = container.querySelectorAll('.md-hr')
+    expect(hrs).toHaveLength(1)
+    expect(hrs[0]!.tagName).toBe('HR')
+  })
+
+  it('renders task lists', () => {
+    const { container } = render(<Markdown text={'- [ ] pending\n- [x] done\n- [ ] also pending'} />)
+    const checkboxs = Array.from(container.querySelectorAll('.md-task input[type="checkbox"]'))
+    expect(checkboxs).toHaveLength(3)
+    expect(checkboxs[0]!.hasAttribute('checked')).toBe(false)
+    expect(checkboxs[1]!.hasAttribute('checked')).toBe(true)
+    expect(checkboxs[2]!.hasAttribute('checked')).toBe(false)
+  })
+
+  it('renders all new block types together', () => {
+    const text = [
+      'Before paragraph.',
+      '',
+      '> A blockquote with **bold** text.',
+      '',
+      '---',
+      '',
+      '| Col1 | Col2 |',
+      '|------|------|',
+      '| a    | b    |',
+      '',
+      '- [ ] task one',
+      '- [x] task two',
+      '',
+      'After paragraph.',
+    ].join('\n')
+    const { container } = render(<Markdown text={text} />)
+    expect(container.querySelector('.md-quote')).toBeTruthy()
+    expect(container.querySelector('.md-hr')).toBeTruthy()
+    expect(container.querySelector('.md-table')).toBeTruthy()
+    expect(container.querySelectorAll('.md-task input[type="checkbox"]')).toHaveLength(2)
+    // "Before paragraph.", "After paragraph." and the blockquote <p> = 3 paragraphs
+    expect(container.querySelectorAll('p')).toHaveLength(3)
+  })
 })
 
 describe('topic bar and rail', () => {

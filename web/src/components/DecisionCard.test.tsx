@@ -107,4 +107,36 @@ describe('DecisionCard', () => {
     expect(screen.queryByRole('heading')).toBeNull()
     expect(screen.getByRole('region', { name: `Decision ${decision().id}` }).tagName).toBe('SECTION')
   })
+
+  it('renders tables, blockquotes, rules and task lists in a long body', () => {
+    const longBody = [
+      'Here is the plan:',
+      '',
+      '| Step | Action |',
+      '|------|--------|',
+      '| 1    | Build  |',
+      '| 2    | Test   |',
+      '',
+      '> This is the key design note.',
+      '',
+      '---',
+      '',
+      '- [ ] Step one',
+      '- [x] Step two',
+      '',
+      'Done.',
+    ].join('\n')
+    show(decision({ question: 'Summary\n' + longBody }))
+    const body = document.querySelector('.decision-md') as HTMLElement
+    expect(body).toHaveClass('is-clamped')
+    expect(screen.getByRole('heading', { name: 'Summary' })).toBeInTheDocument()
+    // All elements are in the DOM (clamped via CSS), but the "Show all" button is present
+    expect(document.querySelector('.cv-table')).toBeTruthy()
+    expect(document.querySelector('.cv-quote')).toBeTruthy()
+    expect(document.querySelector('.cv-hr')).toBeTruthy()
+    const checkboxs = document.querySelectorAll('.cv-task input[type="checkbox"]')
+    expect(checkboxs).toHaveLength(2)
+    const more = screen.getByRole('button', { name: /Show all/ })
+    expect(more).toBeInTheDocument()
+  })
 })
