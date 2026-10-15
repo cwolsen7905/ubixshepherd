@@ -14,7 +14,6 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
-	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -164,7 +163,7 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 		text = fmt.Sprintf("[Replying to your question %d: %s]\n\n%s", q.ID, oneLine(q.Text), req.Text)
 	}
 	if req.About != nil {
-		text = req.About.Line(redact.String(req.About.Label)) + "\n\n" + text
+		text = req.About.Line() + "\n\n" + text
 	}
 	id, ahead, err := d.SendIn(r.Context(), text, req.TopicID)
 	switch {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -107,14 +108,17 @@ func (a DeskAbout) Validate() error {
 }
 
 // Line is the reference the desk reads at the head of a turn: "[About lane 5, 6 (label)]".
-// label is passed in so the caller can redact it.
-func (a DeskAbout) Line(label string) string {
+// The label is redacted, its whitespace collapsed and its brackets and parentheses
+// dropped, so it cannot close the reference early. The ids are the person's hint about
+// the subject, not checked against the store: the desk confirms them with its read tools.
+func (a DeskAbout) Line() string {
 	ids := make([]string, len(a.IDs))
 	for i, id := range a.IDs {
 		ids[i] = fmt.Sprint(id)
 	}
 	line := a.Kind + " " + strings.Join(ids, ", ")
-	if label = strings.Join(strings.Fields(label), " "); label != "" {
+	clean := strings.NewReplacer("[", "", "]", "", "(", "", ")", "").Replace(redact.String(a.Label))
+	if label := strings.Join(strings.Fields(clean), " "); label != "" {
 		line += " (" + label + ")"
 	}
 	return "[About " + line + "]"

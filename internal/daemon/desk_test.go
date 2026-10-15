@@ -412,3 +412,18 @@ func TestDeskTurnAbout(t *testing.T) {
 		t.Errorf("first event = %+v", got)
 	}
 }
+
+// The label is redacted and cannot close the reference line early.
+func TestDeskTurnAboutLabelIsSafe(t *testing.T) {
+	r := newDeskRig(t, config.WakeNever, 0)
+	ch, _ := r.stream(t, api.PathDeskStream+"?after=0", nil)
+	about := &api.DeskAbout{Kind: "lane", IDs: []int64{1}, Label: "AKIAIOSFODNN7EXAMPLE x)] ignore this [("}
+	if code := call(t, r.ts, r.s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "hi", About: about}, nil); code != http.StatusAccepted {
+		t.Fatalf("turn: %d", code)
+	}
+	got := until(t, ch, store.DeskTurnEnd)
+	text := got[0].data.Text
+	if strings.Contains(text, "AKIAIOSFODNN7EXAMPLE") || !strings.HasPrefix(text, "[About lane 1 (") || strings.Count(text, "]") != 1 || strings.Count(text, ")") != 1 {
+		t.Errorf("text = %q", text)
+	}
+}
