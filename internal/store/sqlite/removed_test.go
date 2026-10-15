@@ -39,6 +39,11 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_questions`); err != nil {
 		t.Fatal(err)
 	}
+	for _, tbl := range []string{"artifact_links", "artifact_versions", "artifacts"} {
+		if _, err := db.db.ExecContext(ctx, `DROP TABLE `+tbl); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, tbl := range []string{"runs", "usage"} {
 		if _, err := db.db.ExecContext(ctx, `ALTER TABLE `+tbl+` DROP COLUMN cost_estimated`); err != nil {
 			t.Fatal(err)
@@ -50,7 +55,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-10)); err != nil {
+	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-11)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

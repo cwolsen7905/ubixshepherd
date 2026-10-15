@@ -216,6 +216,7 @@ func daemonServe(ctx context.Context, env Env, restart *bool) error {
 	srv.Fold.Exe = env.Exe
 	srv.Exe = env.Exe
 	srv.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(l.Home, "runs"), Log: srv.Log, Exe: env.Exe}
+	srv.Runner.ArtifactScan = srv.Fold.Artifacts
 	srv.QuotaHolds = func() []api.QuotaHold { return quotaHolds(srv.Runner) }
 	if cfg.Daemon.Poll != "off" {
 		every, _ := time.ParseDuration(cfg.Daemon.Poll)

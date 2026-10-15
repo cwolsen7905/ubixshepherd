@@ -36,7 +36,7 @@ func TestEventKindIsClosed(t *testing.T) {
 	for _, e := range []string{EventLaneOpened, EventLaneClosed, EventRunStarted, EventRunEnded, EventReport,
 		EventDecisionAsked, EventDecisionAnswer, EventRequest, EventRequestAttention, EventMR,
 		EventRunPassed, EventRunFailed, EventRunInterrupted, EventRunQuota, EventCommit, EventGate,
-		EventPipeline, EventBudget, EventTag, EventRelease, EventPlan, EventMRApprove, EventConfig, EventDeskRotated, EventInfo} {
+		EventPipeline, EventBudget, EventTag, EventRelease, EventPlan, EventMRApprove, EventArtifact, EventConfig, EventDeskRotated, EventInfo} {
 		valid[e] = true
 	}
 	for k := range eventKinds {
@@ -51,7 +51,7 @@ func TestEventKindIsClosed(t *testing.T) {
 		"pipeline": EventPipeline, "run_ended": EventRunEnded, "gate": EventGate,
 		store.FeedCommit: EventCommit, store.FeedRunPassed: EventRunPassed, store.FeedRunFailed: EventRunFailed,
 		store.FeedRunInterrupted: EventRunInterrupted, store.FeedRunQuota: EventRunQuota,
-		store.FeedPlan: EventPlan, store.FeedMRApprove: EventMRApprove,
+		store.FeedPlan: EventPlan, store.FeedMRApprove: EventMRApprove, store.FeedArtifact: EventArtifact,
 	} {
 		if got := EventKind(kind); got != want {
 			t.Errorf("EventKind(%q) = %q, want %q", kind, got, want)

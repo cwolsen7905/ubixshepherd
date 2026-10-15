@@ -28,10 +28,13 @@ const (
 	TopicRun      = "run"
 	TopicDecision = "decision"
 	TopicRequest  = "request"
+	// TopicArtifact is an artifact id. An artifact with no link of its own takes its
+	// lane's topic.
+	TopicArtifact = "artifact"
 )
 
 // TopicKinds are the kinds a link can have.
-var TopicKinds = []string{TopicTurn, TopicFeed, TopicNextItem, TopicLane, TopicRun, TopicDecision, TopicRequest}
+var TopicKinds = []string{TopicTurn, TopicFeed, TopicNextItem, TopicLane, TopicRun, TopicDecision, TopicRequest, TopicArtifact}
 
 // Topic link authors, strongest last: a link the person set is never replaced by the
 // desk or Shepherd, so a move sticks.

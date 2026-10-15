@@ -859,6 +859,7 @@ func workerTools() []mcpTool {
 				"options":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Short phrases the person can pick; one line each."},
 				"recommendation": map[string]any{"type": "string", "description": "Which option you recommend, and why, in a sentence."},
 				"why":            map[string]any{"type": "string", "description": "Why this is the person's call rather than yours."},
+				"artifacts":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files in your worktree (a plan, a design note) the person should read to decide; they are shown beside the question."},
 			}, "question", "recommendation"),
 			args: func(a map[string]any) ([]string, error) {
 				out := []string{"worker", "ask-human", str(a, "question"), "--recommendation", str(a, "recommendation"), "--why", str(a, "why")}
@@ -870,6 +871,35 @@ func workerTools() []mcpTool {
 					for _, o := range opts {
 						out = append(out, "--option", o)
 					}
+				}
+				if raw, ok := a["artifacts"]; ok && raw != nil {
+					paths, err := strs(a, "artifacts")
+					if err != nil {
+						return nil, err
+					}
+					for _, p := range paths {
+						out = append(out, "--artifact", p)
+					}
+				}
+				return out, nil
+			},
+		},
+		{
+			Name: "artifact",
+			Description: "Tell Shepherd about a file in your worktree the person may want to read: a plan, a design note, a report, a diagram. " +
+				"Shepherd shows it beside your lane and keeps its versions. Intent: commit (it belongs in the repo), keep (for the person, not the repo) or scratch (working notes). Declare it again after you change it.",
+			InputSchema: obj(map[string]any{
+				"path":   map[string]any{"type": "string", "description": "The file, relative to your worktree."},
+				"title":  map[string]any{"type": "string", "description": "A short title."},
+				"intent": map[string]any{"type": "string", "enum": []string{"commit", "keep", "scratch"}},
+			}, "path"),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"worker", "artifact", str(a, "path")}
+				if t := str(a, "title"); t != "" {
+					out = append(out, "--title", t)
+				}
+				if i := str(a, "intent"); i != "" {
+					out = append(out, "--intent", i)
 				}
 				return out, nil
 			},

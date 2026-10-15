@@ -102,6 +102,10 @@ func TestRoleEndpointMatrix(t *testing.T) {
 		{"POST", api.PathRuns + "/" + other + "/decisions", map[string]any{}, op},
 		{"POST", api.PathRuns + "/" + run + "/requests", map[string]any{}, opWorker},
 		{"POST", api.PathRuns + "/" + other + "/requests", map[string]any{}, op},
+		{"POST", api.PathRunArtifacts(a.ID), map[string]any{}, opWorker},
+		{"POST", api.PathRunArtifacts(b.ID), map[string]any{}, op},
+		{"GET", api.PathArtifacts, nil, opDesk},
+		{"GET", api.PathArtifact(1), nil, opDesk},
 		{"GET", api.PathDecisions, nil, opDesk},
 		// The desk only in a turn the person started; there is none here.
 		{"POST", api.PathDecisions + "/1/answer", api.Answer{Answer: "yes"}, op},
@@ -177,6 +181,7 @@ func TestWorkerTokenIsRunScoped(t *testing.T) {
 	}{
 		{"GET", api.PathRuns + fmt.Sprintf("/%d", b.ID), nil},
 		{"POST", api.PathRuns + fmt.Sprintf("/%d/events", b.ID), store.Event{Kind: dispatch.EventReport, Status: "done", Text: "x"}},
+		{"POST", api.PathRunArtifacts(b.ID), api.ArtifactDeclare{Path: "plan.md"}},
 		{"POST", api.PathTagsReserve, api.Reserve{RepoID: lb.RepoID, LaneID: lb.ID, Bump: "patch"}},
 		{"POST", api.PathTagsReserve, api.Reserve{RepoID: la.RepoID, Bump: "patch"}}, // no lane
 	} {
