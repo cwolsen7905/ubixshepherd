@@ -27,7 +27,7 @@
 }
 
 /* The topic bar: sticky at the top of the thread, chips scroll sideways. */
-.topic-bar { position: sticky; top: var(--bar-h); z-index: 3; margin: 0 0 8px; padding: 6px 0; background: var(--field); border-bottom: 1px solid var(--rule); }
+.topic-bar { flex: none; z-index: 3; margin: 0 0 8px; padding: 6px 0; background: var(--field); border-bottom: 1px solid var(--rule); }
 .topic-bar-strip { display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: thin; padding: 2px; }
 .topic-chip {
   flex: none; display: inline-flex; align-items: baseline; gap: 6px; max-width: 18rem; padding: 3px 10px;
@@ -95,3 +95,10 @@
 .topic-chip[class*="topic-hue-"]::before { content: ""; flex: none; align-self: center; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--topic-hue); }
 .topic-row[class*="topic-hue-"] { border-left: 3px solid var(--topic-hue); padding-left: 6px; }
 .topic-row.is-active[class*="topic-hue-"] { background: color-mix(in srgb, var(--topic-hue) 12%, transparent); }
+
+/* The chips row carries the topic list: "All topics" opens it as a panel under the chips. */
+.topic-bar-row { display: flex; align-items: center; gap: 8px; }
+.topic-bar-row .topic-bar-strip { flex: 1; min-width: 0; }
+.topic-menu-toggle { flex: none; font-size: var(--t-sm); }
+.topic-menu { max-height: 40vh; overflow-y: auto; margin-top: 6px; }
+.topic-menu .topics { margin-top: 0; border-left: 0; padding-left: 0; }

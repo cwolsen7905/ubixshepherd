@@ -39,11 +39,20 @@ describe('TopicBar', () => {
     expect(screen.queryByRole('button', { name: /manual/ })).toBeNull()
   })
 
-  it('is hidden when no topic is active', async () => {
+  it('shows no chips when no topic is active, only the way to the topic list', async () => {
     const load = loader([t({ status: 'cleared' })])
     render(<TopicBar active={null} onFilter={() => {}} load={load} />)
     await vi.waitFor(() => expect(load).toHaveBeenCalled())
-    expect(screen.queryByRole('group')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'All' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'All topics' })).toBeTruthy()
+  })
+
+  it('opens the full topic list under the chips from All topics', async () => {
+    const user = userEvent.setup()
+    render(<TopicBar active={null} onFilter={() => {}} load={loader([t({ id: 1, title: 'release' })])} />)
+    await user.click(screen.getByRole('button', { name: 'All topics' }))
+    expect(await screen.findByRole('region', { name: 'Topics' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Hide topics' })).toHaveAttribute('aria-expanded', 'true')
   })
 
   describe('idle topics', () => {

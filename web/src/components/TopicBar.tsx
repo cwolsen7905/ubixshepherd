@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { topics as topicsApi } from '../api/client'
 import { readFlag, splitTopics, topicHueClass, writeFlag, type TopicList, type TopicView } from '../model/topic'
+import { Topics } from './Topics'
 import '../styles/topics.css'
 
 const POLL = 15_000
@@ -12,7 +13,8 @@ export type LoadTopicBar = (all: boolean) => Promise<TopicList>
  * A strip stuck to the top of the thread: "All" and one chip per active topic, then "+N idle" to reveal
  * the quiet ones. The selected topic is always a chip, idle or not. It filters
  * through the same `onFilter` the rail's Topics section uses, so the hash is the one
- * source of truth and the two cannot disagree. Hidden while no topic is active.
+ * source of truth and the two cannot disagree. "All topics" opens the full list in a
+ * panel under the chips: rename, clear, reopen, merge and add live there.
  */
 export function TopicBar({
   active, onFilter, load = (all) => topicsApi.list(all),
@@ -26,6 +28,7 @@ export function TopicBar({
   const [showIdle, setShowIdle] = useState(() => readFlag(IDLE_KEY))
   const [now, setNow] = useState(() => Date.now())
   const strip = useRef<HTMLDivElement>(null)
+  const [menu, setMenu] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -60,36 +63,48 @@ export function TopicBar({
     }
   }, [active, chips.length])
 
-  if (shown.length === 0 && idle.length === 0) return null
+  const none = shown.length === 0 && idle.length === 0
   return (
     <div className="topic-bar" role="group" aria-label="Filter the thread by topic">
-      <div className="topic-bar-strip" ref={strip}>
-        <button type="button" className="topic-chip" aria-pressed={active === null} onClick={() => onFilter(null)}>
-          All
-        </button>
-        {chips.map((t) => (
-          <button
-            key={t.id} type="button" className={`topic-chip ${topicHueClass(t.id)}${t.waits > 0 ? ' needs-you' : ''}`}
-            aria-pressed={active === t.id} onClick={() => onFilter(active === t.id ? null : t.id)}
-          >
-            <span className="topic-chip-title">{t.title}</span>
-            {t.waits > 0 && (
-              <span className="topic-chip-count">
-                {t.waits}
-                <span className="visually-hidden"> waiting on you</span>
-              </span>
+      <div className="topic-bar-row">
+        {!none && (
+          <div className="topic-bar-strip" ref={strip}>
+            <button type="button" className="topic-chip" aria-pressed={active === null} onClick={() => onFilter(null)}>
+              All
+            </button>
+            {chips.map((t) => (
+              <button
+                key={t.id} type="button" className={`topic-chip ${topicHueClass(t.id)}${t.waits > 0 ? ' needs-you' : ''}`}
+                aria-pressed={active === t.id} onClick={() => onFilter(active === t.id ? null : t.id)}
+              >
+                <span className="topic-chip-title">{t.title}</span>
+                {t.waits > 0 && (
+                  <span className="topic-chip-count">
+                    {t.waits}
+                    <span className="visually-hidden"> waiting on you</span>
+                  </span>
+                )}
+              </button>
+            ))}
+            {idle.length > 0 && (
+              <button
+                type="button" className="topic-chip topic-chip-idle" aria-expanded={showIdle}
+                onClick={() => { writeFlag(IDLE_KEY, !showIdle); setShowIdle(!showIdle) }}
+              >
+                {showIdle ? `Hide ${idle.length} idle` : `+${idle.length} idle`}
+              </button>
             )}
-          </button>
-        ))}
-        {idle.length > 0 && (
-          <button
-            type="button" className="topic-chip topic-chip-idle" aria-expanded={showIdle}
-            onClick={() => { writeFlag(IDLE_KEY, !showIdle); setShowIdle(!showIdle) }}
-          >
-            {showIdle ? `Hide ${idle.length} idle` : `+${idle.length} idle`}
-          </button>
+          </div>
         )}
+        <button type="button" className="link-button topic-menu-toggle" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+          {menu ? 'Hide topics' : 'All topics'}
+        </button>
       </div>
+      {menu && (
+        <div className="topic-menu">
+          <Topics active={active} now={now} onFilter={onFilter} load={load} />
+        </div>
+      )}
     </div>
   )
 }
