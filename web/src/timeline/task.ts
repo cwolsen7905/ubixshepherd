@@ -4,11 +4,19 @@
 
 const MARK = '\nTask:\n'
 
-/** The task text of a run: what follows the prompt's "Task:" marker, else the text as given. */
+/** The first line of the prompt's preamble: a task read from the first line alone is only this. */
+const PREAMBLE = 'You are working for uBixShepherd in lane '
+
+/**
+ * The task text of a run: what follows the prompt's first "Task:" marker (the preamble
+ * comes before it, so a task that quotes the marker stays whole), else the text as given.
+ * A lone preamble line, which is all a first-line read of the prompt keeps, is no task.
+ */
 export function taskText(s: string): string {
-  const at = s.lastIndexOf(MARK)
+  const at = s.indexOf(MARK)
   const body = at >= 0 ? s.slice(at + MARK.length) : s.startsWith('Task:\n') ? s.slice('Task:\n'.length) : s
-  return body.trim()
+  const text = body.trim()
+  return at < 0 && text.startsWith(PREAMBLE) && !text.includes('\n') ? '' : text
 }
 
 /** The first line of the task, for a row. */

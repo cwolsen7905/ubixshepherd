@@ -15,7 +15,10 @@ describe('a run’s task', () => {
   it('reads a task that opens the text', () => {
     expect(taskLine('Task:\nwrite docs')).toBe('write docs')
   })
-  it('uses the last marker, so a task that quotes one is whole', () => {
-    expect(taskLine('pre\nTask:\nfirst\nTask:\nsecond')).toBe('second')
+  it('uses the first marker, so a task that quotes one is whole', () => {
+    expect(taskText('pre\nTask:\nfirst\nTask:\nsecond')).toBe('first\nTask:\nsecond')
+  })
+  it('shows nothing for a lone preamble line rather than the boilerplate', () => {
+    expect(taskLine('You are working for uBixShepherd in lane x of repo y.')).toBe('')
   })
 })
