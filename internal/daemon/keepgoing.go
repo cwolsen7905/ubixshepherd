@@ -14,9 +14,9 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// FeedKeepGoing is the feed kind for keep-going mode turning on or off, and for a lane
-// handed back by the loop guard. The feed's closed set maps it to an info event until
-// the thread and history learn it (docs/keep-going.md, section 7).
+// FeedKeepGoing is the feed kind for keep-going mode turning on or off, for each
+// autonomous action Allow lets through, and for a lane handed back by the loop guard.
+// internal/api maps it to the keep_going event (docs/keep-going.md, section 7).
 const FeedKeepGoing = "keep_going"
 
 // The autonomous actions Allow gates. Each is already authorised elsewhere (an approved
@@ -371,7 +371,49 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 	if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
 		return refuse("keep-going state unwritable: %v", err)
 	}
+	k.s.postFeed(ctx, FeedKeepGoing, lane, actionText(action, lane))
 	return Decision{OK: true}
+}
+
+// actionText is the feed line for an autonomous action Allow let through.
+func actionText(action string, lane int64) string {
+	what := map[string]string{
+		KeepStartItem: "started the next approved item",
+		KeepContinue:  "continued an approved next step",
+		KeepFix:       "followed up a failed pipeline",
+		KeepRerun:     "re-ran an interrupted run",
+		KeepScope:     "widened scope an answered decision named",
+	}[action]
+	if lane == 0 {
+		return "keep-going " + what
+	}
+	return fmt.Sprintf("keep-going %s on lane %d", what, lane)
+}
+
+// recentActions is how many keep-going feed items status lists.
+const recentActions = 10
+
+// recent is the newest keep-going feed items, oldest first. The feed is shared, so it
+// looks back over a window rather than the whole history.
+func (k *KeepGoing) recent(ctx context.Context) []api.KeepGoingAction {
+	last, err := k.s.Store.LastFeed(ctx)
+	if err != nil {
+		return nil
+	}
+	items, err := k.s.Store.Feed(ctx, max(last-2000, 0), 2000)
+	if err != nil {
+		return nil
+	}
+	var out []api.KeepGoingAction
+	for _, it := range items {
+		if it.Kind == FeedKeepGoing {
+			out = append(out, api.KeepGoingAction{At: it.Created, Text: it.Text, Lane: it.Ref})
+		}
+	}
+	if len(out) > recentActions {
+		out = out[len(out)-recentActions:]
+	}
+	return out
 }
 
 // Status builds the view of a workspace's mode after checking its limits.
@@ -394,6 +436,7 @@ func (k *KeepGoing) Status(ctx context.Context, ws int64) (api.KeepGoingStatus, 
 		out.DayEnd = cfg.KeepGoing.DayEndAt(row.Since.In(now.Location()))
 		out.ReasonOff, out.OffAt = "", time.Time{}
 	}
+	out.Recent = k.recent(ctx)
 	if out.SpentUSD, err = k.spentSince(ctx, row, now, cfg); err != nil {
 		return out, err
 	}

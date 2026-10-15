@@ -52,4 +52,14 @@ type KeepGoingStatus struct {
 	// day's spend, which crossing turns the mode off.
 	BudgetUSD     float64 `json:"budget_usd,omitempty"`
 	SpentTodayUSD float64 `json:"spent_today_usd"`
+	// Recent is the last ten keep-going feed items, oldest first: on, off and each
+	// autonomous action.
+	Recent []KeepGoingAction `json:"recent,omitempty"`
+}
+
+// KeepGoingAction is one keep-going feed item as status lists it.
+type KeepGoingAction struct {
+	At   time.Time `json:"at"`
+	Text string    `json:"text"`
+	Lane int64     `json:"lane,omitempty"`
 }

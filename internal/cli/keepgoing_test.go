@@ -86,3 +86,11 @@ func TestKeepGoingTool(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteKeepGoingListsRecent(t *testing.T) {
+	var b strings.Builder
+	writeKeepGoing(&b, api.KeepGoingStatus{Recent: []api.KeepGoingAction{{Text: "keep-going is off: x"}}})
+	if !strings.Contains(b.String(), "recent:") || !strings.Contains(b.String(), "keep-going is off: x") {
+		t.Errorf("output: %q", b.String())
+	}
+}

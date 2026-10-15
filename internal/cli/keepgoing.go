@@ -66,6 +66,7 @@ func runKeepGoing(ctx context.Context, env Env, args []string) error {
 }
 
 func writeKeepGoing(w io.Writer, st api.KeepGoingStatus) {
+	defer writeRecent(w, st.Recent)
 	if !st.On {
 		fmt.Fprintln(w, "keep-going: off")
 		if st.ReasonOff != "" {
@@ -88,6 +89,16 @@ func writeKeepGoing(w io.Writer, st api.KeepGoingStatus) {
 		fmt.Fprintf(w, "  budget: $%.2f of $%.2f today\n", st.SpentTodayUSD, st.BudgetUSD)
 	}
 	fmt.Fprintf(w, "  a lane gets %d autonomous starts a day\n", st.LaneStarts)
+}
+
+func writeRecent(w io.Writer, recent []api.KeepGoingAction) {
+	if len(recent) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "  recent:")
+	for _, a := range recent {
+		fmt.Fprintf(w, "    %s  %s\n", a.At.Local().Format("Mon 15:04"), a.Text)
+	}
 }
 
 func reasonWords(r string) string {
