@@ -184,9 +184,16 @@ export function blocks(src: string): Block[] {
   return out
 }
 
-export function Markdown({ text }: { text: string }) {
+/** Class names for each block: the lane pages' `cv-` set, or the chat page's `md` set. */
+const CLASSES = {
+  cv: { root: 'cv-md', h: 'cv-md-h', task: 'cv-task', quote: 'cv-quote', hr: 'cv-hr', table: 'cv-table' },
+  md: { root: 'md', h: 'md-h', task: 'md-task', quote: 'md-quote', hr: 'md-hr', table: 'md-table' },
+}
+
+export function Markdown({ text, classes = 'cv' }: { text: string; classes?: keyof typeof CLASSES }) {
+  const c = CLASSES[classes]
   return (
-    <div className="cv-md">
+    <div className={c.root}>
       {blocks(text).map((b, i) => {
         switch (b.t) {
           case 'code':
@@ -200,7 +207,7 @@ export function Markdown({ text }: { text: string }) {
             )
           case 'h':
             return (
-              <p key={i} className="cv-md-h">
+              <p key={i} className={c.h}>
                 {inline(b.text)}
               </p>
             )
@@ -214,16 +221,16 @@ export function Markdown({ text }: { text: string }) {
                 <input type="checkbox" disabled checked={it.checked} /> {inline(it.text)}
               </li>
             ))
-            return <ul key={i} className="cv-task">{items}</ul>
+            return <ul key={i} className={c.task}>{items}</ul>
           }
           case 'quote':
             return (
-              <blockquote key={i} className="cv-quote">
+              <blockquote key={i} className={c.quote}>
                 <p>{inline(b.text)}</p>
               </blockquote>
             )
           case 'hr':
-            return <hr key={i} className="cv-hr" />
+            return <hr key={i} className={c.hr} />
           case 'table': {
             const thead = b.header.map((h, j) => <th key={j}>{inline(h)}</th>)
             const tbody = b.rows.map((row, ri) => (
@@ -232,7 +239,7 @@ export function Markdown({ text }: { text: string }) {
               </tr>
             ))
             return (
-              <table key={i} className="cv-table">
+              <table key={i} className={c.table}>
                 <thead>
                   <tr>{thead}</tr>
                 </thead>

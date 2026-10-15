@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore, useState, type Re
 import { useNow } from '../hooks'
 import type { Connection } from '../state/desk'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
-import { blocks as _blocks, inline as _inline, type TaskItem } from '../conversation/Markdown'
+import { blocks, Markdown as ConversationMarkdown } from '../conversation/Markdown'
 
 // What a model or agent wrote is text, never markup: the page builds elements, so nothing
 // of it reaches innerHTML, and a link survives only as an http or https anchor.
@@ -18,69 +18,11 @@ export function safeHref(raw: string): string | null {
 }
 
 /** A small markdown subset: paragraphs, headings, fenced code, lists, tables, blockquotes, horizontal rules and task lists. */
-export function blocks(src: string) {
-  return _blocks(src)
-}
+export { blocks }
 
+/** The one renderer (code blocks get a copy button), with the chat page's class names. */
 export function Markdown({ text }: { text: string }) {
-  return (
-    <div className="md">
-      {blocks(text).map((b, i) => {
-        switch (b.t) {
-          case 'code':
-            return (
-              <pre key={i}>
-                <code>{b.text}</code>
-              </pre>
-            )
-          case 'h':
-            return (
-              <p key={i} className="md-h">
-                {_inline(b.text)}
-              </p>
-            )
-          case 'list': {
-            const items = b.items.map((it, j) => <li key={j}>{_inline(it)}</li>)
-            return b.ordered ? <ol key={i}>{items}</ol> : <ul key={i}>{items}</ul>
-          }
-          case 'task': {
-            const items = (b.items as TaskItem[]).map((it, j) => (
-              <li key={j}>
-                <input type="checkbox" disabled checked={it.checked} /> {_inline(it.text)}
-              </li>
-            ))
-            return <ul key={i} className="md-task">{items}</ul>
-          }
-          case 'quote':
-            return (
-              <blockquote key={i} className="md-quote">
-                <p>{_inline(b.text)}</p>
-              </blockquote>
-            )
-          case 'hr':
-            return <hr key={i} className="md-hr" />
-          case 'table': {
-            const thead = b.header.map((h, j) => <th key={j}>{_inline(h)}</th>)
-            const tbody = b.rows.map((row, ri) => (
-              <tr key={ri}>
-                {row.map((cell, ci) => <td key={ci}>{_inline(cell)}</td>)}
-              </tr>
-            ))
-            return (
-              <table key={i} className="md-table">
-                <thead>
-                  <tr>{thead}</tr>
-                </thead>
-                <tbody>{tbody}</tbody>
-              </table>
-            )
-          }
-          default:
-            return <p key={i}>{_inline(b.text)}</p>
-        }
-      })}
-    </div>
-  )
+  return <ConversationMarkdown text={text} classes="md" />
 }
 
 export const CONNECTION: Record<Connection, { text: string; cls: string; glyph: string }> = {
