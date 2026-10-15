@@ -471,6 +471,9 @@ type Profile struct {
 	// Tags is "free" (the default) or "reserved": every release tag pushed from the repo
 	// must be reserved first (shepherd tag reserve), and contain its lane's merge.
 	Tags string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// MaxRuns is how many agents may run at once in the repo; 0 leaves only the
+	// machine's daemon.max_runs.
+	MaxRuns int `yaml:"max_runs,omitempty" json:"max_runs,omitempty"`
 	// Brief is added to every agent's brief in the repo: its own rules.
 	Brief string `yaml:"brief,omitempty" json:"brief,omitempty"`
 	// Forbid are regular expressions commit messages must not match before Shepherd
@@ -876,6 +879,9 @@ func (p Profile) validate(at string) []error {
 	if !slices.Contains(PermissionModes, p.Agent.PermissionMode) {
 		errs = append(errs, fmt.Errorf("%s.agent.permission_mode: %q is not %s", at, p.Agent.PermissionMode, strings.Join(PermissionModes, ", ")))
 	}
+	if p.MaxRuns < 0 {
+		errs = append(errs, fmt.Errorf("%s.max_runs: %d cannot be negative; 0 leaves only daemon.max_runs", at, p.MaxRuns))
+	}
 	if p.Watch.FixTries != nil && *p.Watch.FixTries < 0 {
 		errs = append(errs, fmt.Errorf("%s.watch.fix_tries: %d is negative; 0 turns handing back off", at, *p.Watch.FixTries))
 	}
@@ -1009,6 +1015,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Watch.ReviewThreads != nil {
 		out.Watch.ReviewThreads = over.Watch.ReviewThreads
+	}
+	if over.MaxRuns != 0 {
+		out.MaxRuns = over.MaxRuns
 	}
 	if over.Agent.PermissionMode != "" {
 		out.Agent.PermissionMode = over.Agent.PermissionMode

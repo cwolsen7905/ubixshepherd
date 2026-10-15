@@ -51,6 +51,25 @@ carries an Upgrade action; `update.auto` lets the daemon take it by itself. The 
 `SHEPHERD_NO_UPDATE_CHECK=1` in the daemon's environment turns the check off regardless of
 the config.
 
+## Per-repo run limit
+
+`max_runs` under `defaults:` or a repo's entry in `repos:` caps how many agents may be
+running in that repo at once. `daemon.max_runs` stays the cap for the whole machine, so
+a repo's limit only keeps one busy repo from taking every slot; it cannot raise the
+machine's. Unset or `0` means only the machine's limit applies; a negative number is an
+error.
+
+```yaml
+repos:
+  ubixos:
+    max_runs: 2
+```
+
+A start past the limit (`lane run`, `run continue`, a routed request or a keep-going
+start) is held, not queued: it is refused with a message naming the repo, and a run
+Shepherd starts on its own is tried again when a slot frees, exactly as for
+`daemon.max_runs`. A reload applies a change.
+
 ## Projects and the `repos:` section
 
 A project's `repos:` lists repo names; each name need not also appear under the top-level

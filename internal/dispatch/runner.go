@@ -386,6 +386,21 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 	if max := cfg.Daemon.MaxRuns; len(running) >= max {
 		return store.Run{}, held("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
 	}
+	if max := cfg.Profile(repo.Name).MaxRuns; max > 0 {
+		in := 0
+		for _, other := range running {
+			ol, err := r.Store.Lane(ctx, other.LaneID)
+			if err != nil {
+				return store.Run{}, err
+			}
+			if ol.RepoID == repo.ID {
+				in++
+			}
+		}
+		if in >= max {
+			return store.Run{}, held("%d agents are already running in %s, its limit (max_runs)", in, repo.Name)
+		}
+	}
 
 	// The lane's conversation: continue its last session with this agent unless asked
 	// for a new one.
