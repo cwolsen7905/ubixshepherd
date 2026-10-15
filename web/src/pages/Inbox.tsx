@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '../api/client'
+import { api, ApiError, waitingOnYou } from '../api/client'
 import type { DecisionView, WaitingItem } from '../api/types'
 import { splitQuestion } from '../components/DecisionCard'
 import { Glyph } from '../components/Glyph'
@@ -7,9 +7,9 @@ import { inline } from '../conversation/Markdown'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { openKey, waitingKey } from '../model/waitingStep'
-import { go, href, parse, withOpen, type Open } from '../router'
+import { go, href, parse, useFocusTarget, withOpen, type Open } from '../router'
 import { neighbour } from '../chat/strip'
-import { useSnapshot } from '../state/context'
+import { useLive, useSnapshot } from '../state/context'
 import '../styles/pages/inbox.css'
 
 type Group = 'answer' | 'approve' | 'broken'
@@ -49,8 +49,12 @@ function pageFor(it: WaitingItem): string | null {
 
 function show(it: WaitingItem) {
   const o = inboxOpen(it)
-  if (o) go(withOpen(window.location.hash, o))
-  else {
+  if (o) {
+    const now = parse(window.location.hash).open
+    // The row already open fires no hashchange: bring the inspector's heading into focus instead.
+    if (now && now.kind === o.kind && now.id === o.id) document.getElementById('inspector-title')?.focus()
+    else go(withOpen(window.location.hash, o))
+  } else {
     const to = pageFor(it)
     if (to) go(to)
   }
@@ -68,6 +72,7 @@ function isOpen(it: WaitingItem, open: Open | undefined): boolean {
  */
 export function InboxPage({ kind }: { kind?: string }) {
   const snap = useSnapshot()
+  const live = useLive()
   const now = useNow()
   const all = useMemo(() => snap.waiting?.items ?? [], [snap.waiting?.items])
   const items = useMemo(() => (kind ? all.filter((it) => it.kind === kind) : all), [all, kind])
@@ -75,6 +80,27 @@ export function InboxPage({ kind }: { kind?: string }) {
   const [showDone, setShowDone] = useState(false)
   const [done, setDone] = useState<DecisionView[] | null>(null)
   const open = parse(window.location.hash).open
+  const [notes, setNotes] = useState<Record<string, { text: string; bad: boolean }>>({})
+  const [shipping, setShipping] = useState<string | null>(null)
+  // A deep link (including the old #/decisions?d=N) scrolls its decision to the middle and marks it.
+  const openDecision = open?.kind === 'decision' ? open.id : undefined
+  const lit = useFocusTarget(openDecision, all.some((it) => it.decision_id === openDecision), (id) => `[data-decision-id="${id}"]`)
+
+  const ship = async (it: WaitingItem) => {
+    const key = waitingKey(it)
+    if (!it.lane_id) return
+    setShipping(key)
+    try {
+      const r = await waitingOnYou.ship(it.lane_id)
+      setNotes((n) => ({ ...n, [key]: { text: r.message || 'Shipped.', bad: false } }))
+    } catch (e) {
+      const text = e instanceof ApiError || e instanceof Error ? e.message : String(e)
+      setNotes((n) => ({ ...n, [key]: { text: `Not shipped: ${text}`, bad: true } }))
+    } finally {
+      setShipping(null)
+      void live.readWaiting()
+    }
+  }
 
   useEffect(() => {
     if (!showDone) return
@@ -171,11 +197,15 @@ export function InboxPage({ kind }: { kind?: string }) {
                   )
                 }
                 return (
-                  <li key={key} className={`inbox-row${waitingKey(it) === at ? ' is-cursor' : ''}`}>
+                  <li
+                    key={key}
+                    className={`inbox-row${waitingKey(it) === at ? ' is-cursor' : ''}${it.decision_id && lit === it.decision_id ? ' is-focus-target' : ''}`}
+                  >
                     <button
                       type="button"
                       className="inbox-open"
                       data-waiting-key={waitingKey(it)}
+                      data-decision-id={it.decision_id}
                       aria-current={selected ? 'true' : undefined}
                       onClick={() => {
                         setCursor(waitingKey(it))
@@ -189,6 +219,16 @@ export function InboxPage({ kind }: { kind?: string }) {
                         {it.since ? ` · waiting ${since(it.since, now)}` : ''}
                       </span>
                     </button>
+                    {it.action === 'ship' && it.lane_id ? (
+                      <button type="button" className="inbox-act" disabled={shipping === waitingKey(it)} onClick={() => void ship(it)}>
+                        {shipping === waitingKey(it) ? 'Shipping…' : 'Ship'}
+                      </button>
+                    ) : null}
+                    {notes[waitingKey(it)] && (
+                      <p className={`inbox-note${notes[waitingKey(it)]?.bad ? ' tone-bad' : ''}`} role={notes[waitingKey(it)]?.bad ? 'alert' : 'status'}>
+                        {notes[waitingKey(it)]?.text}
+                      </p>
+                    )}
                   </li>
                 )
               })}

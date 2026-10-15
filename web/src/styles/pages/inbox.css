@@ -14,3 +14,6 @@
 .inbox-kind { grid-row: 1 / span 2; font-size: var(--t-sm); }
 .inbox-title { font-weight: 600; overflow-wrap: anywhere; }
 .inbox-meta { font-size: var(--t-sm); }
+.inbox-row.is-focus-target .inbox-open { background: var(--lantern-wash); }
+.inbox-act { margin: 0 var(--s-2) var(--s-2); }
+.inbox-note { margin: 0 var(--s-2) var(--s-2); font-size: var(--t-sm); }

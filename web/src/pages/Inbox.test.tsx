@@ -9,12 +9,13 @@ import { InboxPage } from './Inbox'
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
 const waiting: Waiting = {
-  count: 5,
+  count: 6,
   counts: { decisions: 1, mrs: 1, ship: 0, next: 1, blocked: 1 },
   items: [
     { kind: 'decision', action: 'answer', decision_id: 7, lane: 'a', title: 'Which store?' },
     { kind: 'mr', action: 'approve', lane_id: 3, lane: 'b', title: 'Add retries', mr: 12 },
     { kind: 'next', action: 'review', next_id: 5, title: 'Proposed item' },
+    { kind: 'ship', action: 'ship', lane_id: 6, lane: 'd', title: 'Ship lane d' },
     { kind: 'blocked', action: 'open', lane_id: 4, lane: 'c', title: 'Lane c is blocked' },
     { kind: 'request', action: 'route', request_id: 9, title: 'Needs a lane' },
   ],
@@ -81,9 +82,37 @@ describe('InboxPage', () => {
     expect(screen.queryByRole('button', { name: /Needs a lane/ })).toBeNull()
   })
 
+  it('scrolls a decision deep link to the middle and marks it', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    window.location.hash = '#/inbox?kind=decision&open=decision:7'
+    await show('decision')
+    const row = document.querySelector('.inbox-row.is-focus-target') as HTMLElement
+    expect(row).not.toBeNull()
+    expect(scroll).toHaveBeenCalledWith({ block: 'center' })
+  })
+
+  it('focuses the inspector when the open row is chosen again', async () => {
+    window.location.hash = '#/inbox?open=lane:3'
+    await show()
+    const h = document.createElement('h2')
+    h.id = 'inspector-title'
+    h.tabIndex = -1
+    document.body.append(h)
+    await userEvent.click(screen.getByRole('button', { name: /Add retries/ }))
+    expect(h).toHaveFocus()
+    h.remove()
+  })
+
   it('moves the cursor with j', async () => {
     await show()
+    const at = () => document.querySelector('.is-cursor .inbox-title')?.textContent
+    expect(at()).toBeUndefined()
     await userEvent.keyboard('j')
-    expect(document.querySelector('.is-cursor')).not.toBeNull()
+    expect(at()).toBe('Which store?')
+    await userEvent.keyboard('j')
+    expect(at()).toBe('Add retries')
+    await userEvent.keyboard('k')
+    expect(at()).toBe('Which store?')
   })
 })
