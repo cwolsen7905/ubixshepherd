@@ -105,7 +105,7 @@ export function ProjectPage({ name }: { name: string | null }) {
 
       <section aria-labelledby="project-wait" className="project-section">
         <h2 id="project-wait">
-          Waiting on you <Badge count={data.pending_decisions.length + data.pending_requests.length} tone="attention" label="waiting on you" />
+          Waiting on you <Badge count={data.pending_decisions.length + data.pending_requests.length} tone="attention" />
         </h2>
         {data.pending_decisions.length + data.pending_requests.length === 0 && <EmptyState title="Nothing waits on you here." />}
         <ul className="rows">
@@ -137,7 +137,7 @@ export function ProjectPage({ name }: { name: string | null }) {
 
       <section aria-labelledby="project-lanes" className="project-section">
         <h2 id="project-lanes">
-          Open lanes <Badge count={data.open_lanes.length} label="open lanes" />
+          Open lanes <Badge count={data.open_lanes.length} />
         </h2>
         {data.open_lanes.length === 0 && <EmptyState title="No lane is open." />}
         <ul className="rows">
@@ -160,7 +160,7 @@ export function ProjectPage({ name }: { name: string | null }) {
 
       <section aria-labelledby="project-runs" className="project-section">
         <h2 id="project-runs">
-          Recent runs <Badge count={data.runs.length} label="recent runs" />
+          Recent runs <Badge count={data.runs.length} />
         </h2>
         {data.runs.length === 0 && <EmptyState title="No run yet." />}
         <ul className="rows">

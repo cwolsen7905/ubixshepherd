@@ -123,7 +123,7 @@ describe('ProjectPage', () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="shop" />)
     const waiting = await screen.findByRole('region', { name: /Waiting on you/ })
-    expect(within(waiting).getByLabelText('2 waiting on you')).toBeInTheDocument()
+    expect(within(waiting).getByRole('heading', { level: 2 })).toHaveTextContent('Waiting on you 2')
     expect(screen.getByRole('link', { name: 'Edit' })).not.toHaveClass('ui-btn-primary')
     expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(0)
   })
