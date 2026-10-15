@@ -51,7 +51,7 @@ export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (w
   }
   const key = waitingKey({ kind: 'question', action: 'reply', question_id: id, title: '' })
   return (
-    <div className="inspector-body">
+    <div className="inspector-body question-pane">
       <p className="faint">The front desk asked, in turn {q.turn}:</p>
       <Markdown text={q.text} />
       <QuestionActions q={q} thread={thread} topicId={q.topic_id ?? null} onCleared={() => advanceFrom(snap.waiting?.items ?? [], key)} />
