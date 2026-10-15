@@ -36,4 +36,9 @@
   .project-cards { margin-left: 0; grid-template-columns: 1fr; }
   .project-row { grid-template-columns: var(--gutter) minmax(0, 1fr) 3rem; }
   .project-row .row-repo, .project-row .row-agent, .project-row .row-mr { display: none; }
+  /* Place the cells: glyph, lane and age on the first line, the detail under the lane. */
+  .project-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .project-row .row-lane { grid-column: 2; grid-row: 1; }
+  .project-row .row-age { grid-column: 3; grid-row: 1; }
+  .project-row .row-detail { grid-column: 2 / 4; grid-row: 2; }
 }
