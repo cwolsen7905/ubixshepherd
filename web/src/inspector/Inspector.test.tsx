@@ -1,9 +1,24 @@
-import { render, screen } from '@testing-library/react'
+import { render as rtlRender, screen, type RenderOptions } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactElement, ReactNode } from 'react'
+import { LiveProvider } from '../state/context'
+import { Live, type Api, type Clock } from '../state/live'
+import { lane, spend, status } from '../test/fixtures'
 import { InspectorFrame } from './Inspector'
 import { modeFor } from './useMode'
 
 const open = { kind: 'run', id: 5 }
+
+const still: Clock = { now: () => 0, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
+const api = {
+  status: async () => status(), lanes: async () => [lane({ id: 4, branch: 'feat/export-csv' })], runs: async () => [], decisions: async () => [], requests: async () => [],
+  spend: async () => spend(), feedLatest: async () => ({ items: [], events: [], last: 0 }), feed: async (after: number) => ({ items: [], events: [], last: after }),
+} as unknown as Api
+// The inspector sits inside the app's live provider, as in production.
+function Wrap({ children }: { children: ReactNode }) {
+  return <LiveProvider live={new Live(api, still)}>{children}</LiveProvider>
+}
+const render = (ui: ReactElement, o?: RenderOptions) => rtlRender(ui, { wrapper: Wrap, ...o })
 
 describe('modeFor', () => {
   it('switches at 1440 and 760', () => {
@@ -66,12 +81,16 @@ describe('InspectorFrame', () => {
       const close = screen.getByRole('button', { name: 'Close inspector' })
       expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
       expect(screen.getByText('row').closest('.inspector-page')).toHaveAttribute('inert')
+      // The composer's box is the last stop (Send is disabled while it is empty).
+      const box = screen.getByRole('textbox')
       await user.tab()
       expect(close).toHaveFocus()
+      await user.tab()
+      expect(box).toHaveFocus()
       await user.tab()
       expect(close).toHaveFocus()
       await user.tab({ shift: true })
-      expect(close).toHaveFocus()
+      expect(box).toHaveFocus()
       unmount()
     }
   })
@@ -124,5 +143,16 @@ describe('InspectorFrame', () => {
       </InspectorFrame>,
     )
     expect(screen.getByText('row').closest('.inspector-page')).not.toHaveAttribute('inert')
+  })
+})
+
+describe('the context composer in the inspector', () => {
+  it('names a lane by its branch', async () => {
+    render(<InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame>)
+    expect(await screen.findByText('Message the front desk about feat/export-csv (lane 4)')).toBeInTheDocument()
+  })
+  it('is not shown for a kind it cannot speak about', () => {
+    render(<InspectorFrame open={{ kind: 'constructor', id: 4 }} mode="split">page</InspectorFrame>)
+    expect(screen.queryByRole('textbox')).toBeNull()
   })
 })
