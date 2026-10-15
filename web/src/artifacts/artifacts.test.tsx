@@ -51,7 +51,7 @@ describe('LaneArtifactsPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'shot.png' }))
     expect(screen.getByRole('img')).toHaveAttribute('src', '/v1/lanes/4/artifacts/content?path=shot.png')
     await userEvent.click(screen.getByRole('button', { name: 'big.log' }))
-    expect(screen.getByText(/not readable here/)).toBeInTheDocument()
+    expect(screen.getByText(/Not readable here/)).toBeInTheDocument()
     expect(calls.some((c) => c.includes('big.log'))).toBe(false)
   })
 

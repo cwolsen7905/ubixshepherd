@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { laneArtifacts, type LaneArtifacts as Listing } from '../api/artifacts'
+import { EmptyState, Skeleton } from '../ui'
 import { ArtifactViewer, bytes } from './ArtifactViewer'
 
 /** A lane's artifacts: the list, and the chosen one below it. */
@@ -22,10 +23,14 @@ export function LaneArtifactsPanel({ laneId, refreshKey }: { laneId: number; ref
     }
   }, [laneId, refreshKey])
 
-  if (error) return <p className="tone-bad">Could not load the artifacts: {error}</p>
-  if (!list) return <p className="faint">Loading…</p>
+  if (error) return <EmptyState title="Could not load the artifacts">{error}</EmptyState>
+  if (!list) return <Skeleton lines={4} />
   if (list.artifacts.length === 0) {
-    return <p className="faint">No artifacts in this lane yet.{list.globs.length > 0 && <> Looking for <code>{list.globs.join(', ')}</code>.</>}</p>
+    return (
+      <EmptyState title="No artifacts in this lane yet">
+        {list.globs.length > 0 ? <>Looking for <code>{list.globs.join(', ')}</code>.</> : 'This repo sets no artifact globs.'}
+      </EmptyState>
+    )
   }
   const artifact = list.artifacts.find((a) => a.path === chosen)
   return (
