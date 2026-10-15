@@ -143,7 +143,7 @@ describe('the Finished section of the board', () => {
     expect(await within(section).findAllByRole('listitem')).toHaveLength(4)
     expect(within(section).getByText('MR closed')).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: 'Last 7 days' })).toHaveAttribute('aria-current', 'true')
-    expect(within(section).getByRole('link', { name: 'Today' })).toHaveAttribute('href', '#/?range=today')
+    expect(within(section).getByRole('link', { name: 'Today' })).toHaveAttribute('href', '#/board?range=today')
   })
 
   it('says so when nothing closed in the range', async () => {
