@@ -12,6 +12,9 @@ import '../styles/settings.css'
 /** The word a person types to confirm a change that gives agents more power. */
 export const CONFIRM_WORD = 'confirm'
 
+const RISK_HINT = 'Raising this gives agents more power; saving asks you to confirm.'
+const RESTART_HINT = 'Applies when the daemon next starts.'
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
 /** A refusal's structured body, when the daemon sent one. */
@@ -89,8 +92,16 @@ function Field({ scope, field, draft, onDraft, problems }: FieldProps) {
     <div className={`field${st.set ? ' is-set' : ''}${st.dirty ? ' is-dirty' : ''}${field.kind === 'list' || field.kind === 'map' || field.kind === 'json' ? ' field-wide' : ''}`}>
       <div className="field-head">
         <label htmlFor={id}>{field.label}</label>
-        {field.risk && <span className="tag-risk" title="Raising this gives agents more power; saving asks you to confirm"><Chip>Power</Chip></span>}
-        {field.restart && <span title="Applies when the daemon next starts"><Chip>Restart</Chip></span>}
+        {field.risk && (
+          <span className="tag-risk" title={RISK_HINT}>
+            <Chip>Power</Chip><span className="visually-hidden"> {RISK_HINT}</span>
+          </span>
+        )}
+        {field.restart && (
+          <span title={RESTART_HINT}>
+            <Chip>Restart</Chip><span className="visually-hidden"> {RESTART_HINT}</span>
+          </span>
+        )}
         <label className="override">
           <input type="checkbox" checked={st.set} 
             aria-label={`${inherited ? 'Override' : 'Set'} ${field.label}`}

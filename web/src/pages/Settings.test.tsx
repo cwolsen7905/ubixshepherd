@@ -139,6 +139,13 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Review changes' })).not.toHaveClass('ui-btn-primary')
   })
 
+  it('explains the Power tag in text, not only in a tooltip', async () => {
+    daemon(doc())
+    render(<SettingsPage scope="repo:api" />)
+    await screen.findByLabelText('Push')
+    expect(screen.getByText(/Raising this gives agents more power/)).toBeInTheDocument()
+  })
+
   it('shows an inherited value greyed until it is overridden', async () => {
     daemon(doc())
     const user = userEvent.setup()
