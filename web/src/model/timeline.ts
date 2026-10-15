@@ -180,7 +180,7 @@ export interface TRun {
   credits?: number
   /** costUsd is the agent's own estimate, not a bill. */
   costEstimated?: boolean
-  /** The prompt for snapshot runs; the history task for older runs. */
+  /** The whole prompt while the run is in the snapshot (the UI finds the Task: marker in it); the one-line history task once it has left. */
   task: string
   /** What the run is doing now, while it runs. */
   progress?: string
