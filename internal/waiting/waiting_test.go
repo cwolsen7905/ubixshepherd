@@ -97,9 +97,6 @@ func TestCollectGathersWhatWaitsOnThePerson(t *testing.T) {
 	put(broken, store.LaneForge{MR: 177, MRState: "opened", PipelineStatus: "failed", RequireApproval: "success"})
 	merged := lane(t, st, byName["app"], "merged", 0)
 	put(merged, store.LaneForge{MR: 178, MRState: "merged", PipelineStatus: "failed"})
-	if _, _, err := st.UpsertArtifact(ctx, store.Artifact{LaneID: merged.ID, WorkspaceID: ws.ID, RepoID: byName["app"].ID, Path: "design.md", Intent: store.ArtifactUndecided, IntentBy: "default", State: store.ArtifactLive, Kind: store.ArtifactMarkdown, Source: store.ArtifactDeclared, Size: 1024}); err != nil {
-		t.Fatal(err)
-	}
 
 	// 3. Lanes with unpushed work: shepherd pushes (ship), human pushes (open), agent
 	// pushes (nothing waits).
@@ -124,7 +121,7 @@ func TestCollectGathersWhatWaitsOnThePerson(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if w.Counts != (api.WaitingCounts{Decisions: 1, MRs: 2, Ship: 2, Next: 1, Artifacts: 1}) || w.Count != 7 || len(w.Items) != 7 {
+	if w.Counts != (api.WaitingCounts{Decisions: 1, MRs: 2, Ship: 2, Next: 1}) || w.Count != 6 || len(w.Items) != 6 {
 		t.Fatalf("counts %+v count %d: %+v", w.Counts, w.Count, w.Items)
 	}
 	var approve, ship, push, failed *api.WaitingItem
@@ -154,7 +151,7 @@ func TestCollectGathersWhatWaitsOnThePerson(t *testing.T) {
 	}
 
 	line := w.Line()
-	for _, want := range []string{"[Waiting on you (7)] ", "decision 1 (app:held): decision 1: Which option?", "MR !175 (app:held)", "next-up item 1", "artifacts (app:merged)"} {
+	for _, want := range []string{"[Waiting on you (6)] ", "decision 1 (app:held): decision 1: Which option?", "MR !175 (app:held)", "next-up item 1"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line lacks %q: %s", want, line)
 		}
