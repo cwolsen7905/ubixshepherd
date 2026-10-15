@@ -1,6 +1,6 @@
 import type { WaitingItem } from '../api/types'
-import { advanceFrom, neighbour } from './strip'
-import { waitingKey } from '../model/waitingStep'
+import { neighbour, waitingKey } from '../model/waitingStep'
+import { advanceFrom } from './strip'
 
 const dec = (id: number): WaitingItem => ({ kind: 'decision', action: 'answer', decision_id: id, title: `d${id}` })
 const items = [dec(1), dec(2), dec(3)]
