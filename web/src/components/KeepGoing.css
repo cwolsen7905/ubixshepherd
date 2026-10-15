@@ -1,0 +1,45 @@
+/* The sidebar footer's Keep going switch, after the design mockup's .switch and .toggle. */
+.keep-going { display: grid; gap: 0.125rem; }
+.keep-going-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.keep-going-row:disabled { cursor: progress; opacity: 0.7; }
+.keep-going-track {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--control-border);
+  transition: background 120ms;
+}
+.keep-going-track::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--raised);
+  transition: transform 120ms;
+}
+.keep-going-row[aria-checked="true"] .keep-going-track { background: var(--lantern); }
+.keep-going-row[aria-checked="true"] .keep-going-track::after { transform: translateX(12px); }
+.keep-going-detail { font-size: var(--t-sm); color: var(--muted); }
+.keep-going-detail.tone-warn { color: var(--lantern-ink); }
+.keep-going-error { font-size: var(--t-sm); color: var(--lantern-ink); }
+@media (prefers-reduced-motion: reduce) {
+  .keep-going-track, .keep-going-track::after { transition: none; }
+}
+.shell[data-mode="icons"] .keep-going-detail { display: none; }

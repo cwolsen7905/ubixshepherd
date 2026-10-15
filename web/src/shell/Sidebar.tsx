@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { href, type Route } from '../router'
 import type { Status, Waiting } from '../api/types'
+import { KeepGoing } from '../components/KeepGoing'
 import { Badge } from '../ui'
 import { COUNT_LABEL, NAV, navCounts } from './nav'
 
@@ -36,7 +37,7 @@ export function WorkspaceLabel({ workspaces }: { workspaces: Status['workspaces'
 
 /**
  * The left sidebar: name, workspace, the views in three groups with their counts, then the
- * footer slot. Counts come from the attention list, so they agree with Waiting on you.
+ * footer: the Keep going switch and the footer slot. Counts come from the attention list, so they agree with Waiting on you.
  */
 export function Sidebar({
   route,
@@ -78,7 +79,10 @@ export function Sidebar({
           </ul>
         ))}
       </nav>
-      <div className="sidebar-foot">{footer}</div>
+      <div className="sidebar-foot">
+        <KeepGoing />
+        {footer}
+      </div>
     </div>
   )
 }
