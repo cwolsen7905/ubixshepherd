@@ -423,23 +423,24 @@ function ChatThread({
 
   return (
     <div className="page chat">
-      <header className="page-head chat-head">
-        <h1>Chat</h1>
-        <p className={`chat-conn live-dot ${conn.cls}`} role="status">
-          <span aria-hidden="true">{conn.glyph}</span> {conn.text}
-          {offline && <Countdown at={d.retryAt} />}
-        </p>
-        {offline && (
-          <button type="button" className="button" onClick={() => thread.wake()}>
-            Retry now
-          </button>
-        )}
+      <header className="chat-head">
+        <h1>Conversation</h1>
+        <TopicBar active={topicId} onFilter={filterTo} />
         {children}
         <span className="chat-tools">
+          <span className={`chat-conn ${conn.cls}`} role="status">
+            <span aria-hidden="true">{conn.glyph}</span> {conn.text}
+            {offline && <Countdown at={d.retryAt} />}
+          </span>
           {d.busy && (
             <span className="faint">
               {d.queued > 1 ? `Working, ${d.queued - 1} waiting` : 'Working'}…
             </span>
+          )}
+          {offline && (
+            <button type="button" className="button" onClick={() => thread.wake()}>
+              Retry now
+            </button>
           )}
           {!confirming ? (
             <button ref={newButton} type="button" className="button" onClick={() => setConfirming(true)}>
@@ -504,7 +505,6 @@ function ChatThread({
         </div>
         <ErrorBoundary region="The conversation">
         <div className="chat-main">
-        <TopicBar active={topicId} onFilter={filterTo} />
         {topicId !== null && (
           <p className="topic-filter" role="status">
             Showing: {topic && topic.id === topicId ? topic.title : `topic ${topicId}`}, {items.length} {items.length === 1 ? 'row' : 'rows'}.{' '}

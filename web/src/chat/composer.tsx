@@ -71,6 +71,7 @@ function Composer({
       <label htmlFor="chat-input" className="visually-hidden">
         Message to the front desk
       </label>
+      <div className="composer-row">
       <textarea
         id="chat-input"
         ref={box}
@@ -96,6 +97,7 @@ function Composer({
         <button type="submit" className="button button-primary" disabled={sending || disabled || !text.trim()}>
           {sending ? 'Sending…' : 'Send'}
         </button>
+      </div>
       </div>
     </form>
   )
