@@ -226,6 +226,37 @@ func TestMaxRuns(t *testing.T) {
 	}
 }
 
+func TestRepoMaxRuns(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	repo, err := f.st.Repo(ctx, f.lane.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capped := config.Default()
+	capped.Daemon.MaxRuns = 6
+	capped.Repos = map[string]config.Profile{repo.Name: {MaxRuns: 1}}
+	f.runner.SetConfig(capped)
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { f.runner.Stop(ctx, run.ID); f.wait(t, run.ID) }()
+	other := openLane(t, f, "other", "docs/**")
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: other.ID, Agent: "claude", Prompt: "y"}); !errors.Is(err, ErrHeld) || !strings.Contains(err.Error(), repo.Name) {
+		t.Errorf("over the repo's limit: %v", err)
+	}
+	// A reload raising the limit lets the same start through.
+	capped.Repos = map[string]config.Profile{repo.Name: {MaxRuns: 2}}
+	f.runner.SetConfig(capped)
+	second, err := f.runner.Start(ctx, StartRequest{LaneID: other.ID, Agent: "claude", Prompt: "y"})
+	if err != nil {
+		t.Fatalf("under the raised limit: %v", err)
+	}
+	f.runner.Stop(ctx, second.ID)
+	f.wait(t, second.ID)
+}
+
 func TestSetConfigWhileRunsGo(t *testing.T) {
 	f := newFixture(t, "quick")
 	ctx := context.Background()

@@ -155,6 +155,10 @@
 #   ## free, or reserved: every release tag pushed from the repo must be reserved first
 #   ## (shepherd tag reserve) and contain its lane's merge. Needs the pre-push hook.
 #   tags: free
+#   ## How many agents may run at once in the repo, so one busy repo cannot take every
+#   ## slot of daemon.max_runs. A start past it is held, as for daemon.max_runs; unset
+#   ## (or 0) leaves only the machine's limit. A reload applies a change.
+#   max_runs: 2
 #   ## Added to every agent's brief in the repo: its own rules.
 #   brief: No Co-authored-by or AI tool trailers in commit messages.
 #   ## Patterns commit messages must not match before Shepherd pushes; a match goes

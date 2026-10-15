@@ -60,6 +60,25 @@ repos:
 	}
 }
 
+func TestRepoMaxRuns(t *testing.T) {
+	c, err := Parse([]byte("defaults:\n  max_runs: 3\nrepos:\n  big:\n    max_runs: 2\n  plain: {}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Profile("big").MaxRuns; got != 2 {
+		t.Errorf("big = %d", got)
+	}
+	if got := c.Profile("plain").MaxRuns; got != 3 {
+		t.Errorf("plain inherits defaults: %d", got)
+	}
+	if got := Default().Profile("x").MaxRuns; got != 0 {
+		t.Errorf("unset = %d, want 0", got)
+	}
+	if _, err := Parse([]byte("repos:\n  x:\n    max_runs: -1\n")); err == nil {
+		t.Error("negative max_runs accepted")
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	cases := map[string]string{
 		"unknown key":       "defaults:\n  base_brnch: dev\n",
