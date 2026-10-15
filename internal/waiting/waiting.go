@@ -1,5 +1,5 @@
 // Package waiting collects what needs the person's action into one list: open decisions,
-// lane merge requests held on their approval, lanes with work to ship, and Next-up items
+// requests between lanes that need routing, lane merge requests held on their approval, lanes with work to ship, and Next-up items
 // proposed to them. It reads the store and the lanes' git state; nothing is stored for
 // it, so the list is as fresh as what it reads.
 package waiting
@@ -153,8 +153,38 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		out.Counts.Next++
 	}
 
+	// Requests between lanes that Shepherd could not route by rule: the person, or the
+	// front desk, has to choose. Ours through the asking run's lane, like decisions.
+	reqs, err := st.Requests(ctx, store.RequestNeedsRouting)
+	if err != nil {
+		return out, err
+	}
+	for _, q := range reqs {
+		msg := oneLine(q.Message)
+		it := api.WaitingItem{
+			Kind: api.WaitingRequest, Action: "route", RequestID: q.ID,
+			Title: msg, Since: q.Created,
+		}
+		run, err := st.Run(ctx, q.FromRun)
+		if err == nil {
+			if l, ok := laneOf[run.LaneID]; ok {
+				it.Lane, it.LaneID, it.Repo = l.Name, l.ID, repoOf[l.ID].Name
+			} else if workspaceID != 0 {
+				continue
+			}
+		} else if workspaceID != 0 {
+			continue
+		}
+		it.Detail = fmt.Sprintf("request %d needs routing: %s", q.ID, msg)
+		if q.Note != "" {
+			it.Detail += " (" + oneLine(q.Note) + ")"
+		}
+		out.Items = append(out.Items, it)
+		out.Counts.Requests++
+	}
+
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].Since.Before(out.Items[j].Since) })
-	out.Count = len(out.Items)
+	out.Seal()
 	return out, nil
 }
 

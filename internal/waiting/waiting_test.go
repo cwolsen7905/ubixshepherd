@@ -183,3 +183,74 @@ func TestMRBeingFixedIsNotWaiting(t *testing.T) {
 		t.Errorf("failed pipeline, nothing running: %+v %v", it, ok)
 	}
 }
+
+func TestRequestsNeedingRoutingWaitAndVersionMoves(t *testing.T) {
+	ctx := context.Background()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	root := t.TempDir()
+	ws, err := st.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, []store.Repo{{Name: "app", Path: filepath.Join(root, "app")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := st.Repos(ctx, ws.ID)
+	l := lane(t, st, repos[0], "asker", 0)
+	run, err := st.CreateRun(ctx, store.Run{LaneID: l.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Log: filepath.Join(root, "r.log")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := config.Default()
+
+	empty, err := Collect(ctx, st, conf, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if empty.Version == "" {
+		t.Fatal("no version on an empty list")
+	}
+	again, _ := Collect(ctx, st, conf, 0)
+	if again.Version != empty.Version {
+		t.Errorf("version moved with no change: %s then %s", empty.Version, again.Version)
+	}
+
+	stuck, err := st.CreateRequest(ctx, store.Request{FromRun: run.ID, Kind: store.RequestQuestion, Message: "who owns\n the schema?", State: store.RequestNeedsRouting, Note: "no lane named"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateRequest(ctx, store.Request{FromRun: run.ID, Kind: store.RequestQuestion, Message: "routed", State: store.RequestRouted}); err != nil {
+		t.Fatal(err)
+	}
+	w, err := Collect(ctx, st, conf, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w.Count != 1 || w.Counts.Requests != 1 || len(w.Items) != 1 {
+		t.Fatalf("want one request: %+v", w)
+	}
+	it := w.Items[0]
+	if it.Kind != api.WaitingRequest || it.Action != "route" || it.RequestID != stuck.ID || it.Lane != "asker" || it.Repo != "app" || it.Title != "who owns the schema?" {
+		t.Errorf("item: %+v", it)
+	}
+	if w.Version == empty.Version {
+		t.Error("version did not move when a request began to wait")
+	}
+	if !strings.Contains(w.Line(), "request 1 (app:asker)") {
+		t.Errorf("line: %s", w.Line())
+	}
+	if other, _ := Collect(ctx, st, conf, ws.ID+100); other.Counts.Requests != 0 {
+		t.Errorf("another workspace's request counted: %+v", other.Counts)
+	}
+
+	// Closing it clears it and moves the version again.
+	stuck.State = store.RequestClosed
+	if err := st.UpdateRequest(ctx, stuck); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := Collect(ctx, st, conf, 0)
+	if after.Count != 0 || after.Version != empty.Version {
+		t.Errorf("after close: %+v (version %s, empty %s)", after, after.Version, empty.Version)
+	}
+}
