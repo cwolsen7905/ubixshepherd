@@ -171,7 +171,7 @@ function DeskRow({
       return (
         <div
           id={asked ? threadId(`q${asked.id}`) : undefined}
-          className={`msg msg-assistant${waiting ? ' msg-asked' : ''}${asked && flash === `q${asked.id}` ? ' is-flash' : ''}`}
+          className={`msg msg-assistant${waiting ? ' msg-asked' : ''}${questions.some((q) => flash === `q${q.id}`) ? ' is-flash' : ''}`}
         >
           {work.length > 0 && <WorkFold work={work} now={now} />}
           <span className="msg-who">Front desk {when}{pill}</span>

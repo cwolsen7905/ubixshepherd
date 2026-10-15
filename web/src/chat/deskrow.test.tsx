@@ -22,4 +22,11 @@ describe('DeskRow reply references', () => {
     expect(container.querySelector('#thread-q8')).not.toBeNull()
     expect(container.querySelector('.msg-asked')).toBeNull()
   })
+
+  it('highlights the message when a later question of its turn is the jump target', () => {
+    const { container } = render(
+      <DeskRow e={ev({ seq: 3, kind: 'assistant', text: 'Which one?', turn: 1 })} now={Date.now()} questions={[q(7, 'answered'), q(8, 'answered')]} flash="q8" />,
+    )
+    expect(container.querySelector('.msg-assistant.is-flash')).not.toBeNull()
+  })
 })
