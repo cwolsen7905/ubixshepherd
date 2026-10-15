@@ -12,6 +12,7 @@ import { parseLog, type Block } from '../model/log'
 import { href } from '../router'
 import { useLive } from '../state/context'
 import { RUN_EVENT } from './Lane'
+import { RunPane, useRun, type RunTab } from '../inspector/runPane'
 
 /** The most the daemon returns per read, in bytes. */
 const LOG_CHUNK = 64 << 10
@@ -65,40 +66,83 @@ function useRunLog(id: number) {
 export function LogPage({ run: id }: { run: number }) {
   const live = useLive()
   const now = useNow(5000)
-  const [run, setRun] = useState<RunView | null>(null)
-  const { text, done, error } = useRunLog(id)
+  const { run, reload } = useRun(id)
+  const [tab, setTab] = useState<RunTab>('conversation')
+
+  useEffect(() => {
+    if (run?.ended) live.markSeen(`run:${run.id}`)
+  }, [live, run?.id, run?.ended])
+
+  return (
+    <div className="page log">
+      <BackLink />
+      <header className="page-head log-head">
+        <h1>
+          {run && <EventGlyph event={RUN_EVENT[run.state]} />}
+          Run {id}
+        </h1>
+        {run && (
+          <p className="page-sub lane-sub">
+            <a href={href.lane(run.lane_id)}>{run.lane}</a>
+            <span>{run.agent}{run.model ? ` (${run.model})` : ''}</span>
+            <span>{run.state}</span>
+            <span>{duration(run.started, run.ended, now)}</span>
+            {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
+            {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
+            {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
+          </p>
+        )}
+        {run && endedBadly(run) && (
+          <p className="row-actions">
+            <button
+              type="button"
+              className="link-button"
+              title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
+              onClick={() => live.dismiss(run.id, !run.dismissed).then(reload, () => {})}
+            >
+              {run.dismissed ? 'Undismiss' : 'Dismiss'}
+            </button>
+          </p>
+        )}
+      </header>
+
+      {run?.diagnosis && <RunFailure run={run} onFixed={reload} />}
+
+      {run && <RunPane run={run} tab={tab} onTab={setTab} onDone={reload} />}
+    </div>
+  )
+}
+
+/** The raw log with its search, follow and tool-call controls. */
+export function LogTab({ run, onDone }: { run: RunView; onDone?: () => void }) {
+  const { text, done, error } = useRunLog(run.id)
   const [follow, setFollow] = useState(true)
   const [query, setQuery] = useState('')
   const [hit, setHit] = useState(0)
   const [openAll, setOpenAll] = useState(false)
   const search = useRef<HTMLInputElement>(null)
   const body = useRef<HTMLDivElement>(null)
+  const end = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    let current = true
-    api.run(id).then((r) => current && setRun(r), () => {})
-    return () => {
-      current = false
-    }
-  }, [id, done])
-
-  useEffect(() => {
-    if (run?.ended) live.markSeen(`run:${run.id}`)
-  }, [live, run?.id, run?.ended])
+    if (done) onDone?.()
+    // onDone is a fresh closure each render; the log ending is the only trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done])
 
   const blocks = useMemo(() => parseLog(text), [text])
   const q = query.trim().toLowerCase()
   const hits = useMemo(() => (q ? countHits(text.toLowerCase(), q) : 0), [text, q])
 
   // Following keeps the end of the log in view; scrolling up stops it.
-  const running = run?.state === 'running' && !done
+  const running = run.state === 'running' && !done
   useEffect(() => {
-    if (follow && running && !q) window.scrollTo({ top: document.documentElement.scrollHeight })
+    if (follow && running && !q) end.current?.scrollIntoView?.({ block: 'end' })
   }, [text, follow, running, q])
   useEffect(() => {
     const onScroll = () => {
-      const atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 40
-      if (!atEnd) setFollow(false)
+      const bottom = end.current?.getBoundingClientRect().bottom ?? 0
+      if (bottom > window.innerHeight + 40) setFollow(false)
     }
     window.addEventListener('wheel', onScroll, { passive: true })
     window.addEventListener('touchmove', onScroll, { passive: true })
@@ -139,42 +183,7 @@ export function LogPage({ run: id }: { run: number }) {
   )
 
   return (
-    <div className="page log">
-      <BackLink />
-      <header className="page-head log-head">
-        <h1>
-          {run && <EventGlyph event={RUN_EVENT[run.state]} />}
-          Run {id}
-        </h1>
-        {run && (
-          <p className="page-sub lane-sub">
-            <a href={href.lane(run.lane_id)}>{run.lane}</a>
-            <span>{run.agent}{run.model ? ` (${run.model})` : ''}</span>
-            <span>{run.state}</span>
-            <span>{duration(run.started, run.ended, now)}</span>
-            {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
-            {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
-            {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
-          </p>
-        )}
-        {run && endedBadly(run) && (
-          <p className="row-actions">
-            <button
-              type="button"
-              className="link-button"
-              title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
-              onClick={() => live.dismiss(run.id, !run.dismissed).then(() => api.run(id)).then(setRun, () => {})}
-            >
-              {run.dismissed ? 'Undismiss' : 'Dismiss'}
-            </button>
-          </p>
-        )}
-      </header>
-
-      {run?.diagnosis && <RunFailure run={run} onFixed={() => api.run(id).then(setRun, () => {})} />}
-
-      {run && <RunChanges run={run} now={now} />}
-
+    <>
       <div className="log-tools" role="toolbar" aria-label="Log">
         <label className="log-search">
           <span className="visually-hidden">Search the log</span>
@@ -225,17 +234,19 @@ export function LogPage({ run: id }: { run: number }) {
         )}
         {done && text !== '' && <p className="log-end faint">End of log.</p>}
       </div>
-    </div>
+      <div ref={end} />
+    </>
   )
 }
 
 /**
  * The run's own changes: the lane's Changes view narrowed to the run's start_sha..end_sha.
- * Closed until opened, since each read runs git; whether the run is the lane's latest
+ * Read when its tab is shown, since each read runs git; whether the run is the lane's latest
  * (the only one that shows the worktree's uncommitted work) is read then too.
  */
-function RunChanges({ run, now }: { run: RunView; now: number }) {
-  const [open, setOpen] = useState(false)
+export function RunChanges({ run, now }: { run: RunView; now: number }) {
+  // Its own tab: read at once.
+  const open = true
   const [latest, setLatest] = useState<boolean | null>(null)
   const [editorUrl, setEditorUrl] = useState<string | null>(null)
   const laneId = run.lane_id
@@ -260,8 +271,7 @@ function RunChanges({ run, now }: { run: RunView; now: number }) {
     }
   }, [open, laneId, runId, state])
   return (
-    <details className="run-changes" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Changes in this run</summary>
+    <div className="run-changes">
       {open && latest === null && <p className="faint">Reading…</p>}
       {open && latest !== null && (
         <Changes
@@ -273,7 +283,7 @@ function RunChanges({ run, now }: { run: RunView; now: number }) {
           run={{ id: runId, latest, outside: run.outside }}
         />
       )}
-    </details>
+    </div>
   )
 }
 
