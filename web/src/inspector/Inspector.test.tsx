@@ -46,6 +46,13 @@ describe('InspectorFrame', () => {
     expect(screen.getByRole('heading', { name: 'run 5' })).toHaveFocus()
   })
 
+  it('shows a breadcrumb head with Open as page and Close Esc', () => {
+    render(<InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame>)
+    // The lane pane's own body carries an Open as page link too; the head's is the first.
+    expect(screen.getAllByRole('link', { name: 'Open as page' })[0]).toHaveAttribute('href', '#/lanes/4')
+    expect(screen.getByRole('button', { name: 'Close inspector' })).toHaveTextContent('Close Esc')
+  })
+
   it('returns focus on close and closes on Esc', async () => {
     const user = userEvent.setup()
     const { rerender } = render(
@@ -81,14 +88,18 @@ describe('InspectorFrame', () => {
       const close = screen.getByRole('button', { name: 'Close inspector' })
       expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
       expect(screen.getByText('row').closest('.inspector-page')).toHaveAttribute('inert')
-      // The composer's box is the last stop (Send is disabled while it is empty).
+      // The head's Open as page link is the first stop, the composer's box the last (Send is
+      // disabled while it is empty).
       const box = screen.getByRole('textbox')
+      const page = screen.getByRole('link', { name: 'Open as page' })
+      await user.tab()
+      expect(page).toHaveFocus()
       await user.tab()
       expect(close).toHaveFocus()
       await user.tab()
       expect(box).toHaveFocus()
       await user.tab()
-      expect(close).toHaveFocus()
+      expect(page).toHaveFocus()
       await user.tab({ shift: true })
       expect(box).toHaveFocus()
       unmount()

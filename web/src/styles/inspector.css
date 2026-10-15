@@ -4,8 +4,19 @@
    the page lays out as if they were not there. Only the split pane needs a row. */
 .inspector-frame,
 .inspector-page { display: contents; }
-.inspector-frame.is-split { display: flex; min-height: 0; }
-.inspector-frame.is-split .inspector-page { display: block; flex: 1 1 auto; min-width: 40rem; }
+/* The split frame spans the whole main column: it takes back the padding `.main` puts around
+   the page, so the inspector runs edge to edge under the page bar. */
+.inspector-frame.is-split {
+  display: flex;
+  min-height: 0;
+  margin: calc(-1 * var(--s-3)) calc(-1 * var(--shell-edge)) calc(-1 * var(--s-6));
+}
+.inspector-frame.is-split .inspector-page {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 40rem;
+  padding: var(--s-3) var(--shell-edge) var(--s-6);
+}
 
 .inspector {
   background: var(--raised);
@@ -16,11 +27,13 @@
   animation: inspector-in 150ms ease-out;
 }
 .inspector-split {
-  flex: 0 0 clamp(24rem, 28vw, 34rem);
+  /* The mockup's minmax(26rem, 36rem) on a 16px root, in px so the 14px root keeps 576 at 1440. */
+  flex: 0 0 clamp(416px, 40vw, 576px);
   position: sticky;
-  top: 0;
+  top: var(--bar-h);
   align-self: flex-start;
-  max-height: 100vh;
+  height: calc(100vh - var(--bar-h));
+  height: calc(100dvh - var(--bar-h));
   overflow: auto;
   box-shadow: none;
   border-width: 0 0 0 1px;
@@ -38,10 +51,12 @@
 }
 .inspector-scrim { position: fixed; inset: 0; z-index: 39; background: rgb(0 0 0 / 0.35); }
 
-.inspector-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-3) var(--s-4); border-bottom: 1px solid var(--rule); }
-.inspector-head h2 { margin: 0; font-size: var(--t-md); text-transform: capitalize; }
-.inspector-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
-.inspector-close { background: none; border: 0; font-size: var(--t-lg); cursor: pointer; color: var(--muted); }
+.inspector-head { display: flex; align-items: center; gap: var(--s-2); padding: 10px var(--s-4); border-bottom: 1px solid var(--rule); font-size: var(--t-xs); color: var(--faint); }
+.inspector-head h2 { margin: 0; font-size: inherit; font-weight: 600; color: var(--ink); text-transform: capitalize; }
+.inspector-head h2:focus { outline: none; } /* focus lands here on open for keyboards; the heading is not a control */
+.inspector-crumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-head-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
+.inspector-head-actions .ui-btn { font-size: inherit; text-decoration: none; }
 .inspector-body { padding: var(--s-4); margin: 0; }
 
 @keyframes inspector-in { from { transform: translateX(1rem); opacity: 0; } }
