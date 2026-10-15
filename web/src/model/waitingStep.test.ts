@@ -1,5 +1,5 @@
 import type { WaitingItem } from '../api/types'
-import { stepAnchor, stepIndex, waitingKey } from './waitingStep'
+import { openKey, openTarget, stepAnchor, stepIndex, waitingKey } from './waitingStep'
 
 const q = (id: number, turn = 2): WaitingItem => ({ kind: 'question', action: 'reply', question_id: id, turn, title: 'Ship it?' })
 
@@ -44,5 +44,21 @@ describe('stepAnchor', () => {
     expect(stepAnchor({ kind: 'mr', action: 'approve', lane_id: 2, mr: 3, title: 't' }, ctx)).toBe('f40')
     expect(stepAnchor({ kind: 'ship', action: 'ship', lane_id: 3, title: 't' }, ctx)).toBeNull()
     expect(stepAnchor({ kind: 'next', action: 'review', next_id: 1, title: 't' }, ctx)).toBeNull()
+  })
+})
+
+describe('openTarget and openKey', () => {
+  const dec: WaitingItem = { kind: 'decision', action: 'answer', decision_id: 5, title: 'd' }
+  const ques = q(2)
+  const mr: WaitingItem = { kind: 'mr', action: 'approve', lane_id: 1, mr: 9, title: 'm' }
+  it('maps decisions and questions, and nothing else', () => {
+    expect(openTarget(dec)).toEqual({ kind: 'decision', id: 5 })
+    expect(openTarget(ques)).toEqual({ kind: 'question', id: 2 })
+    expect(openTarget(mr)).toBeNull()
+  })
+  it('finds the key of the open item', () => {
+    expect(openKey([mr, dec, ques], { kind: 'question', id: 2 })).toBe(waitingKey(ques))
+    expect(openKey([mr, dec], { kind: 'decision', id: 6 })).toBeNull()
+    expect(openKey([dec], undefined)).toBeNull()
   })
 })

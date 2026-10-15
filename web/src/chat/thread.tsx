@@ -18,6 +18,7 @@ import { useNow } from '../hooks'
 import { useFollowBottom, Countdown, useThread, CONNECTION } from './md'
 import { Composer } from './composer'
 import { QuestionActions } from './questions'
+import { PendingStrip } from './strip'
 import { Markdown } from './md'
 import { clipHead } from './md'
 import { prefillDraft } from '../model/chatDraft'
@@ -448,6 +449,7 @@ function ChatThread({
           )}
         </div>
 
+        <PendingStrip />
         <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} topicId={topicId} onSend={follow.jump} />
         </div>
         </ErrorBoundary>
