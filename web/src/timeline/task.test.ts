@@ -18,6 +18,9 @@ describe('a run’s task', () => {
   it('uses the first marker, so a task that quotes one is whole', () => {
     expect(taskText('pre\nTask:\nfirst\nTask:\nsecond')).toBe('first\nTask:\nsecond')
   })
+  it('skips a "Task:" line in the standards before the daemon’s own marker', () => {
+    expect(taskLine('You are working for x.\nTask:\nnot this\n\nTask:\nthis one')).toBe('this one')
+  })
   it('shows nothing for a lone preamble line rather than the boilerplate', () => {
     expect(taskLine('You are working for uBixShepherd in lane x of repo y.')).toBe('')
   })
