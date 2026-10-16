@@ -425,7 +425,9 @@ function ChatThread({
     <div className="page chat">
       <header className="chat-head">
         <h1>Conversation</h1>
-        <TopicBar active={topicId} onFilter={filterTo} />
+        <ErrorBoundary region="The topics">
+          <TopicBar active={topicId} onFilter={filterTo} />
+        </ErrorBoundary>
         {children}
         <span className="chat-tools">
           <span className={`chat-conn ${conn.cls}`} role="status">

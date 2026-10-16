@@ -12,15 +12,15 @@
    The shell's page bar repeats the title, so it is hidden here unless it carries the menu button. */
 .shell:has(.page.chat) .page-bar:not(:has(.menu-button)) { display: none; }
 .shell:has(.page.chat) .page-bar-title { visibility: hidden; }
-.chat-head { flex: none; position: relative; display: flex; align-items: center; gap: 10px; box-sizing: border-box; height: 45px; padding: 0; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
+.chat-head { flex: none; position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; box-sizing: border-box; min-height: 45px; padding: 0; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .chat-head h1 { margin: 0 8px 0 0; font-size: 16px; font-weight: 700; flex: none; }
-.chat-head .topic-bar { flex: 1 1 auto; min-width: 0; }
+.chat-head .topic-bar { flex: 1 1 12rem; min-width: 0; }
 .chat-conn { margin: 0; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
 .chat-conn.is-up { color: var(--ok); }
 .chat-conn.is-down { color: var(--broken); }
 .chat-ws { display: flex; align-items: center; gap: 6px; font-size: var(--t-sm); }
 .chat-ws select { font: inherit; color: inherit; background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius); padding: 2px 6px; }
-.chat-tools { margin-left: auto; flex: none; display: flex; align-items: center; gap: 8px 12px; font-size: 12.5px; }
+.chat-tools { margin-left: auto; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12.5px; }
 .chat-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .chat-earlier { padding-left: var(--gutter); margin: 0 0 8px; }
 .chat-problem { margin: 0 0 8px; padding: 6px 10px; background: var(--broken-wash); border-radius: var(--radius); font-size: var(--t-sm); }
@@ -158,7 +158,7 @@
 
 /* The topic bar inside the conversation head: the mockup's chips (1px rule, 12px radius, the
    selected one ink and 600), one colour for all topics, so no hue dot or border. */
-.chat-head .topic-bar { flex: 1 1 auto; min-width: 0; margin: 0; padding: 0; background: none; border: 0; }
+.chat-head .topic-bar { flex: 1 1 12rem; min-width: 0; margin: 0; padding: 0; background: none; border: 0; }
 .chat-head .topic-bar-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .chat-head .topic-bar-strip { display: flex; flex: 0 1 auto; gap: 10px; overflow-x: auto; scrollbar-width: none; padding: 1px; min-width: 0; }
 .chat-head .topic-chip {
