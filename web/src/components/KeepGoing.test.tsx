@@ -26,6 +26,41 @@ describe('KeepGoing', () => {
     expect(screen.getByText('$1.20 of $5.00, 2 of 3 runs')).toBeInTheDocument()
   })
 
+  it('shows a progress bar when on with a cap', async () => {
+    render(<KeepGoing load={() => Promise.resolve(st({ on: true, spent_usd: 1.5, runs_now: 1 }))} set={vi.fn()} />)
+    const bar = await screen.findByRole('progressbar', { name: 'Keep going spend' })
+    expect(bar).toHaveAttribute('aria-valuemin', '0')
+    expect(bar).toHaveAttribute('aria-valuemax', '5')
+    expect(bar).toHaveAttribute('aria-valuenow', '1.5')
+    expect(bar).toHaveAttribute('aria-valuetext', '$1.50 of $5.00, 1 of 3 runs')
+    expect(bar).toHaveAttribute('style', '--kg-fill-pct: 30%;')
+  })
+
+  it('hides the progress bar when off', async () => {
+    render(<KeepGoing load={() => Promise.resolve(st({ cap_usd: 5 }))} set={vi.fn()} />)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('hides the progress bar when no cap', async () => {
+    render(<KeepGoing load={() => Promise.resolve(st({ on: true, cap_usd: 0, spent_usd: 1.5, max_runs: 0 }))} set={vi.fn()} />)
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('clamps bar and aria when spend exceeds cap', async () => {
+    render(<KeepGoing load={() => Promise.resolve(st({ on: true, spent_usd: 7, runs_now: 3 }))} set={vi.fn()} />)
+    const bar = await screen.findByRole('progressbar', { name: 'Keep going spend' })
+    expect(bar).toHaveAttribute('aria-valuenow', '5')
+    expect(bar).toHaveAttribute('style', '--kg-fill-pct: 100%;')
+    expect(bar).toHaveClass('tone-warn')
+  })
+
+  it('applies warn tone when at 80% of cap', async () => {
+    render(<KeepGoing load={() => Promise.resolve(st({ on: true, spent_usd: 4, runs_now: 2 }))} set={vi.fn()} />)
+    const bar = await screen.findByRole('progressbar', { name: 'Keep going spend' })
+    expect(bar).toHaveClass('tone-warn')
+    expect(screen.getByText('$4.00 of $5.00, 2 of 3 runs')).toHaveClass('tone-warn')
+  })
+
   it('turns off by a click', async () => {
     const user = userEvent.setup()
     const set = vi.fn((on: boolean) => Promise.resolve(st({ on })))
