@@ -162,7 +162,7 @@ describe('the Timeline page', () => {
     await waitFor(() => expect(container.querySelectorAll('.tl-row')).toHaveLength(24))
     await user.click(screen.getByRole('button', { name: 'Show idle lanes (1)' }))
     expect(container.querySelectorAll('.tl-row')).toHaveLength(25)
-    expect(screen.getByRole('button', { name: 'Hide idle lanes (1)' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Hide idle lanes (1)' })).not.toHaveAttribute('aria-pressed')
   })
 
   it('holds every run in a table, sortable, so nothing is reachable only by hovering', async () => {

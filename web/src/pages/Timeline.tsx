@@ -59,7 +59,7 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
         </p>
         <div className="page-actions">
           {summary.idle > 0 && (
-            <Button variant="ghost" size="small" aria-pressed={showIdle} onClick={() => setShowIdle((v) => !v)}>
+            <Button variant="ghost" size="small" onClick={() => setShowIdle((v) => !v)}>
               {showIdle ? 'Hide' : 'Show'} idle lanes ({summary.idle})
             </Button>
           )}
