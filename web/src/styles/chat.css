@@ -1,7 +1,7 @@
 /* The chat page: the front desk's thread on the same glyph rail as the board, a composer
    pinned under it. Styles come from this file only (the daemon's CSP allows no inline). */
 
-.page.chat { max-width: var(--measure-chat); }
+.page.chat { max-width: none; }  /* the thread uses the width there is; bubbles cap themselves at 78% */
 /* Messages fill the thread column here; conversation.css keeps its readable cap on the lane and run pages. */
 .page.chat .cv-msg, .page.chat .cv-tool { max-width: none; }
 /* The page does not scroll the window: the head and composer are fixed and the thread is the
@@ -28,9 +28,9 @@
 
 .thread { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 16px; }
 .thread:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-/* Prose keeps a readable measure; code and tables may use the full width. */
-.thread .md p, .thread .md li, .thread .msg-text { max-width: 72ch; }
-.thread .md pre, .thread .md table { max-width: 100%; }
+/* Bubbles size the text (78% of the thread); a wide table scrolls inside its bubble instead of widening it. */
+.thread .md pre { max-width: 100%; }
+.thread .md table, .thread .md-table { display: block; max-width: 100%; overflow-x: auto; }
 
 /* Folded rows: a run of events as "N updates", and a turn's work under its reply. */
 .updates-fold { margin: 2px 0; font-size: var(--t-sm); color: var(--muted); }
