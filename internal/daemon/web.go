@@ -65,6 +65,8 @@ const (
 	// webSessionTTL is how long a browser session lasts; signing in again starts a new
 	// one.
 	webSessionTTL = 12 * time.Hour
+	// webSessionMaxAge caps a session from its creation, however active it is.
+	webSessionMaxAge = 7 * 24 * time.Hour
 	// At most this many links wait to be used, and this many sessions are live; past
 	// that the oldest goes.
 	maxSigninCodes = 16
@@ -104,7 +106,9 @@ type webSession struct {
 	created  time.Time
 	lastSeen time.Time
 	// saved is when lastSeen was last written to the store.
-	saved   time.Time
+	saved time.Time
+	// slid is when expires was last pushed forward by activity or an extend.
+	slid    time.Time
 	expires time.Time
 	// allowSettings says this session may save config changes. It is memory only: a
 	// session loaded from the store after a restart reads settings but cannot write.
@@ -139,7 +143,7 @@ func (a *webAuth) load() {
 		if err != nil || len(raw) != 32 {
 			continue
 		}
-		ws := &webSession{csrf: r.CSRF, port: r.Port, created: r.Created, lastSeen: r.LastSeen, saved: r.LastSeen, expires: r.Expires}
+		ws := &webSession{csrf: r.CSRF, port: r.Port, created: r.Created, lastSeen: r.LastSeen, saved: r.LastSeen, slid: r.LastSeen, expires: r.Expires}
 		copy(ws.hash[:], raw)
 		a.sessions[ws.hash] = ws
 	}
@@ -255,7 +259,7 @@ func (a *webAuth) start(port string, allowSettings bool) (string, *webSession, e
 		a.forget(oldest)
 	}
 	ws := &webSession{hash: sha256.Sum256([]byte(val)), csrf: csrf, port: port,
-		created: now, lastSeen: now, saved: now, expires: now.Add(webSessionTTL), allowSettings: allowSettings}
+		created: now, lastSeen: now, saved: now, slid: now, expires: now.Add(webSessionTTL), allowSettings: allowSettings}
 	if a.st != nil {
 		err := a.st.SaveWebSession(context.Background(), store.WebSession{
 			Hash: ws.key(), CSRF: csrf, Port: port, Created: now, LastSeen: now, Expires: ws.expires})
@@ -295,6 +299,53 @@ func (a *webAuth) session(val string) (*webSession, bool) {
 		}
 	}
 	return ws, true
+}
+
+// push moves a live session's expiry to now+webSessionTTL, never past its absolute cap,
+// and persists it. It says whether expires moved. The caller holds a.mu.
+func (a *webAuth) push(ws *webSession, now time.Time) bool {
+	next := now.Add(webSessionTTL)
+	if limit := ws.created.Add(webSessionMaxAge); next.After(limit) {
+		next = limit
+	}
+	if !next.After(ws.expires) {
+		return false
+	}
+	ws.expires, ws.slid, ws.lastSeen = next, now, now
+	if a.st != nil {
+		err := a.st.SaveWebSession(context.Background(), store.WebSession{
+			Hash: ws.key(), CSRF: ws.csrf, Port: ws.port, Created: ws.created, LastSeen: now, Expires: next})
+		if err != nil {
+			a.warnf("web session's expiry not saved", err)
+		} else {
+			ws.saved = now
+		}
+	}
+	return true
+}
+
+// slide pushes a session's expiry forward for person activity, at most once per
+// webSeenEvery. It never revives an expired session.
+func (a *webAuth) slide(ws *webSession) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.clock()
+	if !now.Before(ws.expires) || now.Sub(ws.slid) < webSeenEvery {
+		return false
+	}
+	return a.push(ws, now)
+}
+
+// extend is the person asking for more time: like slide, without the throttle. It
+// refuses an expired session, and says whether the expiry moved (false at the cap).
+func (a *webAuth) extend(ws *webSession) (live, moved bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.clock()
+	if !now.Before(ws.expires) {
+		return false, false
+	}
+	return true, a.push(ws, now)
 }
 
 // end ends one session, or every one when ws is nil, and says how many ended.
@@ -424,6 +475,76 @@ func (s *Server) webPrincipal(r *http.Request) (principal, error) {
 	return principal{Role: RoleWeb, Human: true, web: ws}, nil
 }
 
+// backgroundPath is a request a page makes by itself, polling or a held stream: it is
+// not the person acting, so it does not keep a session alive.
+func backgroundPath(path string) bool {
+	switch path {
+	case api.PathFeedStream, api.PathStatus, api.PathDeskStatus, api.PathDeskStream,
+		api.PathWebSession, api.PathWebSessionExtend:
+		return true
+	}
+	return false
+}
+
+// slideWebSession keeps a session alive for person activity: a request that passes the
+// browser checks and is not background polling pushes the expiry out, and the cookie's
+// lifetime with it (a session's value never changes).
+func (s *Server) slideWebSession(w http.ResponseWriter, r *http.Request) {
+	if backgroundPath(r.URL.Path) {
+		return
+	}
+	c, err := r.Cookie(s.cookieName())
+	if err != nil {
+		return
+	}
+	ws, ok := s.web.session(c.Value)
+	if !ok || browserCheck(r, ws) != nil {
+		return
+	}
+	if s.web.slide(ws) {
+		s.setSessionCookie(w, c.Value, ws)
+	}
+}
+
+// setSessionCookie sets the session cookie to last as long as the session does.
+func (s *Server) setSessionCookie(w http.ResponseWriter, val string, ws *webSession) {
+	s.web.mu.Lock()
+	left := ws.expires.Sub(s.web.clock())
+	s.web.mu.Unlock()
+	http.SetCookie(w, &http.Cookie{
+		Name: s.cookieName(), Value: val, Path: "/v1", MaxAge: max(int(left/time.Second), 1),
+		HttpOnly: true, SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// webExtend answers POST /v1/web/session/extend: the person asks for more time. The
+// browser checks (origin, CSRF) have passed; an expired session never gets here.
+func (s *Server) webExtend(w http.ResponseWriter, r *http.Request) {
+	// Routed from browserGate, so it resolves the principal itself, with the same
+	// browser checks (origin and CSRF token) every browser write passes.
+	p, err := s.webPrincipal(r)
+	if err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if p.web == nil {
+		writeError(w, http.StatusUnauthorized, errors.New("not signed in: run shepherd web for a sign-in link"))
+		return
+	}
+	live, moved := s.web.extend(p.web)
+	if !live {
+		writeError(w, http.StatusUnauthorized, errors.New("this session has ended: run shepherd web for a new sign-in link"))
+		return
+	}
+	if moved {
+		if c, err := r.Cookie(s.cookieName()); err == nil {
+			s.setSessionCookie(w, c.Value, p.web)
+		}
+	}
+	s.Log.Info("web session extended", "expires", p.web.expires.UTC().Format(time.RFC3339), "moved", moved)
+	s.webSessionInfo(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+}
+
 // browserGate checks every request's Host, sets the headers every response carries, and
 // sends a request to the sign-in exchange, the API (behind auth) or the web UI.
 func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
@@ -437,9 +558,15 @@ func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
 			writeError(w, http.StatusMisdirectedRequest, fmt.Errorf("host %q is not this daemon's; reach it at 127.0.0.1 or localhost", r.Host))
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/v1/") && r.Header.Get("Authorization") == "" {
+			s.slideWebSession(w, r)
+		}
 		switch {
 		case r.URL.Path == api.PathWebSignin && r.Method == http.MethodGet:
 			s.webExchange(w, r)
+		case r.URL.Path == api.PathWebSessionExtend && r.Method == http.MethodPost:
+			h.Set("Cache-Control", "no-store")
+			s.webExtend(w, r)
 		case r.URL.Path == "/v1" || strings.HasPrefix(r.URL.Path, "/v1/"):
 			h.Set("Cache-Control", "no-store")
 			apiHandler.ServeHTTP(w, r)
@@ -515,7 +642,10 @@ func (s *Server) webSessionInfo(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r.Context())
 	out := api.WebSession{Role: p.Role}
 	if p.web != nil {
+		s.web.mu.Lock()
 		out.CSRF, out.Expires, out.AllowSettings = p.web.csrf, p.web.expires.UTC(), p.web.allowSettings
+		out.MaxExpires = p.web.created.Add(webSessionMaxAge).UTC()
+		s.web.mu.Unlock()
 	}
 	writeJSON(w, http.StatusOK, out)
 }

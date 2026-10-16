@@ -99,6 +99,18 @@ export function asList<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : []
 }
 
+/** GET /v1/web/session and its extend: the browser session's expiry and its absolute cap. */
+export interface SessionClock {
+  expires?: string
+  max_expires?: string
+}
+
+export const webSession = {
+  read: () => get<SessionClock>('/v1/web/session'),
+  /** Pushes the expiry out, up to the cap; an ended session is refused with a 401. */
+  extend: () => post<SessionClock>('/v1/web/session/extend', {}),
+}
+
 /** A read of a bare JSON array, tolerant of a missing or null body. */
 const getList = <T>(path: string) => get<unknown>(path).then((v) => asList<T>(v))
 

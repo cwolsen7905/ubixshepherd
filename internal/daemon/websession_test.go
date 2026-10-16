@@ -146,3 +146,78 @@ func TestWebServerSessionsPersist(t *testing.T) {
 		t.Error("the new server does not know the session")
 	}
 }
+
+func TestWebSessionSlidesAndPersists(t *testing.T) {
+	st := sessionStore(t)
+	now := time.Now().UTC()
+	cur := now
+	a := &webAuth{st: st, now: func() time.Time { return cur }}
+	val, ws, _ := a.start("1", false)
+	stored := func() time.Time {
+		rows, _ := st.LiveWebSessions(context.Background(), cur)
+		return rows[0].Expires
+	}
+
+	// Within the throttle nothing moves.
+	cur = now.Add(10 * time.Second)
+	if a.slide(ws) {
+		t.Error("slid inside the throttle")
+	}
+	// Past it, activity pushes expiry to now+TTL, in memory and in the store.
+	cur = now.Add(time.Hour)
+	if !a.slide(ws) {
+		t.Fatal("did not slide")
+	}
+	if want := cur.Add(webSessionTTL); !ws.expires.Equal(want) || !stored().Equal(want) {
+		t.Errorf("expires = %v, stored %v, want %v", ws.expires, stored(), want)
+	}
+	// A restarted instance sees it.
+	b := &webAuth{st: st, now: func() time.Time { return cur }}
+	got, ok := b.session(val)
+	if !ok || !got.expires.Equal(ws.expires) {
+		t.Errorf("after restart: %v, %v", got, ok)
+	}
+}
+
+func TestWebSessionSlideStopsAtTheCap(t *testing.T) {
+	now := time.Now().UTC()
+	cur := now
+	a := &webAuth{now: func() time.Time { return cur }}
+	val, ws, _ := a.start("1", false)
+	// Stay active every hour for the whole cap and a bit more.
+	for cur = now; cur.Before(now.Add(webSessionMaxAge - time.Hour)); cur = cur.Add(time.Hour) {
+		a.slide(ws)
+	}
+	cur = now.Add(webSessionMaxAge - time.Minute)
+	a.slide(ws)
+	if want := now.Add(webSessionMaxAge); !ws.expires.Equal(want) {
+		t.Fatalf("expires = %v, want the cap %v", ws.expires, want)
+	}
+	if live, moved := a.extend(ws); !live || moved {
+		t.Errorf("extend at the cap: live=%v moved=%v", live, moved)
+	}
+	cur = now.Add(webSessionMaxAge)
+	if _, ok := a.session(val); ok {
+		t.Error("session lived past its cap")
+	}
+}
+
+func TestWebSessionExtendRefusesExpired(t *testing.T) {
+	now := time.Now().UTC()
+	cur := now
+	a := &webAuth{now: func() time.Time { return cur }}
+	_, ws, _ := a.start("1", false)
+	cur = now.Add(11 * time.Hour)
+	live, moved := a.extend(ws)
+	if !live || !moved || !ws.expires.Equal(cur.Add(webSessionTTL)) {
+		t.Fatalf("extend: live=%v moved=%v expires=%v", live, moved, ws.expires)
+	}
+	cur = ws.expires
+	exp := ws.expires
+	if live, _ := a.extend(ws); live {
+		t.Error("an expired session was extended")
+	}
+	if a.slide(ws) || !ws.expires.Equal(exp) {
+		t.Error("an expired session slid")
+	}
+}
