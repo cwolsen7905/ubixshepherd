@@ -53,6 +53,14 @@ describe('InspectorFrame', () => {
     expect(screen.getByRole('button', { name: 'Close inspector' })).toHaveTextContent('Close Esc')
   })
 
+  it('links a run to its log and gives a decision no page link', () => {
+    const { unmount } = render(<InspectorFrame open={{ kind: 'run', id: 5 }} mode="split">page</InspectorFrame>)
+    expect(screen.getAllByRole('link', { name: 'Open as page' })[0]).toHaveAttribute('href', '#/runs/5/log')
+    unmount()
+    render(<InspectorFrame open={{ kind: 'decision', id: 5 }} mode="split">page</InspectorFrame>)
+    expect(screen.queryByRole('link', { name: 'Open as page' })).toBeNull()
+  })
+
   it('returns focus on close and closes on Esc', async () => {
     const user = userEvent.setup()
     const { rerender } = render(

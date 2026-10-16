@@ -56,7 +56,7 @@
    browser says it should show (not after a mouse open). */
 .inspector-head h2:focus { outline: none; }
 .inspector-head h2:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; border-radius: var(--radius); }
-.inspector-crumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspector-crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-head-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
 .inspector-head-actions .ui-btn { font-size: inherit; text-decoration: none; }
 .inspector-body { padding: var(--s-4); margin: 0; }
