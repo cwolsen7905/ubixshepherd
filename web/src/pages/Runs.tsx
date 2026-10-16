@@ -40,7 +40,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
 
   return (
     <div className="page page-wide runs-page">
-      <header className="page-head">
+      <header className="page-head runs-head">
         <h1>Runs</h1>
         <p className="page-sub runs-total" aria-live="polite">
           {data ? (
@@ -56,9 +56,16 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
             <span className="faint">{error ? 'Could not load runs.' : 'Loading…'}</span>
           )}
         </p>
+        <div className="page-actions">
+          {(agent || lane > 0) && (
+            <Button variant="ghost" size="small" onClick={() => go(href.runs({ range }))}>
+              Clear filters
+            </Button>
+          )}
+        </div>
       </header>
 
-      <div className="filters">
+      <div className="filters runs-filters">
         <RangeFilter range={range} href={(r) => nav({ range: r })} />
         <label>
           <span className="faint">Agent</span>
@@ -83,11 +90,6 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
             ))}
           </select>
         </label>
-        {(agent || lane > 0) && (
-          <Button variant="ghost" size="small" onClick={() => go(href.runs({ range }))}>
-            Clear filters
-          </Button>
-        )}
       </div>
 
       {error && <p className="tone-bad">Could not load runs: {error}</p>}
