@@ -2,13 +2,13 @@
 .board { display: flex; flex-direction: column; gap: var(--s-5); max-width: var(--page-max); }
 /* Group heads use the shared .section-h; the count and action sit beside the name. */
 .group-head { padding-right: var(--pad); }
-.group-name { color: var(--ink); }
-.group-count { color: var(--faint); font-weight: 500; font-size: var(--t-sm); }
+.group-name { color: var(--muted); font-weight: 600; font-size: var(--t-sm); }
+.group-count { color: var(--faint); font-weight: 600; font-size: var(--t-sm); }
 .group-head .ui-btn { margin-left: auto; }
 
-/* The one loud thing: what waits on the person sits on a lantern band. */
-.group-needs { border-radius: var(--radius); background: var(--lantern-wash); border-block: 1px solid color-mix(in srgb, var(--lantern) 35%, transparent); padding-top: var(--s-2); }
-.group-needs .group-name { color: var(--lantern-ink); }
+/* The one loud thing: what waits on the person sits on a lantern band, inset to the page
+   gutter so it lines up with the head instead of running to the shell's edge. */
+.group-needs { margin-inline: var(--pad); border-radius: var(--radius); background: var(--lantern-wash); border: 1px solid color-mix(in srgb, var(--lantern) 35%, transparent); padding-top: var(--s-2); }
 
 .rows { list-style: none; margin: 0; padding: 0; }
 .row {
@@ -17,7 +17,8 @@
   --cols: var(--gutter) minmax(9rem, 1.3fr) 5rem minmax(6rem, 0.8fr) 6rem minmax(0, 3fr) 3rem;
   grid-template-columns: var(--cols);
   align-items: center; column-gap: var(--s-3);
-  min-height: var(--row); padding: 0 var(--pad);
+  /* 35px: 7px above and below a 21px line, 10px beside it, at 1440. */
+  min-height: 2.5rem; padding: 0.5rem 0.7143rem; border-radius: var(--radius);
   color: inherit; text-decoration: none;
   border-top: 1px solid var(--rule);
 }
@@ -26,7 +27,7 @@
 .group-needs .rows li:last-child .row { border-bottom: 0; }
 .row:hover { background: var(--hover); }
 .group-needs .row:hover { background: color-mix(in srgb, var(--lantern) 12%, var(--lantern-wash)); }
-.row:focus-visible { outline-offset: -2px; border-radius: 0; }
+.row:focus-visible { outline-offset: -2px; }
 .row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--lichen); }
 .row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-lane { font-weight: 600; }

@@ -5,3 +5,17 @@
 .quiet-list { list-style: none; margin: var(--s-1) 0 0; padding: 0 var(--pad) 0 var(--gutter); }
 .quiet-list li { display: flex; gap: var(--s-3); align-items: baseline; padding: var(--s-1) 0; font-size: var(--t-sm); }
 .quiet-list a { font-weight: 600; }
+
+/* The head is one row: title, the count line beside it, the view switch at the right. */
+.board > .page-head {
+  display: flex; align-items: center; gap: var(--s-3);
+  min-height: 3.2143rem; margin: 0;
+}
+.board > .page-head h1 { font-weight: 700; }
+.board > .page-head .page-sub { margin: 0; font-size: var(--t-sm); }
+.board > .page-head > .page-actions { margin: 0 var(--pad) 0 auto; }
+
+/* One primary per view: a lane's close button is a plain button here, and what waits on
+   the person is carried by the lantern band. */
+.board .lane-close-row .ui-btn-primary { background: var(--raised); border-color: var(--control); color: var(--ink); }
+.board .lane-close-row .ui-btn-primary:hover:not(:disabled) { background: var(--hover); border-color: var(--muted); filter: none; }
