@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { artifactContentPath, artifactText, type ArtifactInfo, type ArtifactText } from '../api/artifacts'
-import { Markdown } from '../conversation/Markdown'
+import { ArtifactMarkdown } from './ArtifactMarkdown'
 import { EmptyState, Skeleton } from '../ui'
 
 /** The human size of a file. */
@@ -74,7 +74,7 @@ export function ArtifactViewer({ laneId, artifact, refreshKey }: { laneId: numbe
           {mine.value.redacted > 0 && (
             <p className="faint">{mine.value.redacted} secret-like {mine.value.redacted === 1 ? 'span was' : 'spans were'} masked.</p>
           )}
-          {kind === 'markdown' ? <Markdown text={mine.value.text} /> : <pre className="artifact-text">{mine.value.text}</pre>}
+          {kind === 'markdown' ? <ArtifactMarkdown text={mine.value.text} laneId={laneId} path={path} /> : <pre className="artifact-text">{mine.value.text}</pre>}
         </>
       )}
     </div>

@@ -15,6 +15,8 @@ const art = (o: object) => ({
 async function show(props: Parameters<typeof ArtifactsPage>[0], calls: string[]) {
   vi.stubGlobal('fetch', async (path: string) => {
     calls.push(path)
+    if (/^\/v1\/artifacts\/\d+\/content/.test(path)) return new Response('# The body\n\n![shot](img/a.png)\n')
+    if (/^\/v1\/artifacts\/\d+$/.test(path)) return new Response(JSON.stringify(art({ id: 1, path: 'docs/a.md', versions: [] })))
     if (path.startsWith('/v1/artifacts'))
       return new Response(JSON.stringify([art({ id: 1, path: 'docs/a.md' }), art({ id: 2, path: 'docs/b.md', repo_id: 2, lane_id: 2, intent: 'undecided' })]))
     if (path.startsWith('/v1/topics')) return new Response(JSON.stringify({ topics: [{ id: 3, title: 'CSV export' }] }))
@@ -43,14 +45,15 @@ async function show(props: Parameters<typeof ArtifactsPage>[0], calls: string[])
 afterEach(() => vi.unstubAllGlobals())
 
 describe('ArtifactsPage', () => {
-  it('lists every artifact with its lane and intent and opens one in the inspector', async () => {
+  it('lists every artifact with its lane and intent and opens one full width', async () => {
     window.location.hash = '#/artifacts'
     await show({}, [])
     expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
     expect(screen.getByText('docs/b.md')).toBeInTheDocument()
     expect(screen.getByText('undecided')).toBeInTheDocument()
     await userEvent.click(screen.getByText('docs/a.md'))
-    expect(decodeURIComponent(window.location.hash)).toContain('open=artifact:1')
+    expect(window.location.hash).toBe('#/artifacts?view=1')
+    expect(screen.getByRole('link', { name: /Back to the artifact list/ })).toBeInTheDocument()
   })
 
   it('asks the daemon for a lane, run and topic, and filters a repo itself', async () => {
@@ -63,5 +66,30 @@ describe('ArtifactsPage', () => {
     expect(q).toContain('lane_id=2')
     expect(q).toContain('run_id=5')
     expect(q).toContain('topic_id=3')
+  })
+
+  it('opens a deep link to a file full width, in place of the list, with its image from the lane', async () => {
+    window.location.hash = '#/artifacts?view=1&lane=1'
+    await show({ lane: 1 }, [])
+    expect(await screen.findByText('The body')).toBeInTheDocument()
+    const img = await screen.findByRole('img', { name: 'shot' })
+    expect(img.getAttribute('src')).toBe('/v1/lanes/1/artifacts/content?path=docs%2Fimg%2Fa.png')
+    expect(screen.getByRole('table', { hidden: true }).closest('[hidden]')).not.toBeNull()
+  })
+
+  it('returns to the list with its filters on the back arrow and on Escape', async () => {
+    window.location.hash = '#/artifacts?lane=1&view=1'
+    await show({ lane: 1 }, [])
+    await screen.findByText('The body')
+    await userEvent.click(screen.getByRole('link', { name: /Back to the artifact list/ }))
+    expect(window.location.hash).toBe('#/artifacts?lane=1')
+    expect(screen.queryByText('The body')).toBeNull()
+    expect(await screen.findByText('docs/a.md')).toBeVisible()
+
+    window.location.hash = '#/artifacts?lane=1&view=1'
+    await screen.findByText('The body')
+    await userEvent.keyboard('{Escape}')
+    await act(async () => {})
+    expect(window.location.hash).toBe('#/artifacts?lane=1')
   })
 })
