@@ -821,8 +821,16 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	ws, _ := s.workspaceOfLane(r.Context(), req.LaneID)
-	if !s.gate(w, r, ws, KeepContinue, req.LaneID) {
+	// A continue names the run, not the lane (shepherd run continue sends no lane_id):
+	// the gate needs the run's lane, or it reads workspace 0's empty keep-going row.
+	laneID := req.LaneID
+	if laneID == 0 && req.Continue != 0 {
+		if prev, err := s.Store.Run(r.Context(), req.Continue); err == nil {
+			laneID = prev.LaneID
+		}
+	}
+	ws, _ := s.workspaceOfLane(r.Context(), laneID)
+	if !s.gate(w, r, ws, KeepContinue, laneID) {
 		return
 	}
 	run, err := s.Runner.Start(r.Context(), req)

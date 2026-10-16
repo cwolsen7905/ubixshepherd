@@ -332,6 +332,9 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	refuse := func(format string, a ...any) Decision { return Decision{Reason: fmt.Sprintf(format, a...)} }
+	if ws == 0 {
+		return refuse("keep-going cannot tell which workspace this %s belongs to (its lane or repo is unknown), so it starts nothing", action)
+	}
 	row, err := k.s.Store.KeepGoing(ctx, ws)
 	if err != nil {
 		return refuse("keep-going state unreadable: %v", err)
@@ -343,7 +346,7 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 		if row.ReasonOff != "" {
 			return refuse("keep-going is off: %s", offText(row.ReasonOff))
 		}
-		return refuse("keep-going is off")
+		return refuse("keep-going is off: it has not been turned on in workspace %d", ws)
 	}
 	cfg := k.s.LiveConfig()
 	lim := limitsOf(cfg.KeepGoing, row)
