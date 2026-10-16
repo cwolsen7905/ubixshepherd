@@ -28,6 +28,7 @@ type Page =
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
   | { page: 'chat' }
+  | { page: 'status' }
   | { page: 'settings'; scope?: string }
   | { page: 'lane'; id: number }
   | { page: 'log'; run: number }
@@ -147,6 +148,7 @@ function parsePage(hash: string): Page {
     }
   }
   if (path === '/chat') return { page: 'chat' }
+  if (path === '/status') return { page: 'status' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
   m = /^\/lanes\/(\d+)$/.exec(path)
   if (m) return { page: 'lane', id: Number(m[1]) }
@@ -193,6 +195,7 @@ export const href = {
   unassigned: () => '#/unassigned',
   next: (item?: number) => (item ? `#/next?item=${item}` : '#/next'),
   chat: () => '#/',
+  status: () => '#/status',
   settings: (scope?: string) => (scope ? `#/settings?scope=${encodeURIComponent(scope)}` : '#/settings'),
   lane: (id: number) => `#/lanes/${id}`,
   log: (run: number) => `#/runs/${run}/log`,

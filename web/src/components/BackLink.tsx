@@ -15,6 +15,7 @@ export function routeName(r: Route): string {
     case 'unassigned': return 'Unassigned'
     case 'chat': return 'Chat'
     case 'settings': return 'Settings'
+    case 'status': return 'Status'
     case 'lane': return `Lane ${r.id}`
     case 'log': return `Run ${r.run}`
     case 'missing': return 'Board'

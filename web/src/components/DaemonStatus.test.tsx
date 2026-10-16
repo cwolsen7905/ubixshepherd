@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { StatusDetail } from '../api/types'
-import { DaemonStatus, type Loaded } from './DaemonStatus'
+import { DaemonDetail, DaemonStatus, type Loaded } from './DaemonStatus'
 
 const NOW = Date.parse('2026-10-10T12:00:00Z')
 
@@ -20,14 +20,14 @@ const loaded = (d: StatusDetail = detail(), session: Loaded['session'] = { role:
 
 function setup(props: Partial<React.ComponentProps<typeof DaemonStatus>> = {}) {
   const load = vi.fn(() => Promise.resolve(loaded()))
-  render(<DaemonStatus error={null} downSince={null} ready lastEvent="2026-10-10T11:58:30Z" load={load} now={NOW} {...props} />)
+  render(<DaemonStatus error={null} downSince={null} ready load={load} now={NOW} {...props} />)
   return { load, dot: screen.getByRole('button', { name: /daemon/i }), pop: () => screen.getByRole('tooltip', { hidden: true }) }
 }
 
 describe('DaemonStatus', () => {
-  it('shows the daemon, config, activity, spend, watcher and session when focused', async () => {
+  it('shows four short lines and a link to the Status page when focused', async () => {
     const user = userEvent.setup()
-    const { load, dot, pop } = setup()
+    const { load, dot, pop } = setup({ chat: { connection: 'live', retryAt: null } })
     expect(pop()).not.toBeVisible()
     expect(load).not.toHaveBeenCalled()
 
@@ -37,13 +37,34 @@ describe('DaemonStatus', () => {
     expect(dot).toHaveAttribute('aria-describedby', pop().id)
     expect(await screen.findByText('v0.9.0')).toBeInTheDocument()
     const text = pop().textContent ?? ''
-    for (const want of [
-      'abcdef01', 'linux/amd64', 'build-box', '3h', '/home/me/.shepherd/config.yaml', '30m ago',
-      '2 running', '5 open', '1 waiting', 'claude until', '$3.50', 'of $20.00', '1m ago',
-      'connected', '1m ago', 'may save',
-    ]) {
-      expect(text).toContain(want)
-    }
+    for (const want of ['Daemon', 'up', '3h', 'Chat', 'live', 'polled 1m ago', 'v0.9.0']) expect(text).toContain(want)
+    expect(pop().querySelectorAll('dl > div')).toHaveLength(4)
+    // the detail lives on the Status page now
+    for (const gone of ['linux/amd64', '/home/me/.shepherd/config.yaml', '$3.50', 'may save']) expect(text).not.toContain(gone)
+    expect(screen.getByRole('link', { name: 'Details →' })).toHaveAttribute('href', '#/status')
+  })
+
+  it('is green only when both links are up, amber while chat catches up, red when signed out or down', () => {
+    const { rerender } = render(<DaemonStatus error={null} downSince={null} ready chat={{ connection: 'live', retryAt: null }} load={vi.fn(() => Promise.resolve(loaded()))} now={NOW} />)
+    const dot = () => screen.getByRole('button')
+    expect(dot()).toHaveClass('is-up')
+    const again = (p: Partial<React.ComponentProps<typeof DaemonStatus>>) =>
+      rerender(<DaemonStatus error={null} downSince={null} ready load={vi.fn(() => Promise.resolve(loaded()))} now={NOW} {...p} />)
+    again({ chat: null })
+    expect(dot()).toHaveClass('is-up')
+    again({ chat: { connection: 'reconnecting', retryAt: null } })
+    expect(dot()).toHaveClass('is-warn')
+    expect(dot()).toHaveAccessibleName('Chat stream reconnecting')
+    again({ chat: { connection: 'connecting', retryAt: null } })
+    expect(dot()).toHaveClass('is-warn')
+    again({ chat: { connection: 'signed-out', retryAt: null } })
+    expect(dot()).toHaveClass('is-down')
+    again({ chat: { connection: 'refused', retryAt: null } })
+    expect(dot()).toHaveClass('is-down')
+    again({ error: 'unreachable', downSince: NOW, chat: { connection: 'live', retryAt: null } })
+    expect(dot()).toHaveClass('is-down')
+    again({ ready: false, chat: null })
+    expect(dot()).not.toHaveClass('is-up')
   })
 
   it('opens on hover and closes on leave, and on Escape', async () => {
@@ -70,28 +91,45 @@ describe('DaemonStatus', () => {
     expect(pop()).not.toBeVisible()
   })
 
-  it('says a failed reload and unreported fields plainly', async () => {
+  it('says the daemon is down and for how long', async () => {
     const user = userEvent.setup()
-    const d = detail({ reload_error: 'config.yaml: line 3: bad', reload_failed_at: '2026-10-10T11:45:00Z', quota_holds: undefined, forge: undefined })
-    const { pop } = setup({ load: () => Promise.resolve(loaded(d, null)) })
-    await user.tab()
-    expect(await screen.findByText(/failed.*line 3: bad/)).toBeInTheDocument()
-    expect(pop().textContent).toContain('not reported')
-    expect(pop().textContent).not.toContain('may save')
-  })
-
-  it('says since when it is offline, and that it is retrying', async () => {
-    const user = userEvent.setup()
-    const down = NOW - 3 * 60_000
-    const { load, pop } = setup({ error: 'the daemon could not be reached', downSince: down })
-    expect(screen.getByRole('button', { name: /unreachable/i })).toBeInTheDocument()
+    const { load, pop } = setup({ error: 'the daemon could not be reached', downSince: NOW - 3 * 60_000 })
     await user.tab()
     expect(pop()).toBeVisible()
-    expect(pop().textContent).toMatch(/Offline since .*\(3m ago\)\. Retrying\./)
-    expect(pop().textContent).toContain('not connected')
-    // the daemon's detail comes from the daemon, which is not answering
-    expect(pop().textContent).not.toContain('v0.9.0')
+    expect(pop().textContent).toMatch(/down for 3m/)
     await act(async () => {})
     expect(load).toHaveBeenCalled()
+  })
+})
+
+describe('DaemonDetail', () => {
+  const show = (o: Partial<React.ComponentProps<typeof DaemonDetail>> = {}) =>
+    render(<DaemonDetail down={false} error={null} downSince={null} lastEvent="2026-10-10T11:58:30Z" chat={{ connection: 'live', retryAt: null }} data={loaded()} failed={null} now={NOW} {...o} />)
+
+  it('holds everything the popover used to, and the chat stream', () => {
+    const { container } = show()
+    const text = container.textContent ?? ''
+    for (const want of [
+      'abcdef01', 'linux/amd64', 'build-box', '3h', '/home/me/.shepherd/config.yaml', '30m ago',
+      '2 running', '5 open', '1 waiting', 'claude until', '$3.50', 'of $20.00', '1m ago',
+      'Event stream', 'connected', 'Chat stream', 'live', 'may save',
+    ]) {
+      expect(text).toContain(want)
+    }
+  })
+
+  it('says a failed reload and unreported fields plainly', () => {
+    const d = detail({ reload_error: 'config.yaml: line 3: bad', reload_failed_at: '2026-10-10T11:45:00Z', quota_holds: undefined, forge: undefined })
+    const { container } = show({ data: loaded(d, null) })
+    expect(container.textContent).toMatch(/failed.*line 3: bad/)
+    expect(container.textContent).toContain('not reported')
+    expect(container.textContent).not.toContain('may save')
+  })
+
+  it('says since when it is offline and that the chat stream is not open', () => {
+    const { container } = show({ down: true, error: 'no answer', downSince: NOW - 3 * 60_000, data: null, chat: null })
+    expect(container.textContent).toMatch(/Offline since .*\(3m ago\)\. Retrying\./)
+    expect(container.textContent).toContain('not connected')
+    expect(container.textContent).toContain('not open')
   })
 })
