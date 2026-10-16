@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useSyncExternalStore, useState } from '
 import { useNow } from '../hooks'
 import type { Connection } from '../state/desk'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
+import { publishChat } from '../shell/chatLink'
 import { blocks, Markdown as ConversationMarkdown } from '../conversation/Markdown'
 
 // What a model or agent wrote is text, never markup: the page builds elements, so nothing
@@ -25,12 +26,12 @@ export function Markdown({ text }: { text: string }) {
   return <ConversationMarkdown text={text} classes="md" />
 }
 
-export const CONNECTION: Record<Connection, { text: string; cls: string; glyph: string }> = {
-  connecting: { text: 'Connecting…', cls: '', glyph: '○' },
-  live: { text: 'Live', cls: 'is-up', glyph: '●' },
-  reconnecting: { text: 'Offline', cls: 'is-down', glyph: '○' },
-  'signed-out': { text: 'Signed out', cls: 'is-down', glyph: '○' },
-  refused: { text: 'Refused', cls: 'is-down', glyph: '○' },
+/** The line above the composer while the chat stream is not live; nothing says so when it is. */
+export const STREAM_LINE: Record<Exclude<Connection, 'live'>, { text: string; down: boolean }> = {
+  connecting: { text: 'Chat connecting…', down: false },
+  reconnecting: { text: 'Chat reconnecting…', down: false },
+  'signed-out': { text: 'Signed out', down: true },
+  refused: { text: 'Refused', down: true },
 }
 
 /** ", retrying in 4s" until `at`; the one part of the page that ticks every second. */
@@ -41,8 +42,15 @@ export function Countdown({ at }: { at: number | null }) {
   return <>{s > 0 ? `, retrying in ${s}s` : ', retrying…'}</>
 }
 
+/** Reads the thread, and publishes its connection for the rail's status dot while it is open. */
 export function useThread(thread: DeskThread): DeskSnapshot {
-  return useSyncExternalStore(thread.subscribe, thread.getSnapshot)
+  const snap = useSyncExternalStore(thread.subscribe, thread.getSnapshot)
+  const { connection, retryAt } = snap
+  useEffect(() => {
+    publishChat({ connection, retryAt })
+  }, [connection, retryAt])
+  useEffect(() => () => publishChat(null), [])
+  return snap
 }
 
 /** How close to the bottom, in px, still counts as being at it. */

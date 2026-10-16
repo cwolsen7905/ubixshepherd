@@ -15,9 +15,8 @@
 .chat-head { flex: none; position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; box-sizing: border-box; min-height: 45px; padding: 0; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .chat-head h1 { margin: 0 8px 0 0; font-size: 16px; font-weight: 700; flex: none; }
 .chat-head .topic-bar { flex: 1 1 12rem; min-width: 0; }
-.chat-conn { margin: 0; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
-.chat-conn.is-up { color: var(--ok); }
-.chat-conn.is-down { color: var(--broken); }
+.chat-stream { flex: none; margin: 0 0 4px; font-size: 12.5px; color: var(--lantern-ink); }
+.chat-stream.is-down { color: var(--broken); }
 .chat-ws { display: flex; align-items: center; gap: 6px; font-size: var(--t-sm); }
 .chat-ws select { font: inherit; color: inherit; background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius); padding: 2px 6px; }
 .chat-tools { margin-left: auto; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12.5px; }
