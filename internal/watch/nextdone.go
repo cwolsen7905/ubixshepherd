@@ -93,8 +93,11 @@ func (w *Watcher) settleClosed(ctx context.Context, f forge.Forge, host, repoPat
 			if w.skipHost(host) {
 				return
 			}
+			// A failed call leaves the wait where it was; only an answer that settles
+			// nothing lengthens it.
 			p := w.closedRead[lane.ID]
-			w.closedRead[lane.ID] = closedPoll{w.now(), p.n + 1}
+			w.closedRead[lane.ID] = closedPoll{w.now(), p.n}
+			unsettled := func() { w.closedRead[lane.ID] = closedPoll{w.now(), p.n + 1} }
 			mr, err := f.MRForBranch(ctx, lane.Branch)
 			if err != nil {
 				note(err)
@@ -105,15 +108,18 @@ func (w *Watcher) settleClosed(ctx context.Context, f forge.Forge, host, repoPat
 			}
 			w.result(host, nil)
 			if mr == nil || !strings.EqualFold(mr.State, "merged") {
+				unsettled()
 				continue
 			}
 			// A branch name can be reused: only a request made after the lane opened is
 			// this lane's. A forge that gives no creation time proves nothing.
 			if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
+				unsettled()
 				continue
 			}
 			// Work pushed after the merge is not in it: the item is not done.
 			if !coversBranch(ctx, repoPath, lane, mr.SHA) {
+				unsettled()
 				continue
 			}
 			lf.MR, lf.MRState, lf.MRURL, lf.MergeSHA = mr.IID, mr.State, mr.URL, mr.MergeSHA

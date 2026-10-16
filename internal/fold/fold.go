@@ -401,9 +401,12 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	merged, where := f.merged(ctx, repo.Path, lane)
 	if !merged {
 		// A squash merge looks unmerged to git: the forge's word counts.
-		if ok := f.forgeMerged(ctx, repo, lane); ok {
+		if ok, why := f.forgeMerged(ctx, repo, lane); ok {
 			merged, where = true, "the forge's merged request"
 			res.Notes = append(res.Notes, "merged, per the forge")
+			if why != "" {
+				res.Notes = append(res.Notes, why)
+			}
 		}
 	}
 	if !merged && !force {
@@ -530,35 +533,42 @@ func shortSHA(s string) string {
 // covers it: created after the lane opened (a branch name can be reused), and the branch
 // holds nothing beyond the request's head. It records the merge on the lane, so the
 // lane's next-up item is settled as done. Without a forge it is false.
-func (f *Fold) forgeMerged(ctx context.Context, repo store.Repo, lane store.Lane) bool {
+func (f *Fold) forgeMerged(ctx context.Context, repo store.Repo, lane store.Lane) (bool, string) {
 	if f.ForgeFor == nil {
-		return false
+		return false, ""
 	}
 	fg, err := f.ForgeFor(repo.Remote)
 	if err != nil || fg == nil {
-		return false
+		return false, ""
 	}
 	mr, err := fg.MRForBranch(ctx, lane.Branch)
 	if err != nil || mr == nil || !strings.EqualFold(mr.State, "merged") || mr.MergeSHA == "" || mr.SHA == "" {
-		return false
+		return false, ""
 	}
 	if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
-		return false
+		return false, ""
 	}
 	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
 		if !git.Ok(ctx, repo.Path, "cat-file", "-e", mr.SHA+"^{commit}") {
 			git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
 		}
 		if !git.Ok(ctx, repo.Path, "merge-base", "--is-ancestor", "refs/heads/"+lane.Branch, mr.SHA) {
-			return false
+			return false, ""
 		}
 	}
-	if lf, err := f.Store.LaneForge(ctx, lane.ID); err == nil {
-		lf.MR, lf.MRState, lf.MRURL, lf.MergeSHA = mr.IID, mr.State, mr.URL, mr.MergeSHA
-		lf.MRCreated, lf.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
-		f.Store.PutLaneForge(ctx, lf)
+	// The merge is recorded even for a lane the watcher never saw (no row yet), so its
+	// next-up item settles as done; a failure to record is not hidden.
+	lf, err := f.Store.LaneForge(ctx, lane.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return true, "could not record the merge on the lane: " + err.Error()
 	}
-	return true
+	lf.LaneID = lane.ID
+	lf.MR, lf.MRState, lf.MRURL, lf.MergeSHA = mr.IID, mr.State, mr.URL, mr.MergeSHA
+	lf.MRCreated, lf.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
+	if err := f.Store.PutLaneForge(ctx, lf); err != nil {
+		return true, "could not record the merge on the lane: " + err.Error()
+	}
+	return true, ""
 }
 
 // merged reports whether the lane's branch is contained in its base, fetching origin

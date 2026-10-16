@@ -124,6 +124,7 @@ func (w *Watcher) Check(ctx context.Context) {
 		note(err)
 		return
 	}
+	w.expireProposals(ctx)
 	closedByRepo := w.closedItemLanes(ctx) // once per pass, not per repo
 	w.pruneClosedRead(closedByRepo)
 	for _, ws := range wss {

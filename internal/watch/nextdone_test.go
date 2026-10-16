@@ -235,3 +235,25 @@ func TestClosedLanePollBacksOffAndIsForgottenWhenSettled(t *testing.T) {
 		t.Errorf("closedRead not pruned: %v", f.w.closedRead)
 	}
 }
+
+func TestForgeErrorsDoNotLengthenTheClosedLaneWait(t *testing.T) {
+	f := newFixture(t)
+	f.linkedItem(t, store.NextApproved)
+	f.closeByHand(t)
+	now := time.Now()
+	f.w.Clock = func() time.Time { return now }
+	f.f.err = errors.New("500 server error")
+	for i := 0; i < 6; i++ {
+		f.w.Check(f.ctx)
+		now = now.Add(ClosedRecheck + time.Minute)
+	}
+	if p := f.w.closedRead[f.lane.ID]; p.n != 0 {
+		t.Errorf("after six failed calls n = %d, want 0", p.n)
+	}
+	f.f.err = nil
+	f.f.mr = &forge.MR{IID: 9, State: "closed"}
+	f.w.Check(f.ctx)
+	if p := f.w.closedRead[f.lane.ID]; p.n != 1 {
+		t.Errorf("after one answer n = %d, want 1", p.n)
+	}
+}
