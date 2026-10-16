@@ -18,7 +18,8 @@
   grid-template-columns: var(--cols);
   align-items: center; column-gap: var(--s-3);
   /* 35px: 7px above and below a 21px line, 10px beside it, at 1440. */
-  min-height: 2.5rem; padding: 0.5rem 0.7143rem; border-radius: var(--radius);
+  --row: 2.5rem; /* the mockup's row; theme.css still says 2.25rem, outside this lane */
+  min-height: var(--row); padding: 0.5rem 0.7143rem; border-radius: var(--radius);
   color: inherit; text-decoration: none;
   border-top: 1px solid var(--rule);
 }
