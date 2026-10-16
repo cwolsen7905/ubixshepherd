@@ -3,8 +3,10 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -58,6 +60,33 @@ func (r *Runner) claimedDone(ctx context.Context, e store.Event) {
 	if it == nil {
 		return
 	}
+	if n := r.commitsOn(ctx, run.LaneID); n != 0 {
+		// An agent that committed work did not find it already done.
+		r.Log.Info("already-done report ignored: the lane has commits", "run", e.RunID, "commits", n)
+		return
+	}
 	r.feed(ctx, store.FeedPlan, it.ID, "next-up item %d may already be done: %s. Mark it done? (shepherd next done %d)",
 		it.ID, clip(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(e.Text), AlreadyDone)), 200), it.ID)
+}
+
+// commitsOn counts the lane's commits beyond its base; -1 when git cannot say, which
+// counts as some, so a claim that cannot be checked is not offered.
+func (r *Runner) commitsOn(ctx context.Context, laneID int64) int {
+	lane, err := r.Store.Lane(ctx, laneID)
+	if err != nil {
+		return -1
+	}
+	base := lane.Base
+	if repo, err := r.Store.Repo(ctx, lane.RepoID); err == nil && git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+base) {
+		base = "origin/" + base
+	}
+	out, err := git.Run(ctx, lane.Worktree, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return -1
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return -1
+	}
+	return n
 }

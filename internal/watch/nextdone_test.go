@@ -36,7 +36,7 @@ func TestSquashMergedClosedLaneFinishesItsItem(t *testing.T) {
 	f := newFixture(t)
 	it := f.linkedItem(t, store.NextApproved)
 	f.closeByHand(t)
-	f.f.mr = &forge.MR{IID: 9, State: "merged", URL: "https://gl/mr/9", MergeSHA: "abc123456789"}
+	f.f.mr = &forge.MR{IID: 9, State: "merged", URL: "https://gl/mr/9", MergeSHA: "abc123456789", Created: time.Now().Add(time.Minute)}
 
 	f.w.Check(f.ctx)
 
@@ -76,7 +76,7 @@ func TestDroppedAndDoneItemsAreLeftAlone(t *testing.T) {
 	f := newFixture(t)
 	it := f.linkedItem(t, store.NextDropped)
 	f.closeByHand(t)
-	f.f.mr = &forge.MR{IID: 9, State: "merged", MergeSHA: "abc"}
+	f.f.mr = &forge.MR{IID: 9, State: "merged", MergeSHA: "abc", Created: time.Now().Add(time.Minute)}
 	f.w.Check(f.ctx)
 	if got, _ := f.st.NextItem(f.ctx, it.ID); got.State != store.NextDropped {
 		t.Errorf("state = %s, want dropped", got.State)
@@ -97,10 +97,25 @@ func TestClosedLaneIsAskedAboutOnlyOncePerHour(t *testing.T) {
 		t.Errorf("asked again within the hour: %d then %d calls", first, f.f.calls)
 	}
 	now = now.Add(ClosedRecheck + time.Minute)
-	f.f.mr = &forge.MR{IID: 9, State: "merged", MergeSHA: "abc"}
+	f.f.mr = &forge.MR{IID: 9, State: "merged", MergeSHA: "abc", Created: time.Now().Add(time.Minute)}
 	f.w.Check(f.ctx)
 	items, _ := f.st.NextItems(f.ctx)
 	if items[0].State != store.NextDone {
 		t.Errorf("state = %s after the hour, want done", items[0].State)
+	}
+}
+
+func TestMergedRequestOlderThanTheLaneIsNotItsProof(t *testing.T) {
+	for name, created := range map[string]time.Time{"before the lane": time.Now().Add(-48 * time.Hour), "no creation time": {}} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			it := f.linkedItem(t, store.NextApproved)
+			f.closeByHand(t)
+			f.f.mr = &forge.MR{IID: 3, State: "merged", MergeSHA: "abc", Created: created}
+			f.w.Check(f.ctx)
+			if got, _ := f.st.NextItem(f.ctx, it.ID); got.State != store.NextApproved {
+				t.Errorf("state = %s, want approved", got.State)
+			}
+		})
 	}
 }

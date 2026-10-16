@@ -51,6 +51,11 @@ func (w *Watcher) settleClosed(ctx context.Context, f forge.Forge, host string, 
 			if mr == nil || !strings.EqualFold(mr.State, "merged") {
 				continue
 			}
+			// A branch name can be reused: only a request made after the lane opened is
+			// this lane's. A forge that gives no creation time proves nothing.
+			if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
+				continue
+			}
 			lf.MR, lf.MRState, lf.MRURL, lf.MergeSHA = mr.IID, mr.State, mr.URL, mr.MergeSHA
 			lf.MRCreated, lf.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
 			if err := w.Store.PutLaneForge(ctx, lf); err != nil {

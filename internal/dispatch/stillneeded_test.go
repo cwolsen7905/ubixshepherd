@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -76,6 +77,28 @@ func TestAlreadyDoneReportOffersMarkDoneAndChangesNothing(t *testing.T) {
 	for _, fi := range after[before:] {
 		if fi.Kind == store.FeedPlan {
 			t.Errorf("unexpected plan line %q", fi.Text)
+		}
+	}
+}
+
+func TestAlreadyDoneReportIsIgnoredWhenTheLaneHasCommits(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	it, _ := f.st.AddNextItem(ctx, store.NextItem{Title: "Add the thing", Repo: "app", State: store.NextApproved})
+	id := f.lane.ID
+	f.st.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &id})
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "w"})
+	f.wait(t, run.ID)
+	for _, args := range [][]string{{"-C", f.lane.Worktree, "commit", "-q", "--allow-empty", "-m", "work"}} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+	}
+	f.runner.Record(ctx, store.Event{RunID: run.ID, Kind: EventReport, Status: "done", Text: AlreadyDone + " abc1234"})
+	feed, _ := f.st.Feed(ctx, 0, 100)
+	for _, fi := range feed {
+		if fi.Kind == store.FeedPlan {
+			t.Errorf("offered mark-done despite commits: %q", fi.Text)
 		}
 	}
 }
