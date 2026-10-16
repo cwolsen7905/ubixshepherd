@@ -52,11 +52,16 @@ type KeepGoing struct {
 	// told remembers the lanes the loop guard already announced today, so the person is
 	// told once.
 	told map[string]bool
+	// stalls is the stall alert's debounce, per workspace (keepgoing_stall.go).
+	stallMu sync.Mutex
+	stalls  map[int64]*stallState
 }
 
 // KeepGoing returns the server's keep-going controller.
 func (s *Server) KeepGoing() *KeepGoing {
-	s.keepOnce.Do(func() { s.keep = &KeepGoing{s: s, Now: time.Now, told: map[string]bool{}} })
+	s.keepOnce.Do(func() {
+		s.keep = &KeepGoing{s: s, Now: time.Now, told: map[string]bool{}, stalls: map[int64]*stallState{}}
+	})
 	return s.keep
 }
 
@@ -303,9 +308,12 @@ func (k *KeepGoing) EvaluateAll(ctx context.Context) {
 		return
 	}
 	for _, ws := range wss {
-		if _, err := k.Evaluate(ctx, ws.ID); err != nil {
+		row, err := k.Evaluate(ctx, ws.ID)
+		if err != nil {
 			k.s.Log.Warn("keep-going: evaluate", "workspace", ws.ID, "err", err)
+			continue
 		}
+		k.checkStall(ctx, row)
 	}
 }
 
