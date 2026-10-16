@@ -1,15 +1,42 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { topics as topicsApi } from '../api/client'
 import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
 import { bytes } from '../artifacts/ArtifactViewer'
+import { StoredArtifactView } from '../artifacts/StoredArtifact'
 import { since } from '../format'
 import { useNow } from '../hooks'
-import { go, href, withOpen } from '../router'
+import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
 import { EmptyState, Skeleton } from '../ui'
 import '../styles/pages/artifacts.css'
 
 type Filters = { repo?: number; lane?: number; run?: number; topic?: number }
+
+// The open file rides in the address as `view=ID`, a parameter of this page alone, so a
+// link to it works and Back returns to the list.
+const subscribe = (fn: () => void) => {
+  window.addEventListener('hashchange', fn)
+  return () => window.removeEventListener('hashchange', fn)
+}
+
+/** The artifact id in the address's `view=`, or 0. */
+export function viewedId(hash: string): number {
+  const v = Number(new URLSearchParams(hash.split('?')[1] ?? '').get('view'))
+  return Number.isSafeInteger(v) && v > 0 ? v : 0
+}
+
+/** `hash` with `view=` set to `id`, or removed when 0. Other parameters are kept. */
+export function withView(hash: string, id: number): string {
+  const [path = '/artifacts', query = ''] = hash.replace(/^#/, '').split('?')
+  const q = new URLSearchParams(query)
+  if (id) q.set('view', String(id))
+  else q.delete('view')
+  return q.size ? `#${path}?${q}` : `#${path}`
+}
+
+// Set when the person opened a file from this list, so the back arrow can step Back (the
+// list then comes up as it was) instead of pushing another entry.
+let fromList = false
 
 /** Every artifact across lanes and runs, newest first, filtered by repo, lane, run and topic. */
 export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filters) {
@@ -19,6 +46,32 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
   const [list, setList] = useState<{ key: string; rows?: StoredArtifact[]; error?: string } | null>(null)
   const [topicList, setTopicList] = useState<{ id: number; title: string }[]>([])
   const key = `${lane}:${run}:${topic}:${feedLast}`
+  const hash = useSyncExternalStore(subscribe, () => window.location.hash)
+  const viewing = viewedId(hash)
+  const scrolled = useRef(0)
+  const wasViewing = useRef(0)
+
+  useLayoutEffect(() => {
+    if (viewing && !wasViewing.current) window.scrollTo(0, 0)
+    if (!viewing && wasViewing.current) window.scrollTo(0, scrolled.current)
+    if (!viewing) fromList = false
+    wasViewing.current = viewing
+  }, [viewing])
+  useEffect(() => () => void (fromList = false), [])
+  const back = () => {
+    if (fromList) {
+      fromList = false
+      window.history.back()
+    } else go(withView(window.location.hash, 0))
+  }
+  useEffect(() => {
+    if (!viewing) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open], [role="dialog"]')) back()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewing])
 
   useEffect(() => {
     let current = true
@@ -54,8 +107,28 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
   const rows = (here?.rows ?? []).filter((a) => !repo || a.repo_id === repo)
   const filtered = repo > 0 || lane > 0 || run > 0 || topic > 0
 
+  const shown = viewing ? (here?.rows ?? []).find((a) => a.id === viewing) : undefined
+  const listHash = withView(hash, 0)
+
   return (
     <div className="page page-wide artifacts-page">
+      {viewing > 0 && (
+        <section className="artifact-full" aria-label="Artifact">
+          <header className="page-head artifact-full-head">
+            <a className="artifact-back" href={listHash} aria-label="Back to the artifact list" onClick={(e) => {
+              if (fromList && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
+                e.preventDefault()
+                back()
+              }
+            }}>
+              <span aria-hidden="true">←</span> Artifacts
+            </a>
+            <h1>{shown?.title || shown?.path || `Artifact ${viewing}`}</h1>
+          </header>
+          <StoredArtifactView key={viewing} id={viewing} refreshKey={feedLast} />
+        </section>
+      )}
+      <div hidden={viewing > 0}>
       <header className="page-head">
         <h1>Artifacts</h1>
       </header>
@@ -132,7 +205,14 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
               return (
                 <tr key={a.id}>
                   <td>
-                    <a className="artifact-path" href={withOpen(window.location.hash, { kind: 'artifact', id: a.id })}>
+                    <a
+                      className="artifact-path"
+                      href={withView(hash, a.id)}
+                      onClick={() => {
+                        scrolled.current = window.scrollY
+                        fromList = true
+                      }}
+                    >
                       {a.title || a.path}
                     </a>
                     {a.title && <span className="faint"> {a.path}</span>}
@@ -150,6 +230,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
           </tbody>
         </table>
       )}
+      </div>
     </div>
   )
 }

@@ -107,3 +107,26 @@
   align-items: center;
   margin: 0.25rem 0;
 }
+
+/* The full-width view of one file, in place of the list */
+.artifact-full-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
+.artifact-full-head h1 {
+  font-size: var(--t-xl);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.artifact-back {
+  font-size: var(--t-sm);
+  white-space: nowrap;
+}
+.artifact-full .artifact-image {
+  max-width: 100%;
+  height: auto;
+}
+.artifact-image-missing {
+  margin: var(--s-2) 0;
+}

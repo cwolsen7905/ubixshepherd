@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../api/client'
 import { copyText } from '../components/CopyButton'
-import { Markdown } from '../conversation/Markdown'
+import { ArtifactMarkdown } from './ArtifactMarkdown'
 import { since } from '../format'
 import { useNow } from '../hooks'
 import { href, withOpen } from '../router'
@@ -268,7 +268,7 @@ function Body({ a, version, mode, newest, refreshKey }: { a: StoredArtifact; ver
   return (
     <div className="artifact-view">
       {masked}
-      {a.kind === 'markdown' && mode === 'view' ? <Markdown text={mine.text ?? ''} /> : <pre className="artifact-text">{mine.text}</pre>}
+      {a.kind === 'markdown' && mode === 'view' ? <ArtifactMarkdown text={mine.text ?? ''} laneId={a.lane_id} path={a.path} older={version !== ''} /> : <pre className="artifact-text">{mine.text}</pre>}
     </div>
   )
 }
