@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { StatusDetail } from '../api/types'
+import { RailSpend } from '../shell/RailSpend'
 import { DaemonDetail, DaemonStatus, type Loaded } from './DaemonStatus'
 
 const NOW = Date.parse('2026-10-10T12:00:00Z')
@@ -77,6 +78,12 @@ describe('DaemonStatus', () => {
     await screen.findByText('v0.9.0')
     expect(pop().textContent).toContain('$3.50 of $20.00')
     expect(pop().textContent).toContain('2 running, 1 waiting, 0 broken, 3 to route')
+  })
+
+  it('draws the rail spend bar with its value and words', () => {
+    render(<RailSpend spend={{ day: '2026-10-10', usd: 3.5, budget: 20, credit_usd: 0, by_source: null }} />)
+    expect(screen.getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '3.5')
+    expect(document.querySelector('.rail-spend')).toHaveAttribute('title', '$3.50 of $20.00 today')
   })
 
   it('says the detail is unreadable when a refresh fails, not the old snapshot', async () => {
