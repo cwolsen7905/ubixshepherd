@@ -7,6 +7,7 @@ import type { ProjectSummary } from '../api/types'
 import { EmptyState, Skeleton } from '../ui'
 import '../styles/projects.css'
 import '../styles/pages/project.css'
+import '../styles/pages/projects.css'
 
 export const projectHref = (p: Pick<ProjectSummary, 'name' | 'unassigned'>) => (p.unassigned ? href.unassigned() : href.project(p.name))
 
@@ -18,8 +19,7 @@ export function ProjectsPage() {
     <div className="page projects-page">
       <header className="page-head">
         <h1>Projects</h1>
-        <p className="page-sub">Repos grouped as the configuration groups them. Repos in no project are listed as {UNASSIGNED}.</p>
-        <p className="page-actions">
+        <div className="page-actions">
           <a
             className="ui-btn ui-btn-primary"
             href={href.settings(NEW_PROJECT)}
@@ -30,7 +30,7 @@ export function ProjectsPage() {
           >
             New project
           </a>
-        </p>
+        </div>
       </header>
       {error && <p className="tone-bad">Could not load projects: {error}</p>}
       {loading && !data && !error && <Skeleton lines={3} />}
@@ -75,6 +75,7 @@ export function ProjectsPage() {
           </li>
         ))}
       </ul>
+      <p className="project-note">Repos grouped as the configuration groups them. Repos in no project are listed as {UNASSIGNED}.</p>
     </div>
   )
 }
