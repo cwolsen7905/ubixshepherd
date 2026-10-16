@@ -58,9 +58,6 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
     <div className="page page-wide artifacts-page">
       <header className="page-head">
         <h1>Artifacts</h1>
-        <p className="page-sub faint">
-          Files agents wrote, in open and closed lanes. Kept snapshots of a closed lane are read here.
-        </p>
       </header>
 
       <div className="filters">
