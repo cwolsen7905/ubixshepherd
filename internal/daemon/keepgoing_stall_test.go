@@ -158,3 +158,23 @@ func TestStallAlertKeepsToItsWorkspaceAndGroupsBlockersPerRepo(t *testing.T) {
 		t.Errorf("want the app item with %q: %s", want, got[0])
 	}
 }
+
+func TestStallReasonSaysWhatEachKindNeeds(t *testing.T) {
+	for _, c := range []struct {
+		it   api.WaitingItem
+		want string
+	}{
+		{api.WaitingItem{Kind: api.WaitingDecision, DecisionID: 7, Lane: "a"}, "decision 7 is held on lane a: answer it"},
+		{api.WaitingItem{Kind: api.WaitingBlocked, Lane: "a"}, "lane a is blocked: open it and unblock it"},
+		{api.WaitingItem{Kind: api.WaitingScope, Lane: "a"}, "a scope widening on lane a is not applied: look at it"},
+		{api.WaitingItem{Kind: api.WaitingRequest, RequestID: 3}, "request 3 needs routing: route it"},
+		{api.WaitingItem{Kind: api.WaitingMR, MR: 12, Lane: "a"}, "MR !12 on lane a waits on you: approve or fix it"},
+		{api.WaitingItem{Kind: api.WaitingShip, Lane: "a"}, "lane a has unpushed work: ship it"},
+		{api.WaitingItem{Kind: api.WaitingArtifact, Lane: "a"}, "lane a holds files nobody decided on: decide them"},
+		{api.WaitingItem{Kind: "other", Title: "something"}, "something"},
+	} {
+		if got := stallReason(c.it); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.it.Kind, got, c.want)
+		}
+	}
+}
