@@ -59,7 +59,7 @@
   letter-spacing: 0;
 }
 .artifact-table th,
-.filters label span {
+.artifacts-page .filters label span {
   font-size: var(--t-sm);
   font-weight: 600;
   color: var(--muted);
