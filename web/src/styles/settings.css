@@ -1,9 +1,9 @@
 /* The settings page: a scope list beside grouped fields, and the diff review. */
 
 .settings-layout { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: var(--s-5); margin-left: var(--gutter); }
-.settings-nav h2 { margin: var(--s-4) 0 var(--s-1); font-size: var(--t-sm); font-weight: 500; color: var(--faint); }
+.settings-nav h2 { margin: var(--s-4) 0 var(--s-1); padding-inline: 10px; font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
 .settings-nav ul { list-style: none; margin: 0; padding: 0; }
-.settings-nav a { display: block; padding: var(--s-1) var(--s-2); color: var(--ink); text-decoration: none; border-radius: var(--radius); }
+.settings-nav a { display: flex; align-items: center; min-height: 35px; box-sizing: border-box; padding: 7px 10px; color: var(--ink); text-decoration: none; border-radius: var(--radius); }
 .settings-nav a:hover { background: var(--hover); }
 .settings-nav a[aria-current="page"] { background: var(--hover); font-weight: 600; box-shadow: inset 2px 0 0 var(--lichen); }
 .add-repo { display: flex; gap: var(--s-1); margin-top: var(--s-2); }
@@ -11,12 +11,15 @@
 
 .settings-main { max-width: var(--measure-page); }
 .settings-main .group { min-width: 0; }
-.settings-main h1 { margin: 0 0 var(--s-1); font-size: var(--t-xl); font-weight: 600; }
+.settings-main h1 {
+  display: flex; align-items: center; min-height: 45px; margin: 0;
+  font-size: var(--t-xl); font-weight: 700; letter-spacing: -0.01em;
+}
 .settings-main input[type="text"], .settings-main input[type="number"], .settings-main select, .settings-main textarea, .add-repo input {
-  font: inherit; color: inherit; padding: 0.1875rem var(--s-2); background: var(--sheet);
+  font: inherit; color: inherit; min-height: var(--control-h-sm); padding: 0 var(--s-2); background: var(--raised);
   border: 1px solid var(--control-border); border-radius: var(--radius);
 }
-.settings-main textarea { width: 100%; max-width: 40rem; resize: vertical; }
+.settings-main textarea { padding: var(--s-2); width: 100%; max-width: 40rem; resize: vertical; }
 .settings-main textarea.mono { font-family: var(--font-mono); }
 .settings-main input:disabled, .settings-main select:disabled, .settings-main textarea:disabled { color: var(--faint); background: var(--field); border-style: dashed; }
 
@@ -41,7 +44,7 @@
 .actions.sticky { position: sticky; bottom: 0; padding: var(--s-2) 0; background: var(--field); border-top: 1px solid var(--rule); }
 
 .review { margin: var(--s-4) 0; padding: var(--s-3) var(--s-4); background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); }
-.review h2 { margin: 0 0 var(--s-2); font-size: var(--t-lg); font-weight: 600; }
+.review h2 { margin: 0 0 var(--s-2); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
 .diff { margin: 0; padding: var(--s-2); overflow-x: auto; font-family: var(--font-mono); font-size: var(--t-xs); background: var(--field); border: 1px solid var(--rule); }
 .diff span { display: block; }
 .diff-add { background: #e3f1e8; color: var(--ok); }
