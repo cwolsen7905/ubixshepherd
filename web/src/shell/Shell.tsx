@@ -17,7 +17,6 @@ export function Shell({
   waiting,
   workspaces,
   footer,
-  headActions,
   banner,
   children,
   boardBroken = 0,
@@ -27,7 +26,6 @@ export function Shell({
   waiting: Waiting | null
   workspaces: Status['workspaces']
   footer: ReactNode
-  headActions: ReactNode
   banner?: ReactNode
   children: ReactNode
   boardBroken?: number
@@ -59,7 +57,7 @@ export function Shell({
     return () => document.removeEventListener('keydown', onKey)
   }, [sheet, open])
 
-  const title = currentItem(route)?.label ?? ''
+  const title = currentItem(route)?.label ?? (route.page === 'status' ? 'Status' : '')
 
   return (
     <div className="app shell" data-mode={mode}>
@@ -91,9 +89,6 @@ export function Shell({
             </button>
           )}
           <span className="page-bar-title">{title}</span>
-          <div className="page-bar-actions">
-            <ErrorBoundary region="The waiting list">{headActions}</ErrorBoundary>
-          </div>
         </header>
         {banner}
         <main id="main" className="main" tabIndex={-1}>

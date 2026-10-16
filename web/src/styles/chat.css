@@ -15,9 +15,9 @@
 .chat-head { flex: none; position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; box-sizing: border-box; min-height: 45px; padding: 0; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .chat-head h1 { margin: 0 8px 0 0; font-size: 16px; font-weight: 700; flex: none; }
 .chat-head .topic-bar { flex: 1 1 12rem; min-width: 0; }
-.chat-conn { margin: 0; font-size: 12.5px; color: var(--faint); white-space: nowrap; }
-.chat-conn.is-up { color: var(--ok); }
-.chat-conn.is-down { color: var(--broken); }
+.chat-stream { flex: none; margin: 0 0 4px; font-size: 12.5px; color: var(--lantern-ink); }
+.chat-stream:empty { margin: 0; height: 0; overflow: hidden; }
+.chat-stream.is-down { color: var(--broken); }
 .chat-ws { display: flex; align-items: center; gap: 6px; font-size: var(--t-sm); }
 .chat-ws select { font: inherit; color: inherit; background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius); padding: 2px 6px; }
 .chat-tools { margin-left: auto; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 12.5px; }
@@ -30,6 +30,7 @@
 .thread:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 /* Prose keeps a readable measure; code and tables may use the full width. */
 .thread .md p, .thread .md li, .thread .msg-text { max-width: 72ch; }
+.thread .md pre, .thread .md table { max-width: 100%; }
 
 /* Folded rows: a run of events as "N updates", and a turn's work under its reply. */
 .updates-fold { margin: 2px 0; font-size: var(--t-sm); color: var(--muted); }
@@ -40,11 +41,12 @@
 .work-fold summary { cursor: pointer; }
 .thread-empty { padding-left: var(--gutter); }
 
-/* Items sit 12px apart. Your message is a bubble that shrinks to its text and sits at the right;
-   the desk's reply is unboxed text on the field. */
-.msg { margin: 12px 0; padding: 0; overflow-wrap: anywhere; max-width: 100%; }
-.msg-user { width: fit-content; margin-left: auto; padding: 8px 12px; background: var(--sunk); border-radius: 10px; }
-.msg-assistant.msg-asked { padding: 8px 12px; border-radius: var(--radius-lg); }
+/* Items sit 12px apart. Like a messaging app, each side is a bubble that shrinks to its text
+   and grows to at most 78% of the thread: yours at the right, the desk's at the left. */
+.msg { margin: 12px 0; padding: 8px 12px; overflow-wrap: anywhere; width: fit-content; max-width: 78%; border-radius: 14px; }
+.msg-user { margin-left: auto; background: var(--sunk); border-bottom-right-radius: 4px; }
+.msg-assistant { margin-right: auto; background: var(--raised); border: 1px solid var(--rule); border-bottom-left-radius: 4px; }
+.msg-assistant.msg-asked { border-radius: var(--radius-lg); }
 .msg-assistant.is-partial { opacity: 0.85; }
 .msg-who { display: block; font-size: 12.5px; font-weight: 400; color: var(--muted); }
 .msg-who::first-line { font-weight: 700; }
@@ -104,7 +106,7 @@
 
 @media (max-width: 760px) {
   .chat-tools { margin-left: 0; }
-  .msg { margin-left: 0; max-width: 100%; }
+  .msg { max-width: 90%; }
   .trow-system .msg-text { padding-left: 0; }
 }
 

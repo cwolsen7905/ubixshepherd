@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { daemonInfo } from '../api/client'
-import type { Status, StatusDetail, WebSession } from '../api/types'
+import type { SpendToday, Status, StatusDetail, WebSession } from '../api/types'
 import { age, clockTime, shortSha, since, usd } from '../format'
 import { useNow } from '../hooks'
+import { href } from '../router'
+import { chatWords, worstTone, type ChatLink } from '../shell/chatLink'
+import { RailSpend, spendWords } from '../shell/RailSpend'
+import type { StatusCounts } from '../state/attention'
 
 export interface Loaded {
   status: Status
@@ -17,38 +21,12 @@ export function loadDaemon(): Promise<Loaded> {
 /** How often the open popover reads again. */
 export const REFRESH_MS = 5000
 
-interface Props {
-  /** The live connection: why it is down (null when up), since when, and the newest feed item's time. */
-  error: string | null
-  downSince: number | null
-  ready: boolean
-  lastEvent?: string
-  load?: () => Promise<Loaded>
-  /** The time now in ms; the clock ticks by itself when omitted. */
-  now?: number
-}
-
-/**
- * The bar's liveness dot. Hovering, focusing or tapping it opens a popover with what the
- * daemon is and is doing; Escape closes it. The detail is read only while it is open.
- */
-export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDaemon, now: nowProp }: Props) {
-  const ticking = useNow(10_000)
-  const now = nowProp ?? ticking
-  const id = useId()
-  const [open, setOpen] = useState(false)
-  const [pinned, setPinned] = useState(false)
+/** Reads the daemon's detail while `active`, and again every REFRESH_MS. */
+export function useDaemonDetail(active: boolean, load: () => Promise<Loaded>) {
   const [data, setData] = useState<Loaded | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
-  const box = useRef<HTMLSpanElement>(null)
-
-  const close = useCallback(() => {
-    setOpen(false)
-    setPinned(false)
-  }, [])
-
   useEffect(() => {
-    if (!open) return
+    if (!active) return
     let live = true
     const read = () =>
       load().then(
@@ -57,33 +35,90 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
       )
     void read()
     const t = window.setInterval(() => void read(), REFRESH_MS)
+    return () => {
+      live = false
+      window.clearInterval(t)
+    }
+  }, [active, load])
+  return { data, failed }
+}
+
+interface Props {
+  /** The live connection: why it is down (null when up), since when, and the chat stream. */
+  error: string | null
+  downSince: number | null
+  ready: boolean
+  /** The open chat's /stream connection; null when no chat is open. */
+  chat?: ChatLink | null
+  /** Today's spend, shown as a compact line under the status and in full in the popover. */
+  spend?: SpendToday | null
+  /** Lane counts, spelled out in the popover. */
+  counts?: StatusCounts
+  load?: () => Promise<Loaded>
+  /** The time now in ms; the clock ticks by itself when omitted. */
+  now?: number
+}
+
+/**
+ * The rail's one status dot: green when the daemon link and the chat stream are both up,
+ * amber while the chat stream catches up, red when the daemon is unreachable or the chat is
+ * signed out or refused. Hovering, focusing or tapping it opens a short popover; Escape
+ * closes it. The detail is read only while it is open. "Details" opens the Status page.
+ */
+export function DaemonStatus({ error, downSince, ready, chat = null, spend = null, counts, load = loadDaemon, now: nowProp }: Props) {
+  const ticking = useNow(10_000)
+  const now = nowProp ?? ticking
+  const id = useId()
+  const [open, setOpen] = useState(false)
+  const [pinned, setPinned] = useState(false)
+  const box = useRef<HTMLSpanElement>(null)
+  const pop = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<CSSProperties>({})
+  const { data, failed } = useDaemonDetail(open, load)
+
+  const close = useCallback(() => {
+    setOpen(false)
+    setPinned(false)
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close()
     const onDown = (e: Event) => box.current && !box.current.contains(e.target as Node) && close()
     document.addEventListener('keydown', onKey)
     document.addEventListener('pointerdown', onDown)
     return () => {
-      live = false
-      window.clearInterval(t)
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('pointerdown', onDown)
     }
-  }, [open, load, close])
+  }, [open, close])
 
+  // The sidebar scrolls and clips, so the popover is fixed: beside the sidebar when there is
+  // room, else above the status line inside the sidebar's width.
+  useLayoutEffect(() => {
+    if (!open || !box.current) return
+    const b = box.current.getBoundingClientRect()
+    const side = box.current.closest('.sidebar')?.getBoundingClientRect()
+    const wide = pop.current?.offsetWidth ?? 0
+    const edge = side ? side.right : b.right
+    if (window.innerWidth - edge >= wide + 16) setPlace({ left: edge + 8, bottom: Math.max(8, window.innerHeight - b.bottom) })
+    else setPlace({ left: (side?.left ?? b.left) + 8, bottom: window.innerHeight - b.top + 6, maxWidth: (side?.width ?? window.innerWidth) - 16 })
+  }, [open])
+
+  const tone = worstTone({ error, ready }, chat)
   const down = error !== null
-  
-  // Get the forge poll time if available
-  const forgePollTime = data?.status.detail?.forge?.last_poll
-  const forgePollAge = forgePollTime ? since(forgePollTime, now) : null
-  
-  // Text for the status indicator: offline (error), connecting (not ready), or live
-  const statusText = down ? 'Daemon unreachable' : ready ? 'Daemon live' : 'Daemon connecting'
-  // "forge polled Xs ago" — avoid "polled just now ago"
-  const forgeText = forgePollAge
-    ? forgePollAge === 'just now'
-      ? 'forge polled just now'
-      : `forge polled ${forgePollAge} ago`
-    : ''
-  
+  const statusText =
+    tone === 'up' ? 'Daemon live'
+    : tone === 'warn' ? `Chat ${chatWords(chat)}`
+    : tone === 'pending' ? 'Daemon connecting'
+    : down ? 'Daemon down'
+    : `Chat ${chatWords(chat)}`
+  // A held snapshot is not current once the daemon is down or a refresh has failed.
+  const fresh = !down && !failed ? data : null
+  const d = fresh?.status.detail
+  const poll = d?.forge?.last_poll
+  const unknown = <span className="faint">{down || failed ? 'unknown' : '…'}</span>
+
   return (
     <span
       ref={box}
@@ -94,9 +129,11 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
     >
       <button
         type="button"
-        className={`live-dot ${down ? 'is-down' : ready ? 'is-up' : ''}`}
-        aria-label={`${statusText}${forgeText ? `, ${forgeText}` : ''}`}
-        aria-describedby={id}
+        className={`live-dot is-${tone}`}
+        aria-label={statusText}
+        title={statusText}
+        aria-haspopup="dialog"
+        aria-controls={id}
         aria-expanded={open}
         onFocus={() => setOpen(true)}
         onClick={() => {
@@ -104,22 +141,50 @@ export function DaemonStatus({ error, downSince, ready, lastEvent, load = loadDa
           setOpen(!(open && pinned))
         }}
       >
-        <span aria-hidden="true" className="daemon-dot-indicator">{down ? '○' : '●'}</span>
-        <span className="daemon-status-text">{statusText}{forgeText}</span>
-        <span className="visually-hidden">{down ? 'Not connected' : 'Connected'}</span>
+        <span aria-hidden="true" className="daemon-dot-indicator">{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
+        <span className="daemon-status-text">{statusText}</span>
       </button>
-      <div id={id} role="tooltip" className="daemon-pop" hidden={!open}>
-        {open && <Body down={down} error={error} downSince={downSince} lastEvent={lastEvent} data={data} failed={failed} now={now} />}
+      {spend && <RailSpend spend={spend} />}
+      <div id={id} ref={pop} role="dialog" aria-label="Status" className="daemon-pop" hidden={!open} style={place}>
+        {open && (
+          <>
+            <dl className="daemon-short">
+              <Row k="Daemon">
+                {down ? (
+                  <span className="tone-bad">down{downSince !== null && ` for ${age(now - downSince)}`}</span>
+                ) : failed ? (
+                  <span className="tone-bad">unreadable</span>
+                ) : d && data ? (
+                  <>up <span className="faint">{age(Date.parse(d.now) - Date.parse(data.status.started))}</span></>
+                ) : (
+                  <span className="faint">…</span>
+                )}
+              </Row>
+              <Row k="Chat">{chatWords(chat)}</Row>
+              <Row k="Forge">{d ? (d.forge?.error ? <span className="tone-bad">error</span> : poll ? `polled ${since(poll, now) || 'just now'}${since(poll, now) ? ' ago' : ''}` : 'not polled yet') : unknown}</Row>
+              <Row k="Version">{fresh ? fresh.status.version : unknown}</Row>
+              {spend && <Row k="Spend">{spendWords(spend)}</Row>}
+              {counts && (
+                <Row k="Lanes">
+                  {counts.running} running, {counts.waiting} waiting, {counts.broken} broken, {counts.routing} to route
+                </Row>
+              )}
+            </dl>
+            <a className="daemon-details" href={href.status()} onClick={close}>Details →</a>
+          </>
+        )}
       </div>
     </span>
   )
 }
 
-function Body({ down, error, downSince, lastEvent, data, failed, now }: {
+/** Everything the daemon reports, grouped; the Status page's body. */
+export function DaemonDetail({ down, error, downSince, lastEvent, chat, data, failed, now }: {
   down: boolean
   error: string | null
   downSince: number | null
   lastEvent?: string
+  chat: ChatLink | null
   data: Loaded | null
   failed: string | null
   now: number
@@ -193,7 +258,8 @@ function Body({ down, error, downSince, lastEvent, data, failed, now }: {
         </>
       )}
       <Group title="This browser">
-        <Row k="Stream">{down ? 'not connected' : 'connected'}</Row>
+        <Row k="Event stream">{down ? 'not connected' : 'connected'}</Row>
+        <Row k="Chat stream">{chatWords(chat)}</Row>
         <Row k="Last event">{lastEvent ? `${since(lastEvent, now) || 'now'} ago` : 'none yet'}</Row>
         {s && (
           <>

@@ -9,6 +9,7 @@ import { DeskThread } from '../state/desk'
 import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, lane, request, run, spend, status } from '../test/fixtures'
 import type { DeskApi } from '../api/desk'
 import { ChatPage, Markdown } from './Chat'
+import { publishChat, useChatLink, type ChatLink } from '../shell/chatLink'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
@@ -61,6 +62,18 @@ const history = [
   deskEvent({ seq: 2, kind: 'assistant', text: 'Two lanes **need** you.', created: '2026-10-08T10:00:30Z' }),
 ]
 
+/** The connection the chat published for the rail, read the way the rail reads it. */
+function currentLink(): ChatLink | null {
+  let link: ChatLink | null = null
+  function Probe() {
+    link = useChatLink()
+    return null
+  }
+  const { unmount } = render(<Probe />)
+  unmount()
+  return link
+}
+
 describe('ChatPage', () => {
   beforeEach(() => localStorage.clear())
 
@@ -68,9 +81,31 @@ describe('ChatPage', () => {
     await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     expect(await screen.findByText('what is up?')).toBeInTheDocument()
     expect(screen.getByText('need').tagName).toBe('STRONG')
-    expect(screen.getByRole('status', { name: '' })).toBeTruthy()
-    expect(screen.getByText('Live')).toBeInTheDocument()
+    // a healthy stream says nothing in the chat: the rail's dot is the one place it shows
+    expect(screen.queryByText('Live')).not.toBeInTheDocument()
+    expect(document.querySelector('.chat-stream')).toBeEmptyDOMElement()
+    expect(document.querySelector('.chat-stream')).toHaveAttribute('role', 'status')
+    expect(screen.queryByText(/reconnecting/i)).not.toBeInTheDocument()
     expect(screen.getByRole('log')).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('publishes its connection for the rail while open, and clears it on leaving', async () => {
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
+    await screen.findByText('what is up?')
+    expect(currentLink()?.connection).toBe('live')
+    cleanup()
+    expect(currentLink()).toBeNull()
+    publishChat(null)
+  })
+
+  it('keeps the link of a chat that is still open when another closes', () => {
+    publishChat({ connection: 'live', retryAt: null }, 'a')
+    publishChat({ connection: 'reconnecting', retryAt: null }, 'b')
+    expect(currentLink()?.connection).toBe('reconnecting')
+    publishChat(null, 'b')
+    expect(currentLink()?.connection).toBe('live')
+    publishChat(null, 'a')
+    expect(currentLink()).toBeNull()
   })
 
   it('shows Reply here and Skip under the desk message that asked an open question, and nowhere else', async () => {
@@ -107,14 +142,16 @@ describe('ChatPage', () => {
     try {
       act(() => src.emit('assistant', deskEvent({ seq: 8, kind: 'assistant', text: 'one more' })))
       act(() => src.fail())
-      expect(await screen.findByText(/Offline, retrying in \ds/)).toBeInTheDocument()
+      expect(await screen.findByText(/Chat reconnecting…, retrying in \ds/)).toBeInTheDocument()
+      expect(currentLink()?.connection).toBe('reconnecting')
       expect(screen.getByRole('button', { name: 'Retry now' })).toBeInTheDocument()
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1100)
       })
       expect(FakeSource.all[1]?.url).toBe('/stream?ws=0&after=8')
       act(() => FakeSource.get(1).open())
-      expect(await screen.findByText('Live')).toBeInTheDocument()
+      await waitFor(() => expect(document.querySelector('.chat-stream')).toBeEmptyDOMElement())
+      expect(currentLink()?.connection).toBe('live')
     } finally {
       vi.useRealTimers()
     }
@@ -442,7 +479,7 @@ describe('backlog rail', () => {
     expect(localStorage.getItem('shepherd.chat.backlog')).toBe('closed')
   })
 
-  it('says when nothing waits, and shows today\u2019s spend against the budget and a quota hold', async () => {
+  it('says when nothing waits, and a quota hold, and no spend meter (it lives in the rail)', async () => {
     vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
       status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, quota_holds: [{ agent: 'claude', until: '2026-10-08T14:05:00Z' }], forge: { last_poll: '2026-10-08T10:03:00Z' } } }),
     )
@@ -451,7 +488,7 @@ describe('backlog rail', () => {
     const rail = await screen.findByRole('complementary', { name: 'Backlog' })
     expect(within(rail).getByText('nothing waiting')).toBeInTheDocument()
     expect(within(rail).getByText(/Nothing is waiting on you/)).toBeInTheDocument()
-    expect(within(rail).getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '4.1')
+    expect(within(rail).queryByRole('meter')).not.toBeInTheDocument()
     expect(await within(rail).findByText(/claude is out of quota until/)).toBeInTheDocument()
     expect(within(rail).getByText(/Forge polled .+ ago/)).toBeInTheDocument()
   })

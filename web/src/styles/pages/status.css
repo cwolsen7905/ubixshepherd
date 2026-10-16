@@ -1,0 +1,6 @@
+/* The Status page: the daemon's detail at full width, in columns that wrap. */
+.page.status .status-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr)); gap: var(--s-4); font-size: var(--t-sm); }
+.page.status .daemon-group + .daemon-group { margin-top: 0; padding-top: 0; border-top: 0; }
+.page.status .daemon-group { padding: var(--s-3) var(--s-4); border: 1px solid var(--rule); border-radius: var(--radius-lg); }
+.page.status .daemon-offline { grid-column: 1 / -1; }
+.page.status .daemon-group h3 { font-size: var(--t-xs); }

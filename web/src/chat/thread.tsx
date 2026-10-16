@@ -15,7 +15,7 @@ import { href } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type ThreadItem } from '../state/desk'
 import { useNow } from '../hooks'
-import { useFollowBottom, Countdown, useThread, CONNECTION } from './md'
+import { useFollowBottom, Countdown, useThread, STREAM_LINE } from './md'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
 import { QuestionActions } from './questions'
@@ -417,7 +417,7 @@ function ChatThread({
     if (confirming) confirmButton.current?.focus()
   }, [confirming])
 
-  const conn = CONNECTION[d.connection]
+  const line = d.connection === 'live' ? null : STREAM_LINE[d.connection]
   const offline = d.connection === 'reconnecting'
   const stopped = d.connection === 'signed-out' || d.connection === 'refused'
 
@@ -430,10 +430,6 @@ function ChatThread({
         </ErrorBoundary>
         {children}
         <span className="chat-tools">
-          <span className={`chat-conn ${conn.cls}`} role="status">
-            <span aria-hidden="true">{conn.glyph}</span> {conn.text}
-            {offline && <Countdown at={d.retryAt} />}
-          </span>
           {d.busy && (
             <span className="faint">
               {d.queued > 1 ? `Working, ${d.queued - 1} waiting` : 'Working'}…
@@ -500,7 +496,7 @@ function ChatThread({
           <Backlog
             items={backlog}
             now={now}
-            spend={live.spend}
+            spend={null}
             onJump={jump}
             onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
           />
@@ -587,6 +583,15 @@ function ChatThread({
         </div>
 
         <PendingStrip />
+        {/* Always mounted, so a change of its text is announced; empty while the stream is live. */}
+        <p className={`chat-stream${line?.down ? ' is-down' : ''}`} role="status">
+          {line && (
+            <>
+              {line.text}
+              {offline && <Countdown at={d.retryAt} />}
+            </>
+          )}
+        </p>
         <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} topicId={topicId} onSend={follow.jump} />
         </div>
         </ErrorBoundary>
