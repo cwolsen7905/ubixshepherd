@@ -113,8 +113,11 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
     : tone === 'pending' ? 'Daemon connecting'
     : down ? 'Daemon down'
     : `Chat ${chatWords(chat)}`
-  const d = data?.status.detail
+  // A held snapshot is not current once the daemon is down or a refresh has failed.
+  const fresh = !down && !failed ? data : null
+  const d = fresh?.status.detail
   const poll = d?.forge?.last_poll
+  const unknown = <span className="faint">{down || failed ? 'unknown' : '…'}</span>
 
   return (
     <span
@@ -157,8 +160,8 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
                 )}
               </Row>
               <Row k="Chat">{chatWords(chat)}</Row>
-              <Row k="Forge">{d ? (d.forge?.error ? <span className="tone-bad">error</span> : poll ? `polled ${since(poll, now) || 'just now'}${since(poll, now) ? ' ago' : ''}` : 'not polled yet') : <span className="faint">…</span>}</Row>
-              <Row k="Version">{data ? data.status.version : <span className="faint">…</span>}</Row>
+              <Row k="Forge">{d ? (d.forge?.error ? <span className="tone-bad">error</span> : poll ? `polled ${since(poll, now) || 'just now'}${since(poll, now) ? ' ago' : ''}` : 'not polled yet') : unknown}</Row>
+              <Row k="Version">{fresh ? fresh.status.version : unknown}</Row>
               {spend && <Row k="Spend">{spendWords(spend)}</Row>}
               {counts && (
                 <Row k="Lanes">

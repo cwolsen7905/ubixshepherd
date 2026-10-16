@@ -92,6 +92,7 @@ describe('DaemonStatus', () => {
         await vi.advanceTimersByTimeAsync(5100)
       })
       expect(pop().textContent).toContain('unreadable')
+      expect(pop().textContent).not.toContain('v0.9.0')
     } finally {
       vi.useRealTimers()
     }
@@ -127,6 +128,8 @@ describe('DaemonStatus', () => {
     await user.tab()
     expect(pop()).toBeVisible()
     expect(pop().textContent).toMatch(/down for 3m/)
+    expect(pop().textContent).not.toContain('v0.9.0')
+    expect(pop().textContent).toContain('unknown')
     await act(async () => {})
     expect(load).toHaveBeenCalled()
   })
