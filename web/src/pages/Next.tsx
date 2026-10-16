@@ -326,23 +326,22 @@ function NextRow({
         {it.note && <p className="next-note">{it.note}</p>}
       </div>
       <div className="next-actions" role="group" aria-label={`Actions for ${it.title}`}>
-        {canStart(it) ? (
+        {canStart(it) && (
           <Button variant="secondary" size="small" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
             Start
           </Button>
-        ) : (
-          stateActions(it).map((a, i) => (
-            <Button
-              key={a.state}
-              variant={a.state === 'approved' && it.proposed ? 'attention' : i === 0 ? 'secondary' : 'ghost'}
-              size="small"
-              disabled={busy}
-              onClick={() => onUpdate({ state: a.state })}
-            >
-              {a.label}
-            </Button>
-          ))
         )}
+        {stateActions(it).map((a) => (
+          <Button
+            key={a.state}
+            variant={a.state === 'approved' && it.proposed ? 'attention' : 'ghost'}
+            size="small"
+            disabled={busy}
+            onClick={() => onUpdate({ state: a.state })}
+          >
+            {a.label}
+          </Button>
+        ))}
         {movable && (
           <>
             <Button variant="ghost" size="small" className="next-move" disabled={busy || !canMove(all, it, 'up')} aria-label={`Move ${it.title} up`} onClick={() => onUpdate({ move: 'up' })}>

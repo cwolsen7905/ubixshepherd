@@ -181,6 +181,14 @@ describe('NextPage', () => {
     expect(window.location.hash).toBe('#/')
   })
 
+  it('a startable approved item still offers Defer and Drop beside Start', async () => {
+    show()
+    const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
+    expect(within(first).getByRole('button', { name: 'Start' })).toBeInTheDocument()
+    expect(within(first).getByRole('button', { name: 'Defer' })).toBeInTheDocument()
+    expect(within(first).getByRole('button', { name: 'Drop' })).toBeInTheDocument()
+  })
+
   it('shows matrix rows read-only, blocked first, with no actions', async () => {
     const load = vi.fn(async (): Promise<NextList> => matrixList)
     render(
