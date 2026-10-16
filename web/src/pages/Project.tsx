@@ -7,6 +7,7 @@ import { age as ageOf, duration, runCost, since, usd } from '../format'
 import { useNow } from '../hooks'
 import { UNASSIGNED } from '../model/projects'
 import { go, href } from '../router'
+import { isOpenNow, openClick, openHref } from '../components/BacklogOpen'
 import { useProject } from '../state/projects'
 import type { BriefView, ProjectBrief } from '../api/types'
 import { Badge, EmptyState, Skeleton } from '../ui'
@@ -108,7 +109,7 @@ export function ProjectPage({ name }: { name: string | null }) {
         <ul className="rows">
           {data.pending_decisions.map((d) => (
             <li key={`d${d.id}`}>
-              <a className="row project-row" href={href.decisions(d.id)} onClick={(e) => (e.preventDefault(), go(href.decisions(d.id)))}>
+              <a className="row project-row" href={openHref({ kind: 'decision', id: d.id })} aria-current={isOpenNow({ kind: 'decision', id: d.id }) ? 'true' : undefined} onClick={openClick({ kind: 'decision', id: d.id })}>
                 <Glyph glyph="?" tone="warn" label="decision" />
                 <span className="row-lane">{d.lane}</span>
                 <span className="row-detail">{d.question}</span>
@@ -118,7 +119,7 @@ export function ProjectPage({ name }: { name: string | null }) {
           ))}
           {data.pending_requests.map((q) => (
             <li key={`q${q.id}`}>
-              <a className="row project-row" href={href.decisions()} onClick={(e) => (e.preventDefault(), go(href.decisions()))}>
+              <a className="row project-row" href={openHref({ kind: 'run', id: q.from_run })} aria-current={isOpenNow({ kind: 'run', id: q.from_run }) ? 'true' : undefined} onClick={openClick({ kind: 'run', id: q.from_run })}>
                 <Glyph glyph="!" tone="warn" label="request" />
                 <span className="row-lane">{q.from_lane}</span>
                 <span className="row-detail">
@@ -140,7 +141,7 @@ export function ProjectPage({ name }: { name: string | null }) {
         <ul className="rows">
           {data.open_lanes.map((l) => (
             <li key={l.id}>
-              <a className="row project-row" href={href.lane(l.id)} onClick={(e) => (e.preventDefault(), go(href.lane(l.id)))}>
+              <a className="row project-row" href={openHref({ kind: 'lane', id: l.id })} aria-current={isOpenNow({ kind: 'lane', id: l.id }) ? 'true' : undefined} onClick={openClick({ kind: 'lane', id: l.id })}>
                 <Glyph glyph="●" tone="accent" label="open" />
                 <span className="row-lane">{l.name}</span>
                 <span className="row-repo">{l.repo}</span>
@@ -163,7 +164,7 @@ export function ProjectPage({ name }: { name: string | null }) {
         <ul className="rows">
           {data.runs.map((r) => (
             <li key={r.id}>
-              <a className="row project-row" href={href.log(r.id)} onClick={(e) => (e.preventDefault(), go(href.log(r.id)))}>
+              <a className="row project-row" href={openHref({ kind: 'run', id: r.id })} aria-current={isOpenNow({ kind: 'run', id: r.id }) ? 'true' : undefined} onClick={openClick({ kind: 'run', id: r.id })}>
                 <Glyph glyph={r.state === 'running' ? '●' : r.state === 'succeeded' ? '✓' : '✗'} tone={r.state === 'running' ? 'accent' : r.state === 'succeeded' ? 'ok' : 'bad'} label={r.state} />
                 <span className="row-lane">{r.lane}</span>
                 <span className="row-agent">{r.agent}</span>

@@ -13,17 +13,10 @@ import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { href } from '../router'
 import { useAttention } from '../state/context'
 import { ErrorBoundary } from './ErrorBoundary'
+import { isOpenNow, itemOpen, openClick, openHref } from './BacklogOpen'
 import { Glyph } from './Glyph'
 import { MrBadge } from './MrBadge'
 import '../styles/next.css'
-
-/** Where a row leads: a decision to its answer, a lane to its page. */
-function target(it: BacklogItem): string | null {
-  if (it.decision) return href.decisions(it.decision.id)
-  if (it.request) return href.decisions()
-  if (it.laneId !== undefined) return href.lane(it.laneId)
-  return null
-}
 
 /** Whether the rail starts open: the stored choice, else open unless the screen is narrow. */
 function startsOpen(): boolean {
@@ -176,13 +169,13 @@ function BacklogView({
           <ul className="backlog-rows">
             {shown.map((it) => {
               const mark = BACKLOG_MARKS[it.group]
-              const to = target(it)
+              const op = itemOpen(it)
               const label = <span className="backlog-name">{it.name}</span>
               return (
                 <li key={it.key} className={`backlog-row group-${it.group}`}>
                   <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={BACKLOG_NAMES[it.group]} />
                   <span className="backlog-main">
-                    {to ? <a href={to}>{label}</a> : label}
+                    {op ? <a href={openHref(op)} aria-current={isOpenNow(op) ? 'true' : undefined} onClick={openClick(op)}>{label}</a> : label}
                     <span className="backlog-detail">{it.detail}</span>
                   </span>
                   <span className="backlog-side">

@@ -1,3 +1,4 @@
+import { openRow } from '../components/BacklogOpen'
 import { history } from '../api/client'
 import type { RunRecord } from '../api/types'
 import { EventGlyph } from '../components/Glyph'
@@ -114,7 +115,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
           </thead>
           <tbody>
             {data.runs.map((r) => (
-              <tr key={r.id}>
+              <tr key={r.id} {...openRow({ kind: 'run', id: r.id })}>
                 <td><EventGlyph event={STATE_EVENT[r.state]} /></td>
                 <td><a href={href.log(r.id)} title="Open the log">{r.id}</a></td>
                 <td>{r.agent}</td>
