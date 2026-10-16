@@ -4,6 +4,9 @@ import { ApiError, webSession, type SessionClock } from '../api/client'
 /** How often the daemon is asked for the expiry; the countdown between asks is local. */
 export const SESSION_POLL_MS = 60_000
 
+/** The least time between reports of the person's input. */
+export const ACTIVITY_REPORT_MS = 60_000
+
 export interface SessionState {
   /** Epoch ms the session ends; null until read, or when the daemon has no expiry to give (the dev proxy). */
   expires: number | null
@@ -53,6 +56,22 @@ export function useSession(): SessionState {
       live = false
       clearInterval(poll)
       clearInterval(tick)
+    }
+  }, [take])
+
+  // Real input keeps the session alive. Polling cannot: only a key, click or touch is a
+  // person, so those are reported, at most once a minute.
+  useEffect(() => {
+    let last = Date.now()
+    const onInput = () => {
+      if (Date.now() - last < ACTIVITY_REPORT_MS) return
+      last = Date.now()
+      webSession.active().then(take, () => {})
+    }
+    const events = ['pointerdown', 'keydown', 'wheel'] as const
+    for (const e of events) window.addEventListener(e, onInput, { passive: true })
+    return () => {
+      for (const e of events) window.removeEventListener(e, onInput)
     }
   }, [take])
 

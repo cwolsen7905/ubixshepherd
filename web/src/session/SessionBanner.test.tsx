@@ -6,9 +6,10 @@ import { SessionBanner } from './SessionBanner'
 
 const read = vi.fn()
 const extend = vi.fn()
+const active = vi.fn()
 vi.mock('../api/client', async (orig) => ({
   ...(await orig<typeof import('../api/client')>()),
-  webSession: { read: () => read(), extend: () => extend() },
+  webSession: { read: () => read(), extend: () => extend(), active: () => active() },
 }))
 
 const NOW = Date.parse('2026-10-15T12:00:00Z')
@@ -19,10 +20,23 @@ beforeEach(() => {
   vi.setSystemTime(NOW)
   read.mockReset()
   extend.mockReset()
+  active.mockReset()
 })
 afterEach(() => vi.useRealTimers())
 
 describe('SessionBanner', () => {
+  it('reports the person’s input, but not on a timer', async () => {
+    read.mockResolvedValue({ expires: at(500), max_expires: at(5000) })
+    active.mockResolvedValue({ expires: at(720), max_expires: at(5000) })
+    render(<SessionBanner />)
+    await act(async () => { vi.advanceTimersByTime(120_000) })
+    expect(active).not.toHaveBeenCalled()
+    await act(async () => { window.dispatchEvent(new Event('keydown')) })
+    expect(active).toHaveBeenCalledTimes(1)
+    await act(async () => { window.dispatchEvent(new Event('keydown')) })
+    expect(active).toHaveBeenCalledTimes(1)
+  })
+
   it('stays hidden while there is more than 30 minutes', async () => {
     read.mockResolvedValue({ expires: at(31), max_expires: at(5000) })
     const { container } = render(<SessionBanner />)

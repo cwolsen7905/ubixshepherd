@@ -10,6 +10,7 @@ import "time"
 //	                              cookie is set, and it is sent on to /
 //	GET    /v1/web/session        the browser's session: WebSession (its CSRF token)
 //	POST   /v1/web/session/extend the browser asks for more time: WebSession (CSRF-checked)
+//	POST   /v1/web/session/active the page saw the person act: slides the expiry, WebSession
 //	POST   /v1/web/signout        the browser ends its own session
 //	DELETE /v1/web/sessions       operator: end every browser session, WebSignedOut
 //
@@ -33,6 +34,8 @@ const (
 	PathWebSignout = "/v1/web/signout"
 	// PathWebSessionExtend pushes the session's expiry out, up to its absolute cap.
 	PathWebSessionExtend = "/v1/web/session/extend"
+	// PathWebSessionActive reports that the person used the page: the session slides.
+	PathWebSessionActive = "/v1/web/session/active"
 	PathWebSessions      = "/v1/web/sessions"
 )
 

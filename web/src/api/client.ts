@@ -109,6 +109,8 @@ export const webSession = {
   read: () => get<SessionClock>('/v1/web/session'),
   /** Pushes the expiry out, up to the cap; an ended session is refused with a 401. */
   extend: () => post<SessionClock>('/v1/web/session/extend', {}),
+  /** The page saw the person use it: the daemon slides the expiry (at most once a minute). */
+  active: () => post<SessionClock>('/v1/web/session/active', {}),
 }
 
 /** A read of a bare JSON array, tolerant of a missing or null body. */

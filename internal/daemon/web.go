@@ -475,22 +475,13 @@ func (s *Server) webPrincipal(r *http.Request) (principal, error) {
 	return principal{Role: RoleWeb, Human: true, web: ws}, nil
 }
 
-// backgroundPath is a request a page makes by itself, polling or a held stream: it is
-// not the person acting, so it does not keep a session alive.
-func backgroundPath(path string) bool {
-	switch path {
-	case api.PathFeedStream, api.PathStatus, api.PathDeskStatus, api.PathDeskStream,
-		api.PathWebSession, api.PathWebSessionExtend:
-		return true
-	}
-	return false
-}
-
-// slideWebSession keeps a session alive for person activity: a request that passes the
-// browser checks and is not background polling pushes the expiry out, and the cookie's
-// lifetime with it (a session's value never changes).
+// slideWebSession keeps a session alive for person activity: a write that passes the
+// browser checks pushes the expiry out, and the cookie's lifetime with it (a session's
+// value never changes). Reads never do: a page polls them on timers, so a path cannot say
+// whether a person is there. The page reports real input to webActive instead.
 func (s *Server) slideWebSession(w http.ResponseWriter, r *http.Request) {
-	if backgroundPath(r.URL.Path) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions ||
+		r.URL.Path == api.PathWebSessionExtend || r.URL.Path == api.PathWebSessionActive {
 		return
 	}
 	c, err := r.Cookie(s.cookieName())
@@ -520,8 +511,24 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, val string, ws *webSess
 // webExtend answers POST /v1/web/session/extend: the person asks for more time. The
 // browser checks (origin, CSRF) have passed; an expired session never gets here.
 func (s *Server) webExtend(w http.ResponseWriter, r *http.Request) {
-	// Routed from browserGate, so it resolves the principal itself, with the same
-	// browser checks (origin and CSRF token) every browser write passes.
+	s.webRenew(w, r, "extended", func(ws *webSession) (bool, bool) { return s.web.extend(ws) })
+}
+
+// webActive answers POST /v1/web/session/active: the page saw the person use it (a key,
+// a click), so the session slides, at most once a minute. Polling never calls it.
+func (s *Server) webActive(w http.ResponseWriter, r *http.Request) {
+	s.webRenew(w, r, "slid", func(ws *webSession) (bool, bool) {
+		moved := s.web.slide(ws)
+		s.web.mu.Lock()
+		defer s.web.mu.Unlock()
+		return s.web.clock().Before(ws.expires), moved
+	})
+}
+
+// webRenew runs one of the two ways a browser keeps its session: it resolves the
+// principal itself (browserGate routes here), with the origin and CSRF checks every
+// browser write passes, and renews the cookie when the expiry moved.
+func (s *Server) webRenew(w http.ResponseWriter, r *http.Request, what string, renew func(*webSession) (live, moved bool)) {
 	p, err := s.webPrincipal(r)
 	if err != nil {
 		writeError(w, http.StatusForbidden, err)
@@ -531,7 +538,7 @@ func (s *Server) webExtend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, errors.New("not signed in: run shepherd web for a sign-in link"))
 		return
 	}
-	live, moved := s.web.extend(p.web)
+	live, moved := renew(p.web)
 	if !live {
 		writeError(w, http.StatusUnauthorized, errors.New("this session has ended: run shepherd web for a new sign-in link"))
 		return
@@ -540,8 +547,8 @@ func (s *Server) webExtend(w http.ResponseWriter, r *http.Request) {
 		if c, err := r.Cookie(s.cookieName()); err == nil {
 			s.setSessionCookie(w, c.Value, p.web)
 		}
+		s.Log.Debug("web session "+what, "expires", p.web.expires.UTC().Format(time.RFC3339))
 	}
-	s.Log.Info("web session extended", "expires", p.web.expires.UTC().Format(time.RFC3339), "moved", moved)
 	s.webSessionInfo(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 }
 
@@ -567,6 +574,9 @@ func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
 		case r.URL.Path == api.PathWebSessionExtend && r.Method == http.MethodPost:
 			h.Set("Cache-Control", "no-store")
 			s.webExtend(w, r)
+		case r.URL.Path == api.PathWebSessionActive && r.Method == http.MethodPost:
+			h.Set("Cache-Control", "no-store")
+			s.webActive(w, r)
 		case r.URL.Path == "/v1" || strings.HasPrefix(r.URL.Path, "/v1/"):
 			h.Set("Cache-Control", "no-store")
 			apiHandler.ServeHTTP(w, r)

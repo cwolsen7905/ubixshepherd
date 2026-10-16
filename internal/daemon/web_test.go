@@ -661,10 +661,16 @@ func TestWebSessionSlideAndExtendOverHTTP(t *testing.T) {
 	if got := info(); !got.Expires.Equal(first.Expires) {
 		t.Errorf("polling slid the session: %v -> %v", first.Expires, got.Expires)
 	}
-	// A real read does, and the cookie is re-issued to match.
+	// Neither do the reads a page polls on timers: the feed and lists.
 	b.origin = ""
-	resp, _ := b.do("GET", api.PathLanes, nil)
+	b.do("GET", api.PathFeed+"?after=latest", nil)
+	b.do("GET", api.PathLanes+"?workspace_id=1", nil)
 	b.origin = base
+	if got := info(); !got.Expires.Equal(first.Expires) {
+		t.Errorf("polled reads slid the session: %v -> %v", first.Expires, got.Expires)
+	}
+	// The page reporting the person's input does, and the cookie is re-issued to match.
+	resp, _ := b.do("POST", api.PathWebSessionActive, nil)
 	var maxAge int
 	for _, c := range resp.Cookies() {
 		maxAge = c.MaxAge
@@ -675,6 +681,12 @@ func TestWebSessionSlideAndExtendOverHTTP(t *testing.T) {
 	slid := info()
 	if want := clock().Add(webSessionTTL); !slid.Expires.Equal(want) {
 		t.Errorf("expires = %v, want %v", slid.Expires, want)
+	}
+	// A write the person made does too.
+	advance(time.Hour)
+	b.do("POST", api.PathLanes+"/1/scope", map[string]any{})
+	if want := clock().Add(webSessionTTL); !info().Expires.Equal(want) {
+		t.Errorf("a write did not slide the session")
 	}
 
 	// Extend needs the CSRF token.
