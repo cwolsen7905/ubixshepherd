@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { Route } from '../router'
 import type { Status, Waiting } from '../api/types'
 import { ErrorBoundary } from '../components/ErrorBoundary'
+import { SessionBanner } from '../session/SessionBanner'
 import { Sidebar } from './Sidebar'
 import { currentItem } from './nav'
 import { useShellMode } from './useMedia'
@@ -75,6 +76,7 @@ export function Shell({
       </aside>
       {sheet && open && <div className="sheet-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
       <div className="shell-body">
+        <SessionBanner />
         <header className="page-bar">
           {sheet && (
             <button
