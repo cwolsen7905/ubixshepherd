@@ -13,7 +13,7 @@ const defaultLoad: LoadTopicBar = (all) => topicsApi.list(all)
 export type LoadTopicBar = (all: boolean) => Promise<TopicList>
 
 /**
- * A strip stuck to the top of the thread: "All" and one chip per active topic, then "+N idle" to reveal
+ * A strip in the conversation head, after the title: "All" and one chip per active topic, then "+N idle" to reveal
  * the quiet ones. The selected topic is always a chip, idle or not. It filters
  * through the same `onFilter` the rail's Topics section uses, so the hash is the one
  * source of truth and the two cannot disagree. "All topics" opens the full list in a
