@@ -39,7 +39,20 @@
 .keep-going-detail { font-size: var(--t-sm); color: var(--muted); }
 .keep-going-detail.tone-warn { color: var(--lantern-ink); }
 .keep-going-error { font-size: var(--t-sm); color: var(--lantern-ink); }
+.keep-going-bar {
+  display: block; width: 100%; height: 4px; border-radius: 2px;
+  background: color-mix(in srgb, var(--lantern) 20%, transparent);
+  overflow: hidden;
+}
+.keep-going-fill {
+  display: block; height: 100%;
+  width: var(--kg-fill-pct);
+  background: var(--lantern);
+  transition: width 200ms;
+}
+.keep-going-bar.tone-warn .keep-going-fill { background: var(--lantern); }
 @media (prefers-reduced-motion: reduce) {
   .keep-going-track, .keep-going-track::after { transition: none; }
+  .keep-going-fill { transition: none; }
 }
 .shell[data-mode="icons"] .keep-going-detail { display: none; }
