@@ -68,7 +68,11 @@ export function App() {
 
   const footer = (
     <>
-      {spend && <RailSpend spend={spend} />}
+      {spend && (
+        <ErrorBoundary region="The spend bar">
+          <RailSpend spend={spend} />
+        </ErrorBoundary>
+      )}
       <div className="foot-row">
         <ErrorBoundary region="The daemon status">
           <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} spend={spend} counts={counts} />
