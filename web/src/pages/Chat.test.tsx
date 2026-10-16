@@ -468,7 +468,7 @@ describe('backlog rail', () => {
     expect(localStorage.getItem('shepherd.chat.backlog')).toBe('closed')
   })
 
-  it('says when nothing waits, and shows today\u2019s spend against the budget and a quota hold', async () => {
+  it('says when nothing waits, and a quota hold, and no spend meter (it lives in the rail)', async () => {
     vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
       status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, quota_holds: [{ agent: 'claude', until: '2026-10-08T14:05:00Z' }], forge: { last_poll: '2026-10-08T10:03:00Z' } } }),
     )
@@ -477,7 +477,7 @@ describe('backlog rail', () => {
     const rail = await screen.findByRole('complementary', { name: 'Backlog' })
     expect(within(rail).getByText('nothing waiting')).toBeInTheDocument()
     expect(within(rail).getByText(/Nothing is waiting on you/)).toBeInTheDocument()
-    expect(within(rail).getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '4.1')
+    expect(within(rail).queryByRole('meter')).not.toBeInTheDocument()
     expect(await within(rail).findByText(/claude is out of quota until/)).toBeInTheDocument()
     expect(within(rail).getByText(/Forge polled .+ ago/)).toBeInTheDocument()
   })

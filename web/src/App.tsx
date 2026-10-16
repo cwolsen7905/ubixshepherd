@@ -28,7 +28,6 @@ import { UpdateNotice } from './components/UpdateNotice'
 import { Shell } from './shell/Shell'
 import { useChatLink } from './shell/chatLink'
 import { useAttentionChrome } from './shell/useAttentionChrome'
-import { SpendMeter } from './components/BudgetMeter'
 import { readShowDismissed, writeShowDismissed } from './model/board'
 
 export function App() {
@@ -64,20 +63,20 @@ export function App() {
 
   const spend = snap.spend
   const chat = useChatLink()
+  const counts = statusCounts({ ...snap, showDismissed })
 
   const footer = (
     <>
-      {spend && <SpendMeter spend={spend} />}
       <div className="foot-row">
         <ErrorBoundary region="The daemon status">
-          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} />
+          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} spend={spend} counts={counts} />
         </ErrorBoundary>
         <button type="button" className="help-button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
           <kbd>?</kbd>
         </button>
       </div>
       <ErrorBoundary region="The lane counts">
-        <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
+        <StatusCounts counts={counts} />
       </ErrorBoundary>
       <ErrorBoundary region="The update notice">
         <UpdateNotice />

@@ -496,7 +496,7 @@ function ChatThread({
           <Backlog
             items={backlog}
             now={now}
-            spend={live.spend}
+            spend={null}
             onJump={jump}
             onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
           />

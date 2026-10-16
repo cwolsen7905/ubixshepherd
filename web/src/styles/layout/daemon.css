@@ -1,13 +1,19 @@
 /* The liveness dot's popover: what the daemon is and is doing. */
-.daemon-status { position: relative; display: inline-flex; }
+.daemon-status { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
 .live-dot { 
   background: none; border: 0; padding: var(--s-1) var(--s-2); cursor: pointer; line-height: 1;
   display: flex; align-items: center; gap: var(--s-2);
 }
 .daemon-dot-indicator { font-size: var(--t-2xs); }
-.daemon-status-text { font-size: var(--t-xs); }
+.live-dot { min-width: 0; max-width: 100%; text-align: left; color: var(--ink); }
+.daemon-dot-indicator { flex: none; }
+.daemon-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-xs); }
+/* Today's spend, compact under the status line: a thin bar and a short amount; the words are in the popover. */
+.rail-spend { display: grid; gap: 2px; padding: 0 var(--s-2); min-width: 0; font-size: var(--t-2xs); color: var(--muted); }
+.rail-spend .meter { display: block; height: 3px; border-radius: 2px; background: var(--sunk); }
+.rail-spend-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .daemon-pop {
-  position: absolute; top: 100%; right: 0; z-index: 10; width: 14rem; max-width: 90vw;
+  position: fixed; z-index: 50; width: 18rem; max-width: calc(100vw - 1rem);
   padding: var(--s-3) var(--s-4); border: 1px solid var(--control-border); border-radius: var(--radius-lg);
   background: var(--sheet); color: var(--ink); font-size: var(--t-xs); white-space: normal;
   box-shadow: var(--shadow-2);
@@ -27,3 +33,10 @@
 .daemon-short dt { color: var(--muted); }
 .daemon-short dd { margin: 0; }
 .daemon-details { display: inline-block; margin-top: var(--s-2); }
+/* Icon rail: the dot alone; the words, the amount and the counts' words are in the popover and titles. */
+.shell[data-mode="icons"] .daemon-status-text,
+.shell[data-mode="icons"] .rail-spend-text { display: none; }
+.shell[data-mode="icons"] .live-dot { justify-content: center; padding-inline: 0; }
+.shell[data-mode="icons"] .rail-spend { padding: 0; }
+.shell[data-mode="icons"] .keep-going-row { justify-content: center; }
+.shell[data-mode="icons"] .keep-going-row > span:first-child { display: none; }

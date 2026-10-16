@@ -12,3 +12,6 @@
 .status-zero { color: var(--faint, var(--muted)); }
 .status-zero .status-n { font-weight: 400; }
 .status-broken:not(.status-zero) { color: var(--bad, var(--ink)); }
+/* Icon rail: one chip per row, centred, so four fit in the narrow column. */
+.shell[data-mode="icons"] .status-counts { flex-direction: column; align-items: center; gap: 0; }
+.shell[data-mode="icons"] .status-chip { padding: 0.05rem 0; font-size: var(--t-2xs); }

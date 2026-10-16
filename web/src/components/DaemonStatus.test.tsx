@@ -39,6 +39,7 @@ describe('DaemonStatus', () => {
     const text = pop().textContent ?? ''
     for (const want of ['Daemon', 'up', '3h', 'Chat', 'live', 'polled 1m ago', 'v0.9.0']) expect(text).toContain(want)
     expect(pop().querySelectorAll('dl > div')).toHaveLength(4)
+    expect(screen.getByRole('button')).toHaveTextContent('Daemon live')
     // the detail lives on the Status page now
     for (const gone of ['linux/amd64', '/home/me/.shepherd/config.yaml', '$3.50', 'may save']) expect(text).not.toContain(gone)
     expect(screen.getByRole('link', { name: 'Details →' })).toHaveAttribute('href', '#/status')
@@ -54,7 +55,7 @@ describe('DaemonStatus', () => {
     expect(dot()).toHaveClass('is-up')
     again({ chat: { connection: 'reconnecting', retryAt: null } })
     expect(dot()).toHaveClass('is-warn')
-    expect(dot()).toHaveAccessibleName('Chat stream reconnecting')
+    expect(dot()).toHaveAccessibleName('Chat reconnecting')
     again({ chat: { connection: 'connecting', retryAt: null } })
     expect(dot()).toHaveClass('is-warn')
     again({ chat: { connection: 'signed-out', retryAt: null } })
@@ -65,6 +66,18 @@ describe('DaemonStatus', () => {
     expect(dot()).toHaveClass('is-down')
     again({ ready: false, chat: null })
     expect(dot()).not.toHaveClass('is-up')
+  })
+
+  it('puts spend in the status line and every status in the popover', async () => {
+    const user = userEvent.setup()
+    const spend = { day: '2026-10-10', usd: 3.5, budget: 20, credit_usd: 0, by_source: null }
+    const { dot, pop } = setup({ spend, counts: { running: 2, waiting: 1, broken: 0, routing: 3 } })
+    expect(screen.getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '3.5')
+    expect(document.querySelector('.rail-spend')).toHaveAttribute('title', '$3.50 of $20.00 today')
+    await user.click(dot)
+    await screen.findByText('v0.9.0')
+    expect(pop().textContent).toContain('$3.50 of $20.00')
+    expect(pop().textContent).toContain('2 running, 1 waiting, 0 broken, 3 to route')
   })
 
   it('opens on hover and closes on leave, and on Escape', async () => {

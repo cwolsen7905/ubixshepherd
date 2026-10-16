@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { daemonInfo } from '../api/client'
-import type { Status, StatusDetail, WebSession } from '../api/types'
+import type { SpendToday, Status, StatusDetail, WebSession } from '../api/types'
 import { age, clockTime, shortSha, since, usd } from '../format'
 import { useNow } from '../hooks'
 import { href } from '../router'
 import { chatWords, worstTone, type ChatLink } from '../shell/chatLink'
+import { RailSpend, spendWords } from '../shell/RailSpend'
+import type { StatusCounts } from '../state/attention'
 
 export interface Loaded {
   status: Status
@@ -48,17 +50,14 @@ interface Props {
   ready: boolean
   /** The open chat's /stream connection; null when no chat is open. */
   chat?: ChatLink | null
+  /** Today's spend, shown as a compact line under the status and in full in the popover. */
+  spend?: SpendToday | null
+  /** Lane counts, spelled out in the popover. */
+  counts?: StatusCounts
   load?: () => Promise<Loaded>
   /** The time now in ms; the clock ticks by itself when omitted. */
   now?: number
 }
-
-const HEADLINE = {
-  up: 'Daemon and chat live',
-  warn: 'Chat stream reconnecting',
-  down: 'Daemon unreachable',
-  pending: 'Daemon connecting',
-} as const
 
 /**
  * The rail's one status dot: green when the daemon link and the chat stream are both up,
@@ -66,13 +65,15 @@ const HEADLINE = {
  * signed out or refused. Hovering, focusing or tapping it opens a short popover; Escape
  * closes it. The detail is read only while it is open. "Details" opens the Status page.
  */
-export function DaemonStatus({ error, downSince, ready, chat = null, load = loadDaemon, now: nowProp }: Props) {
+export function DaemonStatus({ error, downSince, ready, chat = null, spend = null, counts, load = loadDaemon, now: nowProp }: Props) {
   const ticking = useNow(10_000)
   const now = nowProp ?? ticking
   const id = useId()
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
   const box = useRef<HTMLSpanElement>(null)
+  const pop = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<CSSProperties>({})
   const { data, failed } = useDaemonDetail(open, load)
 
   const close = useCallback(() => {
@@ -92,9 +93,26 @@ export function DaemonStatus({ error, downSince, ready, chat = null, load = load
     }
   }, [open, close])
 
+  // The sidebar scrolls and clips, so the popover is fixed: beside the sidebar when there is
+  // room, else above the status line inside the sidebar's width.
+  useLayoutEffect(() => {
+    if (!open || !box.current) return
+    const b = box.current.getBoundingClientRect()
+    const side = box.current.closest('.sidebar')?.getBoundingClientRect()
+    const wide = pop.current?.offsetWidth ?? 0
+    const edge = side ? side.right : b.right
+    if (window.innerWidth - edge >= wide + 16) setPlace({ left: edge + 8, bottom: Math.max(8, window.innerHeight - b.bottom) })
+    else setPlace({ left: (side?.left ?? b.left) + 8, bottom: window.innerHeight - b.top + 6, maxWidth: (side?.width ?? window.innerWidth) - 16 })
+  }, [open])
+
   const tone = worstTone({ error, ready }, chat)
   const down = error !== null
-  const statusText = tone === 'down' && !down ? `Chat ${chatWords(chat)}` : HEADLINE[tone]
+  const statusText =
+    tone === 'up' ? 'Daemon live'
+    : tone === 'warn' ? `Chat ${chatWords(chat)}`
+    : tone === 'pending' ? 'Daemon connecting'
+    : down ? 'Daemon down'
+    : `Chat ${chatWords(chat)}`
   const d = data?.status.detail
   const poll = d?.forge?.last_poll
 
@@ -110,6 +128,7 @@ export function DaemonStatus({ error, downSince, ready, chat = null, load = load
         type="button"
         className={`live-dot is-${tone}`}
         aria-label={statusText}
+        title={statusText}
         aria-describedby={id}
         aria-expanded={open}
         onFocus={() => setOpen(true)}
@@ -119,9 +138,10 @@ export function DaemonStatus({ error, downSince, ready, chat = null, load = load
         }}
       >
         <span aria-hidden="true" className="daemon-dot-indicator">{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
-        <span className="daemon-status-text">{tone === 'up' ? 'Live' : tone === 'warn' ? 'Reconnecting' : tone === 'down' ? 'Offline' : 'Connecting'}</span>
+        <span className="daemon-status-text">{statusText}</span>
       </button>
-      <div id={id} role="tooltip" className="daemon-pop" hidden={!open}>
+      {spend && <RailSpend spend={spend} />}
+      <div id={id} ref={pop} role="tooltip" className="daemon-pop" hidden={!open} style={place}>
         {open && (
           <>
             <dl className="daemon-short">
@@ -139,6 +159,12 @@ export function DaemonStatus({ error, downSince, ready, chat = null, load = load
               <Row k="Chat">{chatWords(chat)}</Row>
               <Row k="Forge">{d ? (d.forge?.error ? <span className="tone-bad">error</span> : poll ? `polled ${since(poll, now) || 'just now'}${since(poll, now) ? ' ago' : ''}` : 'not polled yet') : <span className="faint">…</span>}</Row>
               <Row k="Version">{data ? data.status.version : <span className="faint">…</span>}</Row>
+              {spend && <Row k="Spend">{spendWords(spend)}</Row>}
+              {counts && (
+                <Row k="Lanes">
+                  {counts.running} running, {counts.waiting} waiting, {counts.broken} broken, {counts.routing} to route
+                </Row>
+              )}
             </dl>
             <a className="daemon-details" href={href.status()} onClick={close}>Details →</a>
           </>

@@ -77,10 +77,10 @@
 .nav .ui-badge-bad::after { content: " \2717"; }
 
 .sidebar-foot { display: grid; gap: var(--s-2); padding: var(--s-2); font-size: var(--t-xs); color: var(--muted); }
-.foot-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.foot-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-width: 0; }
+.sidebar-foot { min-width: 0; overflow: hidden; }
 .spend { display: grid; gap: var(--s-1); }
 .spend .meter { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--sunk); }
-.sidebar .daemon-pop { top: auto; bottom: 100%; left: 0; right: auto; width: 20rem; }
 .sidebar .banner { padding: var(--s-2); border: 1px solid var(--rule); border-radius: var(--radius); }
 
 /* The slim page head: the page's name, the waiting list and, in a sheet, the menu button. */
