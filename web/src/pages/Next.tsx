@@ -95,16 +95,10 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     />
   )
 
-  const waiting = items.filter((it) => it.stored_state === 'approved' && it.state === 'approved').length
   return (
     <div className="page next">
       <header className="page-head">
         <h1>Next up</h1>
-        <p className="page-sub">
-          {list === null
-            ? 'Reading the list…'
-            : `${waiting} approved and not started. Your order is the priority: the first approved item with no lane is next. Only you approve, defer or drop.`}
-        </p>
       </header>
 
       {error && (
@@ -138,7 +132,6 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
           <h2 id="next-waiting-h" className="next-group-h">
             Waiting on you <span className="faint">{proposed.length}</span>
           </h2>
-          <p className="faint next-group-sub">Added by an agent or the desk. Approve, defer or drop each one.</p>
           <ol className="next-rows">{proposed.map(renderRow(proposed))}</ol>
         </section>
       )}
@@ -166,10 +159,6 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
           <h2 id="next-matrix-h" className="next-group-h">
             From work matrix <span className="faint">{matrix.reduce((n, g) => n + g.rows.length, 0)}</span>
           </h2>
-          <p className="faint next-group-sub">
-            Rows with status todo or blocked in each repo's <code>docs/WORK.md</code>. Read from git, not stored here: edit the
-            file to change one.
-          </p>
           {matrix.map((g) => (
             <div key={g.repo}>
               <h3 className="next-matrix-repo">{g.repo}</h3>
@@ -338,14 +327,14 @@ function NextRow({
       </div>
       <div className="next-actions" role="group" aria-label={`Actions for ${it.title}`}>
         {canStart(it) && (
-          <Button variant="primary" size="small" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
+          <Button variant="secondary" size="small" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
             Start
           </Button>
         )}
         {stateActions(it).map((a) => (
           <Button
             key={a.state}
-            variant={a.state === 'approved' ? (canStart(it) ? 'secondary' : 'primary') : a.state === 'dropped' ? 'ghost' : 'secondary'}
+            variant={a.state === 'approved' && it.proposed ? 'attention' : 'ghost'}
             size="small"
             disabled={busy}
             onClick={() => onUpdate({ state: a.state })}
