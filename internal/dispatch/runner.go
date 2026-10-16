@@ -472,6 +472,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 			workspace, repoRules = cfg.Defaults.Brief, cfg.Repos[repo.Name].Brief
 		}
 		note := Standing(ad.Note, workspace, pc, repoRules)
+		if sn := StillNeeded(r.itemOfLane(ctx, lane.ID), lane.Base); sn != "" {
+			note = strings.TrimSpace(note + "\n" + sn)
+		}
 		// A lane Shepherd starts on its own (a follow) has no one to approve a plan.
 		may.PlanFirst = !req.Auto && prof.Autonomy.PlanFirst != nil && *prof.Autonomy.PlanFirst
 		prompt = Brief(req.Prompt, lane.Name, repo.Name, lane.Branch, lane.Base, lane.Worktree, lane.Scope, gate, may, worker != "", note, r.standardsDigest(ctx, prof, lane))
@@ -863,6 +866,7 @@ func (r *Runner) Record(ctx context.Context, e store.Event) (store.Event, error)
 	if err == nil {
 		r.Log.Info("agent "+e.Kind, "run", e.RunID, "status", e.Status)
 		r.feed(ctx, store.FeedReport, e.RunID, "%s reports %s: %s", r.who(ctx, e.RunID), e.Status, clip(e.Text, 200))
+		r.claimedDone(ctx, e)
 	}
 	return e, err
 }
