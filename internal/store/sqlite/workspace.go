@@ -33,6 +33,10 @@ func (s *DB) RenameWorkspace(ctx context.Context, id int64, name string) (store.
 	}
 	res, err := tx.ExecContext(ctx, `UPDATE workspaces SET name = ? WHERE id = ?`, name, id)
 	if err != nil {
+		// A rename that raced past the check above still meets the UNIQUE column.
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return store.Workspace{}, fmt.Errorf("%w: workspace name %q is already used by another workspace", store.ErrConflict, name)
+		}
 		return store.Workspace{}, fmt.Errorf("rename workspace %d: %w", id, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {

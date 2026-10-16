@@ -52,7 +52,7 @@ func TestRenameWorkspace(t *testing.T) {
 		t.Errorf("desk rename: %d", code)
 	}
 	wss, _ := s.Store.Workspaces(ctx)
-	if len(wss) != 2 || wss[1].Name != "c" && wss[0].Name != "c" {
+	if len(wss) != 2 || wss[0].Name != "b" || wss[1].Name != "c" {
 		t.Errorf("workspaces = %+v", wss)
 	}
 }
