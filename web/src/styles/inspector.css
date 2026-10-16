@@ -4,13 +4,12 @@
    the page lays out as if they were not there. Only the split pane needs a row. */
 .inspector-frame,
 .inspector-page { display: contents; }
-/* The split frame spans the whole main column: it takes back the padding `.main` puts around
-   the page, so the inspector runs edge to edge under the page bar. */
-.inspector-frame.is-split {
-  display: flex;
-  min-height: 0;
-  margin: calc(-1 * var(--s-3)) calc(-1 * var(--shell-edge)) calc(-1 * var(--s-6));
-}
+/* The split frame spans the whole main column: `.main` drops its own padding while a split
+   inspector is open and the page takes it back, so the inspector runs edge to edge under the
+   page bar. The side padding is `--shell-edge`, a percentage, so it must resolve against
+   `.main`'s full width (here) and not against a box that is already narrowed by it. */
+.main:has(> .inspector-frame.is-split) { padding: 0; }
+.inspector-frame.is-split { display: flex; min-height: 0; }
 .inspector-frame.is-split .inspector-page {
   display: block;
   flex: 1 1 auto;
@@ -53,7 +52,10 @@
 
 .inspector-head { display: flex; align-items: center; gap: var(--s-2); padding: 10px var(--s-4); border-bottom: 1px solid var(--rule); font-size: var(--t-xs); color: var(--faint); }
 .inspector-head h2 { margin: 0; font-size: inherit; font-weight: 600; color: var(--ink); text-transform: capitalize; }
-.inspector-head h2:focus { outline: none; } /* focus lands here on open for keyboards; the heading is not a control */
+/* Focus lands here on open so keyboards know where they are: a quiet ring, and only when the
+   browser says it should show (not after a mouse open). */
+.inspector-head h2:focus { outline: none; }
+.inspector-head h2:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; border-radius: var(--radius); }
 .inspector-crumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-head-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
 .inspector-head-actions .ui-btn { font-size: inherit; text-decoration: none; }

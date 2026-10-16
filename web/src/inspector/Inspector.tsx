@@ -63,7 +63,7 @@ function parentLane(open: Open, snap: ReturnType<typeof useSnapshot>): string | 
 /** The page an item has of its own, for "Open as page". */
 function pageFor(open: Open): string | undefined {
   if (open.kind === 'lane') return href.lane(open.id)
-  if (open.kind === 'run') return `#/runs/${open.id}/log`
+  if (open.kind === 'run') return href.log(open.id)
   return undefined
 }
 
