@@ -2,6 +2,8 @@ package daemon
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -116,5 +118,43 @@ func TestStallAlertNamesAnUnregisteredRepo(t *testing.T) {
 	got := stallAlerts(t, s)
 	if len(got) != 1 || !strings.Contains(got[0], "repo nowhere is not registered") {
 		t.Fatalf("want the register-it reason: %v", got)
+	}
+}
+
+func TestStallAlertKeepsToItsWorkspaceAndGroupsBlockersPerRepo(t *testing.T) {
+	s, _, clk, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	kg := s.KeepGoing()
+	// A second workspace with its own repo: its approved item is not this stall's.
+	root := t.TempDir()
+	if _, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "other", Path: root},
+		[]store.Repo{{Name: "elsewhere", Path: filepath.Join(root, "elsewhere")}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.AddNextItem(ctx, store.NextItem{Title: "Other workspace item", Repo: "elsewhere", State: store.NextApproved, Source: store.NextByPerson}); err != nil {
+		t.Fatal(err)
+	}
+	approvedItem(t, s, "App item")
+	run, err := s.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded, Started: clk.Now()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.Store.CreateDecision(ctx, store.Decision{RunID: run.ID, Question: "which db?", State: store.DecisionOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	kg.EvaluateAll(ctx)
+	clk.Add(stallGrace)
+	kg.EvaluateAll(ctx)
+	got := stallAlerts(t, s)
+	if len(got) != 1 {
+		t.Fatalf("want one alert: %v", got)
+	}
+	if strings.Contains(got[0], "Other workspace item") {
+		t.Errorf("another workspace's item is in this stall: %s", got[0])
+	}
+	if want := fmt.Sprintf("decision %d is held on lane %s", d.ID, lane.Name); !strings.Contains(got[0], "App item") || !strings.Contains(got[0], want) {
+		t.Errorf("want the app item with %q: %s", want, got[0])
 	}
 }
