@@ -94,7 +94,7 @@ func TestDeskQuestionsLifecycle(t *testing.T) {
 	}
 }
 
-func TestReplyToClearsTheQuestion(t *testing.T) {
+func TestReplyToLeavesTheQuestionOpen(t *testing.T) {
 	s, ts := newServer(t)
 	ctx := context.Background()
 	root, _ := paths.Canonical(t.TempDir())
@@ -106,14 +106,20 @@ func TestReplyToClearsTheQuestion(t *testing.T) {
 		t.Fatalf("reply: %d", code)
 	}
 	got, _ := s.Store.Question(ctx, q.ID)
-	if got.State != store.QuestionAnswered || got.AnsweredTurn != acc.Turn || acc.Turn == 0 {
+	if got.State != store.QuestionOpen || got.AnsweredTurn != 0 || acc.Turn == 0 {
 		t.Errorf("question after reply: %+v (turn %d)", got, acc.Turn)
 	}
 	es, _ := s.Store.DeskHistory(ctx, ws.ID, 0, 10)
 	if len(es) == 0 || es[0].Kind != store.DeskUser || !strings.Contains(es[0].Text, "Replying to your question 1") || !strings.HasSuffix(es[0].Text, "the app") {
 		t.Errorf("person's turn: %+v", es)
 	}
-	// A second reply to a closed question, and one to no question, are refused.
+	// A follow-up is accepted while it is open; once the person skips it, a reply is refused.
+	if code := call(t, ts, s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "and the web UI too", ReplyTo: q.ID}, nil); code != http.StatusAccepted {
+		t.Errorf("second reply to an open question: %d", code)
+	}
+	if code := call(t, ts, s.Token, "POST", api.PathQuestion(q.ID)+"/skip", struct{}{}, nil); code != http.StatusOK {
+		t.Fatalf("skip: %d", code)
+	}
 	if code := call(t, ts, s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "again", ReplyTo: q.ID}, nil); code != http.StatusConflict {
 		t.Errorf("reply to a closed question: %d", code)
 	}

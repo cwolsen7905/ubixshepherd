@@ -5,17 +5,20 @@ import { DeskThread } from '../state/desk'
 
 /**
  * Reply here and Skip under a desk message that asked the person something. Reply opens an
- * input right here; sending it posts a normal turn linked to the question, which clears it.
- * Skip clears it without an answer. Once cleared the question is no longer open, so the
- * buttons go away.
+ * input right here; sending it posts a normal turn linked to the question and leaves it open,
+ * since a reply may be a follow-up or a partial answer. Mark answered, Skip, or the desk's
+ * question_answer clears it; only then do the buttons go away.
  */
 function QuestionActions({
-  q, thread, topicId = null, onCleared,
+  q, thread, topicId = null, onCleared, onReplied,
 }: {
   q: DeskQuestion
   thread: DeskThread
   topicId?: number | null
+  /** Called once the question is no longer open (answered or skipped). */
   onCleared: () => void
+  /** Called after a reply that left it open. */
+  onReplied?: () => void
 }) {
   const [replying, setReplying] = useState(false)
   const [text, setText] = useState('')
@@ -35,16 +38,16 @@ function QuestionActions({
     if (ok) {
       setText('')
       setReplying(false)
-      onCleared()
+      onReplied?.()
     } else {
       setProblem('Not sent. The desk may be busy; try again.')
     }
   }
-  const skip = async () => {
+  const close = async (how: 'answer' | 'skip') => {
     setBusy(true)
     setProblem(null)
     try {
-      await deskQuestions.skip(q.id)
+      await deskQuestions[how](q.id)
       onCleared()
     } catch (err) {
       setProblem(err instanceof Error ? err.message : String(err))
@@ -61,8 +64,11 @@ function QuestionActions({
           <button type="button" className="button" onClick={() => setReplying(true)} disabled={busy}>
             Reply here
           </button>
-          <button type="button" className="button" onClick={() => void skip()} disabled={busy}>
+          <button type="button" className="button" onClick={() => void close('skip')} disabled={busy}>
             Skip
+          </button>
+          <button type="button" className="button" onClick={() => void close('answer')} disabled={busy}>
+            Mark answered
           </button>
         </>
       )}

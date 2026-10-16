@@ -220,6 +220,8 @@ export const deskQuestions = {
     get<unknown>(`/v1/questions?${qs({ state })}`).then((r) => asList<DeskQuestion>(asObject(r).questions)),
   /** Clears it without an answer; the daemon records the skip in the thread. */
   skip: (id: number) => post<DeskQuestion>(`/v1/questions/${id}/skip`, {}),
+  /** The person marks it answered, for a reply that settled it. */
+  answer: (id: number) => post<DeskQuestion>(`/v1/questions/${id}/answer`, {}),
 }
 
 /** A failed run's diagnoses and its suggested fixes. */
