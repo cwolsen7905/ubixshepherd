@@ -51,7 +51,7 @@
 
 /* Head: one 45px row, h1 16/700, sub inline, actions right. */
 .timeline-head {
-  height: 45px;
+  min-height: 45px; /* grows rather than clip a wrapping sub */
   display: flex; flex-direction: row; align-items: center; column-gap: var(--s-4);
   margin: var(--s-2) 0 var(--s-4); padding-left: var(--gutter);
 }
