@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -19,12 +20,19 @@ import (
 const (
 	ClosedRecheck    = time.Hour
 	ClosedRecheckMax = 7 * 24 * time.Hour
+	// ClosedRecheckNoMR caps the wait for a lane the forge has no request for at all: it
+	// may be opened and merged any day, so it is not left for a week.
+	ClosedRecheckNoMR = 24 * time.Hour
+	// closedFetchLimit bounds the one git fetch a repo may cost per pass.
+	closedFetchLimit = 30 * time.Second
 )
 
 // closedPoll is when the forge was last asked about a closed lane, and how many times.
 type closedPoll struct {
 	at time.Time
 	n  int
+	// noMR is set when the last answer was that the branch has no request.
+	noMR bool
 }
 
 // wait is how long to leave the lane alone after n unsettling answers.
@@ -35,6 +43,9 @@ func (p closedPoll) wait() time.Duration {
 	}
 	if d > ClosedRecheckMax {
 		d = ClosedRecheckMax
+	}
+	if p.noMR && d > ClosedRecheckNoMR {
+		d = ClosedRecheckNoMR
 	}
 	return d
 }
@@ -53,22 +64,6 @@ func (w *Watcher) pruneClosedRead(linked map[int64]bool) {
 	}
 }
 
-// coversBranch reports whether the lane's local branch, if it still exists, holds nothing
-// beyond the merged request's head: work pushed after the merge is not in it. A branch
-// that is gone has nothing more; a head the forge did not give cannot be checked.
-func coversBranch(ctx context.Context, repoPath string, lane store.Lane, head string) bool {
-	if !git.RefExists(ctx, repoPath, "refs/heads/"+lane.Branch) {
-		return true
-	}
-	if head == "" {
-		return false
-	}
-	if !git.Ok(ctx, repoPath, "cat-file", "-e", head+"^{commit}") {
-		git.Run(ctx, repoPath, "fetch", "--quiet", "origin")
-	}
-	return git.Ok(ctx, repoPath, "merge-base", "--is-ancestor", "refs/heads/"+lane.Branch, head)
-}
-
 // settleClosed marks done the items whose lane closed before the watcher saw its merge.
 // A lane closed by hand is judged by git ancestry, which a squash merge fails, so the
 // lane's stored request never became merged and the item stayed open. The forge's word
@@ -78,6 +73,16 @@ func coversBranch(ctx context.Context, repoPath string, lane store.Lane, head st
 func (w *Watcher) settleClosed(ctx context.Context, f forge.Forge, host, repoPath string, closed []closedLane, note func(error)) {
 	if w.closedRead == nil {
 		w.closedRead = map[int64]closedPoll{}
+	}
+	fetched := false
+	fetchOnce := func(ctx context.Context) {
+		if fetched {
+			return
+		}
+		fetched = true
+		ctx, cancel := context.WithTimeout(ctx, closedFetchLimit)
+		defer cancel()
+		git.Run(ctx, repoPath, "fetch", "--quiet", "origin")
 	}
 	for _, cl := range closed {
 		lane, its := cl.lane, cl.items
@@ -95,8 +100,8 @@ func (w *Watcher) settleClosed(ctx context.Context, f forge.Forge, host, repoPat
 			// A failed call leaves the wait where it was; only an answer that settles
 			// nothing lengthens it.
 			p := w.closedRead[lane.ID]
-			w.closedRead[lane.ID] = closedPoll{w.now(), p.n}
-			unsettled := func() { w.closedRead[lane.ID] = closedPoll{w.now(), p.n + 1} }
+			w.closedRead[lane.ID] = closedPoll{w.now(), p.n, p.noMR}
+			unsettled := func(noMR bool) { w.closedRead[lane.ID] = closedPoll{w.now(), p.n + 1, noMR} }
 			mr, err := f.MRForBranch(ctx, lane.Branch)
 			if err != nil {
 				note(err)
@@ -107,18 +112,14 @@ func (w *Watcher) settleClosed(ctx context.Context, f forge.Forge, host, repoPat
 			}
 			w.result(host, nil)
 			if mr == nil || !strings.EqualFold(mr.State, "merged") {
-				unsettled()
+				unsettled(mr == nil)
 				continue
 			}
-			// A branch name can be reused: only a request made after the lane opened is
-			// this lane's. A forge that gives no creation time proves nothing.
-			if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
-				unsettled()
-				continue
-			}
-			// Work pushed after the merge is not in it: the item is not done.
-			if !coversBranch(ctx, repoPath, lane, mr.SHA) {
-				unsettled()
+			// The one proof, shared with lane close: merged with a commit, made after the
+			// lane opened, and the branch holds nothing beyond its head. A fetch for a head
+			// not here is made at most once per repo per pass, and bounded.
+			if !fold.MergeCovers(ctx, repoPath, lane, mr, fetchOnce) {
+				unsettled(false)
 				continue
 			}
 			lf.MR, lf.MRState, lf.MRURL, lf.MergeSHA = mr.IID, mr.State, mr.URL, mr.MergeSHA

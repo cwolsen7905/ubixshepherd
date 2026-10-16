@@ -290,3 +290,37 @@ func TestStoreReadFailureKeepsTheClosedLanePollState(t *testing.T) {
 		t.Errorf("a failed read forgot the poll state: %v", f.w.closedRead)
 	}
 }
+
+func TestLaneWithNoRequestIsAskedAtLeastDaily(t *testing.T) {
+	f := newFixture(t)
+	f.linkedItem(t, store.NextApproved)
+	f.closeByHand(t)
+	now := time.Now()
+	f.w.Clock = func() time.Time { return now }
+	f.f.mr = nil
+	for i := 0; i < 8; i++ { // enough answers to pass the cap a request would reach
+		f.w.Check(f.ctx)
+		now = now.Add(ClosedRecheckNoMR + time.Minute)
+	}
+	if got := f.w.closedRead[f.lane.ID].wait(); got != ClosedRecheckNoMR {
+		t.Errorf("wait with no request = %v, want %v", got, ClosedRecheckNoMR)
+	}
+	// The request is opened and merged in the meantime: found within the day.
+	f.f.mr = &forge.MR{IID: 9, State: "merged", MergeSHA: "abc", SHA: f.head(t), Created: time.Now().Add(time.Minute)}
+	f.w.Check(f.ctx)
+	items, _ := f.st.NextItems(f.ctx)
+	if items[0].State != store.NextDone {
+		t.Errorf("state = %s, want done", items[0].State)
+	}
+}
+
+func TestMergedRequestWithoutAMergeCommitIsNotProof(t *testing.T) {
+	f := newFixture(t)
+	it := f.linkedItem(t, store.NextApproved)
+	f.closeByHand(t)
+	f.f.mr = &forge.MR{IID: 9, State: "merged", SHA: f.head(t), Created: time.Now().Add(time.Minute)}
+	f.w.Check(f.ctx)
+	if got, _ := f.st.NextItem(f.ctx, it.ID); got.State != store.NextApproved {
+		t.Errorf("state = %s: lane close would refuse this request, so must the watcher", got.State)
+	}
+}

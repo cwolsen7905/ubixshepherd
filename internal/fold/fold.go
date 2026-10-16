@@ -529,6 +529,28 @@ func shortSHA(s string) string {
 	return s
 }
 
+// MergeCovers is the one proof that a forge's merged request finished a lane, shared by
+// lane close and the watcher so they cannot disagree. The request must be merged with a
+// merge commit and a head, created after the lane opened (a branch name can be reused),
+// and the lane's local branch, if it still exists, must hold nothing beyond the request's
+// head. fetch is called, at most once and only when the head is not here yet, to get it;
+// the caller decides how often and how long that may take.
+func MergeCovers(ctx context.Context, repoPath string, lane store.Lane, mr *forge.MR, fetch func(context.Context)) bool {
+	if mr == nil || !strings.EqualFold(mr.State, "merged") || mr.MergeSHA == "" || mr.SHA == "" {
+		return false
+	}
+	if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
+		return false
+	}
+	if !git.RefExists(ctx, repoPath, "refs/heads/"+lane.Branch) {
+		return true
+	}
+	if !git.Ok(ctx, repoPath, "cat-file", "-e", mr.SHA+"^{commit}") && fetch != nil {
+		fetch(ctx)
+	}
+	return git.Ok(ctx, repoPath, "merge-base", "--is-ancestor", "refs/heads/"+lane.Branch, mr.SHA)
+}
+
 // forgeMerged reports whether the forge has merged a request for the lane's branch that
 // covers it: created after the lane opened (a branch name can be reused), and the branch
 // holds nothing beyond the request's head. It records the merge on the lane, so the
@@ -542,19 +564,10 @@ func (f *Fold) forgeMerged(ctx context.Context, repo store.Repo, lane store.Lane
 		return false, ""
 	}
 	mr, err := fg.MRForBranch(ctx, lane.Branch)
-	if err != nil || mr == nil || !strings.EqualFold(mr.State, "merged") || mr.MergeSHA == "" || mr.SHA == "" {
+	if err != nil || !MergeCovers(ctx, repo.Path, lane, mr, func(ctx context.Context) {
+		git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
+	}) {
 		return false, ""
-	}
-	if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
-		return false, ""
-	}
-	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
-		if !git.Ok(ctx, repo.Path, "cat-file", "-e", mr.SHA+"^{commit}") {
-			git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
-		}
-		if !git.Ok(ctx, repo.Path, "merge-base", "--is-ancestor", "refs/heads/"+lane.Branch, mr.SHA) {
-			return false, ""
-		}
 	}
 	// The merge is recorded even for a lane the watcher never saw (no row yet), so its
 	// next-up item settles as done; a failure to record is not hidden.
