@@ -177,17 +177,17 @@ export function UsagePage({ range = DEFAULT_USAGE_RANGE, from, to }: { range?: U
     <div className="page page-wide usage-page">
       <header className="page-head">
         <h1>Usage</h1>
-        <p className="page-sub" aria-live="polite">
-          {data ? (
-            <>
-              Tokens and context size, {data.from === data.to ? data.from : `${data.from} to ${data.to}`}. Peak context is the
-              measure of window need; cache read counts the same prompt again on every request.
-            </>
-          ) : (
-            <span className="faint">{error ? 'Could not load usage.' : 'Loading…'}</span>
-          )}
-        </p>
       </header>
+      <p className="page-sub usage-sub" aria-live="polite">
+        {data ? (
+          <>
+            Tokens and context size, {data.from === data.to ? data.from : `${data.from} to ${data.to}`}. Peak context is the
+            measure of window need; cache read counts the same prompt again on every request.
+          </>
+        ) : (
+          <span className="faint">{error ? 'Could not load usage.' : 'Loading…'}</span>
+        )}
+      </p>
 
       <div className="filters">
         <nav className="range" aria-label="Date range">

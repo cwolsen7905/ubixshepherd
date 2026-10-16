@@ -1,8 +1,8 @@
 /* The usage page: summary tiles, sortable group tables and the peak-context chart. */
 
 .usage-page .filters input[type="date"] {
-  font: inherit; color: inherit; padding: 0.1875rem var(--s-2);
-  background: var(--sheet); border: 1px solid var(--control-border); border-radius: var(--radius);
+  font: inherit; color: inherit; min-height: var(--control-h-sm); padding: 0 var(--s-2);
+  background: var(--raised); border: 1px solid var(--control-border); border-radius: var(--radius);
 }
 
 .tiles {
@@ -16,7 +16,11 @@
 .tile-sub { display: block; margin-top: var(--s-1); color: var(--muted); font-size: var(--t-xs); }
 
 .usage-group { margin: 0 0 var(--s-5) var(--gutter); }
-.usage-group h2 { margin: 0 0 var(--s-2); font-size: var(--t-lg); font-weight: 600; }
+.usage-group h2 { margin: 0 0 var(--s-2); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+.usage-page .page-head h1 { font-weight: 700; }
+.usage-page .page-head { min-height: 45px; align-items: center; }
+.usage-table tbody tr { height: 35px; }
+.usage-table tbody td { padding: 7px 10px; }
 .usage-table { font-variant-numeric: tabular-nums; }
 .usage-table th:first-child, .usage-table td:first-child { width: auto; padding-right: var(--s-4); }
 .usage-table th.num { text-align: right; }
@@ -34,7 +38,7 @@
 .ctx-swatch-bar { width: 1.25rem; height: 0.5rem; background: var(--lichen); border-radius: 0 2px 2px 0; }
 .ctx-swatch-line { width: 0; height: 0.875rem; border-left: 2px dashed var(--ink); }
 .ctx-swatch-tick { width: 0; height: 0.875rem; border-left: 2px solid var(--muted); }
-.ctx-section h3 { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-sm); font-weight: 500; color: var(--faint); }
+.ctx-section h3 { margin: var(--s-3) 0 var(--s-1); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
 .ctx-section ul { list-style: none; margin: 0; padding: 0; }
 .ctx-row, .ctx-axis { display: grid; grid-template-columns: var(--label-w) minmax(8rem, 1fr) var(--value-w); column-gap: var(--s-3); align-items: center; }
 .ctx-row { min-height: 1.75rem; font-size: var(--t-sm); }
@@ -48,3 +52,6 @@
 .ctx-axis-scale { position: relative; height: 1.25rem; }
 .ctx-axis-scale > span { position: absolute; transform: translateX(-50%); }
 .ctx-axis-scale > span:first-child { transform: none; }
+
+/* The sub-line sits under the one-row head, on the glyph rail. */
+.usage-page .usage-sub { margin: calc(-1 * var(--s-3)) 0 var(--s-4) var(--gutter); }
