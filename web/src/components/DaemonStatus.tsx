@@ -5,7 +5,7 @@ import { age, clockTime, shortSha, since, usd } from '../format'
 import { useNow } from '../hooks'
 import { href } from '../router'
 import { chatWords, worstTone, type ChatLink } from '../shell/chatLink'
-import { RailSpend, spendWords } from '../shell/RailSpend'
+import { spendWords } from '../shell/RailSpend'
 import type { StatusCounts } from '../state/attention'
 
 export interface Loaded {
@@ -50,7 +50,7 @@ interface Props {
   ready: boolean
   /** The open chat's /stream connection; null when no chat is open. */
   chat?: ChatLink | null
-  /** Today's spend, shown as a compact line under the status and in full in the popover. */
+  /** Today's spend, spelled out in the popover (the rail draws its bar above the status line). */
   spend?: SpendToday | null
   /** Lane counts, spelled out in the popover. */
   counts?: StatusCounts
@@ -144,7 +144,6 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
         <span aria-hidden="true" className="daemon-dot-indicator">{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
         <span className="daemon-status-text">{statusText}</span>
       </button>
-      {spend && <RailSpend spend={spend} />}
       <div id={id} ref={pop} role="dialog" aria-label="Status" className="daemon-pop" hidden={!open} style={place}>
         {open && (
           <>
