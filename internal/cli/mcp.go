@@ -79,6 +79,17 @@ func mcpTools() []mcpTool {
 			args:        func(map[string]any) ([]string, error) { return []string{"status"}, nil },
 		},
 		{
+			Name:        "workspace_rename",
+			Description: "Rename a registered workspace. Changes the name only: its path, repos, lanes and history stay. Refused for an empty name or one another workspace already uses. Anything that names the old one (--workspace, $SHEPHERD_WORKSPACE, hosts.yaml) needs the new name.",
+			InputSchema: obj(map[string]any{
+				"workspace": map[string]any{"type": "string", "description": "The workspace to rename: its current name or its path (shepherd_status lists them)."},
+				"name":      map[string]any{"type": "string", "description": "The new name: non-empty, no slashes."},
+			}, "workspace", "name"),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"workspace", "rename", str(a, "workspace"), str(a, "name")}, nil
+			},
+		},
+		{
 			Name:        "shepherd_where",
 			Description: "Which workspace, repo and lane a directory belongs to, with the repo's profile (base branch, branch model, gate, shared paths, autonomy).",
 			InputSchema: obj(map[string]any{"path": propPath}),

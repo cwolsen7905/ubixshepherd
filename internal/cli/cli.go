@@ -69,6 +69,8 @@ func commands() []command {
 			"shepherd init [dir] [--name NAME] [--yes | --all | --only a,b] [--prune]", runInit},
 		{"repo", "See, add and remove the repos Shepherd manages, with no restart and no init",
 			"shepherd repo list [--json] | add <path|name>... [--workspace W] | remove <name> [--why TEXT] [--workspace W] | scan [workspace] [--json]", runRepo},
+		{"workspace", "Rename a registered workspace, without running init again",
+			"shepherd workspace rename <name|path> <new-name>", runWorkspace},
 		{"lane", "Open, list and close lanes: a branch and worktree per stream of work",
 			"shepherd lane open <name> --scope '<globs>' [--branch B] [--repo R] [--item N] | list [--all] [--json] | close [name] [--force] | scope [lane] --add G --remove G | review [--repo R] [--only V] | diff [lane] [--repo R] [--stat | --files | --file P] [--since SHA --until SHA] [--json] | ship [lane] [--repo R] | run [lane] --agent claude|copilot|cursor|opencode [--model M] [--effort E] [--new] [--detach] \"task\"", runLane},
 		{"run", "Agent runs: list, show, follow, continue, attach to, stop and dismiss them; see why one failed and fix it", "shepherd run list [--all] | show <id> | logs [-f] <id> | continue <id> \"message\" [--model M] [--effort E] [--detach] | attach <id> | stop <id> | diff <id> [--files | --file P] | dismiss <id> | undismiss <id> | why <id> | fix <id> <action> [--agent A] [--model M]", runRun},

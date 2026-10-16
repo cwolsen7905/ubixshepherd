@@ -112,6 +112,7 @@ make install                # copy to ~/.local/bin/shepherd and restart a runnin
 bin/shepherd init ~/git     # finds the repos below ~/git; you choose which Shepherd manages
 bin/shepherd status         # the daemon, its workspaces, and where you are
 bin/shepherd where          # the workspace, repo and lane for this directory, with its profile
+bin/shepherd workspace rename old new   # rename a workspace (by name or path); nothing else changes
 ```
 
 ### Lanes

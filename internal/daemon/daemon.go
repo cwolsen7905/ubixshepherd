@@ -162,6 +162,7 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathUpdateUpgrade, web, s.upgradeUpdate)
 	handle("GET "+api.PathWorkspaces, desk, s.listWorkspaces)
 	handle("POST "+api.PathWorkspaces, operatorOnly, s.saveWorkspace)
+	handle("POST "+api.PathWorkspaces+"/{id}/rename", operatorOnly, s.renameWorkspace)
 	// Managing a repo is the person's call inside their own workspace: the desk may do
 	// it for them, a worker never (an agent must not widen its own reach).
 	handle("GET "+api.PathRepos, desk, s.listRepos)
