@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -117,5 +118,39 @@ func TestMergedRequestOlderThanTheLaneIsNotItsProof(t *testing.T) {
 				t.Errorf("state = %s, want approved", got.State)
 			}
 		})
+	}
+}
+
+func TestForgeErrorOnAClosedLaneKeepsTheItemAndIsAskedAgainAfterTheHour(t *testing.T) {
+	f := newFixture(t)
+	it := f.linkedItem(t, store.NextApproved)
+	f.closeByHand(t)
+	now := time.Now()
+	f.w.Clock = func() time.Time { return now }
+	f.f.err = errors.New("500 server error")
+	f.w.Check(f.ctx)
+	if got, _ := f.st.NextItem(f.ctx, it.ID); got.State != store.NextApproved {
+		t.Fatalf("state = %s after a forge error, want approved", got.State)
+	}
+	if st := f.w.Status(); st.Error == "" {
+		t.Error("the forge error was not noted in the pass's status")
+	}
+	first := f.f.calls
+	if first == 0 {
+		t.Fatal("the forge was never asked")
+	}
+	f.w.Check(f.ctx)
+	if f.f.calls != first {
+		t.Errorf("asked again within the hour: %d then %d", first, f.f.calls)
+	}
+	now = now.Add(ClosedRecheck + time.Minute)
+	f.f.err = nil
+	f.f.mr = &forge.MR{IID: 9, State: "merged", MergeSHA: "abc", Created: time.Now().Add(time.Minute)}
+	f.w.Check(f.ctx)
+	if f.f.calls == first {
+		t.Error("not asked again after the hour")
+	}
+	if got, _ := f.st.NextItem(f.ctx, it.ID); got.State != store.NextDone {
+		t.Errorf("state = %s after the hour, want done", got.State)
 	}
 }

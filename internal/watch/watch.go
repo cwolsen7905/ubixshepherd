@@ -124,6 +124,7 @@ func (w *Watcher) Check(ctx context.Context) {
 		note(err)
 		return
 	}
+	closedByRepo := w.closedItemLanes(ctx) // once per pass, not per repo
 	for _, ws := range wss {
 		repos, err := w.Store.Repos(ctx, ws.ID)
 		if err != nil {
@@ -133,7 +134,7 @@ func (w *Watcher) Check(ctx context.Context) {
 			repos[i] = w.refreshRemote(ctx, ws, repos[i])
 			repo := repos[i]
 			lanes, err := w.Store.Lanes(ctx, repo.ID)
-			closed := w.closedItemLanes(ctx, repo.ID)
+			closed := closedByRepo[repo.ID]
 			if err != nil || (len(lanes) == 0 && len(closed) == 0) {
 				continue
 			}

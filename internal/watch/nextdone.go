@@ -95,9 +95,10 @@ type closedLane struct {
 	items []store.NextItem
 }
 
-// closedItemLanes finds a repo's closed lanes that still have an open item linked:
-// Lanes lists only the lanes not closed, so these are found through the items.
-func (w *Watcher) closedItemLanes(ctx context.Context, repoID int64) []closedLane {
+// closedItemLanes finds the closed lanes that still have an open item linked, by repo:
+// Lanes lists only the lanes not closed, so these are found through the items. It reads
+// the list once, for the whole pass.
+func (w *Watcher) closedItemLanes(ctx context.Context) map[int64][]closedLane {
 	items, err := w.Store.NextItems(ctx)
 	if err != nil {
 		return nil
@@ -113,13 +114,13 @@ func (w *Watcher) closedItemLanes(ctx context.Context, repoID int64) []closedLan
 		}
 		by[it.LaneID] = append(by[it.LaneID], it)
 	}
-	var out []closedLane
+	out := map[int64][]closedLane{}
 	for _, id := range order {
 		lane, err := w.Store.Lane(ctx, id)
-		if err != nil || lane.RepoID != repoID || lane.State != store.LaneClosed {
+		if err != nil || lane.State != store.LaneClosed {
 			continue
 		}
-		out = append(out, closedLane{lane, by[id]})
+		out[lane.RepoID] = append(out[lane.RepoID], closedLane{lane, by[id]})
 	}
 	return out
 }
