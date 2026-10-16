@@ -9,6 +9,8 @@ import "time"
 //	GET    /v1/web/signin?code=C  the browser opens the link: the code is spent, a session
 //	                              cookie is set, and it is sent on to /
 //	GET    /v1/web/session        the browser's session: WebSession (its CSRF token)
+//	POST   /v1/web/session/extend the browser asks for more time: WebSession (CSRF-checked)
+//	POST   /v1/web/session/active the page saw the person act: slides the expiry, WebSession
 //	POST   /v1/web/signout        the browser ends its own session
 //	DELETE /v1/web/sessions       operator: end every browser session, WebSignedOut
 //
@@ -27,10 +29,14 @@ import "time"
 // must name a loopback host (localhost, 127.0.0.0/8, ::1) in its Host header, so a DNS
 // name rebound to 127.0.0.1 cannot reach the API from a web page.
 const (
-	PathWebSignin   = "/v1/web/signin"
-	PathWebSession  = "/v1/web/session"
-	PathWebSignout  = "/v1/web/signout"
-	PathWebSessions = "/v1/web/sessions"
+	PathWebSignin  = "/v1/web/signin"
+	PathWebSession = "/v1/web/session"
+	PathWebSignout = "/v1/web/signout"
+	// PathWebSessionExtend pushes the session's expiry out, up to its absolute cap.
+	PathWebSessionExtend = "/v1/web/session/extend"
+	// PathWebSessionActive reports that the person used the page: the session slides.
+	PathWebSessionActive = "/v1/web/session/active"
+	PathWebSessions      = "/v1/web/sessions"
 )
 
 // CSRFHeader carries a browser session's CSRF token on every request that changes
@@ -58,6 +64,8 @@ type WebSession struct {
 	Role    string    `json:"role"`
 	CSRF    string    `json:"csrf,omitempty"`
 	Expires time.Time `json:"expires,omitzero"`
+	// MaxExpires is the latest the session can last, however it is extended.
+	MaxExpires time.Time `json:"max_expires,omitzero"`
 	// AllowSettings: this browser session may save config changes.
 	AllowSettings bool `json:"allow_settings,omitempty"`
 }

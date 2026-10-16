@@ -632,3 +632,80 @@ func TestWebUnknownPaths(t *testing.T) {
 		t.Errorf("unknown page path: %d %s", resp.StatusCode, body)
 	}
 }
+
+// Person activity slides a browser session and its cookie; polling does not; the extend
+// endpoint needs the CSRF token and never revives an ended session.
+func TestWebSessionSlideAndExtendOverHTTP(t *testing.T) {
+	var mu sync.Mutex
+	cur := time.Now().UTC()
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return cur }
+	advance := func(d time.Duration) { mu.Lock(); cur = cur.Add(d); mu.Unlock() }
+	s, base, _ := webDaemon(t, func(s *Server) { s.web.now = clock })
+	b := newBrowser(t, base)
+	signIn(t, s, b)
+	info := func() api.WebSession {
+		var ws api.WebSession
+		b.origin = ""
+		_, body := b.do("GET", api.PathWebSession, nil)
+		b.origin = base
+		json.Unmarshal([]byte(body), &ws)
+		return ws
+	}
+	first := info()
+	if first.MaxExpires.IsZero() {
+		t.Fatal("no max_expires")
+	}
+
+	// Polling the session itself does not slide it.
+	advance(2 * time.Hour)
+	if got := info(); !got.Expires.Equal(first.Expires) {
+		t.Errorf("polling slid the session: %v -> %v", first.Expires, got.Expires)
+	}
+	// Neither do the reads a page polls on timers: the feed and lists.
+	b.origin = ""
+	b.do("GET", api.PathFeed+"?after=latest", nil)
+	b.do("GET", api.PathLanes+"?workspace_id=1", nil)
+	b.origin = base
+	if got := info(); !got.Expires.Equal(first.Expires) {
+		t.Errorf("polled reads slid the session: %v -> %v", first.Expires, got.Expires)
+	}
+	// The page reporting the person's input does, and the cookie is re-issued to match.
+	resp, _ := b.do("POST", api.PathWebSessionActive, nil)
+	var maxAge int
+	for _, c := range resp.Cookies() {
+		maxAge = c.MaxAge
+	}
+	if want := int(webSessionTTL / time.Second); maxAge != want {
+		t.Errorf("cookie MaxAge = %d, want %d", maxAge, want)
+	}
+	slid := info()
+	if want := clock().Add(webSessionTTL); !slid.Expires.Equal(want) {
+		t.Errorf("expires = %v, want %v", slid.Expires, want)
+	}
+	// A write the person made does too.
+	advance(time.Hour)
+	b.do("POST", api.PathLanes+"/1/scope", map[string]any{})
+	if want := clock().Add(webSessionTTL); !info().Expires.Equal(want) {
+		t.Errorf("a write did not slide the session")
+	}
+
+	// Extend needs the CSRF token.
+	advance(11 * time.Hour)
+	csrf := b.csrf
+	b.csrf = ""
+	if resp, _ := b.do("POST", api.PathWebSessionExtend, nil); resp.StatusCode != http.StatusForbidden {
+		t.Errorf("extend without CSRF: %d", resp.StatusCode)
+	}
+	b.csrf = csrf
+	resp, body := b.do("POST", api.PathWebSessionExtend, nil)
+	var ext api.WebSession
+	if resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(body), &ext) != nil || !ext.Expires.Equal(clock().Add(webSessionTTL)) {
+		t.Fatalf("extend: %d %s", resp.StatusCode, body)
+	}
+
+	// Once ended it is not revived.
+	advance(webSessionTTL + time.Second)
+	if resp, _ := b.do("POST", api.PathWebSessionExtend, nil); resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("extend after expiry: %d", resp.StatusCode)
+	}
+}
