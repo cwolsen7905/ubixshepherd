@@ -125,8 +125,8 @@ func (w *Watcher) Check(ctx context.Context) {
 		return
 	}
 	w.expireProposals(ctx)
-	closedByRepo := w.closedItemLanes(ctx) // once per pass, not per repo
-	w.pruneClosedRead(closedByRepo)
+	closedByRepo, linked := w.closedItemLanes(ctx) // once per pass, not per repo
+	w.pruneClosedRead(linked)
 	for _, ws := range wss {
 		repos, err := w.Store.Repos(ctx, ws.ID)
 		if err != nil {

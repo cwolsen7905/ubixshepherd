@@ -39,16 +39,15 @@ func (p closedPoll) wait() time.Duration {
 	return d
 }
 
-// pruneClosedRead forgets the lanes that no longer have an open item behind a closed lane.
-func (w *Watcher) pruneClosedRead(closedByRepo map[int64][]closedLane) {
-	live := map[int64]bool{}
-	for _, cls := range closedByRepo {
-		for _, cl := range cls {
-			live[cl.lane.ID] = true
-		}
+// pruneClosedRead forgets the lanes that no longer have an open item linked. A lane whose
+// read failed still has its item, so its entry stays; when the items could not be read
+// (linked is nil) nothing is forgotten.
+func (w *Watcher) pruneClosedRead(linked map[int64]bool) {
+	if linked == nil {
+		return
 	}
 	for id := range w.closedRead {
-		if !live[id] {
+		if !linked[id] {
 			delete(w.closedRead, id)
 		}
 	}
@@ -163,11 +162,13 @@ type closedLane struct {
 
 // closedItemLanes finds the closed lanes that still have an open item linked, by repo:
 // Lanes lists only the lanes not closed, so these are found through the items. It reads
-// the list once, for the whole pass.
-func (w *Watcher) closedItemLanes(ctx context.Context) map[int64][]closedLane {
+// the list once, for the whole pass. linked is every lane with an open item, closed or
+// not, and nil when the items could not be read.
+func (w *Watcher) closedItemLanes(ctx context.Context) (out map[int64][]closedLane, linked map[int64]bool) {
 	items, err := w.Store.NextItems(ctx)
 	if err != nil {
-		return nil
+		w.Log.Warn("watch: read next-up items", "err", err)
+		return nil, nil
 	}
 	by := map[int64][]store.NextItem{}
 	var order []int64
@@ -180,13 +181,15 @@ func (w *Watcher) closedItemLanes(ctx context.Context) map[int64][]closedLane {
 		}
 		by[it.LaneID] = append(by[it.LaneID], it)
 	}
-	out := map[int64][]closedLane{}
+	out = map[int64][]closedLane{}
+	linked = map[int64]bool{}
 	for _, id := range order {
+		linked[id] = true
 		lane, err := w.Store.Lane(ctx, id)
 		if err != nil || lane.State != store.LaneClosed {
 			continue
 		}
 		out[lane.RepoID] = append(out[lane.RepoID], closedLane{lane, by[id]})
 	}
-	return out
+	return out, linked
 }

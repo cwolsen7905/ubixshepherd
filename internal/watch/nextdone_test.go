@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"context"
 	"errors"
 	"os/exec"
 	"strings"
@@ -255,5 +256,37 @@ func TestForgeErrorsDoNotLengthenTheClosedLaneWait(t *testing.T) {
 	f.w.Check(f.ctx)
 	if p := f.w.closedRead[f.lane.ID]; p.n != 1 {
 		t.Errorf("after one answer n = %d, want 1", p.n)
+	}
+}
+
+// A store that cannot list the items must not make the watcher forget what it has
+// learned about closed lanes.
+type failingItems struct {
+	store.Store
+	fail bool
+}
+
+func (s *failingItems) NextItems(ctx context.Context) ([]store.NextItem, error) {
+	if s.fail {
+		return nil, errors.New("database is locked")
+	}
+	return s.Store.NextItems(ctx)
+}
+
+func TestStoreReadFailureKeepsTheClosedLanePollState(t *testing.T) {
+	f := newFixture(t)
+	fs := &failingItems{Store: f.st}
+	f.w.Store = fs
+	f.linkedItem(t, store.NextApproved)
+	f.closeByHand(t)
+	f.f.mr = &forge.MR{IID: 9, State: "closed"}
+	f.w.Check(f.ctx)
+	if len(f.w.closedRead) != 1 {
+		t.Fatalf("closedRead = %v", f.w.closedRead)
+	}
+	fs.fail = true
+	f.w.Check(f.ctx)
+	if len(f.w.closedRead) != 1 {
+		t.Errorf("a failed read forgot the poll state: %v", f.w.closedRead)
 	}
 }

@@ -21,6 +21,7 @@ func (w *Watcher) expireProposals(ctx context.Context) {
 	}
 	items, err := w.Store.NextItems(ctx)
 	if err != nil {
+		w.Log.Warn("watch: read next-up items to expire proposals", "err", err)
 		return
 	}
 	now := w.now()
