@@ -179,3 +179,11 @@
 .chat-main .pending-strip ul { flex: 1 1 0; flex-wrap: nowrap; gap: 12px; overflow-x: auto; scrollbar-width: none; }
 .chat-main .pending-chip { max-width: 24ch; }
 .chat-main .pending-count, .chat-main .pending-keys { flex: none; white-space: nowrap; }
+
+/* Seen and missed: one quiet line for what happened while the person was away, with what
+   needs them first; the notification toggle sits in the head until Settings takes it. */
+.away { flex: none; margin: 0 0 var(--s-2); padding: 6px 12px; font-size: 13px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+.away-line { margin: 0; }
+.away-needs { color: var(--lantern-ink); font-weight: 600; }
+.away-dismiss { margin-left: var(--s-2); }
+.notify-toggle { font-size: 13px; }
