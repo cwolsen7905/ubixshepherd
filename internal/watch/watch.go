@@ -50,6 +50,9 @@ type Watcher struct {
 	reviewed map[int64]time.Time
 	// approvalRead is what each lane's approval was last read for (approval.go).
 	approvalRead map[int64]approvalRead
+	// closedRead is when the forge was last asked about a closed lane's request, by lane
+	// id (nextdone.go).
+	closedRead map[int64]time.Time
 
 	// statMu guards poll; apart from mu, which Check holds for a whole pass, so Status
 	// never waits on a forge.
@@ -130,7 +133,8 @@ func (w *Watcher) Check(ctx context.Context) {
 			repos[i] = w.refreshRemote(ctx, ws, repos[i])
 			repo := repos[i]
 			lanes, err := w.Store.Lanes(ctx, repo.ID)
-			if err != nil || len(lanes) == 0 {
+			closed := w.closedItemLanes(ctx, repo.ID)
+			if err != nil || (len(lanes) == 0 && len(closed) == 0) {
 				continue
 			}
 			f, err := w.forgeFor(repo)
@@ -160,6 +164,7 @@ func (w *Watcher) Check(ctx context.Context) {
 					break
 				}
 			}
+			w.settleClosed(ctx, f, host, closed, note)
 			w.autoCloseLanes(ctx, lanes)
 		}
 		w.checkFollows(ctx, repos)
