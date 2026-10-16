@@ -828,6 +828,10 @@ type Store interface {
 	// not listed are left as they are.
 	SaveWorkspace(ctx context.Context, ws Workspace, repos []Repo) (Workspace, error)
 	Workspaces(ctx context.Context) ([]Workspace, error)
+	// RenameWorkspace changes a workspace's name and nothing else. An empty name is
+	// refused, a name another workspace uses is an ErrConflict, and an unknown id is
+	// an ErrNotFound.
+	RenameWorkspace(ctx context.Context, id int64, name string) (Workspace, error)
 	// Repos returns a workspace's managed repos: those not removed.
 	Repos(ctx context.Context, workspaceID int64) ([]Repo, error)
 	// AllRepos also returns the removed ones, with Removed set.

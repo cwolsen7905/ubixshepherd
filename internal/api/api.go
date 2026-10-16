@@ -377,6 +377,16 @@ type SaveWorkspace struct {
 	Repos []store.Repo `json:"repos"`
 }
 
+// RenameWorkspace is the body of POST /v1/workspaces/{id}/rename.
+type RenameWorkspace struct {
+	Name string `json:"name"`
+}
+
+// PathWorkspaceRename is the route that renames the workspace with the given id.
+func PathWorkspaceRename(id int64) string {
+	return fmt.Sprintf("%s/%d/rename", PathWorkspaces, id)
+}
+
 // WorkspaceDetail answers POST and GET on workspaces.
 type WorkspaceDetail struct {
 	store.Workspace

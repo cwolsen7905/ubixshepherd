@@ -61,7 +61,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_ship", "lane_list", "fold_gc", "shepherd_where"} {
+	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_ship", "lane_list", "fold_gc", "shepherd_where", "workspace_rename"} {
 		if !names[n] {
 			t.Errorf("tool %s missing", n)
 		}
@@ -158,5 +158,27 @@ func TestMCPMaxOutput(t *testing.T) {
 	if len([]rune(capped)) > config.MinToolOutputChars || !strings.Contains(capped, "Ask for less.") || !strings.HasPrefix(capped, whole[:50]) ||
 		!strings.HasSuffix(capped, whole[len(whole)-50:]) {
 		t.Errorf("capped = %q", capped)
+	}
+}
+
+func TestMCPWorkspaceRename(t *testing.T) {
+	h := newHarness(t, "", false)
+	root := makeWorkspace(t)
+	if code := h.run("init", root, "--yes", "--name", "alpha"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"workspace_rename","arguments":{"workspace":"alpha","name":"beta"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"workspace_rename","arguments":{"workspace":"alpha","name":"gamma"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"workspace_rename","arguments":{"workspace":"beta","name":""}}}`,
+	)
+	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "Renamed workspace alpha to beta") {
+		t.Errorf("workspace_rename: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[1]); !isErr || !strings.Contains(text, `no workspace "alpha"`) {
+		t.Errorf("old name after rename: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[2]); !isErr || !strings.Contains(text, "non-empty") {
+		t.Errorf("empty name: %v %s", isErr, text)
 	}
 }
