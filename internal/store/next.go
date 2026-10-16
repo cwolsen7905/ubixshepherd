@@ -1,6 +1,7 @@
 package store
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -54,6 +55,17 @@ type NextItem struct {
 	Updated time.Time `json:"updated"`
 	// DoneAt is when the item was finished; nil until then.
 	DoneAt *time.Time `json:"done_at,omitempty"`
+	// DoneWhen is one line, the acceptance test for the item.
+	DoneWhen string `json:"done_when,omitempty"`
+	// DependsOn are the ids of the items this one needs finished first. Whether it is
+	// blocked is derived (Blocked), never stored.
+	DependsOn []int64 `json:"depends_on,omitempty"`
+	// Suggestion is a one-line "done?" or "done or drop?" that something noticed and
+	// only the person acts on; Suggested is when it was made. Checked is when the weekly
+	// re-check last ran for the item.
+	Suggestion string    `json:"suggestion,omitempty"`
+	Suggested  time.Time `json:"suggested,omitzero"`
+	Checked    time.Time `json:"checked,omitzero"`
 }
 
 // NextPatch is a change to an item: nil fields are left alone.
@@ -67,6 +79,76 @@ type NextPatch struct {
 	State  *string
 	Note   *string
 	DoneAt *time.Time
+	// DoneWhen and DependsOn are set as given (empty clears). Suggestion is set as given
+	// and stamps Suggested when it is not empty; an empty one clears both. Checked
+	// records a weekly re-check.
+	DoneWhen   *string
+	DependsOn  *[]int64
+	Suggestion *string
+	Checked    *time.Time
+}
+
+// FormatDeps is the stored form of a dependency list: ids, comma separated.
+func FormatDeps(ids []int64) string {
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	return strings.Join(parts, ",")
+}
+
+// ParseDeps reads the stored form back; anything that is not a positive id is skipped.
+func ParseDeps(s string) []int64 {
+	var out []int64
+	for _, f := range strings.Split(s, ",") {
+		if id, err := strconv.ParseInt(strings.TrimSpace(f), 10, 64); err == nil && id > 0 {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// Blocked returns the dependencies of it whose state is not done, in the order they were
+// named, given the effective state of every item by id (an id missing from the map is
+// unknown and counts as unfinished). A dropped dependency is not done: it keeps the item
+// blocked, so the person decides whether to drop or re-plan it too.
+func Blocked(it NextItem, state map[int64]string) []int64 {
+	var out []int64
+	for _, d := range it.DependsOn {
+		if state[d] != NextDone {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// DependencyCycle reports whether giving item id the dependencies deps closes a cycle
+// among the stored lists in all (id to its dependencies): that is, whether id is
+// reachable from any of deps, or is one of them.
+func DependencyCycle(id int64, deps []int64, all map[int64][]int64) bool {
+	seen := map[int64]bool{}
+	var reach func(n int64) bool
+	reach = func(n int64) bool {
+		if n == id {
+			return true
+		}
+		if seen[n] {
+			return false
+		}
+		seen[n] = true
+		for _, d := range all[n] {
+			if reach(d) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, d := range deps {
+		if reach(d) {
+			return true
+		}
+	}
+	return false
 }
 
 // Settled is an item's effective state: what the person chose, or what the link to its

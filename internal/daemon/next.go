@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -18,8 +19,10 @@ import (
 // maxNextTitle and maxNextNote bound an item: a line to name the work, a paragraph to
 // say more.
 const (
-	maxNextTitle = 200
-	maxNextNote  = 2000
+	maxNextTitle    = 200
+	maxNextNote     = 2000
+	maxNextDoneWhen = 300
+	maxNextDeps     = 20
 )
 
 // personsNext reports whether the caller may choose an item's state or order. Like an
@@ -40,6 +43,7 @@ func (s *Server) nextView(ctx context.Context, it store.NextItem) api.NextItemVi
 		State: it.State, Stored: it.State, Rank: it.Rank, Source: it.Source, Note: it.Note,
 		MR: it.MR, Created: it.Created, Updated: it.Updated, DoneAt: it.DoneAt,
 		Proposed: it.Source != store.NextByPerson && it.Source != store.NextByChat && it.State == store.NextPlanned,
+		DoneWhen: it.DoneWhen, DependsOn: it.DependsOn, Suggestion: it.Suggestion,
 	}
 	if it.LaneID == 0 {
 		return v
@@ -63,6 +67,39 @@ func (s *Server) nextView(ctx context.Context, it store.NextItem) api.NextItemVi
 	}
 	st := store.Settle(it, &lane, lf)
 	v.State, v.Why = st.State, st.Why
+	return v
+}
+
+// blockedOn is the dependencies of it that are not done, judged by each one's effective
+// state (a lane-derived done counts). all is the whole list. Nothing stores it.
+func (s *Server) blockedOn(ctx context.Context, it store.NextItem, all []store.NextItem) []api.NextBlocker {
+	if len(it.DependsOn) == 0 {
+		return nil
+	}
+	state := map[int64]string{}
+	title := map[int64]string{}
+	for _, o := range all {
+		for _, d := range it.DependsOn {
+			if o.ID == d {
+				state[d], title[d] = s.nextView(ctx, o).State, o.Title
+			}
+		}
+	}
+	var out []api.NextBlocker
+	for _, d := range store.Blocked(it, state) {
+		out = append(out, api.NextBlocker{ID: d, Title: title[d], State: state[d]})
+	}
+	return out
+}
+
+// itemView is nextView with what the item is blocked on, read from the whole list.
+func (s *Server) itemView(ctx context.Context, it store.NextItem) api.NextItemView {
+	v := s.nextView(ctx, it)
+	if len(it.DependsOn) > 0 {
+		if all, err := s.Store.NextItems(ctx); err == nil {
+			v.BlockedOn = s.blockedOn(ctx, it, all)
+		}
+	}
 	return v
 }
 
@@ -121,10 +158,11 @@ func (s *Server) listNext(w http.ResponseWriter, r *http.Request) {
 	// started items among the rest by their stored place.
 	for _, it := range items {
 		v := s.nextView(ctx, it)
+		v.BlockedOn = s.blockedOn(ctx, it, items)
 		if !all && (v.State == store.NextDone || v.State == store.NextDropped) {
 			continue
 		}
-		if out.NextUp == 0 && v.State == store.NextApproved && v.LaneID == 0 {
+		if out.NextUp == 0 && v.State == store.NextApproved && v.LaneID == 0 && len(v.BlockedOn) == 0 {
 			out.NextUp = v.ID
 		}
 		out.Items = append(out.Items, v)
@@ -145,12 +183,12 @@ func (s *Server) getNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	it = s.settleNext(ctx, []store.NextItem{it})[0]
-	writeJSON(w, http.StatusOK, s.nextView(ctx, it))
+	writeJSON(w, http.StatusOK, s.itemView(ctx, it))
 }
 
 // cleanNext checks and redacts an item's text. Plan is a path under the repo, never
 // absolute or leaving it.
-func cleanNext(title, note, plan *string) error {
+func cleanNext(title, note, plan, doneWhen, suggestion *string) error {
 	if title != nil {
 		*title = strings.TrimSpace(redact.String(*title))
 		switch {
@@ -164,6 +202,18 @@ func cleanNext(title, note, plan *string) error {
 		*note = redact.String(*note)
 		if len(*note) > maxNextNote {
 			return fmt.Errorf("a note is at most %d bytes", maxNextNote)
+		}
+	}
+	if doneWhen != nil {
+		*doneWhen = strings.TrimSpace(redact.String(*doneWhen))
+		if len(*doneWhen) > maxNextDoneWhen || strings.ContainsAny(*doneWhen, "\r\n") {
+			return fmt.Errorf("done_when is one line of at most %d bytes", maxNextDoneWhen)
+		}
+	}
+	if suggestion != nil {
+		*suggestion = strings.TrimSpace(redact.String(*suggestion))
+		if len(*suggestion) > maxNextDoneWhen || strings.ContainsAny(*suggestion, "\r\n") {
+			return fmt.Errorf("a suggestion is one line of at most %d bytes", maxNextDoneWhen)
 		}
 	}
 	if plan != nil && *plan != "" {
@@ -189,8 +239,12 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if err := cleanNext(&req.Title, &req.Note, &req.Plan); err != nil {
+	if err := cleanNext(&req.Title, &req.Note, &req.Plan, &req.DoneWhen, nil); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.DependsOn) > maxNextDeps {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("an item depends on at most %d others", maxNextDeps))
 		return
 	}
 	if req.State == "" {
@@ -216,7 +270,7 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 	}
 	it, err := s.Store.AddNextItem(r.Context(), store.NextItem{
 		Title: req.Title, Repo: req.Repo, Plan: req.Plan, Lane: req.Lane, Note: req.Note,
-		State: req.State, Source: src,
+		State: req.State, Source: src, DoneWhen: req.DoneWhen, DependsOn: req.DependsOn,
 	})
 	if err != nil {
 		s.fail(w, err)
@@ -224,7 +278,7 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("next item added", "item", it.ID, "state", it.State, "source", it.Source)
 	s.postFeed(r.Context(), store.FeedPlan, it.ID, fmt.Sprintf("next-up item %d added by %s as %s: %s", it.ID, it.Source, it.State, it.Title))
-	writeJSON(w, http.StatusOK, s.nextView(r.Context(), it))
+	writeJSON(w, http.StatusOK, s.itemView(r.Context(), it))
 }
 
 func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +292,7 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if err := cleanNext(req.Title, req.Note, req.Plan); err != nil {
+	if err := cleanNext(req.Title, req.Note, req.Plan, req.DoneWhen, req.Suggestion); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -246,7 +300,13 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("state is planned, approved, deferred, dropped or done, not %q (started is derived)", *req.State))
 		return
 	}
-	if (req.State != nil || req.Move != "") && !personsNext(r) {
+	if req.DependsOn != nil && len(*req.DependsOn) > maxNextDeps {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("an item depends on at most %d others", maxNextDeps))
+		return
+	}
+	// A suggestion is something to notice, and only the person acts on it, so only the
+	// person may dismiss it.
+	if (req.State != nil || req.Move != "" || req.Suggestion != nil) && !personsNext(r) {
 		writeError(w, http.StatusForbidden, errNotPersons)
 		return
 	}
@@ -262,7 +322,13 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	patch := store.NextPatch{Title: req.Title, Repo: req.Repo, Plan: req.Plan, Lane: req.Lane, MR: req.MR,
-		Note: req.Note, State: req.State, LaneID: req.LaneID}
+		Note: req.Note, State: req.State, LaneID: req.LaneID, DoneWhen: req.DoneWhen, DependsOn: req.DependsOn,
+		Suggestion: req.Suggestion}
+	// Dismissing a suggestion is "still needed": the weekly re-check's clock starts over.
+	if req.Suggestion != nil && *req.Suggestion == "" && before.Suggestion != "" {
+		checked := time.Now().UTC()
+		patch.Checked = &checked
+	}
 	it, err := s.Store.UpdateNextItem(ctx, id, patch)
 	if err != nil {
 		s.nextError(w, err)
@@ -280,7 +346,7 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 			s.postFeed(ctx, store.FeedPlan, id, fmt.Sprintf("next-up item %d %s: %s", id, verb, it.Title))
 		}
 	}
-	writeJSON(w, http.StatusOK, s.nextView(ctx, it))
+	writeJSON(w, http.StatusOK, s.itemView(ctx, it))
 }
 
 // planVerbs are the stored states whose arrival is told on the feed; a return to

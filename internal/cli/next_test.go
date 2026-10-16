@@ -124,3 +124,90 @@ func TestNextCLIAndMCP(t *testing.T) {
 		t.Errorf("seed again: %s", h.out)
 	}
 }
+
+// done_when and depends_on go through the CLI flags and the tools that map onto them; an
+// item is blocked on a dependency that is not done, and a suggestion is dismissed with
+// --dismiss.
+func TestNextGuardFieldsCLIAndMCP(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, _ := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	item := func(id string) api.NextItemView {
+		t.Helper()
+		if code := h.run("next", "show", id, "--json"); code != 0 {
+			t.Fatalf("show %s: %s", id, h.err)
+		}
+		var v api.NextItemView
+		if err := json.Unmarshal(h.out.Bytes(), &v); err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if code := h.run("next", "add", "First", "--repo", "app", "--approved", "--done-when", "it lists as done"); code != 0 {
+		t.Fatalf("add: %s", h.err)
+	}
+	if code := h.run("next", "add", "Second", "--repo", "app", "--approved", "--depends", "1"); code != 0 {
+		t.Fatalf("add: %s", h.err)
+	}
+	if v := item("1"); v.DoneWhen != "it lists as done" || len(v.BlockedOn) != 0 {
+		t.Errorf("first: %+v", v)
+	}
+	if v := item("2"); len(v.DependsOn) != 1 || len(v.BlockedOn) != 1 || v.BlockedOn[0].Title != "First" {
+		t.Errorf("second: %+v", v)
+	}
+	h.run("next", "list", "--json")
+	var l api.NextList
+	if err := json.Unmarshal(h.out.Bytes(), &l); err != nil || l.NextUp != 1 {
+		t.Fatalf("list: %v %+v", err, l)
+	}
+	if code := h.run("next", "list"); code != 0 || !strings.Contains(h.out.String(), "blocked on #1") {
+		t.Errorf("list does not say what blocks: %s", h.out)
+	}
+	if code := h.run("next", "update", "1", "--depends", "2"); code == 0 {
+		t.Error("a dependency cycle was accepted")
+	}
+	if code := h.run("next", "update", "2", "--depends", "bad"); code == 0 {
+		t.Error("a bad --depends was accepted")
+	}
+	if code := h.run("next", "done", "1"); code != 0 {
+		t.Fatalf("done: %s", h.err)
+	}
+	if v := item("2"); len(v.BlockedOn) != 0 {
+		t.Errorf("still blocked after the dependency is done: %+v", v)
+	}
+
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"next_add","arguments":{"title":"Third","done_when":"works","depends_on":[2]}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3,"done_when":"","depends_on":[]}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3,"depends_on":["x"]}}}`,
+	)
+	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "added") {
+		t.Fatalf("next_add: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[1]); isErr || !strings.Contains(text, "updated") {
+		t.Fatalf("next_update: %v %s", isErr, text)
+	}
+	if _, isErr := toolText(t, resps[2]); !isErr {
+		t.Error("next_update with a non-numeric dependency accepted")
+	}
+	if v := item("3"); v.DoneWhen != "" || len(v.DependsOn) != 0 {
+		t.Errorf("cleared: %+v", v)
+	}
+
+	sug := "done?: ALREADY DONE"
+	if _, err := h.srv.Store.UpdateNextItem(context.Background(), 2, store.NextPatch{Suggestion: &sug}); err != nil {
+		t.Fatal(err)
+	}
+	if v := item("2"); v.Suggestion != sug {
+		t.Errorf("suggestion not shown: %+v", v)
+	}
+	if code := h.run("next", "update", "2", "--dismiss"); code != 0 {
+		t.Fatalf("dismiss: %s", h.err)
+	}
+	if v := item("2"); v.Suggestion != "" {
+		t.Errorf("suggestion survived --dismiss: %+v", v)
+	}
+}

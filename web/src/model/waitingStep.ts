@@ -1,6 +1,6 @@
 // Stepping through what waits on the person: the header counter's up and down arrows pick
 // the next item, and the chat page scrolls to it in the thread and highlights it.
-import type { WaitingItem } from '../api/types'
+import type { NextUpdateBody, WaitingItem } from '../api/types'
 import type { Open } from '../router'
 
 /** A stable key for an item: the daemon's list has no ids of its own. */
@@ -110,3 +110,40 @@ export function neighbour(items: readonly WaitingItem[], from: string | null, di
   }
   return rest[stepIndex(keys, start, dir)]
 }
+
+/** What the person can do about a "done?" suggestion on a next-up item. */
+export type SuggestionChoice = 'done' | 'drop' | 'keep'
+
+/**
+ * Is `it` a suggestion that a next-up item may be done? The daemon sends these as kind `next`
+ * with action `decide` and the suggestion line in `detail`. (`decide` is not yet in the
+ * WaitingItem action union, hence the widening.)
+ */
+export function isSuggestion(it: WaitingItem): boolean {
+  return it.kind === 'next' && (it.action as string) === 'decide' && !!it.next_id
+}
+
+/**
+ * The choices a suggestion offers, in button order: "done?" offers done and still needed;
+ * "done or drop?" also offers drop. Accepting and dropping are the person's call; "still
+ * needed" dismisses the suggestion and resets the weekly re-check.
+ */
+export function suggestionChoices(it: WaitingItem): SuggestionChoice[] {
+  return /^done or drop\b/i.test(it.detail ?? '') ? ['done', 'drop', 'keep'] : ['done', 'keep']
+}
+
+/** The PATCH /v1/next/{id} body for a choice. An empty `suggestion` dismisses it. */
+export type SuggestionBody = NextUpdateBody & { suggestion?: string }
+
+export function suggestionPatch(choice: SuggestionChoice): SuggestionBody {
+  switch (choice) {
+    case 'done':
+      return { state: 'done' }
+    case 'drop':
+      return { state: 'dropped' }
+    case 'keep':
+      return { suggestion: '' }
+  }
+}
+
+export const SUGGESTION_LABEL: Record<SuggestionChoice, string> = { done: 'Done', drop: 'Drop', keep: 'Still needed' }

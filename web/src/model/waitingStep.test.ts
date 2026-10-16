@@ -1,5 +1,5 @@
 import type { WaitingItem } from '../api/types'
-import { openKey, openTarget, stepAnchor, stepIndex, waitingKey } from './waitingStep'
+import { isSuggestion, openKey, openTarget, stepAnchor, stepIndex, suggestionChoices, suggestionPatch, waitingKey } from './waitingStep'
 
 const q = (id: number, turn = 2): WaitingItem => ({ kind: 'question', action: 'reply', question_id: id, turn, title: 'Ship it?' })
 
@@ -60,5 +60,24 @@ describe('openTarget and openKey', () => {
     expect(openKey([mr, dec, ques], { kind: 'question', id: 2 })).toBe(waitingKey(ques))
     expect(openKey([mr, dec], { kind: 'decision', id: 6 })).toBeNull()
     expect(openKey([dec], undefined)).toBeNull()
+  })
+})
+
+describe('next-up suggestions', () => {
+  const sug = (detail: string): WaitingItem => ({ kind: 'next', action: 'decide' as WaitingItem['action'], next_id: 5, title: 'Item', detail })
+  it('tells a suggestion from a proposal waiting for approval', () => {
+    expect(isSuggestion(sug('done?: landed in abc123'))).toBe(true)
+    expect(isSuggestion({ kind: 'next', action: 'review', next_id: 5, title: 'Item' })).toBe(false)
+    expect(isSuggestion({ ...sug('done?'), next_id: undefined })).toBe(false)
+  })
+  it('offers drop only when the suggestion says done or drop', () => {
+    expect(suggestionChoices(sug('done?: landed in abc123'))).toEqual(['done', 'keep'])
+    expect(suggestionChoices(sug('Done or drop?: lane closed unmerged'))).toEqual(['done', 'drop', 'keep'])
+    expect(suggestionChoices({ ...sug(''), detail: undefined })).toEqual(['done', 'keep'])
+  })
+  it('maps a choice to the change, and still needed only dismisses', () => {
+    expect(suggestionPatch('done')).toEqual({ state: 'done' })
+    expect(suggestionPatch('drop')).toEqual({ state: 'dropped' })
+    expect(suggestionPatch('keep')).toEqual({ suggestion: '' })
   })
 })

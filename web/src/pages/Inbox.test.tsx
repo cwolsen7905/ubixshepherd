@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { decision, spend, status } from '../test/fixtures'
-import type { Waiting } from '../api/types'
-import { ApiError, waitingOnYou } from '../api/client'
+import type { Waiting, WaitingItem } from '../api/types'
+import { ApiError, nextUp, waitingOnYou } from '../api/client'
 import { InboxPage } from './Inbox'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -19,6 +19,7 @@ const waiting: Waiting = {
     { kind: 'ship', action: 'ship', lane_id: 6, lane: 'd', title: 'Ship lane d' },
     { kind: 'blocked', action: 'open', lane_id: 4, lane: 'c', title: 'Lane c is blocked' },
     { kind: 'request', action: 'route', request_id: 9, title: 'Needs a lane' },
+    { kind: 'next', action: 'decide' as WaitingItem['action'], next_id: 8, title: 'Old item', detail: 'done or drop?: its lane closed unmerged' },
   ],
 }
 
@@ -120,6 +121,29 @@ describe('InboxPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ship' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not shipped: gate failed')
     ship.mockRestore()
+  })
+
+  it('offers done, drop and still needed on a done-or-drop suggestion', async () => {
+    const update = vi.spyOn(nextUp, 'update').mockResolvedValue({} as never)
+    await show()
+    expect(screen.getByText('done or drop?: its lane closed unmerged')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Drop' }))
+    expect(update).toHaveBeenLastCalledWith(8, { state: 'dropped' })
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(update).toHaveBeenLastCalledWith(8, { state: 'done' })
+    await userEvent.click(screen.getByRole('button', { name: 'Still needed' }))
+    expect(update).toHaveBeenLastCalledWith(8, { suggestion: '' })
+    // A proposal waiting for approval has no such buttons.
+    expect(screen.getAllByRole('button', { name: 'Done' })).toHaveLength(1)
+    update.mockRestore()
+  })
+
+  it('shows a refused suggestion answer as an alert', async () => {
+    const update = vi.spyOn(nextUp, 'update').mockRejectedValue(new ApiError(403, 'only the person'))
+    await show()
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not changed: only the person')
+    update.mockRestore()
   })
 
   it('moves the cursor with j', async () => {
