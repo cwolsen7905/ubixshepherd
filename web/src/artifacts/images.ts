@@ -30,33 +30,30 @@ export function resolveImage(artifactPath: string, src: string): string | null {
 export type Piece = { t: 'md'; text: string } | { t: 'img'; alt: string; src: string }
 
 const IMAGE = /!\[([^\]\n]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g
+const ONLY_IMAGES = /^\s*(?:!\[[^\]\n]*\]\([^)\s]+(?:\s+"[^"]*")?\)\s*)+$/
 
-/** Splits markdown at its image references (outside fenced code) so images can be rendered as images. */
+/**
+ * Splits markdown at the lines that hold only images (outside fenced code, ``` or ~~~) so
+ * those can be rendered as images. An image inside a sentence or a list item stays in the
+ * markdown, which shows it as text: splitting there would break the paragraph or the list.
+ */
 export function splitImages(text: string): Piece[] {
   const out: Piece[] = []
   let buf: string[] = []
-  let fenced = false
+  let fence = ''
   const flush = () => {
     if (buf.length) out.push({ t: 'md', text: buf.join('\n') })
     buf = []
   }
   for (const line of text.replace(/\r\n?/g, '\n').split('\n')) {
-    if (/^\s*```/.test(line)) fenced = !fenced
-    if (fenced || !line.includes('![')) {
-      buf.push(line)
+    const f = /^\s*(```|~~~)/.exec(line)?.[1]
+    if (f && (!fence || fence === f)) fence = fence ? '' : f
+    else if (!fence && ONLY_IMAGES.test(line)) {
+      flush()
+      for (const m of line.matchAll(IMAGE)) out.push({ t: 'img', alt: m[1] ?? '', src: m[2] ?? '' })
       continue
     }
-    let at = 0
-    for (const m of line.matchAll(IMAGE)) {
-      const before = line.slice(at, m.index)
-      if (before.trim()) buf.push(before)
-      flush()
-      out.push({ t: 'img', alt: m[1] ?? '', src: m[2] ?? '' })
-      at = (m.index ?? 0) + m[0].length
-    }
-    const rest = line.slice(at)
-    if (rest.trim() || at === 0) buf.push(rest)
-    else buf.push('')
+    buf.push(line)
   }
   flush()
   return out

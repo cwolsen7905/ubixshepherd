@@ -22,4 +22,9 @@ describe('splitImages', () => {
     expect(p.filter((x) => x.t === 'img')).toEqual([{ t: 'img', alt: 'a b', src: 'x.png' }])
     expect(p.map((x) => (x.t === 'md' ? x.text : '')).join('')).toContain('![no](y.png)')
   })
+
+  it('leaves inline images and tilde-fenced code in the markdown', () => {
+    const src = 'See ![a](x.png) for the flow\n- ![b](y.png)\n~~~\n![c](z.png)\n~~~\n'
+    expect(splitImages(src)).toEqual([{ t: 'md', text: src.replace(/\n$/, '\n') }])
+  })
 })

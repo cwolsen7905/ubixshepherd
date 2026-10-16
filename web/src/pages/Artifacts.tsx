@@ -57,6 +57,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
     if (!viewing) fromList = false
     wasViewing.current = viewing
   }, [viewing])
+  useEffect(() => () => void (fromList = false), [])
   const back = () => {
     if (fromList) {
       fromList = false
