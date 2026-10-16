@@ -33,7 +33,7 @@ describe('KeepGoing', () => {
     expect(bar).toHaveAttribute('aria-valuemax', '5')
     expect(bar).toHaveAttribute('aria-valuenow', '1.5')
     expect(bar).toHaveAttribute('aria-valuetext', '$1.50 of $5.00, 1 of 3 runs')
-    expect(bar).toHaveAttribute('style')
+    expect(bar).toHaveAttribute('style', '--kg-fill-pct: 30%;')
   })
 
   it('hides the progress bar when off', async () => {
@@ -44,6 +44,14 @@ describe('KeepGoing', () => {
   it('hides the progress bar when no cap', async () => {
     render(<KeepGoing load={() => Promise.resolve(st({ on: true, cap_usd: 0, spent_usd: 1.5, max_runs: 0 }))} set={vi.fn()} />)
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+
+  it('clamps bar and aria when spend exceeds cap', async () => {
+    render(<KeepGoing load={() => Promise.resolve(st({ on: true, spent_usd: 7, runs_now: 3 }))} set={vi.fn()} />)
+    const bar = await screen.findByRole('progressbar', { name: 'Keep going spend' })
+    expect(bar).toHaveAttribute('aria-valuenow', '5')
+    expect(bar).toHaveAttribute('style', '--kg-fill-pct: 100%;')
+    expect(bar).toHaveClass('tone-warn')
   })
 
   it('applies warn tone when at 80% of cap', async () => {

@@ -50,7 +50,7 @@
   background: var(--lantern);
   transition: width 200ms;
 }
-.keep-going-bar.tone-warn .keep-going-fill { background: var(--lantern); }
+.keep-going-bar.tone-warn .keep-going-fill { background: var(--lantern-ink); }
 @media (prefers-reduced-motion: reduce) {
   .keep-going-track, .keep-going-track::after { transition: none; }
   .keep-going-fill { transition: none; }

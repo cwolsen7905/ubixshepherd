@@ -123,7 +123,7 @@ export function KeepGoing({
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={Math.round(st.cap_usd * 100) / 100}
-              aria-valuenow={Math.round(st.spent_usd * 100) / 100}
+              aria-valuenow={Math.round(Math.min(st.spent_usd, st.cap_usd) * 100) / 100}
               aria-valuetext={d.text}
               aria-label="Keep going spend"
             >
