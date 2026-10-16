@@ -84,10 +84,26 @@ func (k *KeepGoing) stallLines(ctx context.Context, ws int64) ([]string, error) 
 	for _, r := range repos {
 		mine[r.Name] = true
 	}
+	// known is every repo in any workspace: an item for one of another workspace's
+	// repos is not this workspace's stall, but one for a repo in none is.
+	known := map[string]bool{}
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range wss {
+		rs, err := s.Store.Repos(ctx, w.ID)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rs {
+			known[r.Name] = true
+		}
+	}
 	var approved []api.NextItemView
 	for _, it := range items {
 		v := s.nextView(ctx, it)
-		if v.State == store.NextApproved && v.LaneID == 0 && (v.Repo == "" || mine[v.Repo]) {
+		if v.State == store.NextApproved && v.LaneID == 0 && (v.Repo == "" || mine[v.Repo] || !known[v.Repo]) {
 			approved = append(approved, v)
 		}
 	}

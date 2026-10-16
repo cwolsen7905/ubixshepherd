@@ -101,3 +101,20 @@ func TestStallAlertSaysNothingKnownAndSilentWhenOff(t *testing.T) {
 		t.Fatalf("want the nothing-known line: %v", got)
 	}
 }
+
+func TestStallAlertNamesAnUnregisteredRepo(t *testing.T) {
+	s, _, clk, ws, _ := keepSetup(t)
+	ctx := context.Background()
+	kg := s.KeepGoing()
+	if _, err := s.Store.AddNextItem(ctx, store.NextItem{Title: "Orphan", Repo: "nowhere", State: store.NextApproved, Source: store.NextByPerson}); err != nil {
+		t.Fatal(err)
+	}
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	kg.EvaluateAll(ctx)
+	clk.Add(stallGrace)
+	kg.EvaluateAll(ctx)
+	got := stallAlerts(t, s)
+	if len(got) != 1 || !strings.Contains(got[0], "repo nowhere is not registered") {
+		t.Fatalf("want the register-it reason: %v", got)
+	}
+}
