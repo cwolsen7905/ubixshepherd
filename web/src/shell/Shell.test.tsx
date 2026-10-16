@@ -32,7 +32,6 @@ function view(w: Waiting | null = waiting, hash = '#/') {
       waiting={w}
       workspaces={[{ id: 1, name: 'acme', path: '/a', created: '', repos: 1, lanes: 1 }]}
       footer={<button type="button">help</button>}
-      headActions={<button type="button">waiting</button>}
     >
       <h1>Page</h1>
     </Shell>,
@@ -121,7 +120,6 @@ describe('Shell', () => {
     const at = (re: RegExp) => seen.findIndex((t) => re.test(t))
     expect(at(/Skip to the page/)).toBe(0)
     expect(at(/Inbox/)).toBeLessThan(at(/^help$/))
-    expect(at(/^help$/)).toBeLessThan(at(/^waiting$/))
   })
 
   it('moves focus to the page on the skip link', async () => {

@@ -91,13 +91,13 @@
   background: var(--surface); border-bottom: 1px solid var(--rule);
 }
 .page-bar-title { flex: 1; font-weight: 600; }
-.page-bar-actions { display: flex; align-items: center; gap: var(--s-3); }
 .menu-button { background: none; border: 1px solid var(--control-border); border-radius: var(--radius); padding: var(--s-1) var(--s-2); color: var(--ink); cursor: pointer; }
 .main:focus { outline: none; }
 
 .faint { color: var(--faint); }
 .live-dot { font-size: var(--t-2xs); }
 .live-dot.is-up { color: var(--ok); }
+.live-dot.is-warn { color: var(--lantern-ink); }
 .live-dot.is-down { color: var(--broken); }
 .help-button { background: none; border: 0; padding: 0; cursor: pointer; }
 

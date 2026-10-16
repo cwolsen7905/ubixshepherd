@@ -15,7 +15,7 @@ function openWaiting() {
 }
 
 /**
- * The page head's counts: running, waiting on you, broken or blocked, needs routing. All
+ * The rail's counts, under its status line: running, waiting on you, broken or blocked, needs routing. All
  * four always show; a zero is muted and keeps its place. One status region, announced when
  * the numbers change.
  */
@@ -35,14 +35,14 @@ export function StatusCounts({ counts }: { counts: Counts }) {
         )
         if (c.key === 'waiting') {
           return (
-            <button key={c.key} type="button" className={cls} aria-label={label} onClick={openWaiting}>
+            <button key={c.key} type="button" className={cls} aria-label={label} title={label} onClick={openWaiting}>
               {body}
             </button>
           )
         }
         const to = c.key === 'routing' ? href.decisions() : href.board()
         return (
-          <a key={c.key} className={cls} href={to} aria-label={label}>
+          <a key={c.key} className={cls} href={to} aria-label={label} title={label}>
             {body}
           </a>
         )

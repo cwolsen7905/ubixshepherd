@@ -11,6 +11,12 @@ describe('StatusCounts', () => {
     expect(screen.getByRole('link', { name: '0 needing routing' })).toHaveAttribute('href', '#/decisions')
   })
 
+  it('gives each chip a tooltip, since the rail shows the glyph and number only', () => {
+    render(<StatusCounts counts={{ running: 2, waiting: 1, broken: 1, routing: 0 }} />)
+    expect(screen.getByRole('link', { name: '2 running' })).toHaveAttribute('title', '2 running')
+    expect(screen.getByRole('button', { name: '1 waiting on you' })).toHaveAttribute('title', '1 waiting on you')
+  })
+
   it('keeps the words in the markup for the narrow layout to hide, and the glyphs from readers', () => {
     const { container } = render(<StatusCounts counts={{ running: 1, waiting: 1, broken: 1, routing: 1 }} />)
     expect(container.querySelectorAll('.status-word')).toHaveLength(4)

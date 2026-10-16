@@ -11,6 +11,7 @@ import { LanePage } from './pages/Lane'
 import { LogPage } from './pages/Log'
 import { ProjectPage } from './pages/Project'
 import { ProjectsPage } from './pages/Projects'
+import { StatusPage } from './pages/Status'
 import { RunsPage } from './pages/Runs'
 import { SettingsPage } from './pages/Settings'
 import { TimelinePage } from './pages/Timeline'
@@ -25,6 +26,7 @@ import { statusCounts } from './state/attention'
 import { ArtifactsPage } from './pages/Artifacts'
 import { UpdateNotice } from './components/UpdateNotice'
 import { Shell } from './shell/Shell'
+import { useChatLink } from './shell/chatLink'
 import { useAttentionChrome } from './shell/useAttentionChrome'
 import { SpendMeter } from './components/BudgetMeter'
 import { readShowDismissed, writeShowDismissed } from './model/board'
@@ -61,18 +63,22 @@ export function App() {
   )
 
   const spend = snap.spend
+  const chat = useChatLink()
 
   const footer = (
     <>
       {spend && <SpendMeter spend={spend} />}
       <div className="foot-row">
         <ErrorBoundary region="The daemon status">
-          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} lastEvent={snap.feed.at(-1)?.created} />
+          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} />
         </ErrorBoundary>
         <button type="button" className="help-button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
           <kbd>?</kbd>
         </button>
       </div>
+      <ErrorBoundary region="The lane counts">
+        <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
+      </ErrorBoundary>
       <ErrorBoundary region="The update notice">
         <UpdateNotice />
       </ErrorBoundary>
@@ -88,9 +94,6 @@ export function App() {
         footer={footer}
         boardBroken={boardBroken}
         paletteOpen={() => paletteRef.current?.open()}
-        headActions={
-          <StatusCounts counts={statusCounts({ ...snap, showDismissed })} />
-        }
         banner={
           snap.error && (
             <div className="banner tone-bad" role="alert">
@@ -124,6 +127,7 @@ export function App() {
         {route.page === 'next' && <NextPage />}
         {route.page === 'artifacts' && <ArtifactsPage repo={route.repo} lane={route.lane} run={route.run} topic={route.topic} />}
         {route.page === 'chat' && <ChatPage />}
+        {route.page === 'status' && <StatusPage />}
         {route.page === 'settings' && <SettingsPage scope={route.scope} />}
         {route.page === 'lane' && <LanePage key={route.id} id={route.id} />}
         {route.page === 'log' && <LogPage key={route.run} run={route.run} />}
