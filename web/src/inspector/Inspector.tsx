@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react'
-import { go, withOpen, type Open } from '../router'
+import { go, href, withOpen, type Open } from '../router'
 import { DecisionPane } from './decisionPane'
 import { QuestionPane } from './questionPane'
 import { useMode, type Mode } from './useMode'
@@ -8,6 +8,7 @@ import { ArtifactInspector } from './artifactPane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
 import { useSnapshot } from '../state/context'
+import { Kbd } from '../ui'
 import '../styles/inspector.css'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -49,6 +50,51 @@ function InspectorFoot({ open }: { open: Open }) {
   if (!isAboutKind(open.kind)) return null
   const label = open.kind === 'lane' ? snap.lanes.find((l) => l.id === open.id)?.branch : undefined
   return <ContextComposer about={{ kind: open.kind, ids: [open.id], ...(label ? { label } : {}) }} />
+}
+
+/** The lane an open item belongs to, as the breadcrumb names it. Unknown items show no parent. */
+function parentLane(open: Open, snap: ReturnType<typeof useSnapshot>): string | undefined {
+  if (open.kind === 'lane') return snap.lanes.find((l) => l.id === open.id)?.branch
+  if (open.kind === 'decision') return snap.decisions.find((d) => d.id === open.id)?.lane
+  if (open.kind === 'run') return snap.runs.find((r) => r.id === open.id)?.lane
+  return undefined
+}
+
+/** The page an item has of its own, for "Open as page". */
+function pageFor(open: Open): string | undefined {
+  if (open.kind === 'lane') return href.lane(open.id)
+  if (open.kind === 'run') return href.log(open.id)
+  return undefined
+}
+
+/** The breadcrumb row: where the item lives, what it is, then Open as page and Close. */
+function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject<HTMLHeadingElement | null> }) {
+  const snap = useSnapshot()
+  const parent = parentLane(open, snap)
+  const page = pageFor(open)
+  return (
+    <header className="inspector-head">
+      {parent && (
+        <>
+          <span className="inspector-crumb">{parent}</span>
+          <span aria-hidden="true">›</span>
+        </>
+      )}
+      <h2 id="inspector-title" ref={heading} tabIndex={-1}>
+        {open.kind} {open.id}
+      </h2>
+      <span className="inspector-head-actions">
+        {page && (
+          <a className="ui-btn ui-btn-ghost" href={page}>
+            Open as page
+          </a>
+        )}
+        <button type="button" className="ui-btn ui-btn-ghost" onClick={closeInspector} aria-label="Close inspector">
+          Close <Kbd keys="Esc" />
+        </button>
+      </span>
+    </header>
+  )
 }
 
 /**
@@ -144,14 +190,7 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
             aria-modal={modal ? true : undefined}
             aria-labelledby="inspector-title"
           >
-            <header className="inspector-head">
-              <h2 id="inspector-title" ref={heading} tabIndex={-1}>
-                {open.kind} {open.id}
-              </h2>
-              <button type="button" className="inspector-close" onClick={closeInspector} aria-label="Close inspector">
-                ×
-              </button>
-            </header>
+            <InspectorHead open={open} heading={heading} />
             <InspectorBody open={open} />
             <InspectorFoot open={open} />
           </aside>

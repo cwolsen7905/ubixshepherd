@@ -1,4 +1,4 @@
-import { render as rtlRender, screen, type RenderOptions } from '@testing-library/react'
+import { render as rtlRender, screen, within, type RenderOptions } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { LiveProvider } from '../state/context'
@@ -46,6 +46,23 @@ describe('InspectorFrame', () => {
     expect(screen.getByRole('heading', { name: 'run 5' })).toHaveFocus()
   })
 
+  it('shows a breadcrumb head with Open as page and Close Esc', () => {
+    render(<InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame>)
+    // The lane pane's body carries its own link too, so look in the head only.
+    const head = within(document.querySelector('.inspector-head') as HTMLElement)
+    expect(head.getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/lanes/4')
+    expect(screen.getByRole('button', { name: 'Close inspector' })).toHaveTextContent('Close Esc')
+  })
+
+  it('links a run to its log and gives a decision no page link', () => {
+    const { unmount } = render(<InspectorFrame open={{ kind: 'run', id: 5 }} mode="split">page</InspectorFrame>)
+    const head = within(document.querySelector('.inspector-head') as HTMLElement)
+    expect(head.getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/runs/5/log')
+    unmount()
+    render(<InspectorFrame open={{ kind: 'decision', id: 5 }} mode="split">page</InspectorFrame>)
+    expect(within(document.querySelector('.inspector-head') as HTMLElement).queryByRole('link', { name: 'Open as page' })).toBeNull()
+  })
+
   it('returns focus on close and closes on Esc', async () => {
     const user = userEvent.setup()
     const { rerender } = render(
@@ -81,14 +98,18 @@ describe('InspectorFrame', () => {
       const close = screen.getByRole('button', { name: 'Close inspector' })
       expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
       expect(screen.getByText('row').closest('.inspector-page')).toHaveAttribute('inert')
-      // The composer's box is the last stop (Send is disabled while it is empty).
+      // The head's Open as page link is the first stop, the composer's box the last (Send is
+      // disabled while it is empty).
       const box = screen.getByRole('textbox')
+      const page = screen.getByRole('link', { name: 'Open as page' })
+      await user.tab()
+      expect(page).toHaveFocus()
       await user.tab()
       expect(close).toHaveFocus()
       await user.tab()
       expect(box).toHaveFocus()
       await user.tab()
-      expect(close).toHaveFocus()
+      expect(page).toHaveFocus()
       await user.tab({ shift: true })
       expect(box).toHaveFocus()
       unmount()
