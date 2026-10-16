@@ -89,7 +89,7 @@ func TestAlreadyDoneReportIsIgnoredWhenTheLaneHasCommits(t *testing.T) {
 	f.st.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &id})
 	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "w"})
 	f.wait(t, run.ID)
-	for _, args := range [][]string{{"-C", f.lane.Worktree, "commit", "-q", "--allow-empty", "-m", "work"}} {
+	for _, args := range [][]string{{"-C", f.lane.Worktree, "-c", "user.name=t", "-c", "user.email=t@e", "commit", "-q", "--allow-empty", "-m", "work"}} {
 		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
 			t.Fatalf("%v %s", err, out)
 		}
