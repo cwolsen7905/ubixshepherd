@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
@@ -33,27 +34,26 @@ type stallState struct {
 // It fires once per stall: the state resets only when the workspace stops stalling.
 func (k *KeepGoing) checkStall(ctx context.Context, row store.KeepGoing) {
 	ws := row.WorkspaceID
-	k.stallMu.Lock()
-	defer k.stallMu.Unlock()
-	reset := func() { delete(k.stalls, ws) }
-	if !row.On {
-		reset()
-		return
-	}
-	n, err := k.running(ctx, ws)
-	if err != nil || n > 0 {
-		if err == nil {
-			reset()
+	// The store reads happen outside the lock; it guards only the debounce map.
+	var lines []string
+	stalled := false
+	if row.On {
+		n, err := k.running(ctx, ws)
+		if err != nil {
+			return
 		}
-		return
+		if n == 0 {
+			if lines, err = k.stallLines(ctx, ws); err != nil {
+				k.s.Log.Warn("keep-going: stall check", "workspace", ws, "err", err)
+				return
+			}
+			stalled = len(lines) > 0
+		}
 	}
-	lines, err := k.stallLines(ctx, ws)
-	if err != nil {
-		k.s.Log.Warn("keep-going: stall check", "workspace", ws, "err", err)
-		return
-	}
-	if len(lines) == 0 {
-		reset()
+	k.stallMu.Lock()
+	if !stalled {
+		delete(k.stalls, ws)
+		k.stallMu.Unlock()
 		return
 	}
 	st := k.stalls[ws]
@@ -61,11 +61,14 @@ func (k *KeepGoing) checkStall(ctx context.Context, row store.KeepGoing) {
 		st = &stallState{since: k.Now()}
 		k.stalls[ws] = st
 	}
-	if st.told || k.Now().Sub(st.since) < stallGrace {
-		return
+	post := !st.told && k.Now().Sub(st.since) >= stallGrace
+	if post {
+		st.told = true
 	}
-	st.told = true
-	k.s.postFeed(ctx, FeedKeepGoing, 0, "keep-going is stalled: nothing is running and nothing can start. "+strings.Join(lines, " "))
+	k.stallMu.Unlock()
+	if post {
+		k.s.postFeed(ctx, FeedKeepGoing, 0, redact.String("keep-going is stalled: nothing is running and nothing can start. "+strings.Join(lines, " ")))
+	}
 }
 
 // stallLines is one line per approved, unstarted item in the workspace, saying what
