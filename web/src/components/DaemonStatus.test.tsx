@@ -21,7 +21,7 @@ const loaded = (d: StatusDetail = detail(), session: Loaded['session'] = { role:
 function setup(props: Partial<React.ComponentProps<typeof DaemonStatus>> = {}) {
   const load = vi.fn(() => Promise.resolve(loaded()))
   render(<DaemonStatus error={null} downSince={null} ready load={load} now={NOW} {...props} />)
-  return { load, dot: screen.getByRole('button', { name: /daemon/i }), pop: () => screen.getByRole('tooltip', { hidden: true }) }
+  return { load, dot: screen.getByRole('button', { name: /daemon/i }), pop: () => screen.getByRole('dialog', { hidden: true }) }
 }
 
 describe('DaemonStatus', () => {
@@ -34,7 +34,7 @@ describe('DaemonStatus', () => {
     await user.tab()
     expect(dot).toHaveFocus()
     expect(pop()).toBeVisible()
-    expect(dot).toHaveAttribute('aria-describedby', pop().id)
+    expect(dot).toHaveAttribute('aria-controls', pop().id)
     expect(await screen.findByText('v0.9.0')).toBeInTheDocument()
     const text = pop().textContent ?? ''
     for (const want of ['Daemon', 'up', '3h', 'Chat', 'live', 'polled 1m ago', 'v0.9.0']) expect(text).toContain(want)

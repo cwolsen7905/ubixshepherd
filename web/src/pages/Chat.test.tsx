@@ -83,7 +83,8 @@ describe('ChatPage', () => {
     expect(screen.getByText('need').tagName).toBe('STRONG')
     // a healthy stream says nothing in the chat: the rail's dot is the one place it shows
     expect(screen.queryByText('Live')).not.toBeInTheDocument()
-    expect(document.querySelector('.chat-stream')).toBeNull()
+    expect(document.querySelector('.chat-stream')).toBeEmptyDOMElement()
+    expect(document.querySelector('.chat-stream')).toHaveAttribute('role', 'status')
     expect(screen.queryByText(/reconnecting/i)).not.toBeInTheDocument()
     expect(screen.getByRole('log')).toHaveAttribute('aria-live', 'polite')
   })
@@ -149,7 +150,7 @@ describe('ChatPage', () => {
       })
       expect(FakeSource.all[1]?.url).toBe('/stream?ws=0&after=8')
       act(() => FakeSource.get(1).open())
-      await waitFor(() => expect(document.querySelector('.chat-stream')).toBeNull())
+      await waitFor(() => expect(document.querySelector('.chat-stream')).toBeEmptyDOMElement())
       expect(currentLink()?.connection).toBe('live')
     } finally {
       vi.useRealTimers()

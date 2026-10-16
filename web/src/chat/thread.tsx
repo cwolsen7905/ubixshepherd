@@ -583,12 +583,15 @@ function ChatThread({
         </div>
 
         <PendingStrip />
-        {line && (
-          <p className={`chat-stream${line.down ? ' is-down' : ''}`} role="status">
-            {line.text}
-            {offline && <Countdown at={d.retryAt} />}
-          </p>
-        )}
+        {/* Always mounted, so a change of its text is announced; empty while the stream is live. */}
+        <p className={`chat-stream${line?.down ? ' is-down' : ''}`} role="status">
+          {line && (
+            <>
+              {line.text}
+              {offline && <Countdown at={d.retryAt} />}
+            </>
+          )}
+        </p>
         <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} topicId={topicId} onSend={follow.jump} />
         </div>
         </ErrorBoundary>

@@ -132,7 +132,8 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
         className={`live-dot is-${tone}`}
         aria-label={statusText}
         title={statusText}
-        aria-describedby={id}
+        aria-haspopup="dialog"
+        aria-controls={id}
         aria-expanded={open}
         onFocus={() => setOpen(true)}
         onClick={() => {
@@ -144,7 +145,7 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
         <span className="daemon-status-text">{statusText}</span>
       </button>
       {spend && <RailSpend spend={spend} />}
-      <div id={id} ref={pop} role="tooltip" className="daemon-pop" hidden={!open} style={place}>
+      <div id={id} ref={pop} role="dialog" aria-label="Status" className="daemon-pop" hidden={!open} style={place}>
         {open && (
           <>
             <dl className="daemon-short">
