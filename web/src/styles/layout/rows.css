@@ -6,7 +6,8 @@
 .group-count { color: var(--faint); font-weight: 600; font-size: var(--t-sm); }
 .group-head .ui-btn { margin-left: auto; }
 
-/* The one loud thing: what waits on the person sits on a lantern band, inset to the page
+/* What waits on the person sits on a lantern band (the band is the signal; its label stays
+   a muted group label like every other), inset to the page
    gutter so it lines up with the head instead of running to the shell's edge. */
 .group-needs { margin-inline: var(--pad); border-radius: var(--radius); background: var(--lantern-wash); border: 1px solid color-mix(in srgb, var(--lantern) 35%, transparent); padding-top: var(--s-2); }
 
