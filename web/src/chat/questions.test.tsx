@@ -9,7 +9,7 @@ const q: DeskQuestion = { id: 5, workspace_id: 1, turn: 2, text: 'Which repo?', 
 afterEach(cleanup)
 
 describe('QuestionActions after a reply', () => {
-  it('keeps Reply here and Skip, so a follow-up can be sent', async () => {
+  it('keeps Reply here and Skip and does not clear it, so a follow-up can be sent', async () => {
     const send = vi.fn(async () => true)
     const cleared = vi.fn()
     render(<QuestionActions q={q} thread={{ send } as unknown as DeskThread} onCleared={cleared} />)
@@ -17,6 +17,7 @@ describe('QuestionActions after a reply', () => {
     await userEvent.type(screen.getByRole('textbox'), 'what do you mean?')
     await userEvent.click(screen.getByRole('button', { name: 'Send reply' }))
     await waitFor(() => expect(send).toHaveBeenCalledWith('what do you mean?', null, 5))
+    expect(cleared).not.toHaveBeenCalled()
     expect(await screen.findByRole('button', { name: 'Reply here' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
   })
