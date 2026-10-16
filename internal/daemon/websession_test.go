@@ -193,7 +193,7 @@ func TestWebSessionSlideStopsAtTheCap(t *testing.T) {
 	if want := now.Add(webSessionMaxAge); !ws.expires.Equal(want) {
 		t.Fatalf("expires = %v, want the cap %v", ws.expires, want)
 	}
-	if live, moved := a.extend(ws); !live || moved {
+	if live, moved, _ := a.extend(ws); !live || moved {
 		t.Errorf("extend at the cap: live=%v moved=%v", live, moved)
 	}
 	cur = now.Add(webSessionMaxAge)
@@ -208,16 +208,35 @@ func TestWebSessionExtendRefusesExpired(t *testing.T) {
 	a := &webAuth{now: func() time.Time { return cur }}
 	_, ws, _ := a.start("1", false)
 	cur = now.Add(11 * time.Hour)
-	live, moved := a.extend(ws)
+	live, moved, _ := a.extend(ws)
 	if !live || !moved || !ws.expires.Equal(cur.Add(webSessionTTL)) {
 		t.Fatalf("extend: live=%v moved=%v expires=%v", live, moved, ws.expires)
 	}
 	cur = ws.expires
 	exp := ws.expires
-	if live, _ := a.extend(ws); live {
+	if live, _, _ := a.extend(ws); live {
 		t.Error("an expired session was extended")
 	}
 	if a.slide(ws) || !ws.expires.Equal(exp) {
 		t.Error("an expired session slid")
+	}
+}
+
+// A store that refuses the write leaves the expiry as it was: the cookie must not claim
+// more than a restart would keep.
+func TestWebSessionExpiryNotMovedWhenTheStoreRefuses(t *testing.T) {
+	st := sessionStore(t)
+	now := time.Now().UTC()
+	cur := now
+	a := &webAuth{st: st, now: func() time.Time { return cur }, warn: func(string, error) {}}
+	_, ws, _ := a.start("1", false)
+	before := ws.expires
+	st.Close()
+	cur = now.Add(time.Hour)
+	if a.slide(ws) || !ws.expires.Equal(before) {
+		t.Errorf("slide moved the expiry past a failed save: %v", ws.expires)
+	}
+	if live, moved, err := a.extend(ws); !live || moved || err == nil || !ws.expires.Equal(before) {
+		t.Errorf("extend: live=%v moved=%v err=%v expires=%v", live, moved, err, ws.expires)
 	}
 }

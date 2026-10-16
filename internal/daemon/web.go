@@ -307,26 +307,31 @@ func (a *webAuth) session(val string) (*webSession, bool) {
 }
 
 // push moves a live session's expiry to now+webSessionTTL, never past its absolute cap,
-// and persists it. It says whether expires moved. The caller holds a.mu.
-func (a *webAuth) push(ws *webSession, now time.Time) bool {
+// and persists it. It says whether expires moved; when the store refuses the write the
+// expiry stays as it was, so the cookie never claims more than a restart would keep. The
+// caller holds a.mu.
+func (a *webAuth) push(ws *webSession, now time.Time) (bool, error) {
 	next := now.Add(webSessionTTL)
 	if limit := ws.created.Add(webSessionMaxAge); next.After(limit) {
 		next = limit
 	}
 	if !next.After(ws.expires) {
-		return false
+		return false, nil
 	}
-	ws.expires, ws.slid, ws.lastSeen = next, now, now
 	if a.st != nil {
-		err := a.st.SaveWebSession(context.Background(), store.WebSession{
+		// Bounded: the lock is held, and a stalled store must not stall every request.
+		ctx, cancel := context.WithTimeout(context.Background(), webStoreTimeout)
+		defer cancel()
+		err := a.st.SaveWebSession(ctx, store.WebSession{
 			Hash: ws.key(), CSRF: ws.csrf, Port: ws.port, Created: ws.created, LastSeen: now, Expires: next})
 		if err != nil {
 			a.warnf("web session's expiry not saved", err)
-		} else {
-			ws.saved = now
+			return false, err
 		}
+		ws.saved = now
 	}
-	return true
+	ws.expires, ws.slid, ws.lastSeen = next, now, now
+	return true, nil
 }
 
 // slide pushes a session's expiry forward for person activity, at most once per
@@ -338,19 +343,22 @@ func (a *webAuth) slide(ws *webSession) bool {
 	if !now.Before(ws.expires) || now.Sub(ws.slid) < webSeenEvery {
 		return false
 	}
-	return a.push(ws, now)
+	moved, _ := a.push(ws, now)
+	return moved
 }
 
 // extend is the person asking for more time: like slide, without the throttle. It
-// refuses an expired session, and says whether the expiry moved (false at the cap).
-func (a *webAuth) extend(ws *webSession) (live, moved bool) {
+// refuses an expired session, and says whether the expiry moved (false at the cap). A
+// store that refuses the write is an error: the person must know it did not extend.
+func (a *webAuth) extend(ws *webSession) (live, moved bool, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.clock()
 	if !now.Before(ws.expires) {
-		return false, false
+		return false, false, nil
 	}
-	return true, a.push(ws, now)
+	moved, err = a.push(ws, now)
+	return true, moved, err
 }
 
 // end ends one session, or every one when ws is nil, and says how many ended.
@@ -516,24 +524,24 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, val string, ws *webSess
 // webExtend answers POST /v1/web/session/extend: the person asks for more time. The
 // browser checks (origin, CSRF) have passed; an expired session never gets here.
 func (s *Server) webExtend(w http.ResponseWriter, r *http.Request) {
-	s.webRenew(w, r, "extended", func(ws *webSession) (bool, bool) { return s.web.extend(ws) })
+	s.webRenew(w, r, "extended", s.web.extend)
 }
 
 // webActive answers POST /v1/web/session/active: the page saw the person use it (a key,
 // a click), so the session slides, at most once a minute. Polling never calls it.
 func (s *Server) webActive(w http.ResponseWriter, r *http.Request) {
-	s.webRenew(w, r, "slid", func(ws *webSession) (bool, bool) {
+	s.webRenew(w, r, "slid", func(ws *webSession) (bool, bool, error) {
 		moved := s.web.slide(ws)
 		s.web.mu.Lock()
 		defer s.web.mu.Unlock()
-		return s.web.clock().Before(ws.expires), moved
+		return s.web.clock().Before(ws.expires), moved, nil
 	})
 }
 
 // webRenew runs one of the two ways a browser keeps its session: it resolves the
 // principal itself (browserGate routes here), with the origin and CSRF checks every
 // browser write passes, and renews the cookie when the expiry moved.
-func (s *Server) webRenew(w http.ResponseWriter, r *http.Request, what string, renew func(*webSession) (live, moved bool)) {
+func (s *Server) webRenew(w http.ResponseWriter, r *http.Request, what string, renew func(*webSession) (live, moved bool, err error)) {
 	p, err := s.webPrincipal(r)
 	if err != nil {
 		writeError(w, http.StatusForbidden, err)
@@ -543,7 +551,11 @@ func (s *Server) webRenew(w http.ResponseWriter, r *http.Request, what string, r
 		writeError(w, http.StatusUnauthorized, errors.New("not signed in: run shepherd web for a sign-in link"))
 		return
 	}
-	live, moved := renew(p.web)
+	live, moved, err := renew(p.web)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("the session could not be extended: its new expiry was not saved"))
+		return
+	}
 	if !live {
 		writeError(w, http.StatusUnauthorized, errors.New("this session has ended: run shepherd web for a new sign-in link"))
 		return

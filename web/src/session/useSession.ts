@@ -45,7 +45,7 @@ export function useSession(): SessionState {
       webSession.read().then(
         (c) => live && take(c),
         (e) => {
-          if (live && e instanceof ApiError && (e.status === 401 || e.status === 403)) setOver(true)
+          if (live && e instanceof ApiError && e.status === 401) setOver(true)
         },
       )
     }

@@ -68,6 +68,13 @@ describe('SessionBanner', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/Session ended.*shepherd web/)
   })
 
+  it('does not call a 403 an ended session', async () => {
+    read.mockRejectedValue(new ApiError(403, 'wrong origin'))
+    const { container } = render(<SessionBanner />)
+    await act(async () => {})
+    expect(container).toBeEmptyDOMElement()
+  })
+
   it('turns to ended when the clock runs out', async () => {
     read.mockResolvedValue({ expires: at(1), max_expires: at(5000) })
     render(<SessionBanner />)
