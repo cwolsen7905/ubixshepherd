@@ -24,7 +24,7 @@ export function ArtifactMarkdown({ text, laneId, path }: { text: string; laneId:
   return (
     <>
       {splitImages(text).map((p, i) =>
-        p.t === 'md' ? <Markdown key={i} text={p.text} /> : <Image key={i} laneId={laneId} artifactPath={path} alt={p.alt} src={p.src} />,
+        p.t === 'md' ? <Markdown key={i} text={p.text} /> : <Image key={`${i}:${laneId}:${path}:${p.src}`} laneId={laneId} artifactPath={path} alt={p.alt} src={p.src} />,
       )}
     </>
   )
