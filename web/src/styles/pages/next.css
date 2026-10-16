@@ -14,7 +14,6 @@
 
 .next-group { margin: 0 0 var(--s-5); }
 .next-group-h { margin: 0 0 var(--s-2); font-size: 13px; font-weight: 600; color: var(--muted); }
-.next-group-sub { display: none; }
 .next-waiting .next-group-h { color: var(--muted); }
 .next-section { margin: 0 0 var(--s-3); }
 .next-section-h { margin: var(--s-3) 0 var(--s-1); font-size: 13px; font-weight: 600; color: var(--muted); }
