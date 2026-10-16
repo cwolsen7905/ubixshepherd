@@ -5,9 +5,9 @@ import { DeskThread } from '../state/desk'
 
 /**
  * Reply here and Skip under a desk message that asked the person something. Reply opens an
- * input right here; sending it posts a normal turn linked to the question, which clears it.
- * Skip clears it without an answer. Once cleared the question is no longer open, so the
- * buttons go away.
+ * input right here; sending it posts a normal turn linked to the question and leaves it open,
+ * since a reply may be a follow-up or a partial answer. Skip, or the desk's
+ * question_answer, clears it; only then do the buttons go away.
  */
 function QuestionActions({
   q, thread, topicId = null, onCleared,

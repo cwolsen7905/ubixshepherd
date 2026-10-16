@@ -143,9 +143,9 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A reply to a desk question: check it before anything is sent, quote it so the desk
-	// knows what is being answered, and clear it once the turn is accepted.
+	// knows what is being answered. The question stays open: a reply may be a follow-up or a
+	// partial answer, so only question_answer, the person or a skip closes it.
 	text := req.Text
-	var replyTo store.Question
 	if req.ReplyTo != 0 {
 		q, err := s.Store.Question(r.Context(), req.ReplyTo)
 		switch {
@@ -159,7 +159,6 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, fmt.Errorf("%w: question %d is not open here", store.ErrConflict, q.ID))
 			return
 		}
-		replyTo = q
 		text = fmt.Sprintf("[Replying to your question %d: %s]\n\n%s", q.ID, oneLine(q.Text), req.Text)
 	}
 	if req.About != nil {
@@ -176,11 +175,6 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	default:
 		// The person spoke: idle time counts from now.
 		s.KeepGoing().Touch(r.Context(), d.Workspace().ID)
-		if replyTo.ID != 0 {
-			if _, err := s.Store.CloseQuestion(r.Context(), replyTo.ID, store.QuestionAnswered, id); err != nil {
-				s.Log.Warn("clear an answered question", "question", replyTo.ID, "err", err)
-			}
-		}
 		writeJSON(w, http.StatusAccepted, api.DeskTurnAccepted{WorkspaceID: d.Workspace().ID, Turn: id, Ahead: ahead})
 	}
 }
