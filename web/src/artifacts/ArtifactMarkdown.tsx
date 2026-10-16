@@ -18,12 +18,17 @@ function Image({ laneId, artifactPath, alt, src }: { laneId: number; artifactPat
 
 /**
  * A markdown artifact: the shared renderer for the text, and each image reference shown from
- * its file in the artifact's lane. Anything not a file of the repo is not fetched.
+ * its file in the artifact's lane. Anything not a file of the repo is not fetched. `older` says
+ * the text is a past version, whose images can only be the lane's current files.
  */
-export function ArtifactMarkdown({ text, laneId, path }: { text: string; laneId: number; path: string }) {
+export function ArtifactMarkdown({ text, laneId, path, older }: { text: string; laneId: number; path: string; older?: boolean }) {
+  const pieces = splitImages(text)
   return (
     <>
-      {splitImages(text).map((p, i) =>
+      {older && pieces.some((p) => p.t === 'img') && (
+        <p className="faint" role="note">Images show the lane’s current files: only this file is kept per version.</p>
+      )}
+      {pieces.map((p, i) =>
         p.t === 'md' ? <Markdown key={i} text={p.text} /> : <Image key={`${i}:${laneId}:${path}:${p.src}`} laneId={laneId} artifactPath={path} alt={p.alt} src={p.src} />,
       )}
     </>

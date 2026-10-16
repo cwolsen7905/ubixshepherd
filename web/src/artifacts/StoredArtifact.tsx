@@ -268,7 +268,7 @@ function Body({ a, version, mode, newest, refreshKey }: { a: StoredArtifact; ver
   return (
     <div className="artifact-view">
       {masked}
-      {a.kind === 'markdown' && mode === 'view' ? <ArtifactMarkdown text={mine.text ?? ''} laneId={a.lane_id} path={a.path} /> : <pre className="artifact-text">{mine.text}</pre>}
+      {a.kind === 'markdown' && mode === 'view' ? <ArtifactMarkdown text={mine.text ?? ''} laneId={a.lane_id} path={a.path} older={version !== ''} /> : <pre className="artifact-text">{mine.text}</pre>}
     </div>
   )
 }

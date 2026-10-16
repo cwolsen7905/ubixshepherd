@@ -9,4 +9,9 @@ describe('ArtifactMarkdown', () => {
     rerender(<ArtifactMarkdown text="![b](y.png)" laneId={1} path="docs/b.md" />)
     expect(screen.getByRole('img', { name: 'b' })).toBeInTheDocument()
   })
+
+  it('says an older version’s images are the lane’s current files', () => {
+    render(<ArtifactMarkdown text="![a](x.png)" laneId={1} path="docs/a.md" older />)
+    expect(screen.getByRole('note')).toHaveTextContent(/current files/)
+  })
 })
