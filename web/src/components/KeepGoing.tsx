@@ -97,7 +97,7 @@ export function KeepGoing({
   if (!st) return null
   const d = detail(st, now())
   const bar = st.on && st.cap_usd > 0
-    ? { pct: Math.min(100, (st.spent_usd / st.cap_usd) * 100), warn: st.spent_usd >= 0.8 * st.cap_usd }
+    ? { pct: Math.min(100, (st.spent_usd / st.cap_usd) * 100) }
     : null
   const barStyle = bar ? { '--kg-fill-pct': `${bar.pct}%` } as React.CSSProperties : {}
   return (
@@ -118,7 +118,7 @@ export function KeepGoing({
         <>
           {bar && (
             <span
-              className={`keep-going-bar tone-${bar.warn ? 'warn' : 'ok'}`}
+              className={`keep-going-bar tone-${d.warn ? 'warn' : 'ok'}`}
               style={barStyle}
               role="progressbar"
               aria-valuemin={0}
