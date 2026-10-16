@@ -8,9 +8,9 @@
 .live-dot { min-width: 0; max-width: 100%; text-align: left; color: var(--ink); }
 .daemon-dot-indicator { flex: none; }
 .daemon-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-xs); }
-/* Today's spend, compact under the status line: a thin bar and a short amount; the words are in the popover. */
-.rail-spend { display: grid; gap: 2px; padding: 0 var(--s-2); min-width: 0; font-size: var(--t-2xs); color: var(--muted); }
-.rail-spend .meter { display: block; height: 3px; border-radius: 2px; background: var(--sunk); }
+/* Today's spend, compact under the keep-going bar and above the status line: a bar as wide and tall as that one and a short amount; the words are in the popover. */
+.rail-spend { display: grid; gap: 2px; padding: 0; min-width: 0; font-size: var(--t-2xs); color: var(--muted); }
+.rail-spend .meter { display: block; height: 4px; border-radius: 2px; background: var(--sunk); }
 .rail-spend-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .daemon-pop {
   position: fixed; z-index: 50; width: 18rem; max-width: calc(100vw - 1rem);

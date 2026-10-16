@@ -68,12 +68,11 @@ describe('DaemonStatus', () => {
     expect(dot()).not.toHaveClass('is-up')
   })
 
-  it('puts spend in the status line and every status in the popover', async () => {
+  it('puts every status in the popover, leaving the spend bar to the rail', async () => {
     const user = userEvent.setup()
     const spend = { day: '2026-10-10', usd: 3.5, budget: 20, credit_usd: 0, by_source: null }
     const { dot, pop } = setup({ spend, counts: { running: 2, waiting: 1, broken: 0, routing: 3 } })
-    expect(screen.getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '3.5')
-    expect(document.querySelector('.rail-spend')).toHaveAttribute('title', '$3.50 of $20.00 today')
+    expect(screen.queryByRole('meter')).toBeNull()
     await user.click(dot)
     await screen.findByText('v0.9.0')
     expect(pop().textContent).toContain('$3.50 of $20.00')

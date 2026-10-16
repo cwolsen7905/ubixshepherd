@@ -17,6 +17,7 @@ import { SettingsPage } from './pages/Settings'
 import { TimelinePage } from './pages/Timeline'
 import { UsagePage } from './pages/Usage'
 import { DaemonStatus } from './components/DaemonStatus'
+import { RailSpend } from './shell/RailSpend'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
 import { InspectorFrame } from './inspector/Inspector'
@@ -67,6 +68,7 @@ export function App() {
 
   const footer = (
     <>
+      {spend && <RailSpend spend={spend} />}
       <div className="foot-row">
         <ErrorBoundary region="The daemon status">
           <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} spend={spend} counts={counts} />
