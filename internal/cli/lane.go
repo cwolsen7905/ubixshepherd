@@ -294,7 +294,7 @@ func laneList(ctx context.Context, env Env, args []string) error {
 
 func laneClose(ctx context.Context, env Env, args []string) error {
 	fs := flags("lane close", env)
-	force := fs.Bool("force", false, "close although git cannot see the branch merged (after a squash merge), discarding uncommitted changes")
+	force := fs.Bool("force", false, "close although neither git nor the forge shows the branch merged, discarding uncommitted changes")
 	repo := fs.String("repo", "", "repo, by its name in the workspace")
 	pos, err := parse(fs, args)
 	if err != nil {
