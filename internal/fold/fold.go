@@ -399,6 +399,16 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	}
 
 	merged, where := f.merged(ctx, repo.Path, lane)
+	if !merged {
+		// A squash merge looks unmerged to git: the forge's word counts.
+		if ok, why := f.forgeMerged(ctx, repo, lane); ok {
+			merged, where = true, "the forge's merged request"
+			res.Notes = append(res.Notes, "merged, per the forge")
+			if why != "" {
+				res.Notes = append(res.Notes, why)
+			}
+		}
+	}
 	if !merged && !force {
 		return res, refuse("branch %s is not in %s as far as git can tell. A squash merge looks like this too: once the MR is merged, close with --force (the branch is kept)", lane.Branch, where)
 	}
@@ -517,6 +527,61 @@ func shortSHA(s string) string {
 		return s[:9]
 	}
 	return s
+}
+
+// MergeCovers is the one proof that a forge's merged request finished a lane, shared by
+// lane close and the watcher so they cannot disagree. The request must be merged with a
+// merge commit and a head, created after the lane opened (a branch name can be reused),
+// and the lane's local branch, if it still exists, must hold nothing beyond the request's
+// head. fetch is called, at most once and only when the head is not here yet, to get it;
+// the caller decides how often and how long that may take.
+func MergeCovers(ctx context.Context, repoPath string, lane store.Lane, mr *forge.MR, fetch func(context.Context)) bool {
+	if mr == nil || !strings.EqualFold(mr.State, "merged") || mr.MergeSHA == "" || mr.SHA == "" {
+		return false
+	}
+	if mr.Created.IsZero() || mr.Created.Before(lane.Created) {
+		return false
+	}
+	if !git.RefExists(ctx, repoPath, "refs/heads/"+lane.Branch) {
+		return true
+	}
+	if !git.Ok(ctx, repoPath, "cat-file", "-e", mr.SHA+"^{commit}") && fetch != nil {
+		fetch(ctx)
+	}
+	return git.Ok(ctx, repoPath, "merge-base", "--is-ancestor", "refs/heads/"+lane.Branch, mr.SHA)
+}
+
+// forgeMerged reports whether the forge has merged a request for the lane's branch that
+// covers it: created after the lane opened (a branch name can be reused), and the branch
+// holds nothing beyond the request's head. It records the merge on the lane, so the
+// lane's next-up item is settled as done. Without a forge it is false.
+func (f *Fold) forgeMerged(ctx context.Context, repo store.Repo, lane store.Lane) (bool, string) {
+	if f.ForgeFor == nil {
+		return false, ""
+	}
+	fg, err := f.ForgeFor(repo.Remote)
+	if err != nil || fg == nil {
+		return false, ""
+	}
+	mr, err := fg.MRForBranch(ctx, lane.Branch)
+	if err != nil || !MergeCovers(ctx, repo.Path, lane, mr, func(ctx context.Context) {
+		git.Run(ctx, repo.Path, "fetch", "--quiet", "origin")
+	}) {
+		return false, ""
+	}
+	// The merge is recorded even for a lane the watcher never saw (no row yet), so its
+	// next-up item settles as done; a failure to record is not hidden.
+	lf, err := f.Store.LaneForge(ctx, lane.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return true, "could not record the merge on the lane: " + err.Error()
+	}
+	lf.LaneID = lane.ID
+	lf.MR, lf.MRState, lf.MRURL, lf.MergeSHA = mr.IID, mr.State, mr.URL, mr.MergeSHA
+	lf.MRCreated, lf.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
+	if err := f.Store.PutLaneForge(ctx, lf); err != nil {
+		return true, "could not record the merge on the lane: " + err.Error()
+	}
+	return true, ""
 }
 
 // merged reports whether the lane's branch is contained in its base, fetching origin
