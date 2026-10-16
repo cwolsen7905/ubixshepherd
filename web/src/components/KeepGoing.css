@@ -56,3 +56,4 @@
   .keep-going-fill { transition: none; }
 }
 .shell[data-mode="icons"] .keep-going-detail { display: none; }
+.shell[data-mode="icons"] .keep-going-bar { display: none; }
