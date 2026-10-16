@@ -4,7 +4,7 @@
 .app { min-height: 100vh; display: flex; flex-direction: column; }
 
 /* The shell: a sidebar down the left, then the slim page head and the page. */
-.shell { display: grid; grid-template-columns: var(--sidebar-w, 15rem) minmax(0, 1fr); min-height: 100vh; }
+.shell { display: grid; grid-template-columns: var(--sidebar-w, 15.4286rem) minmax(0, 1fr); min-height: 100vh; }
 .shell[data-mode="icons"] { --sidebar-w: 3.5rem; }
 .shell[data-mode="sheet"] { grid-template-columns: minmax(0, 1fr); }
 .shell-body { display: flex; flex-direction: column; min-width: 0; }
@@ -25,49 +25,61 @@
   box-shadow: var(--shadow-2);
 }
 .sheet-scrim { position: fixed; inset: 0; z-index: 25; background: color-mix(in srgb, var(--field) 60%, transparent); }
-.sidebar-inner { display: flex; flex-direction: column; min-height: 100%; padding: var(--s-3); gap: var(--s-4); }
-.sidebar-top { display: grid; gap: var(--s-2); }
-.workspace { margin: 0; font-size: var(--t-xs); color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-name { color: var(--ink); }
+.sidebar-inner { display: flex; flex-direction: column; min-height: 100%; padding: var(--s-3) 0.714rem; gap: 2px; }
+.sidebar-top { display: grid; gap: 2px; }
 .search-trigger {
-  display: grid; grid-template-columns: 1.5rem 1fr auto; align-items: center; gap: var(--s-2);
-  padding: var(--s-1) var(--s-2); border-radius: var(--radius); border: 1px solid var(--control-border);
-  background: var(--field); color: var(--muted); font-size: var(--t-xs); cursor: pointer;
-  margin: 0; width: 100%; text-align: left;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-2);
+  padding: 0.357rem var(--s-2); margin: 0 0 0.714rem; width: 100%; text-align: left;
+  border-radius: var(--radius); border: 1px solid var(--rule);
+  background: var(--raised); color: var(--faint); font-size: var(--t-md); cursor: pointer;
 }
-.search-trigger:hover { background: var(--hover); color: var(--ink); border-color: var(--rule); }
-.search-icon { font-size: var(--t-lg); text-align: center; }
+.search-trigger:hover { background: var(--hover); color: var(--ink); border-color: var(--control-border); }
+.search-icon { display: none; font-size: var(--t-lg); text-align: center; }
 .search-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.search-key { font-size: var(--t-2xs); color: var(--faint); white-space: nowrap; }
+.search-key {
+  padding: 0 var(--s-1); border: 1px solid var(--rule); border-radius: 0.2143rem;
+  background: var(--surface); color: var(--muted); font-size: var(--t-2xs); white-space: nowrap;
+}
+.shell[data-mode="icons"] .search-trigger { justify-content: center; }
+.shell[data-mode="icons"] .search-icon { display: block; }
+.shell[data-mode="icons"] .search-label,
+.shell[data-mode="icons"] .search-key { display: none; }
 
-/* The mark and name, as on ubixsys.com: 600 weight, the product name in the brand blue. */
+/* The workspace is the brand: the mark and its name at the body size, 600. */
 .wordmark {
-  display: inline-flex; align-items: baseline; gap: 0.5em;
-  font-weight: 600; font-size: var(--t-lg); letter-spacing: -0.01em;
-  text-decoration: none; white-space: nowrap;
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: var(--s-1) var(--s-2) var(--s-3);
+  font-weight: 600; font-size: var(--t-md); color: var(--ink);
+  text-decoration: none; white-space: nowrap; min-width: 0;
 }
-.wordmark b { font-weight: 600; color: var(--brand); }
-.wordmark-mark { width: 0.95em; height: 0.95em; flex: none; border-radius: 1px; }
+.wordmark-text { overflow: hidden; text-overflow: ellipsis; }
+.wordmark-mark { width: 1.2857rem; height: 1.2857rem; flex: none; }
 
-.nav { display: flex; flex-direction: column; gap: var(--s-3); flex: 1; }
-.nav-group { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.nav-group + .nav-group { padding-top: var(--s-3); border-top: 1px solid var(--rule); }
+.nav { display: flex; flex-direction: column; flex: 1; }
+.nav-group { list-style: none; margin: 0; padding: 0; display: grid; }
+.nav-group + .nav-group::before { content: ""; height: 1px; margin: var(--s-2) var(--s-1); background: var(--rule); }
 .nav a {
-  display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) auto; align-items: center; gap: var(--s-2);
-  padding: var(--s-1) var(--s-2); border-radius: var(--radius);
-  text-decoration: none; color: var(--muted); white-space: nowrap;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--s-2);
+  padding: 0.357rem var(--s-2); border-radius: var(--radius);
+  text-decoration: none; color: var(--ink); white-space: nowrap;
 }
-.nav a:hover { background: var(--hover); color: var(--ink); }
-.nav a[aria-current="page"] { background: var(--sunk); color: var(--ink); font-weight: 600; }
+.nav a:hover { background: var(--hover); }
+.nav a[aria-current="page"] { background: var(--sunk); font-weight: 600; }
 .nav a:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-.nav-mark { font-family: var(--font-mono); text-align: center; color: var(--faint); }
-.nav a[aria-current="page"] .nav-mark { color: var(--lichen); }
-.nav-count { display: inline-flex; font-weight: 600; }
+/* The letter column is only the icon rail's content: the full sidebar is words. */
+.nav-mark { display: none; font-family: var(--font-mono); text-align: center; color: var(--faint); }
+.shell[data-mode="icons"] .nav-mark { display: block; }
+.shell[data-mode="icons"] .nav a[aria-current="page"] .nav-mark { color: var(--lichen); }
+.nav-count { display: inline-flex; }
+/* Counts: a solid lantern chip for what waits on you; broken work is red text with a cross. */
+.nav .ui-badge-attention { background: var(--lantern); color: var(--raised); box-shadow: none; }
+.nav .ui-badge-bad { background: transparent; padding-inline: 0; }
+.nav .ui-badge-bad::after { content: " \2717"; }
 
-.sidebar-foot { display: grid; gap: var(--s-2); font-size: var(--t-sm); color: var(--muted); }
+.sidebar-foot { display: grid; gap: var(--s-2); padding: var(--s-2); font-size: var(--t-xs); color: var(--muted); }
 .foot-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
 .spend { display: grid; gap: var(--s-1); }
-.spend .meter { width: 100%; }
+.spend .meter { display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--sunk); }
 .sidebar .daemon-pop { top: auto; bottom: 100%; left: 0; right: auto; width: 20rem; }
 .sidebar .banner { padding: var(--s-2); border: 1px solid var(--rule); border-radius: var(--radius); }
 
