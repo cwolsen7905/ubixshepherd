@@ -148,10 +148,10 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
               <Row k="Daemon">
                 {down ? (
                   <span className="tone-bad">down{downSince !== null && ` for ${age(now - downSince)}`}</span>
-                ) : d && data ? (
-                  <>up <span className="faint">{age(Date.parse(d.now) - Date.parse(data.status.started))}</span></>
                 ) : failed ? (
                   <span className="tone-bad">unreadable</span>
+                ) : d && data ? (
+                  <>up <span className="faint">{age(Date.parse(d.now) - Date.parse(data.status.started))}</span></>
                 ) : (
                   <span className="faint">…</span>
                 )}

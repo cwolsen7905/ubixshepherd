@@ -97,6 +97,16 @@ describe('ChatPage', () => {
     publishChat(null)
   })
 
+  it('keeps the link of a chat that is still open when another closes', () => {
+    publishChat({ connection: 'live', retryAt: null }, 'a')
+    publishChat({ connection: 'reconnecting', retryAt: null }, 'b')
+    expect(currentLink()?.connection).toBe('reconnecting')
+    publishChat(null, 'b')
+    expect(currentLink()?.connection).toBe('live')
+    publishChat(null, 'a')
+    expect(currentLink()).toBeNull()
+  })
+
   it('shows Reply here and Skip under the desk message that asked an open question, and nowhere else', async () => {
     const asked = { id: 7, workspace_id: 1, turn: 1, text: 'Ship it?', state: 'open', created: '2026-10-08T10:00:40Z' }
     vi.stubGlobal('fetch', async (path: string) => {

@@ -80,6 +80,23 @@ describe('DaemonStatus', () => {
     expect(pop().textContent).toContain('2 running, 1 waiting, 0 broken, 3 to route')
   })
 
+  it('says the detail is unreadable when a refresh fails, not the old snapshot', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+      const load = vi.fn().mockResolvedValueOnce(loaded()).mockRejectedValue(new Error('boom'))
+      const { dot, pop } = setup({ load })
+      await user.click(dot)
+      expect(await screen.findByText('v0.9.0')).toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5100)
+      })
+      expect(pop().textContent).toContain('unreadable')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('opens on hover and closes on leave, and on Escape', async () => {
     const user = userEvent.setup()
     const { dot, pop } = setup()

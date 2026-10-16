@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useSyncExternalStore, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useSyncExternalStore, useState } from 'react'
 import { useNow } from '../hooks'
 import type { Connection } from '../state/desk'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
@@ -46,10 +46,11 @@ export function Countdown({ at }: { at: number | null }) {
 export function useThread(thread: DeskThread): DeskSnapshot {
   const snap = useSyncExternalStore(thread.subscribe, thread.getSnapshot)
   const { connection, retryAt } = snap
+  const key = useId()
   useEffect(() => {
-    publishChat({ connection, retryAt })
-  }, [connection, retryAt])
-  useEffect(() => () => publishChat(null), [])
+    publishChat({ connection, retryAt }, key)
+  }, [connection, retryAt, key])
+  useEffect(() => () => publishChat(null, key), [key])
   return snap
 }
 

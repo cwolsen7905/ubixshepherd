@@ -9,13 +9,21 @@ export interface ChatLink {
   retryAt: number | null
 }
 
+// Each publisher has its own key, so one closing does not clear another's link; the
+// newest publication is the one shown.
+const links = new Map<string, ChatLink>()
 let current: ChatLink | null = null
 const subs = new Set<() => void>()
 
-/** Sets the open chat's connection, or null when the chat closes. */
-export function publishChat(link: ChatLink | null) {
-  if (current === link || (current && link && current.connection === link.connection && current.retryAt === link.retryAt)) return
-  current = link
+/** Sets the connection of the chat `key`, or removes it with null when that chat closes. */
+export function publishChat(link: ChatLink | null, key = 'chat') {
+  const before = links.get(key)
+  if (link && before && before.connection === link.connection && before.retryAt === link.retryAt) return
+  links.delete(key)
+  if (link) links.set(key, link)
+  const next = [...links.values()].at(-1) ?? null
+  if (next === current) return
+  current = next
   subs.forEach((fn) => fn())
 }
 
