@@ -1,3 +1,40 @@
+/* The runs page head: one 45px row, h1 16/700, sub inline, actions right. */
+.runs-head {
+  min-height: 45px; /* grows rather than clip a wrapping sub */
+  display: flex; flex-direction: row; align-items: center; column-gap: var(--s-4);
+  margin: var(--s-2) 0 var(--s-4); padding-left: var(--gutter);
+}
+.runs-head h1 {
+  margin: 0; font-size: var(--t-xl);
+  /* 16/700 in the mockup; Plex Bold is not bundled, so 600 is the heaviest face. */
+  font-weight: 600; line-height: 1;
+}
+.runs-head .page-sub {
+  margin: 0; flex: 1 1 auto; line-height: 1;
+}
+.runs-head .page-sub .faint { line-height: inherit; }
+.runs-head .page-actions { flex-shrink: 0; }
+
+/* Filters in a single row. */
+.runs-filters {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2) var(--s-3);
+  margin: 0 0 var(--s-3);
+}
+.runs-filters label { display: inline-flex; flex-direction: row; align-items: center; gap: var(--s-2); }
+.runs-filters label .faint { white-space: nowrap; }
+
+/* Table rows: 35px height, 7/10 padding, r radius. */
+.runs-table tbody tr { height: 35px; }
+.runs-table tbody tr td {
+  padding: 0.5rem 0.7143rem; /* 7 / 10 at the 14px root */
+  border-bottom: 1px solid var(--rule);
+  vertical-align: middle;
+  border-radius: var(--radius);
+}
+.runs-table tbody tr td:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.runs-table tbody tr td:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.runs-table tbody tr:hover { background: var(--hover); }
+
 /* The runs table, on the Runs page and in the Timeline's table view: a wider glyph rail and
    column gap, and a task column that takes the rest of the row, one line, full text on hover. */
 .runs-table { table-layout: auto; }

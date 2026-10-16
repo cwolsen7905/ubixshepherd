@@ -8,6 +8,7 @@ import {
 } from '../model/timeline'
 import { go, href, type TimelineRange } from '../router'
 import { useSnapshot } from '../state/context'
+import { Button } from '../ui'
 import { useTimelineHistory } from '../timeline/data'
 
 /** How often the window is recomputed: running bars move on their own between these. */
@@ -51,11 +52,18 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
 
   return (
     <div className={`page page-wide timeline-page${stale ? ' is-stale' : ''}`}>
-      <header className="page-head">
+      <header className="page-head timeline-head">
         <h1>Timeline</h1>
         <p className="page-sub" aria-live="polite">
           {snap.ready ? line || <span className="faint">Nothing running, waiting or merged.</span> : <span className="faint">Loading…</span>}
         </p>
+        <div className="page-actions">
+          {summary.idle > 0 && (
+            <Button variant="ghost" size="small" onClick={() => setShowIdle((v) => !v)}>
+              {showIdle ? 'Hide' : 'Show'} idle lanes ({summary.idle})
+            </Button>
+          )}
+        </div>
       </header>
 
       <div className="filters tl-filters">
@@ -78,11 +86,6 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
           </nav>
         )}
         <TimelineLegend agents={agents} agent={agent} range={range} />
-        {summary.idle > 0 && (
-          <button type="button" className="link-button" aria-pressed={showIdle} onClick={() => setShowIdle((v) => !v)}>
-            {showIdle ? 'Hide' : 'Show'} idle lanes ({summary.idle})
-          </button>
-        )}
       </div>
 
       {hist.error && <p className="tone-bad">Could not read the history: {hist.error}. Showing what the daemon last sent.</p>}
