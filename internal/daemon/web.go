@@ -74,6 +74,8 @@ const (
 	// webSeenEvery is the least time between writes of a session's last-seen time, so
 	// page loads do not each write to the store.
 	webSeenEvery = time.Minute
+	// webStoreTimeout bounds a write of a session's expiry, made under the session lock.
+	webStoreTimeout = 3 * time.Second
 )
 
 // webAuth holds the sign-in codes and browser sessions, by the SHA-256 of their values:
@@ -261,7 +263,10 @@ func (a *webAuth) start(port string, allowSettings bool) (string, *webSession, e
 	ws := &webSession{hash: sha256.Sum256([]byte(val)), csrf: csrf, port: port,
 		created: now, lastSeen: now, saved: now, slid: now, expires: now.Add(webSessionTTL), allowSettings: allowSettings}
 	if a.st != nil {
-		err := a.st.SaveWebSession(context.Background(), store.WebSession{
+		// Bounded: the lock is held, and a stalled store must not stall every request.
+		ctx, cancel := context.WithTimeout(context.Background(), webStoreTimeout)
+		defer cancel()
+		err := a.st.SaveWebSession(ctx, store.WebSession{
 			Hash: ws.key(), CSRF: csrf, Port: port, Created: now, LastSeen: now, Expires: ws.expires})
 		if err != nil {
 			return "", nil, fmt.Errorf("keep the session: %w", err)
