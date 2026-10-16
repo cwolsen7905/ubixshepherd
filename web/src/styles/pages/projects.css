@@ -1,0 +1,24 @@
+/* Projects and a project's page against the shared page rules (web-ui-fidelity.md, gap 9):
+   a one-row 45px head with h1 16/700, rows of 35px with 7/10 padding and the radius, group
+   labels 13/600 muted, lantern for what waits on the person. Loaded after project.css. */
+.projects-page .page-head, .project-page .page-head {
+  display: flex; align-items: center; gap: var(--s-3); height: 3.2143rem; margin: 0;
+}
+.projects-page .page-head h1, .project-page .page-head h1 { font-size: var(--t-xl); font-weight: 700; letter-spacing: 0; }
+.page-head-repos { color: var(--muted); font-size: var(--t-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projects-page .page-head > .page-actions, .project-page .page-head > .page-actions {
+  margin: 0 0 0 auto; flex-wrap: nowrap; white-space: nowrap; font-size: var(--t-sm);
+}
+.projects-page .page-head > .page-actions .project-spend, .project-page .page-head > .page-actions .project-spend { margin: 0; }
+
+.project-note { margin: var(--s-3) 0 0 var(--gutter); max-width: var(--measure-prose); font-size: var(--t-sm); color: var(--muted); }
+
+/* Group labels. */
+.project-section { margin: 0 0 var(--s-4); }
+.project-section h2 { margin: 0 0 var(--s-1); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
+.project-section h2.is-waiting { color: var(--lantern-ink); }
+
+/* Rows. */
+.project-section .rows .project-row { min-height: 2.5rem; padding: 0.5rem 0.7143rem; border-radius: var(--radius); }
+.project-section .rows li:last-child .project-row { border-bottom: 0; }
+.project-section .rows .project-row { border-top: 0; }

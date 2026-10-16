@@ -12,6 +12,7 @@ import type { BriefView, ProjectBrief } from '../api/types'
 import { Badge, EmptyState, Skeleton } from '../ui'
 import '../styles/projects.css'
 import '../styles/pages/project.css'
+import '../styles/pages/projects.css'
 
 const NS_PER_MS = 1_000_000
 
@@ -77,34 +78,30 @@ export function ProjectPage({ name }: { name: string | null }) {
     <div className="page project-page">
       <header className="page-head">
         <h1>{title}</h1>
-        <p className="page-sub">
+        <span className="page-head-repos">{data.repos.length === 0 ? 'no repos' : data.repos.join(', ')}</span>
+        <div className="page-actions">
+          <span className="project-spend">
+            <BudgetMeter budget={data.budget} today={data.spend_today} /> · <a href={href.usage()}>Usage detail</a>
+          </span>
           <a href={href.projects()}>All projects</a>
           {name !== null && (
-            <>
-              {' · '}
-              <a
-                className="ui-btn ui-btn-sm"
-                href={href.settings(`project:${name}`)}
-                onClick={(e) => {
-                  e.preventDefault()
-                  go(href.settings(`project:${name}`))
-                }}
-              >
-                Edit
-              </a>
-            </>
+            <a
+              className="ui-btn ui-btn-sm"
+              href={href.settings(`project:${name}`)}
+              onClick={(e) => {
+                e.preventDefault()
+                go(href.settings(`project:${name}`))
+              }}
+            >
+              Edit
+            </a>
           )}
-          {' · '}
-          {data.repos.length === 0 ? 'no repos' : data.repos.join(', ')}
-        </p>
-        <p className="project-spend">
-          <BudgetMeter budget={data.budget} today={data.spend_today} /> · <a href={href.usage()}>Usage detail</a>
-        </p>
+        </div>
       </header>
       {error && <p className="tone-bad">Could not refresh: {error}. Showing what was last loaded.</p>}
 
       <section aria-labelledby="project-wait" className="project-section">
-        <h2 id="project-wait">
+        <h2 id="project-wait" className={data.pending_decisions.length + data.pending_requests.length > 0 ? 'is-waiting' : undefined}>
           Waiting on you <Badge count={data.pending_decisions.length + data.pending_requests.length} tone="attention" />
         </h2>
         {data.pending_decisions.length + data.pending_requests.length === 0 && <EmptyState title="Nothing waits on you here." />}
