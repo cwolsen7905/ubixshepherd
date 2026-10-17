@@ -65,9 +65,10 @@ check: core-boundary script-check
 # The keep-going checks (KEEP-C-01 to C-12 in the keep-going spec) are tests behind a
 # build tag. They fail until the daemon-side drive lands, so this is not part of check.
 check-keep-going:
-	@go test -v -count=1 -tags keepgoing_checks ./internal/daemon -run 'KeepGoing|Stall|Linked|Unlinked' 2>&1 | tee .keepgoing-checks.log | grep -E '^(--- |ok|FAIL|panic)'; \
-	status=$$(grep -c -E '^--- FAIL' .keepgoing-checks.log); rm -f .keepgoing-checks.log; \
-	test "$$status" = 0
+	@go test -v -count=1 -tags keepgoing_checks ./internal/daemon -run 'KeepGoing|Stall|Linked|Unlinked' > .keepgoing-checks.log 2>&1; \
+	status=$$?; grep -E '^(--- |ok|FAIL|panic)' .keepgoing-checks.log; \
+	if [ $$status -ne 0 ] && ! grep -q -E '^--- ' .keepgoing-checks.log; then cat .keepgoing-checks.log; fi; \
+	rm -f .keepgoing-checks.log; exit $$status
 
 # The install script is not Go: parse it, so it cannot rot unseen.
 script-check:

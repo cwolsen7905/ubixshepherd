@@ -1,3 +1,5 @@
+//go:build keepgoing_checks
+
 package daemon
 
 import (
