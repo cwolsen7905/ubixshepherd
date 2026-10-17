@@ -27,7 +27,10 @@ describe('RunChanges', () => {
     expect(await screen.findByText('run commit')).toBeInTheDocument()
     expect(urls).toContain('/v1/lanes/1/diff?mode=stat&run=10')
     expect(screen.getByRole('region', { name: /Uncommitted/ })).toHaveTextContent("in the lane's worktree now")
-    expect(screen.getByText('outside scope')).toBeInTheDocument()
+    // The run's own file is marked outside scope by the design row: lantern title, no plain text.
+    const row = screen.getByText('docs/x.md').closest('li') as HTMLElement
+    expect(row).toHaveClass('is-outside')
+    expect(row.title).toMatch(/outside scope/)
     vi.unstubAllGlobals()
   })
 
