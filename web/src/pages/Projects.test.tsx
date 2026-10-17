@@ -78,6 +78,7 @@ describe('mergeRule', () => {
     expect(mergeRule(configDoc, 'acme-api')).toBe('agent merges')
     expect(mergeRule(configDoc, 'other')).toBe('you merge')
     expect(mergeRule(null, 'acme-api')).toBe('you merge')
+    expect(mergeRule({} as ConfigDoc, 'acme-api')).toBe('you merge')
   })
 })
 
