@@ -71,4 +71,20 @@ describe('Conversation scrolling', () => {
     jump.click()
     expect(panel.scrollTop).toBe(900)
   })
+
+  it('keeps following when the wheel goes up over another column, and lets go over the panel', async () => {
+    render(
+      <div>
+        <div data-testid="board" style={{ overflowY: 'auto' }}>board</div>
+        <div data-testid="panel" style={{ overflowY: 'auto' }}>
+          <Conversation source={source} now={0} />
+        </div>
+      </div>,
+    )
+    await screen.findByText('hello')
+    fireEvent.wheel(screen.getByTestId('board'), { deltaY: -50 })
+    expect(screen.queryByRole('button', { name: 'Jump to latest' })).not.toBeInTheDocument()
+    fireEvent.wheel(screen.getByText('hello'), { deltaY: -50 })
+    expect(await screen.findByRole('button', { name: 'Jump to latest' })).toBeInTheDocument()
+  })
 })

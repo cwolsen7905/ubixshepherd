@@ -73,6 +73,9 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
       lastY.current = y
     }
     const onWheel = (e: WheelEvent) => {
+      // A wheel over another column scrolls that column, not this thread.
+      const box = ownScroller(target.current)
+      if (box && !(e.target instanceof Node && box.contains(e.target))) return
       if (e.deltaY < 0) pin(false)
     }
     const onResize = () => {
