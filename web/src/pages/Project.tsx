@@ -1,6 +1,8 @@
 import { BudgetMeter } from '../components/BudgetMeter'
 import { mrBadge, MrBadge } from '../components/MrBadge'
 import { GateBadge } from '../components/GateBadge'
+import { splitQuestion } from '../components/DecisionCard'
+import { inline } from '../conversation/Markdown'
 import { Work } from '../components/Work'
 import { age as ageOf, duration, runCost, since, usd } from '../format'
 import { useKeys, useNow } from '../hooks'
@@ -45,6 +47,12 @@ function BriefText({ brief, heading, stale, draft }: { brief: ProjectBrief; head
       <pre className="sh-brief-text">{brief.text}</pre>
     </div>
   )
+}
+
+/** The short title of a decision: its heading line, or the first line when it has none. */
+function questionTitle(q: string): string {
+  const { head, body } = splitQuestion(q)
+  return head || body.split('\n')[0] || q
 }
 
 /** A lane row: the lane over its repo and gate, the merge request at the right. A link to
@@ -151,7 +159,8 @@ export function ProjectPage({ name }: { name: string | null }) {
               glyph="?"
               tone="warn"
               glyphLabel="decision"
-              title={d.question}
+              title={inline(questionTitle(d.question))}
+              titleAttr={d.question}
               sub={`${d.lane} · ${d.agent}`}
               age={since(d.created, now)}
               selected={isOpenNow(open)}
