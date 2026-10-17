@@ -51,6 +51,11 @@ type Drain struct {
 func (r *Runner) Drain(timeout time.Duration) {
 	r.mu.Lock()
 	if r.drain != nil {
+		// A drain under way takes a sooner deadline (a restart that will not wait), never
+		// a later one.
+		if until := time.Now().Add(timeout); until.Before(r.drain.until) {
+			r.drain.until = until
+		}
 		r.mu.Unlock()
 		return
 	}
@@ -58,22 +63,21 @@ func (r *Runner) Drain(timeout time.Duration) {
 	r.drain = d
 	r.mu.Unlock()
 	r.Log.Info("draining for a restart", "runs", r.Active(), "timeout", timeout)
-	go r.runDrain(d, timeout)
+	go r.runDrain(d)
 }
 
-func (r *Runner) runDrain(d *drainState, timeout time.Duration) {
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+func (r *Runner) runDrain(d *drainState) {
 	tick := time.NewTicker(25 * time.Millisecond)
 	defer tick.Stop()
-wait:
 	for r.Active() > 0 {
-		select {
-		case <-timer.C:
+		r.mu.Lock()
+		due := !time.Now().Before(d.until)
+		r.mu.Unlock()
+		if due {
 			r.stopForRestart()
-			break wait
-		case <-tick.C:
+			break
 		}
+		<-tick.C
 	}
 	// The runs' outcomes, and what each one's end sets off, are recorded before the
 	// daemon may be stopped.
@@ -123,12 +127,15 @@ func (r *Runner) Draining() *Drain {
 	return &Drain{Runs: len(r.procs), Until: r.drain.until, Drained: r.drain.drained}
 }
 
-// CancelDrain lets starts go again, and starts what was held.
+// CancelDrain lets starts go again. The runs the drain stopped are continued, since the
+// restart that would have done it is not coming, and what was held starts.
 func (r *Runner) CancelDrain(ctx context.Context) {
 	r.mu.Lock()
 	r.drain = nil
 	r.mu.Unlock()
-	r.RunHeld(ctx)
+	if err := r.ResumeRestarted(ctx); err != nil {
+		r.Log.Error("continue the runs a drain stopped", "err", err)
+	}
 }
 
 // holdForRestart is the answer to a start made while draining. A start the person

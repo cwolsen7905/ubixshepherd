@@ -292,3 +292,51 @@ func TestDrainIsNotDrainedWhileARunIsStillBeingRecorded(t *testing.T) {
 	f.runner.wg.Done()
 	f.drained(t)
 }
+
+func TestASecondDrainTakesASoonerDeadline(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(10 * time.Minute)
+	f.runner.Drain(100 * time.Millisecond) // a restart that will not wait
+	f.drained(t)
+	if got, _ := f.st.Run(ctx, run.ID); got.State != store.RunInterrupted || got.Reason != store.ReasonRestart {
+		t.Errorf("run = %+v", got)
+	}
+	// A later deadline does not stretch it.
+	f.runner.Drain(time.Hour)
+	if d := f.runner.Draining(); d == nil || time.Until(d.Until) > time.Minute {
+		t.Errorf("drain = %+v", d)
+	}
+}
+
+func TestAbandonedRestartContinuesTheRunsItStopped(t *testing.T) {
+	old := DrainGrace
+	DrainGrace = 200 * time.Millisecond
+	t.Cleanup(func() { DrainGrace = old })
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("NAP", "0")
+	f.runner.Drain(50 * time.Millisecond)
+	// No restart comes: the drain is given up, and the stopped run goes on in the same daemon.
+	for deadline := time.Now().Add(20 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if runs := runsOf(t, f.st); len(runs) == 2 {
+			if runs[0].Parent != run.ID || runs[0].Prompt != ResumePrompt {
+				t.Fatalf("continuation = %+v", runs[0])
+			}
+			f.wait(t, runs[0].ID)
+			if f.runner.Draining() != nil {
+				t.Error("still draining")
+			}
+			return
+		}
+	}
+	t.Fatal("the stopped run was not continued")
+}
