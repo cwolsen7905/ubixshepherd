@@ -124,8 +124,9 @@ export function RulesPage() {
                     <li key={r.id}>
                       <ListRow
                         variant="file"
-                        glyph={r.holder === 'person' ? '○' : '▸'}
-                        glyphLabel={r.holder === 'person' ? 'person decides' : `${r.holder} may act`}
+                        glyph="✓"
+                        tone="ok"
+                        glyphLabel="in force"
                         title={`${r.name}: ${r.holder}`}
                         sub={`${r.source} · ${r.allows}`}
                       />

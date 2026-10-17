@@ -11,7 +11,7 @@ import { Chip, EmptyState, GroupHeader, ListRow } from '../ui'
 import { glyphTone } from '../ui/StatusGlyph'
 import './History.css'
 
-/** The kinds of the filter chips, each a set of the feed's events. Reverts have no event of their own yet: a revert shows under merges when the feed names one. */
+/** The kinds of the filter chips, each a set of the feed's events. The feed has no revert event yet, so a revert has no chip of its own. */
 export const HISTORY_KINDS: { id: string; label: string; events: readonly EventKind[] }[] = [
   { id: 'run', label: 'Runs', events: ['run_started', 'run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota', 'commit', 'report', 'gate'] },
   { id: 'answer', label: 'Answers', events: ['decision_asked', 'decision_answered', 'request', 'request_attention'] },
