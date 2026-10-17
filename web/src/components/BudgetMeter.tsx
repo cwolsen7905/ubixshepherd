@@ -1,6 +1,7 @@
 import { usd } from '../format'
 import { budgetUse, periodPhrase } from '../model/projects'
-import type { ProjectBudget, SpendToday } from '../api/types'
+import type { ProjectBudget } from '../api/types'
+import { Meter } from '../ui'
 
 /** A project's spend against its budget: a bar and the words, never the colour alone. */
 export function BudgetMeter({ budget, today }: { budget?: ProjectBudget; today: number }) {
@@ -20,48 +21,12 @@ export function BudgetMeter({ budget, today }: { budget?: ProjectBudget; today: 
   const state = use.fraction >= 1 ? (budget.cap === 'hard' ? 'at its hard cap' : 'over its soft cap') : use.fraction >= 0.8 ? 'near its cap' : ''
   return (
     <span className="budget">
-      <span
-        className={`meter tone-${use.tone}`}
-        role="meter"
-        aria-label={`Spent ${phrase}`}
-        aria-valuemin={0}
-        aria-valuemax={budget.amount}
-        aria-valuenow={budget.spent}
-        aria-valuetext={`${usd(budget.spent) || '$0.00'} of ${usd(budget.amount)}`}
-      >
-        <span className="meter-fill" style={{ width: `${Math.min(100, use.percent)}%` }} />
-      </span>
+      <Meter value={budget.spent} max={budget.amount} label={`Spent ${phrase}`} valueText={`${usd(budget.spent) || '$0.00'} of ${usd(budget.amount)}`} />
       <span>
         {usd(budget.spent) || '$0.00'} of {usd(budget.amount)} {phrase}
       </span>
       {state && <span className={`tone-${use.tone}`}> · {state}</span>}
       {budget.period === 'month' && <span className="faint"> · {usd(today) || '$0.00'} today</span>}
-    </span>
-  )
-}
-
-/** Today's spend for the sidebar footer: the amount, and a meter against the day's budget when there is one. */
-export function SpendMeter({ spend }: { spend: SpendToday }) {
-  const amount = usd(spend.usd) || '$0.00'
-  const text = spend.budget > 0 ? `${amount} of ${usd(spend.budget)} today` : `${amount} today`
-  const fraction = spend.budget > 0 ? spend.usd / spend.budget : 0
-  const tone = fraction >= 1 ? 'bad' : fraction >= 0.8 ? 'warn' : 'ok'
-  return (
-    <span className="spend" title={`Spent today (${spend.day})`}>
-      {spend.budget > 0 && (
-        <span
-          className={`meter tone-${tone}`}
-          role="meter"
-          aria-label="Spent today"
-          aria-valuemin={0}
-          aria-valuemax={spend.budget}
-          aria-valuenow={spend.usd}
-          aria-valuetext={text}
-        >
-          <span className="meter-fill" style={{ width: `${Math.min(100, fraction * 100)}%` }} />
-        </span>
-      )}
-      <span className="spend-text">{text}</span>
     </span>
   )
 }

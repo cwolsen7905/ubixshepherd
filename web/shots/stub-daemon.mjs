@@ -539,6 +539,7 @@ http.createServer((req, res) => {
     return json(res, requests().filter((q) => states.length === 0 || states.includes(q.state)))
   }
   if (p === '/v1/spend') return json(res, spend())
+  if (p === '/v1/keep-going') return json(res, { on: true, spent_usd: 3.4, cap_usd: 5, runs_now: 2, max_runs: 3 })
   if (p === '/v1/feed') {
     const items = feedItems()
     const after = u.searchParams.get('after')

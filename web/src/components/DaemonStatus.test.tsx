@@ -22,7 +22,7 @@ const loaded = (d: StatusDetail = detail(), session: Loaded['session'] = { role:
 function setup(props: Partial<React.ComponentProps<typeof DaemonStatus>> = {}) {
   const load = vi.fn(() => Promise.resolve(loaded()))
   render(<DaemonStatus error={null} downSince={null} ready load={load} now={NOW} {...props} />)
-  return { load, dot: screen.getByRole('button', { name: /daemon/i }), pop: () => screen.getByRole('dialog', { hidden: true }) }
+  return { load, dot: screen.getByRole('button'), pop: () => screen.getByRole('dialog', { hidden: true }) }
 }
 
 describe('DaemonStatus', () => {
@@ -39,8 +39,8 @@ describe('DaemonStatus', () => {
     expect(await screen.findByText('v0.9.0')).toBeInTheDocument()
     const text = pop().textContent ?? ''
     for (const want of ['Daemon', 'up', '3h', 'Chat', 'live', 'polled 1m ago', 'v0.9.0']) expect(text).toContain(want)
-    expect(pop().querySelectorAll('dl > div')).toHaveLength(4)
-    expect(screen.getByRole('button')).toHaveTextContent('Daemon live')
+    expect(pop().querySelectorAll('dl > dt')).toHaveLength(4)
+    expect(screen.getByRole('button')).toHaveTextContent('Online')
     // the detail lives on the Status page now
     for (const gone of ['linux/amd64', '/home/me/.shepherd/config.yaml', '$3.50', 'may save']) expect(text).not.toContain(gone)
     expect(screen.getByRole('link', { name: 'Details →' })).toHaveAttribute('href', '#/status')
@@ -48,7 +48,8 @@ describe('DaemonStatus', () => {
 
   it('is green only when both links are up, amber while chat catches up, red when signed out or down', () => {
     const { rerender } = render(<DaemonStatus error={null} downSince={null} ready chat={{ connection: 'live', retryAt: null }} load={vi.fn(() => Promise.resolve(loaded()))} now={NOW} />)
-    const dot = () => screen.getByRole('button')
+    const button = () => screen.getByRole('button')
+    const dot = () => button().querySelector('.sh-daemon-dot')
     expect(dot()).toHaveClass('is-up')
     const again = (p: Partial<React.ComponentProps<typeof DaemonStatus>>) =>
       rerender(<DaemonStatus error={null} downSince={null} ready load={vi.fn(() => Promise.resolve(loaded()))} now={NOW} {...p} />)
@@ -56,7 +57,7 @@ describe('DaemonStatus', () => {
     expect(dot()).toHaveClass('is-up')
     again({ chat: { connection: 'reconnecting', retryAt: null } })
     expect(dot()).toHaveClass('is-warn')
-    expect(dot()).toHaveAccessibleName('Chat reconnecting')
+    expect(button()).toHaveAccessibleName('Online, chat reconnecting')
     again({ chat: { connection: 'connecting', retryAt: null } })
     expect(dot()).toHaveClass('is-warn')
     again({ chat: { connection: 'signed-out', retryAt: null } })
@@ -82,28 +83,45 @@ describe('DaemonStatus', () => {
 
   it('says how long ago the forge was polled, without opening the popover', async () => {
     const { load, dot } = setup({ watch: true })
-    await waitFor(() => expect(dot).toHaveTextContent('Daemon live, forge 1m ago'))
+    await waitFor(() => expect(dot).toHaveTextContent('Online, forge 1m ago'))
     expect(load).toHaveBeenCalledTimes(1)
-    expect(dot).toHaveAccessibleName('Daemon live, forge 1m ago')
+    expect(dot).toHaveAccessibleName('Online, forge 1m ago')
   })
 
   it('says the forge failed when its poll errors', async () => {
     const load = vi.fn(() => Promise.resolve(loaded(detail({ forge: { error: 'glab: 401' } }))))
     render(<DaemonStatus error={null} downSince={null} ready load={load} now={NOW} watch />)
-    await waitFor(() => expect(screen.getByRole('button', { name: /daemon/i })).toHaveTextContent('Daemon live, forge error'))
+    await waitFor(() => expect(screen.getByRole('button')).toHaveTextContent('Online, forge error'))
   })
 
-  it('keeps a polite status region with the lane counts, outside the popover', () => {
-    setup({ counts: { running: 2, waiting: 1, broken: 0, routing: 3 } })
-    const region = screen.getByRole('status', { name: 'Status counts' })
-    expect(region).toHaveTextContent('2 running, 1 waiting on you, 0 broken or blocked, 3 needing routing')
-    expect(region).toHaveClass('visually-hidden')
+  it('says offline and when it retries, ticking down from the moment it went down', () => {
+    setup({ error: 'unreachable', downSince: NOW - 2_500 })
+    // The backoff retries after 1s, 2s, 4s: at 2.5s down, the next try is at 3s.
+    expect(screen.getByRole('button')).toHaveTextContent('Offline, retrying in 1s')
   })
 
-  it('draws the rail spend bar with its value and words', () => {
+  it('draws the spend line with its meter, value and words', () => {
     render(<RailSpend spend={{ day: '2026-10-10', usd: 3.5, budget: 20, credit_usd: 0, by_source: null }} />)
     expect(screen.getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '3.5')
-    expect(document.querySelector('.rail-spend')).toHaveAttribute('title', '$3.50 of $20.00 today')
+    expect(document.querySelector('.sh-spend')).toHaveAttribute('title', '$3.50 of $20.00 today')
+    expect(screen.getByText('$3.50 of $20.00 today')).toBeInTheDocument()
+  })
+
+  it('turns the meter lantern from 80% and broken at the cap', () => {
+    const at = (usd: number) => ({ day: '2026-10-10', usd, budget: 20, credit_usd: 0, by_source: null })
+    const { rerender } = render(<RailSpend spend={at(16)} />)
+    expect(screen.getByRole('meter')).toHaveClass('is-near')
+    rerender(<RailSpend spend={at(20)} />)
+    expect(screen.getByRole('meter')).toHaveClass('is-over')
+    rerender(<RailSpend spend={at(3)} />)
+    expect(screen.getByRole('meter')).not.toHaveClass('is-near')
+  })
+
+  it('shows the restart in the Daemon row while draining', async () => {
+    const user = userEvent.setup()
+    const { dot, pop } = setup({ restart: 'Restarting: draining 4 runs, 9m left' })
+    await user.click(dot)
+    expect(pop().textContent).toContain('Restarting: draining 4 runs, 9m left')
   })
 
   it('says the detail is unreadable when a refresh fails, not the old snapshot', async () => {
@@ -130,7 +148,9 @@ describe('DaemonStatus', () => {
     await user.hover(dot)
     expect(pop()).toBeVisible()
     await user.unhover(dot)
-    expect(pop()).not.toBeVisible()
+    // The pointer gets a moment to reach the card before it closes.
+    expect(pop()).toBeVisible()
+    await waitFor(() => expect(pop()).not.toBeVisible())
 
     await user.hover(dot)
     expect(pop()).toBeVisible()

@@ -15,14 +15,11 @@ export function useMedia(query: string): boolean {
   return on
 }
 
-/** Below this the sidebar collapses to icons; below SHEET_MAX it becomes a sheet. */
-export const ICONS_MAX = 1279
+/** Below this the sidebar becomes a sheet behind a menu button; from it up the sidebar is always there. */
 export const SHEET_MAX = 759
 
-export type ShellMode = 'full' | 'icons' | 'sheet'
+export type ShellMode = 'full' | 'sheet'
 
 export function useShellMode(): ShellMode {
-  const icons = useMedia(`(max-width: ${ICONS_MAX}px)`)
-  const sheet = useMedia(`(max-width: ${SHEET_MAX}px)`)
-  return sheet ? 'sheet' : icons ? 'icons' : 'full'
+  return useMedia(`(max-width: ${SHEET_MAX}px)`) ? 'sheet' : 'full'
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { get, post } from '../api/client'
 import { usd } from '../format'
-import './KeepGoing.css'
+import { cx, Toggle } from '../ui'
 
 /** What `GET /v1/keep-going` answers (internal/api/keepgoing.go), the fields the switch reads. */
 export interface KeepGoingStatus {
@@ -96,45 +96,43 @@ export function KeepGoing({
 
   if (!st) return null
   const d = detail(st, now())
-  const bar = st.on && st.cap_usd > 0
-    ? { pct: Math.min(100, (st.spent_usd / st.cap_usd) * 100) }
-    : null
-  const barStyle = bar ? { '--kg-fill-pct': `${bar.pct}%` } as React.CSSProperties : {}
+  const capped = st.on && st.cap_usd > 0
+  const pct = capped ? Math.min(100, (st.spent_usd / st.cap_usd) * 100) : st.on ? 100 : 0
+  const fill = { '--kg-fill-pct': `${pct}%` } as React.CSSProperties
+  const barClass = cx('sh-keep-bar', st.on && 'is-on', capped && d?.warn && 'tone-warn')
   return (
-    <div className="keep-going">
-      <button
-        type="button"
-        role="switch"
-        className="keep-going-row"
-        aria-checked={st.on}
-        disabled={busy}
-        onClick={toggle}
-        title="Let the front desk carry on with approved work without waiting between steps"
-      >
+    <div className="sh-keep" data-component="KeepGoing">
+      <div className="sh-keep-row">
         <span>Keep going</span>
-        <span className="keep-going-track" aria-hidden="true" />
-      </button>
-      {d && (
-        <>
-          {bar && (
-            <span
-              className={`keep-going-bar tone-${d.warn ? 'warn' : 'ok'}`}
-              style={barStyle}
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={Math.round(st.cap_usd * 100) / 100}
-              aria-valuenow={Math.round(Math.min(st.spent_usd, st.cap_usd) * 100) / 100}
-              aria-valuetext={d.text}
-              aria-label="Keep going spend"
-            >
-              <span className="keep-going-fill" />
-            </span>
-          )}
-          <span className={`keep-going-detail${d.warn ? ' tone-warn' : ''}`}>{d.text}</span>
-        </>
+        <Toggle
+          checked={st.on}
+          label="Keep going"
+          disabled={busy}
+          title="Let the front desk carry on with approved work without waiting between steps"
+          onChange={toggle}
+        />
+      </div>
+      {capped && d ? (
+        <span
+          className={barClass}
+          style={fill}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={Math.round(st.cap_usd * 100) / 100}
+          aria-valuenow={Math.round(Math.min(st.spent_usd, st.cap_usd) * 100) / 100}
+          aria-valuetext={d.text}
+          aria-label="Keep going spend"
+        >
+          <b />
+        </span>
+      ) : (
+        <span className={barClass} style={fill} aria-hidden="true">
+          <b />
+        </span>
       )}
+      {d && <span className={cx('sh-keep-note', d.warn && 'is-near', d.warn && 'tone-warn')}>{d.text}</span>}
       {err && (
-        <span className="keep-going-error" role="alert">
+        <span className="sh-keep-note is-near" role="alert">
           {err}
         </span>
       )}

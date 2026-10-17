@@ -13,7 +13,7 @@
 .inspector-frame.is-split .inspector-page {
   display: block;
   flex: 1 1 auto;
-  min-width: 40rem;
+  min-width: 40ch;
   padding: var(--s-3) var(--shell-edge) var(--s-6);
 }
 
@@ -27,7 +27,8 @@
 }
 .inspector-split {
   /* The mockup's minmax(26rem, 36rem) on a 16px root, in px so the 14px root keeps 576 at 1440. */
-  flex: 0 0 clamp(416px, 40vw, 576px);
+  /* The width is the shell's: the design's default, or what the divider set and the view remembers. */
+  flex: 0 0 var(--sh-side-w, clamp(var(--sh-inspector-min), 38vw, var(--sh-inspector-max)));
   position: sticky;
   top: var(--bar-h);
   /* Flush to the bottom edge: as tall as the window under the bar, and at least as tall as

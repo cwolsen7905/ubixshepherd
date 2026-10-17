@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { daemonInfo } from '../api/client'
 import type { SpendToday, Status, StatusDetail, WebSession } from '../api/types'
 import { age, clockTime, shortSha, since, usd } from '../format'
@@ -7,6 +7,7 @@ import { href } from '../router'
 import { chatWords, worstTone, type ChatLink } from '../shell/chatLink'
 import { spendWords } from '../shell/RailSpend'
 import type { StatusCounts } from '../state/attention'
+import { offlineWords, retryIn } from '../ui'
 
 export interface Loaded {
   status: Status
@@ -53,7 +54,7 @@ interface Props {
   ready: boolean
   /** The open chat's /stream connection; null when no chat is open. */
   chat?: ChatLink | null
-  /** Today's spend, spelled out in the popover (the rail draws its bar above the status line). */
+  /** Today's spend, spelled out in the popover (the footer draws its meter above the status line). */
   spend?: SpendToday | null
   /** Lane counts, spelled out in the popover. */
   counts?: StatusCounts
@@ -62,29 +63,41 @@ interface Props {
   watch?: boolean
   /** The time now in ms; the clock ticks by itself when omitted. */
   now?: number
+  /** While the daemon drains for a restart: the words for the Daemon row. */
+  restart?: string | null
 }
 
+/** How long the popover stays after the pointer leaves, so the pointer can reach it. */
+export const CLOSE_MS = 150
+
 /**
- * The rail's one status dot: green when the daemon link and the chat stream are both up,
- * amber while the chat stream catches up, red when the daemon is unreachable or the chat is
- * signed out or refused. Hovering, focusing or tapping it opens a short popover; Escape
- * closes it. The detail is read only while it is open. "Details" opens the Status page.
+ * The sidebar's status line (`.sh-daemon`): a dot and "Online, forge 41s ago" or "Offline,
+ * retrying in 8s". Hovering, focusing or tapping it opens the status popover beside the sidebar
+ * (a short delay on leaving lets the pointer reach it); Escape closes it. The detail is read
+ * only while it is open. "Details" opens the Status page. The dot is the worse of the daemon
+ * link and the chat stream, and never stands without the words.
  */
-export function DaemonStatus({ error, downSince, ready, chat = null, spend = null, counts, load = loadDaemon, watch = false, now: nowProp }: Props) {
-  const ticking = useNow(10_000)
+export function DaemonStatus({ error, downSince, ready, chat = null, spend = null, counts, load = loadDaemon, watch = false, now: nowProp, restart = null }: Props) {
+  const down = error !== null
+  const ticking = useNow(down ? 1000 : 10_000)
   const now = nowProp ?? ticking
   const id = useId()
   const [open, setOpen] = useState(false)
   const [pinned, setPinned] = useState(false)
-  const box = useRef<HTMLSpanElement>(null)
-  const pop = useRef<HTMLDivElement>(null)
-  const [place, setPlace] = useState<CSSProperties>({})
+  const box = useRef<HTMLDivElement>(null)
+  const leave = useRef<number | undefined>(undefined)
   const { data, failed } = useDaemonDetail(open || watch, load, open ? REFRESH_MS : WATCH_MS)
 
   const close = useCallback(() => {
+    window.clearTimeout(leave.current)
     setOpen(false)
     setPinned(false)
   }, [])
+  const enter = useCallback(() => {
+    window.clearTimeout(leave.current)
+    setOpen(true)
+  }, [])
+  useEffect(() => () => window.clearTimeout(leave.current), [])
 
   useEffect(() => {
     if (!open) return
@@ -98,20 +111,7 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
     }
   }, [open, close])
 
-  // The sidebar scrolls and clips, so the popover is fixed: beside the sidebar when there is
-  // room, else above the status line inside the sidebar's width.
-  useLayoutEffect(() => {
-    if (!open || !box.current) return
-    const b = box.current.getBoundingClientRect()
-    const side = box.current.closest('.sidebar')?.getBoundingClientRect()
-    const wide = pop.current?.offsetWidth ?? 0
-    const edge = side ? side.right : b.right
-    if (window.innerWidth - edge >= wide + 16) setPlace({ left: edge + 8, bottom: Math.max(8, window.innerHeight - b.bottom) })
-    else setPlace({ left: (side?.left ?? b.left) + 8, bottom: window.innerHeight - b.top + 6, maxWidth: (side?.width ?? window.innerWidth) - 16 })
-  }, [open])
-
   const tone = worstTone({ error, ready }, chat)
-  const down = error !== null
   // A held snapshot is not current once the daemon is down or a refresh has failed.
   const fresh = !down && !failed ? data : null
   const d = fresh?.status.detail
@@ -119,73 +119,75 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
   const forgeAge = poll ? since(poll, now) : ''
   const forgeWords = d?.forge?.error ? ', forge error' : poll ? `, forge ${forgeAge ? `${forgeAge} ago` : 'just now'}` : ''
   const statusText =
-    tone === 'up' ? `Daemon live${forgeWords}`
-    : tone === 'warn' ? `Chat ${chatWords(chat)}`
-    : tone === 'pending' ? 'Daemon connecting'
-    : down ? 'Daemon down'
+    down ? offlineWords({ offline: true, retryIn: retryIn(downSince, now) })
+    : tone === 'up' ? `Online${forgeWords}`
+    : tone === 'warn' ? `Online, chat ${chatWords(chat)}`
+    : tone === 'pending' ? 'Connecting'
     : `Chat ${chatWords(chat)}`
-  const unknown = <span className="faint">{down || failed ? 'unknown' : '…'}</span>
+  const unknown = <span className="is-faint">{down || failed ? 'unknown' : '…'}</span>
 
   return (
-    <span
+    <div
       ref={box}
-      className="daemon-status"
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => !pinned && setOpen(false)}
+      className="sh-daemon"
+      data-component="StatusPopover"
+      onMouseEnter={enter}
+      onMouseLeave={() => {
+        if (pinned) return
+        window.clearTimeout(leave.current)
+        leave.current = window.setTimeout(() => setOpen(false), CLOSE_MS)
+      }}
       onBlur={(e) => !pinned && !e.currentTarget.contains(e.relatedTarget as Node | null) && setOpen(false)}
     >
       <button
         type="button"
-        className={`live-dot is-${tone}`}
+        className="sh-daemon-line"
         aria-label={statusText}
         title={statusText}
         aria-haspopup="dialog"
         aria-controls={id}
         aria-expanded={open}
-        onFocus={() => setOpen(true)}
+        onFocus={enter}
         onClick={() => {
           setPinned(!(open && pinned))
           setOpen(!(open && pinned))
         }}
       >
-        <span aria-hidden="true" className="daemon-dot-indicator">{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
-        <span className="daemon-status-text">{statusText}</span>
+        <span aria-hidden="true" className={`sh-daemon-dot is-${tone}`}>{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
+        <span>{statusText}</span>
       </button>
-      {counts && (
-        <span className="visually-hidden" role="status" aria-label="Status counts">
-          {counts.running} running, {counts.waiting} waiting on you, {counts.broken} broken or blocked, {counts.routing} needing routing
-        </span>
-      )}
-      <div id={id} ref={pop} role="dialog" aria-label="Status" className="daemon-pop" hidden={!open} style={place}>
+      <div id={id} role="dialog" aria-label="Status" className="sh-status-pop" hidden={!open}>
         {open && (
-          <>
-            <dl className="daemon-short">
-              <Row k="Daemon">
-                {down ? (
-                  <span className="tone-bad">down{downSince !== null && ` for ${age(now - downSince)}`}</span>
+          <div className="sh-status-pop-card">
+            <dl className="sh-dl">
+              <PopRow k="Daemon">
+                {restart ? (
+                  <>{restart}</>
+                ) : down ? (
+                  <span className="is-bad">down{downSince !== null && ` for ${age(now - downSince)}`}</span>
                 ) : failed ? (
-                  <span className="tone-bad">unreadable</span>
+                  <span className="is-bad">unreadable</span>
                 ) : d && data ? (
-                  <>up <span className="faint">{age(Date.parse(d.now) - Date.parse(data.status.started))}</span></>
+                  <>up <span className="is-faint">{age(Date.parse(d.now) - Date.parse(data.status.started))}</span></>
                 ) : (
-                  <span className="faint">…</span>
+                  <span className="is-faint">…</span>
                 )}
-              </Row>
-              <Row k="Chat">{chatWords(chat)}</Row>
-              <Row k="Forge">{d ? (d.forge?.error ? <span className="tone-bad">error</span> : poll ? `polled ${since(poll, now) || 'just now'}${since(poll, now) ? ' ago' : ''}` : 'not polled yet') : unknown}</Row>
-              <Row k="Version">{fresh ? fresh.status.version : unknown}</Row>
-              {spend && <Row k="Spend">{spendWords(spend)}</Row>}
+              </PopRow>
+              <PopRow k="Chat">{chatWords(chat)}</PopRow>
+              <PopRow k="Forge">{d ? (d.forge?.error ? <span className="is-bad">error</span> : poll ? `polled ${since(poll, now) || 'just now'}${since(poll, now) ? ' ago' : ''}` : 'not polled yet') : unknown}</PopRow>
+              <PopRow k="Version">{fresh ? fresh.status.version : unknown}</PopRow>
+              {spend && <PopRow k="Spend">{spendWords(spend)}</PopRow>}
               {counts && (
-                <Row k="Lanes">
+                <PopRow k="Lanes">
                   {counts.running} running, {counts.waiting} waiting, {counts.broken} broken, {counts.routing} to route
-                </Row>
+                </PopRow>
               )}
             </dl>
-            <a className="daemon-details" href={href.status()} onClick={close}>Details →</a>
-          </>
+            <a className="sh-details" href={href.status()} onClick={close}>Details →</a>
+          </div>
         )}
       </div>
-    </span>
+    </div>
   )
 }
 
@@ -304,5 +306,15 @@ function Row({ k, children }: { k: string; children: ReactNode }) {
       <dt>{k}</dt>
       <dd>{children}</dd>
     </div>
+  )
+}
+
+/** A row of the popover's `.sh-dl`: the term and its value as direct grid cells. */
+function PopRow({ k, children }: { k: string; children: ReactNode }) {
+  return (
+    <>
+      <dt>{k}</dt>
+      <dd>{children}</dd>
+    </>
   )
 }

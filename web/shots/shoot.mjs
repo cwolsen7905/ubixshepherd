@@ -10,7 +10,7 @@ const ALL_PAGES = [
   ['chat', '#/chat'],
   ['chat-next', '#/chat', { rail: 'Next up' }],
   ['next', '#/next'],
-  ['board', '#/'],
+  ['board', '#/board'],
   ['lane', '#/lanes/4'],
   // A third element names a tab to open and a file to expand on that page.
   ['lane-changes', '#/lanes/4', { tab: 'Changes', file: 'internal/auth/session.go' }],

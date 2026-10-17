@@ -26,6 +26,13 @@ import { statusCounts } from './state/attention'
 import { ArtifactsPage } from './pages/Artifacts'
 import { UpdateNotice } from './components/UpdateNotice'
 import { Shell } from './shell/Shell'
+import { OfflineBanner, OfflineProvider } from './shell/Offline'
+import { RestartLine, drainOf, restartWords } from './shell/Restart'
+import { StatusCounts } from './shell/StatusCounts'
+import { popLists } from './shell/statusItems'
+import { useShellMode } from './shell/useMedia'
+import { useMode } from './inspector/useMode'
+import type { NavKey } from './shell/nav'
 import { useChatLink } from './shell/chatLink'
 import { useAttentionChrome } from './shell/useAttentionChrome'
 import { readShowDismissed, writeShowDismissed } from './model/board'
@@ -63,7 +70,13 @@ export function App() {
 
   const spend = snap.spend
   const chat = useChatLink()
-  const counts = statusCounts({ ...snap, showDismissed })
+  const input = { ...snap, showDismissed }
+  const counts = statusCounts(input)
+  const lists = useMemo(() => popLists({ ...snap, showDismissed }, snap.updated), [snap, showDismissed])
+  const unseenNav = useMemo(() => new Set<NavKey>(boardCounts(items).done > 0 ? ['board'] : []), [items])
+  const drain = drainOf(snap.status)
+  const mode = useShellMode()
+  const inspector = useMode()
 
   const footer = (
     <>
@@ -72,14 +85,25 @@ export function App() {
           <RailSpend spend={spend} />
         </ErrorBoundary>
       )}
-      <div className="foot-row">
+      {drain && <RestartLine drain={drain} />}
+      <div className="sh-foot-row">
         <ErrorBoundary region="The daemon status">
-          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} spend={spend} counts={counts} watch />
+          <DaemonStatus
+            error={snap.error}
+            downSince={snap.downSince}
+            ready={snap.ready}
+            chat={chat}
+            spend={spend}
+            counts={counts}
+            restart={drain ? restartWords(drain, snap.updated) : null}
+            watch
+          />
         </ErrorBoundary>
-        <button type="button" className="help-button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
-          <kbd>?</kbd>
+        <button type="button" className="sh-help-btn" onClick={() => setHelp(true)} aria-label="Keys and glyphs" title="Keys and glyphs (?)">
+          ?
         </button>
       </div>
+      {mode !== 'sheet' && <StatusCounts counts={counts} lists={lists} />}
       <ErrorBoundary region="The update notice">
         <UpdateNotice />
       </ErrorBoundary>
@@ -87,7 +111,7 @@ export function App() {
   )
 
   return (
-    <>
+    <OfflineProvider error={snap.error} downSince={snap.downSince}>
       <Shell
         route={route}
         waiting={snap.waiting}
@@ -95,14 +119,11 @@ export function App() {
         footer={footer}
         boardBroken={boardBroken}
         lanes={snap.lanes}
+        unseen={unseenNav}
+        status={{ counts, lists }}
+        sideBeside={Boolean(route.open) && inspector === 'split'}
         paletteOpen={() => paletteRef.current?.open()}
-        banner={
-          snap.error && (
-            <div className="banner tone-bad" role="alert">
-              The daemon did not answer: {snap.error}. Showing what was last loaded; retrying.
-            </div>
-          )
-        }
+        banner={<OfflineBanner error={snap.error} />}
       >
         <InspectorFrame open={route.open}>
         {route.page === 'board' && (
@@ -142,6 +163,6 @@ export function App() {
       </Shell>
       {help && <Help onClose={() => setHelp(false)} />}
       <CommandPalette ref={paletteRef} />
-    </>
+    </OfflineProvider>
   )
 }

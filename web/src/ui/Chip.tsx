@@ -1,29 +1,34 @@
 import type { ReactNode } from 'react'
-import './ui.css'
+import { cx } from './cx'
 
 /**
- * A filter, file or topic. With `onClick` it is a button (a toggle when `selected` is given);
- * `onRemove` adds a remove button. Otherwise it is plain text.
+ * A filter, file or topic (`.sh-chip`). With `onClick` it is a button (a toggle when `selected`
+ * is given, shown by `.is-on`); `onRemove` adds a remove button. `count` is the lantern number
+ * of items waiting on the person. Otherwise it is plain text.
  */
 export function Chip({
   children,
   kind = 'topic',
   selected,
+  count,
   onClick,
   onRemove,
 }: {
   children: ReactNode
   kind?: 'filter' | 'file' | 'topic'
   selected?: boolean
+  count?: number
   onClick?: () => void
   onRemove?: () => void
 }) {
-  const cls = `ui-chip${kind === 'file' ? ' ui-chip-file' : ''}`
+  const cls = cx('sh-chip', kind === 'file' && 'sh-chip--file', selected && 'is-on', 'ui-chip')
+  const n = count ? <span className="sh-chip-n">{count}</span> : null
   if (onRemove) {
     return (
-      <span className={cls}>
+      <span className={cls} data-component="Chip">
         {children}
-        <button type="button" className="ui-chip-remove" aria-label="Remove" onClick={onRemove}>
+        {n}
+        <button type="button" className="sh-chip-x" aria-label="Remove" onClick={onRemove}>
           ×
         </button>
       </span>
@@ -31,10 +36,16 @@ export function Chip({
   }
   if (onClick) {
     return (
-      <button type="button" className={cls} aria-pressed={selected} onClick={onClick}>
+      <button type="button" className={cls} data-component="Chip" aria-pressed={selected} onClick={onClick}>
         {children}
+        {n}
       </button>
     )
   }
-  return <span className={cls}>{children}</span>
+  return (
+    <span className={cls} data-component="Chip">
+      {children}
+      {n}
+    </span>
+  )
 }

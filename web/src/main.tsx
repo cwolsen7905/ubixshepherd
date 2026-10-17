@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { Live } from './state/live'
 import { LiveProvider } from './state/context'
+import './styles/tokens.css'
+import './styles/components.css'
 import './styles/theme.css'
 import './styles/app.css'
 

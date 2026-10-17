@@ -1,0 +1,45 @@
+{
+  "src/favicon.ts": {
+    "hex": 6
+  },
+  "src/styles/chat.css": {
+    "px-font": 12
+  },
+  "src/styles/decisions.css": {
+    "hex": 2
+  },
+  "src/styles/failure.css": {
+    "hex": 2
+  },
+  "src/styles/lane-approve.css": {
+    "hex": 1
+  },
+  "src/styles/lane-close.css": {
+    "hex": 2
+  },
+  "src/styles/layout/page.css": {
+    "px-font": 1
+  },
+  "src/styles/next.css": {
+    "font-family": 1
+  },
+  "src/styles/pages/artifacts.css": {
+    "hex": 7
+  },
+  "src/styles/pages/next.css": {
+    "font-family": 1,
+    "px-font": 4
+  },
+  "src/styles/session.css": {
+    "hex": 3
+  },
+  "src/styles/settings.css": {
+    "hex": 1
+  },
+  "src/styles/topics.css": {
+    "hex": 16
+  },
+  "src/timeline/timeline.css": {
+    "hex": 16
+  }
+}

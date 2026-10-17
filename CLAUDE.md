@@ -131,6 +131,42 @@ stranger:
   the repo). Public uBix projects (uBixCore, uBixVault, Replikate, UbixOS, ubixsys.com) are
   fine to name.
 
+## Web UI rules
+
+The UI in `web/` follows the maintainer's design for how things look; the lane brief and the
+tests say what things do. When you build or change UI:
+
+- Style only with the `--sh-*` tokens (`web/src/styles/tokens.css`) and the `.sh-*` classes
+  (`web/src/styles/components.css`). No hex colours, px font sizes or font families in a
+  component or page, no new colours, no CSS framework, no inline styles except computed widths
+  (meters, bars, the side panel's width). `npm test` runs a style lint that fails on a new
+  offender; older files are counted in `web/src/test/styleAllowlist.json`, which only shrinks.
+- A new component gets its class in `components.css` beside its siblings, and a `data-component`
+  attribute with its name. Reuse a shared part from `web/src/ui/` (ListRow, GroupHeader,
+  ContextComposer, Button, Chip, Tabs, Dialog, Kbd, Count) before writing another. Type is
+  IBM Plex Sans and Mono only.
+- Lantern means "waiting on the person" and nothing else: decisions, questions, approvals,
+  proposed next-up items, the pending bar and the person's commit button. Lichen is selection,
+  links, focus and Send. Red is failures only. Every status is a glyph with words, never colour
+  alone: `?` decision, `!` request, `◆` approve, `≡` next up, `✗` broken, `✓` ok, `●` working,
+  `○` idle, `▸` run or tool call, `▤` artifact.
+- The layout is sidebar, main, side panel. Selecting a row never leaves the list. The side
+  panel is for answering, the main body for reading, a modal for confirming; every side panel
+  offers "Open as page". Main keeps at least 40 characters; the divider's width is remembered
+  per view.
+- Every list takes `j`, `k` and Enter; `]` jumps to the next waiting item, `1` to `9` pick
+  options, Cmd+Enter sends then moves on, Esc closes, Cmd+K opens the palette.
+- Merging is per repo. A repo whose merges a person makes uses the approval flow; a repo merged
+  by rule says "Merged by rule <name>" with a Revert link. Never write that Shepherd never merges.
+- Status counts never hide at zero; zero is faint. Offline, the footer and a banner say so and
+  when the next try is, Send is off and drafts stay.
+- Copy is plain sentence case with no exclamation marks and no emoji. Lists show relative
+  times, logs 24-hour times. A sub-line shows a model without its provider prefix, with the full
+  id in the title.
+- Settings never save by themselves: stage, show a diff, mark risky lines, confirm risky saves.
+  A destructive confirm uses the broken button; the person's commit action stays lantern.
+- Check both themes (`data-theme="light"` and `"dark"`) before calling UI work done.
+
 ## Ground rules
 
 - **The maintainer decides scope, stack and naming.** Bring open questions with the

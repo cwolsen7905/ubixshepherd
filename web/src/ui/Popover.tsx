@@ -27,8 +27,8 @@ export function Popover({ label, children }: { label: ReactNode; children: React
   }, [open])
 
   return (
-    <span ref={root} className="ui-popover-anchor">
-      <button ref={trigger} type="button" className="ui-btn" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}>
+    <span ref={root} className="ui-popover-anchor" data-component="Popover">
+      <button ref={trigger} type="button" className="sh-btn ui-btn" aria-expanded={open} aria-controls={id} onClick={() => setOpen((o) => !o)}>
         {label}
       </button>
       {open && (

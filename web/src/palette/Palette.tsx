@@ -1,7 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Dialog, Kbd } from '../ui'
+import { Dialog, Kbd, cx } from '../ui'
 import { match, type Item } from './items'
-import './palette.css'
 
 /**
  * The palette's view: a combobox over a listbox in a dialog. Typing filters, the arrows move
@@ -10,7 +9,7 @@ import './palette.css'
  */
 export function Palette(props: PaletteProps) {
   return (
-    <Dialog open={props.open} onClose={props.onClose} title="Search or act">
+    <Dialog open={props.open} onClose={props.onClose} title="Search or act" hideTitle size="palette">
       <PaletteBody {...props} />
     </Dialog>
   )
@@ -82,19 +81,19 @@ function PaletteBody({ items, onChoose, confirm, onConfirm, onCancelConfirm, pro
   }, [at, results])
 
   return (
-    <div className="palette" onKeyDown={onKey}>
+    <div className="sh-palette-box" data-component="CommandPalette" onKeyDown={onKey}>
       {confirm ? (
-        <div className="palette-confirm" role="alertdialog" aria-label={confirm.title}>
+        <div className="sh-palette-confirm" role="alertdialog" aria-label={confirm.title}>
           <p>{confirm.title}</p>
-          <p className="palette-keys">
-            <Kbd keys="Enter" /> {confirm.yes} · <Kbd keys="Esc" /> back
+          <p className="sh-palette-foot">
+            <span><Kbd keys="Enter" />{confirm.yes}</span> <span><Kbd keys="Esc" />back</span>
           </p>
         </div>
       ) : (
         <>
           <input
             ref={input}
-            className="palette-input"
+            className="sh-palette-input"
             type="text"
             role="combobox"
             aria-expanded="true"
@@ -111,35 +110,37 @@ function PaletteBody({ items, onChoose, confirm, onConfirm, onCancelConfirm, pro
               setActive(0)
             }}
           />
-          <ul id={listId} role="listbox" aria-label="Results" className="palette-list">
+          <ul id={listId} role="listbox" aria-label="Results" className="sh-palette-list">
             {results.map((it, i) => (
               <li
                 key={it.id}
                 id={optionId(i)}
                 role="option"
                 aria-selected={i === at}
-                className="palette-option"
+                className={cx('sh-palette-item', i === at && 'is-active')}
                 onMouseMove={() => i !== at && setActive(i)}
                 onClick={() => onChoose(it)}
               >
-                <span className="palette-group">{it.group}</span>
-                <span className="palette-label">{it.label}</span>
-                {it.hint && <span className="palette-hint">{it.hint}</span>}
+                <span className="sh-palette-kind">{it.group}</span>
+                <span>{it.label}</span>
+                {it.hint && <span className="sh-palette-hint">{it.hint}</span>}
               </li>
             ))}
           </ul>
           {results.length === 0 && (
-            <p className="palette-empty" role="status">
+            <p className="sh-palette-empty" role="status">
               Nothing matches “{query}”.
             </p>
           )}
-          <p className="palette-keys" aria-hidden="true">
-            <Kbd keys={['↑', '↓']} /> move · <Kbd keys="Enter" /> open · <Kbd keys="Esc" /> close
+          <p className="sh-palette-foot" aria-hidden="true">
+            <span><Kbd keys={['↑', '↓']} />move</span>
+            <span><Kbd keys="Enter" />open</span>
+            <span><Kbd keys="Esc" />close</span>
           </p>
         </>
       )}
       {problem && (
-        <p className="palette-problem" role="alert">
+        <p className="sh-palette-problem" role="alert">
           {problem}
         </p>
       )}
