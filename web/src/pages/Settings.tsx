@@ -272,15 +272,34 @@ function Segmented<T extends string>({ label, value, options, onPick }: { label:
   )
 }
 
-/** The diff's lines, each with the risk it carries: a risky key marks its first added line. */
+/**
+ * The diff's lines, each with the risk it carries. The YAML key path of every shown line is
+ * tracked from its indentation, and an added line is risky when that path ends the risk's
+ * dotted path (a hunk may start below the root, so the parents it shows are all there is).
+ */
 function diffLines(diff: string, risky: ConfigRisk[]) {
   const claimed = new Set<number>()
+  const stack: { indent: number; key: string }[] = []
   return diff.split('\n').filter((l, i, all) => l !== '' || i < all.length - 1).map((text, i) => {
     const sign = text.startsWith('+') ? '+' : text.startsWith('-') ? '-' : text.startsWith('@@') ? '@' : ' '
     let risk: ConfigRisk | undefined
-    if (sign === '+') {
-      risk = risky.find((r, j) => !claimed.has(j) && text.includes(`${r.path.split('.').pop()}:`))
-      if (risk) claimed.add(risky.indexOf(risk))
+    if (sign === '@') stack.length = 0
+    else if (sign !== '-') {
+      const m = /^(\s*)(?:- )?([^\s:#][^:]*):(\s|$)/.exec(text.slice(1))
+      if (m) {
+        const indent = (m[1] ?? '').length
+        while (stack.length > 0 && (stack[stack.length - 1]?.indent ?? 0) >= indent) stack.pop()
+        const key = (m[2] ?? '').trim()
+        const path = [...stack.map((x) => x.key), key].join('.')
+        if (sign === '+') {
+          const j = risky.findIndex((r, n) => !claimed.has(n) && `.${r.path}`.endsWith(`.${path}`))
+          if (j >= 0) {
+            claimed.add(j)
+            risk = risky[j]
+          }
+        }
+        stack.push({ indent, key })
+      }
     }
     return { i, sign, text: sign === '@' ? text : sign === ' ' ? text : text.slice(1), risk }
   })
@@ -296,7 +315,7 @@ function StagedBar({ preview, risky, problems, count, canWrite, why, busy, onDis
       <div className="sh-staged-inner">
         <div className="sh-staged-head">
           <strong>{count} unsaved change{count === 1 ? '' : 's'}</strong>
-          {risky.length > 0 && <span className="sh-risk-tag">{risky.length} risky</span>}
+          {risky.length > 0 && <span className="sh-risk-tag"><span aria-hidden="true">◆</span> {risky.length} risky</span>}
           <span className="sh-setting-desc">Nothing changes until you save.</span>
           <span className="sh-staged-actions">
             <Button variant="ghost" onClick={onDiscard}>Discard</Button>
@@ -323,7 +342,7 @@ function StagedBar({ preview, risky, problems, count, canWrite, why, busy, onDis
               <div className={`sh-diff-line${l.sign === '+' ? ' is-add' : l.sign === '-' ? ' is-del' : ''}`}>
                 <span>{l.sign === '@' ? '' : l.sign === ' ' ? '' : l.sign}</span>
                 <span className={l.sign === '@' ? 'sh-diff-gap' : undefined}>{l.text}</span>
-                {l.risk && <span className="sh-risk-flag">Risky</span>}
+                {l.risk && <span className="sh-risk-flag"><span aria-hidden="true">◆</span> Risky</span>}
               </div>
               {l.risk && <div className="sh-diff-why">{l.risk.why}.</div>}
             </div>

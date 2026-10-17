@@ -33,7 +33,7 @@
 .sh-staged-inner { max-width: 44rem; display: grid; gap: 10px; }
 .sh-staged-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .sh-staged-actions { margin-left: auto; display: flex; gap: var(--sh-s4); }
-.sh-risk-tag { font-size: var(--sh-t-tag); font-weight: 600; border-radius: var(--sh-r-pill); padding: 0 7px; border: 1px solid var(--sh-broken); color: var(--sh-broken); white-space: nowrap; }
+.sh-risk-tag { font-size: var(--sh-t-tag); font-weight: 600; border-radius: var(--sh-r-pill); padding: 0 7px; border: 1px solid var(--sh-lantern); background: var(--sh-lantern-wash); color: var(--sh-lantern-ink); white-space: nowrap; }
 .sh-staged-problems { font-size: var(--sh-t-small); color: var(--sh-broken); }
 .sh-staged-problems ul { margin: var(--sh-s2) 0 0; padding-left: var(--sh-s6); }
 .sh-diff { border: 1px solid var(--sh-rule); border-radius: var(--sh-r); background: var(--sh-raised); font: var(--sh-t-meta) / 1.7 var(--sh-mono); overflow: hidden; }
@@ -43,7 +43,7 @@
 .sh-diff-line.is-add { color: var(--sh-ok); }
 .sh-diff-line.is-del { background: var(--sh-sunk); color: var(--sh-broken); }
 .sh-diff-gap { color: var(--sh-faint); }
-.sh-risk-flag { font: 600 var(--sh-t-tag) var(--sh-font); color: var(--sh-broken); }
+.sh-risk-flag { font: 600 var(--sh-t-tag) var(--sh-font); color: var(--sh-lantern-ink); }
 .sh-diff-why { padding: 0 10px 4px 2.2rem; font: var(--sh-t-meta) / 1.5 var(--sh-font); color: var(--sh-muted); }
 
 /* All settings: the full field editor, kept for what the sections above do not cover. */

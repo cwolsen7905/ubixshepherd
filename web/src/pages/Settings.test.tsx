@@ -217,6 +217,21 @@ describe('SettingsPage sections', () => {
     expect(seen.find((s) => s.method === 'PUT')?.body?.confirm).toEqual(['repos.api.autonomy.merge'])
   })
 
+  it('marks the risky key under its own parent, not another section\'s key of the same name', async () => {
+    daemon(doc(), (_m, p) =>
+      p === '/v1/config/preview'
+        ? json({ etag: 'e1', diff: '+  daemon:\n+    merge: x\n+  repos:\n+    api:\n+      autonomy:\n+        merge: agent\n', risky: [{ path: 'repos.api.autonomy.merge', from: 'human', to: 'agent', why: 'lets an agent merge' }] })
+        : undefined,
+    )
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    const diff = await screen.findByRole('region', { name: 'Diff of config.yaml' })
+    await waitFor(() => expect(within(diff).getAllByText(/Risky/)).toHaveLength(1))
+    expect(within(diff).getByText('merge: agent').closest('.sh-diff-line')).toHaveTextContent('Risky')
+    expect(within(diff).getByText('merge: x').closest('.sh-diff-line')).not.toHaveTextContent('Risky')
+  })
+
   it('shows validation problems and offers no save', async () => {
     daemon(doc(), (_m, p) =>
       p === '/v1/config/preview' ? json({ error: 'invalid', problems: ['repos.api.autonomy.merge: "robot" is not human or agent'] }, 422) : undefined,
