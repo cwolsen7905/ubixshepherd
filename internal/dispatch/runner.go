@@ -732,7 +732,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 				why = "ended twice without finishing"
 				nudge = ""
 			case run.Session == "":
-				why = fmt.Sprintf("%s ended without finishing, and its run has no session to continue; see the run log", ad.Name)
+				why = "ended without finishing, and its run has no session to continue"
 				nudge = ""
 			default:
 				why = continuedNote
@@ -1006,15 +1006,18 @@ const (
 )
 
 // notFinished says what to tell a run that exited 0 without finishing, or "" if it did
-// finish. It did not if it asked nothing and made no commit, and either left changes
-// uncommitted or (for an agent that can end a turn without the work) changed nothing and
+// finish. It did not if it asked nothing and either left changes uncommitted or (for an
+// agent that can end a turn without the work) changed nothing and
 // reported nothing.
 func (r *Runner) notFinished(ctx context.Context, run store.Run, lane store.Lane, ad Adapter) string {
-	if run.Commits > 0 || r.asked(ctx, run) {
+	if r.asked(ctx, run) {
 		return ""
 	}
 	if r.hasChanges(ctx, lane) {
 		return commitPrompt
+	}
+	if run.Commits > 0 {
+		return ""
 	}
 	if ad.NoChangeFails && r.changedNothing(ctx, run, lane) {
 		return carryOnPrompt
@@ -1026,7 +1029,14 @@ func (r *Runner) notFinished(ctx context.Context, run store.Run, lane store.Lane
 // new file is work), but only inside the scope, so build output elsewhere does not. A
 // git failure counts as changes: the run is not taken for finished on an unreadable tree.
 func (r *Runner) hasChanges(ctx context.Context, lane store.Lane) bool {
-	out, err := git.Run(ctx, lane.Worktree, "status", "--porcelain", "-uall")
+	args := []string{"status", "--porcelain", "-uall"}
+	if len(lane.Scope) > 0 {
+		args = append(args, "--")
+		for _, g := range lane.Scope {
+			args = append(args, ":(glob)"+g)
+		}
+	}
+	out, err := git.Run(ctx, lane.Worktree, args...)
 	if err != nil {
 		r.Log.Warn("read the lane's status", "lane", lane.Name, "err", err)
 		return true

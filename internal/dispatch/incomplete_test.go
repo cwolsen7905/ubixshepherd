@@ -157,3 +157,16 @@ func TestOutOfScopeFilesAreNotUnfinishedWork(t *testing.T) {
 		t.Error("a new file in scope does not count as work")
 	}
 }
+
+// Work left uncommitted after a commit is still unfinished.
+func TestUncommittedWorkAfterACommitIsUnfinished(t *testing.T) {
+	f := newFixture(t, "ok")
+	lane, _ := f.st.Lane(context.Background(), f.lane.ID)
+	os.MkdirAll(filepath.Join(lane.Worktree, "src"), 0o755)
+	os.WriteFile(filepath.Join(lane.Worktree, "src", "left.go"), []byte("x"), 0o644)
+	ad, _ := AdapterFor("claude")
+	got := f.runner.notFinished(context.Background(), store.Run{Commits: 1}, lane, ad)
+	if got != commitPrompt {
+		t.Errorf("prompt = %q", got)
+	}
+}
