@@ -33,7 +33,7 @@ describe('the Rules page', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify(doc), { status: 200 }))
     render(<RulesPage />)
     const repo = await screen.findByRole('region', { name: 'Repo' })
-    expect(within(repo).getAllByText(/repo acme-api/, { selector: '.sh-row-sub' }).length).toBeGreaterThan(0)
+    expect(within(repo).getAllByText('repo acme-api', { selector: '.rules-source code' }).length).toBeGreaterThan(0)
     expect(screen.getByRole('region', { name: 'Proposed by Shepherd' })).toHaveTextContent('No proposed rules.')
     expect(screen.getByRole('region', { name: 'Shadow log' })).toHaveTextContent('The shadow log is empty.')
     vi.unstubAllGlobals()

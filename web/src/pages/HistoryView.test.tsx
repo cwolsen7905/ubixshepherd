@@ -48,14 +48,14 @@ describe('the History page', () => {
     const rows = within(today).getAllByRole('listitem')
     expect(rows[0]).toHaveTextContent('decision 3 answered')
     expect(rows[1]).toHaveTextContent('run 10')
-    expect(within(rows[1] as HTMLElement).getByRole('link')).toHaveAttribute('href', '#/runs/10/log')
+    expect(within(rows[1] as HTMLElement).getAllByRole('link')[0]).toHaveAttribute('href', '#/runs/10/log')
     expect(screen.getByRole('region', { name: 'Yesterday' })).toHaveTextContent('blog: opened !7')
   })
 
   it('filters by kind, project and search text', async () => {
     await show({ kind: 'answer' })
     expect(await screen.findAllByRole('listitem')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Answers' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /^Answers/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('narrows to a project through its repos and lanes', async () => {
@@ -72,7 +72,7 @@ describe('the History page', () => {
 
   it('puts a kind choice in the address', async () => {
     await show()
-    await userEvent.click(await screen.findByRole('button', { name: 'Merges' }))
+    await userEvent.click(await screen.findByRole('button', { name: /^Merges/ }))
     expect(window.location.hash).toBe('#/history?kind=merge')
   })
 })

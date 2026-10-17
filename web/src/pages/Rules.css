@@ -1,0 +1,27 @@
+.rules-mode { display: flex; align-items: center; gap: var(--sh-s4); font-size: var(--sh-t-meta); }
+.rules-mode .sh-segmented button:disabled { cursor: not-allowed; }
+.rules-n { color: var(--sh-faint); font-variant-numeric: tabular-nums; }
+.rules-note, .rules-order, .rules-pad, .rules-none { padding-left: var(--gutter); margin: 0 0 var(--sh-s5); font-size: var(--sh-t-meta); }
+.rules-order { color: var(--sh-ink); font-size: var(--sh-t-small); margin: var(--sh-s5) 0 var(--sh-s6); }
+.rules-page .sh-group-h { padding-left: var(--gutter); }
+.rules-table { width: calc(100% - var(--gutter)); margin-left: var(--gutter); border-collapse: collapse; table-layout: fixed; margin-bottom: var(--sh-s6); }
+.rules-table td { overflow-wrap: anywhere; padding: var(--sh-s4) var(--sh-s5); border-top: 1px solid var(--sh-rule); vertical-align: baseline; font-size: var(--sh-t-small); }
+.rules-id { width: 15rem; }
+.rules-verdict-col { width: 6rem; }
+.rules-source { width: 12rem; }
+.rules-id, .rules-source { font-family: var(--sh-mono); font-size: var(--sh-t-meta); white-space: nowrap; }
+.rules-id code, .rules-source code { font: inherit; }
+.rules-source { text-align: right; color: var(--sh-muted); }
+.rules-allows { color: var(--sh-muted); }
+.rules-verdict--refuse { border-color: var(--sh-broken); color: var(--sh-broken); }
+.rules-verdict--hold { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
+.rules-verdict--ask { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
+.rules-verdict--proceed { border-color: var(--sh-ok); color: var(--sh-ok); }
+@media (max-width: 760px) {
+  .rules-table, .rules-table tbody, .rules-table tr { display: block; }
+  .rules-table tr { padding: var(--sh-s4) 0; border-top: 1px solid var(--sh-rule); }
+  .rules-table td { display: inline-block; border: 0; padding: var(--sh-s1) var(--sh-s4) var(--sh-s1) 0; }
+  .rules-table td.rules-what { display: block; }
+  .rules-source { text-align: left; }
+}
+@media (max-width: 760px) { .rules-id, .rules-verdict-col, .rules-source { width: auto; } }
