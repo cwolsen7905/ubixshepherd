@@ -474,3 +474,43 @@ func TestAPersonsStopIsNotContinued(t *testing.T) {
 		t.Errorf("runs = %+v, want only the stopped one", runs)
 	}
 }
+
+// stubbornAgent ignores the polite stop, so a run stopped by the person outlives a
+// shutdown's deadline.
+const stubbornAgent = `#!/bin/sh
+if [ "$1" = create-chat ]; then echo "11111111-2222-4333-8444-555555555555"; exit 0; fi
+cat >/dev/null
+trap '' TERM
+while :; do sleep 1; done
+`
+
+// A run the person stopped that hangs past the shutdown deadline stays theirs: it is
+// not marked as a restart's and is not continued.
+func TestPersonStoppedRunPastTheShutdownDeadlineIsNotContinued(t *testing.T) {
+	f := napFixture(t, "0")
+	agent := filepath.Join(t.TempDir(), "stubborn-agent")
+	if err := os.WriteFile(agent, []byte(stubbornAgent), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.runner.lookPath = func(string) (string, error) { return agent, nil }
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(10 * time.Minute)
+	if err := f.runner.Stop(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	f.runner.Shutdown(sctx)
+	f.runner.Wait()
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.Reason == store.ReasonRestart {
+		t.Fatalf("run = %+v, want the person's stop", got)
+	}
+	if runs := f.resumedOnce(t); len(runs) != 1 {
+		t.Errorf("runs = %+v, want only the stopped one", runs)
+	}
+}
