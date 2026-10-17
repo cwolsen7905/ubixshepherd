@@ -411,6 +411,47 @@ describe('approving from the Changes tab', () => {
   })
 })
 
+describe('one lantern primary in the header', () => {
+  async function head(decisions: ReturnType<typeof decision>[]) {
+    const live = liveWith(undefined, { decisions: async () => decisions })
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => {
+      if (path === '/v1/lanes/1/approval') {
+        return new Response(JSON.stringify({ supported: true, mr: 7, mr_url: 'https://forge/mr/7', mr_state: 'opened', sha: 'abcdef0123456789', approved: false }))
+      }
+      if (path.includes('/diff')) {
+        return new Response(JSON.stringify({ lane_id: 1, lane: 'x', branch: 'x', base: 'dev', base_ref: 'origin/dev', head: 'abc1234', mode: 'stat', read_at: '2026-10-08T10:04:00Z', commits: [], commits_total: 0, committed: [], uncommitted: [], untracked: [], out_of_scope: 0 }))
+      }
+      return new Response(JSON.stringify(path.startsWith('/v1/runs') ? [run()] : []))
+    })
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} />
+      </LiveProvider>,
+    )
+    await userEvent.click(await screen.findByRole('tab', { name: 'Changes' }))
+    const bar = document.querySelector('[data-component="PageHeader"]') as HTMLElement
+    await within(bar).findByRole('button', { name: 'Approve !7…' })
+    return within(bar)
+  }
+
+  it('keeps the decision, which blocks the agent, in lantern and draws Approve as a default outlined button', async () => {
+    const h = await head([decision({ lane: 'feat/login', repo: 'acme-api' })])
+    expect(h.getByRole('button', { name: 'Answer decision' })).toHaveClass('sh-btn--warn')
+    const approve = h.getByRole('button', { name: 'Approve !7…' })
+    expect(approve).not.toHaveClass('sh-btn--warn')
+    expect(approve).not.toHaveClass('sh-btn--primary')
+    expect(document.querySelectorAll('[data-component="PageHeader"] .sh-btn--warn')).toHaveLength(1)
+  })
+
+  it('makes Approve the lantern primary when nothing else is asked first', async () => {
+    const h = await head([])
+    expect(h.getByRole('button', { name: 'Approve !7…' })).toHaveClass('sh-btn--warn')
+  })
+})
+
 describe('the gate badge', () => {
   it('shows the lane\'s gate record in the facts aside', async () => {
     const live = liveWith([lane({ gate: { state: 'stale', sha: 'abcdef0123456', at: '2026-10-08T09:00:00Z', command: 'make check', source: 'ship' } })])

@@ -239,7 +239,8 @@ export function MrInspector({ open, chrome }: { open: Open; chrome?: PageChrome 
 
   if (chrome) {
     const current = items.find((t) => t.id === tab) ?? items[0]
-    const waiting = !!lane.mr && lane.mr_state !== 'merged' && lane.mr_state !== 'closed'
+    // The glyph is lantern, so only a merge request the daemon lists as waiting for this person's approval wears it.
+    const waiting = (snap.waiting?.items ?? []).some((it) => it.kind === 'mr' && it.action === 'approve' && it.lane_id === lane.id)
     return (
       <div className="inspector-body mr-inspector">
         <PageHeader

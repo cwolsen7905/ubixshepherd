@@ -44,7 +44,7 @@ open `http://127.0.0.1:5199/`. `NODEC=1` leaves no open decisions or requests.
 
 `LONG=1` makes the lane's changes, its runs, the run log and a kept plan long enough to scroll,
 for the `*-scrolled` pages (`lane-changes-scrolled`, `lane-runs-scrolled`, `run-log-scrolled`,
-`mr-page-scrolled`, `artifact-view-scrolled`, `run-page-scrolled`, `decision-page-scrolled`, `files-scrolled`). Each scrolls the
+`mr-page-scrolled`, `artifact-view-scrolled`, `artifact-page-scrolled`, `run-page-scrolled`, `decision-page-scrolled`, `files-scrolled`). Each scrolls the
 window and any column that scrolls itself by 600 px before the shot, so the page header must still be
 whole at the top:
 

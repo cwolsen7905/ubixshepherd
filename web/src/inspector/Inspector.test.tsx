@@ -103,6 +103,21 @@ describe('InspectorFrame', () => {
     expect(document.getElementById('inspector-title')).toBe(within(head).getByRole('heading', { level: 1 }))
   })
 
+  it('shows the approval glyph on a merge request only while it waits for the person to approve', async () => {
+    const withWaiting = (items: unknown[]) => {
+      const live = new Live(api, still, async () => ({ items, count: items.length, counts: { decisions: 0, mrs: 0, ship: 0, next: 0 } }) as never)
+      return ({ children }: { children: ReactNode }) => <LiveProvider live={live}>{children}</LiveProvider>
+    }
+    const mr = <InspectorFrame open={{ kind: 'mr', id: 4, full: true }} mode="split">page</InspectorFrame>
+    window.location.hash = '#/inbox?open=mr:4/full'
+    const none = rtlRender(mr, { wrapper: withWaiting([]) })
+    const tabs = await screen.findByRole('tablist', { name: 'Merge request views' })
+    expect(within(tabs.closest('[data-component="PageHeader"]') as HTMLElement).queryByText('waiting for your approval')).toBeNull()
+    none.unmount()
+    rtlRender(mr, { wrapper: withWaiting([{ kind: 'mr', action: 'approve', lane_id: 4, mr: 41, title: '' }]) })
+    expect(await within(document.querySelector('[data-component="PageHeader"]') as HTMLElement).findByText('waiting for your approval')).toBeInTheDocument()
+  })
+
   it('gives a full-width decision the page header too, with the way back and where it lives', () => {
     window.location.hash = '#/inbox?open=decision:5/full'
     render(<InspectorFrame open={{ kind: 'decision', id: 5, full: true }} mode="split">page</InspectorFrame>)

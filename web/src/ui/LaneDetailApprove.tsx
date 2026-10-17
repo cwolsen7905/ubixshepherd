@@ -85,15 +85,16 @@ export function useLaneApproval(laneId: number, refreshKey: number, enabled: boo
 
 /**
  * The header's Approve, the state's primary action on a lane to review: "Approve !41…" opens
- * the confirmation, which names the exact head the person signs off.
+ * the confirmation, which names the exact head the person signs off. `secondary` draws it as a
+ * default outlined button, for a view whose one lantern primary is something else.
  */
-export function ApproveAction({ approval }: { approval: LaneApprovalState }) {
+export function ApproveAction({ approval, secondary = false }: { approval: LaneApprovalState; secondary?: boolean }) {
   const { view, confirming, setConfirming, busy, failure } = approval
   if (!view?.mr) return null
   const sha = view.sha ?? ''
   return (
     <>
-      <Button variant="attention" disabled={busy || !sha} onClick={() => setConfirming(true)}>
+      <Button variant={secondary ? 'secondary' : 'attention'} disabled={busy || !sha} onClick={() => setConfirming(true)}>
         Approve !{view.mr}…
       </Button>
       <Dialog

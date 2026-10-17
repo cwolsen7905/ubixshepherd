@@ -312,7 +312,8 @@ function LaneHeader({ lane, runs, latest, action, approval, tab, onTab, now, chr
           <>
             {action && action.kind !== 'approve' && <PrimaryButton lane={lane} action={action} />}
             {action?.kind === 'approve' && !approve && tab !== 'changes' && <PrimaryButton lane={lane} action={action} />}
-            {approve && <ApproveAction approval={approval} />}
+            {/* One lantern primary per view: the state's own, else Approve. */}
+            {approve && <ApproveAction approval={approval} secondary={!!action && action.kind !== 'approve'} />}
             {approve && tab !== 'changes' && <Button variant="ghost" onClick={() => onTab('changes')}>Review changes</Button>}
             {secondary && latest && <Button variant="ghost" onClick={() => go(href.log(latest.id))}>Open run</Button>}
           </>
