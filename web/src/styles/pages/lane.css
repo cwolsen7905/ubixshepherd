@@ -3,6 +3,10 @@
 .lane-head h1 .glyph { font-size: var(--t-lg); }
 .lane-sub { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); }
 .lane-note { padding-left: var(--gutter); margin: calc(-1 * var(--s-2)) 0 var(--s-4); font-size: var(--t-sm); }
+/* The Overview's action row: the state's primary action, a ghost "Open as page", and
+   Close lane pushed to the right. */
+.lane-detail-primary { gap: var(--s-3); }
+.lane-detail-close { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
 .lane-decisions {
   display: grid; grid-template-columns: var(--gutter) minmax(0, 1fr);
   margin: 0 0 var(--s-4); padding: var(--s-2) 0; background: var(--lantern-wash);

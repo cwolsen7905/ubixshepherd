@@ -1,10 +1,11 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
+import type { NextItem } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
-import { lane, run, spend, status } from '../test/fixtures'
-import { defaultLaneDetailTab, LaneDetail, type LaneDetailTab } from './LaneDetail'
+import { decision, lane, nextItem, request, run, spend, status } from '../test/fixtures'
+import { defaultLaneDetailTab, laneStateAction, LaneDetail, type LaneDetailTab } from './LaneDetail'
 import { rememberedTab } from './LaneDetailMemory'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -85,6 +86,10 @@ describe('LaneDetail', () => {
   it('has the state\'s primary action on the Overview', async () => {
     await mount('panel')
     const panel = screen.getByRole('tabpanel')
+    // No decision, request, run failure or approved item waits: no primary, only the
+    // ghost "Open as page" and Close lane at the right.
+    expect(within(panel).queryByRole('button', { name: 'Answer decision' })).toBeNull()
+    expect(within(panel).getByRole('button', { name: 'Open as page' })).toBeInTheDocument()
     expect(within(panel).getByRole('button', { name: 'Close lane' })).toBeInTheDocument()
   })
 
@@ -98,5 +103,43 @@ describe('LaneDetail', () => {
   it('says a closed lane has no worktree to read', async () => {
     await mount('page', 'files', lane({ state: 'closed', closed: '2026-10-08T09:00:00Z' }))
     expect(screen.getByText(/no worktree to read/)).toBeInTheDocument()
+  })
+})
+
+describe('laneStateAction', () => {
+  const l = lane()
+  const base = { lane: l, runs: [] as ReturnType<typeof run>[], latest: undefined, review: undefined, decisions: [], requests: [], next: [], waiting: [] }
+
+  it('answers an open decision of the lane first, in lantern', () => {
+    const d = decision()
+    expect(laneStateAction({ ...base, decisions: [d] })?.kind).toBe('answer')
+  })
+
+  it('routes a request to route next, in lantern', () => {
+    const r = request()
+    expect(laneStateAction({ ...base, requests: [r] })?.kind).toBe('route')
+  })
+
+  it('follows a running run', () => {
+    const running = run({ state: 'running' })
+    expect(laneStateAction({ ...base, runs: [running], latest: running })?.kind).toBe('follow')
+  })
+
+  it('opens the log of a failed run', () => {
+    const failed = run({ state: 'failed' })
+    expect(laneStateAction({ ...base, runs: [failed], latest: failed })?.kind).toBe('open')
+  })
+
+  it('shows no primary when nothing waits', () => {
+    expect(laneStateAction(base)).toBeUndefined()
+  })
+
+  it('opens next up when an approved item of the repo waits', () => {
+    const item = nextItem()
+    expect(laneStateAction({ ...base, next: [item] })?.kind).toBe('next')
+  })
+
+  it('shows no primary on a closed lane', () => {
+    expect(laneStateAction({ ...base, lane: lane({ state: 'closed' }), decisions: [decision()] })).toBeUndefined()
   })
 })
