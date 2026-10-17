@@ -123,7 +123,11 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
     return out
   }, [shown])
 
-  /** The lane an entry is about, for the link at the right of its row. */
+  /**
+   * The lane an entry is about, for the link at the right of its row. A run's lane comes from the
+   * snapshot's runs: a run that has left the snapshot has no lane link, and the row simply shows none.
+   * A lane event's ref can be a repo id (fold import, worktree retire), so the lane must also be named in the text.
+   */
   const laneOf = (e: FeedEntry): LaneView | undefined => {
     if (!e.ref) return undefined
     if (e.event.startsWith('run_') || e.event === 'commit' || e.event === 'report') {
@@ -200,6 +204,7 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
                     <div
                       className="sh-row sh-row--time history-row"
                       tabIndex={0}
+                      role={to ? 'link' : undefined}
                       data-component="HistoryRow"
                       onClick={(ev) => to && !(ev.target as HTMLElement).closest('a') && go(to)}
                       onKeyDown={(ev) => {
@@ -209,7 +214,7 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
                       <time className="history-time" dateTime={e.created}>{clockTime(e.created, now).slice(-5)}</time>
                       <StatusGlyph glyph={m.glyph} tone={glyphTone(m.tone)} label={m.label} />
                       <span className="sh-row-main">
-                        {to ? <a className="sh-row-title" href={to}>{e.text}</a> : <span className="sh-row-title">{e.text}</span>}
+                        {to ? <a className="sh-row-title" href={to} tabIndex={-1}>{e.text}</a> : <span className="sh-row-title">{e.text}</span>}
                         <span className="sh-row-sub">{m.label}</span>
                       </span>
                       {lane && <a className="history-lane" href={href.lane(lane.id)}>{lane.name}</a>}

@@ -8,18 +8,19 @@ import { HistoryPage, mentions } from './History'
 const NOW = Date.parse('2026-10-10T15:00:00Z')
 const still: Clock = { now: () => NOW, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
-async function show(props: Parameters<typeof HistoryPage>[0] = {}) {
+async function show(props: Parameters<typeof HistoryPage>[0] = {}, older: ReturnType<typeof feedItem>[] = []) {
   vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ projects: [project({ name: 'shop', repos: ['acme-api'] }), project({ name: 'blog', repos: ['blog'] })] }), { status: 200 }))
   const items = [
     feedItem({ id: 1, kind: 'run_passed', text: 'run 10: claude in lane feat/login succeeded', ref: 10, created: '2026-10-10T12:30:00Z' }),
     feedItem({ id: 2, kind: 'decision_answered', text: 'decision 3 answered', ref: 3, created: '2026-10-10T13:00:00Z' }),
     feedItem({ id: 3, kind: 'mr', text: 'blog: opened !7', ref: 8, created: '2026-10-09T09:05:00Z' }),
+    ...older,
   ]
   const api = {
     status: async () => status(), lanes: async () => [lane()], runs: async () => [run({ id: 10, lane_id: 1 })], decisions: async () => [], requests: async () => [],
     spend: async () => null,
-    feedLatest: async () => ({ items: [], events: [], last: 3 }),
-    feed: async (after: number) => (after === 0 ? { items, events: ['run_passed', 'decision_answered', 'mr'], last: 3 } : { items: [], events: [], last: after }),
+    feedLatest: async () => ({ items: [], events: [], last: items.length }),
+    feed: async (after: number) => (after === 0 ? { items, events: ['run_passed', 'decision_answered', 'mr', ...older.map((o) => o.kind)], last: items.length } : { items: [], events: [], last: after }),
   } as unknown as Api
   const live = new Live(api, still)
   await act(() => live.refresh())
@@ -48,7 +49,7 @@ describe('the History page', () => {
     const rows = within(today).getAllByRole('listitem')
     expect(rows[0]).toHaveTextContent('decision 3 answered')
     expect(rows[1]).toHaveTextContent('run 10')
-    expect(within(rows[1] as HTMLElement).getAllByRole('link')[0]).toHaveAttribute('href', '#/runs/10/log')
+    expect((rows[1] as HTMLElement).querySelector('a.sh-row-title')).toHaveAttribute('href', '#/runs/10/log')
     expect(screen.getByRole('region', { name: 'Yesterday' })).toHaveTextContent('blog: opened !7')
   })
 
@@ -66,6 +67,24 @@ describe('the History page', () => {
     window.location.hash = ''
     await userEvent.click(within(row).getByRole('link', { name: 'feat/login' }))
     expect(window.location.hash).toBe('#/lanes/1')
+  })
+
+  it('hides entries older than the default 7 days until the range is widened', async () => {
+    await show({}, [feedItem({ id: 4, kind: 'run_passed', text: 'run 2: old work', ref: 2, created: '2026-09-20T09:00:00Z' })])
+    await screen.findByRole('region', { name: 'Today' })
+    expect(screen.queryByText('run 2: old work')).toBeNull()
+    expect(screen.getByText('3 of 3 in the last 7 days')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Date range' }), 'all')
+    expect(await screen.findByText('run 2: old work')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Date range' }), 'today')
+    expect(screen.queryByText('run 2: old work')).toBeNull()
+    expect(screen.queryByText('blog: opened !7')).toBeNull()
+  })
+
+  it('says when only older entries exist', async () => {
+    await show({ q: 'old work' }, [feedItem({ id: 4, kind: 'run_passed', text: 'run 2: old work', ref: 2, created: '2026-09-20T09:00:00Z' })])
+    expect(await screen.findByText('Nothing matches.')).toBeInTheDocument()
+    expect(screen.getByText('Clear a filter to see more.')).toBeInTheDocument()
   })
 
   it('filters by kind, project and search text', async () => {
