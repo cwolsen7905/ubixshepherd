@@ -10,6 +10,7 @@ import { go, href, type TimelineRange } from '../router'
 import { useSnapshot } from '../state/context'
 import { Button } from '../ui'
 import { useTimelineHistory } from '../timeline/data'
+import './Timeline.css'
 
 /** How often the window is recomputed: running bars move on their own between these. */
 export const WINDOW_REFRESH = 15_000
@@ -51,13 +52,15 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
   const stale = !!snap.error
 
   return (
-    <div className={`page page-wide timeline-page${stale ? ' is-stale' : ''}`}>
-      <header className="page-head timeline-head">
-        <h1>Timeline</h1>
-        <p className="page-sub" aria-live="polite">
-          {snap.ready ? line || <span className="faint">Nothing running, waiting or merged.</span> : <span className="faint">Loading…</span>}
-        </p>
-        <div className="page-actions">
+    <div className={`timeline-page${stale ? ' is-stale' : ''}`} data-component="Timeline">
+      <header className="sh-head tl-page-head">
+        <div>
+          <h1>Timeline</h1>
+          <p className="tl-page-sub" aria-live="polite">
+            {snap.ready ? line || <span className="faint">Nothing running, waiting or merged.</span> : <span className="faint">Loading…</span>}
+          </p>
+        </div>
+        <div className="sh-head-right">
           {summary.idle > 0 && (
             <Button variant="ghost" size="small" onClick={() => setShowIdle((v) => !v)}>
               {showIdle ? 'Hide' : 'Show'} idle lanes ({summary.idle})
@@ -66,18 +69,18 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
         </div>
       </header>
 
-      <div className="filters tl-filters">
+      <div className="tl-controls">
         {narrow ? (
           <label>
-            <span className="faint">Range</span>
-            <select value={range} onChange={(e) => go(href.timeline({ range: e.target.value as TimelineRange, agent: agent || undefined }))}>
+            <span className="faint">Range </span>
+            <select className="tl-select" value={range} onChange={(e) => go(href.timeline({ range: e.target.value as TimelineRange, agent: agent || undefined }))}>
               {TIMELINE_RANGES.map((r) => (
                 <option key={r.id} value={r.id}>{r.label}</option>
               ))}
             </select>
           </label>
         ) : (
-          <nav className="range" aria-label="Time range">
+          <nav className="sh-segmented" aria-label="Time range">
             {TIMELINE_RANGES.map((r) => (
               <a key={r.id} href={href.timeline({ range: r.id, agent: agent || undefined })} aria-current={r.id === range ? 'true' : undefined}>
                 {r.label}
@@ -86,6 +89,13 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
           </nav>
         )}
         <TimelineLegend agents={agents} agent={agent} range={range} />
+        <span className="tl-key-glyphs" role="group" aria-label="Marks on the tracks">
+          <span><b className="is-lantern">?</b> waiting on you</span>
+          <span><b className="is-ok">◆</b> merged</span>
+          <span><b className="is-broken">✗</b> failed</span>
+          <span><b className="is-ok">✓</b> passed</span>
+          <span><b className="is-broken">⌀</b> out of quota</span>
+        </span>
       </div>
 
       {hist.error && <p className="tone-bad">Could not read the history: {hist.error}. Showing what the daemon last sent.</p>}
@@ -106,7 +116,7 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
       )}
 
       <details className="tl-table">
-        <summary>View as table</summary>
+        <summary><span className="tl-table-mark" aria-hidden="true">▸</span>View as table</summary>
         {rows.length === 0 ? (
           <p className="faint">{agent ? `No ${agent} run` : 'No run'} in {label.toLowerCase()}.</p>
         ) : (

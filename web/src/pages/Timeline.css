@@ -1,0 +1,47 @@
+/* The Timeline page: head, controls, legend and the table. The chart is timeline/timeline.css. */
+
+.tl-page-head { flex-wrap: wrap; row-gap: var(--sh-s3); align-items: flex-start; margin-bottom: var(--sh-s6); }
+.tl-page-head h1 { margin: 0; }
+.tl-page-sub { margin: 0; font-size: var(--sh-t-small); color: var(--sh-muted); }
+.tl-page-head .sh-head-right { align-self: center; }
+
+.tl-controls { display: flex; flex-wrap: wrap; gap: var(--sh-s5) 22px; align-items: center; margin-bottom: var(--sh-s6); }
+.tl-controls .sh-segmented a { padding: 3px 12px; font: var(--sh-t-small) var(--sh-font); color: var(--sh-muted); background: var(--sh-raised); white-space: nowrap; text-decoration: none; }
+.tl-controls .sh-segmented a + a { border-left: 1px solid var(--sh-control); }
+.tl-controls .sh-segmented a:hover { color: var(--sh-ink); text-decoration: none; }
+.tl-controls .sh-segmented a[aria-current="true"] { background: var(--sh-sunk); color: var(--sh-ink); font-weight: 600; }
+.tl-select { font: var(--sh-t-small) var(--sh-font); color: var(--sh-ink); background: var(--sh-raised); border: 1px solid var(--sh-control); border-radius: var(--sh-r); padding: 3px var(--sh-s4); }
+
+/* The agents: a bar-shaped swatch each, a link that filters to it. */
+.tl-legend { display: inline-flex; flex-wrap: wrap; gap: var(--sh-s2) 22px; font-size: var(--sh-t-small); }
+.tl-legend a { display: inline-flex; align-items: center; gap: var(--sh-s3); color: var(--sh-muted); text-decoration: none; }
+.tl-legend a:hover { color: var(--sh-ink); }
+.tl-legend a[aria-current="true"] { color: var(--sh-ink); font-weight: 600; box-shadow: inset 0 -2px 0 var(--sh-lichen); }
+
+/* The glyph key. */
+.tl-key-glyphs { display: inline-flex; flex-wrap: wrap; gap: var(--sh-s2) var(--sh-s7); font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.tl-key-glyphs b { font-weight: 700; }
+.tl-key-glyphs .is-lantern { color: var(--sh-lantern); }
+.tl-key-glyphs .is-ok { color: var(--sh-ok); }
+.tl-key-glyphs .is-broken { color: var(--sh-broken); }
+
+.tl-note { margin: var(--sh-s4) 0 0; font-size: var(--sh-t-meta); }
+
+/* The event list, folded under the chart. */
+.tl-table { margin: var(--sh-s7) 0 0; }
+.tl-table summary { cursor: pointer; color: var(--sh-muted); font-size: var(--sh-t-small); padding: var(--sh-s2) 0; list-style: none; }
+.tl-table summary::-webkit-details-marker { display: none; }
+.tl-table-mark { display: inline-block; width: 1.1em; transition: none; }
+.tl-table[open] .tl-table-mark { transform: rotate(90deg); }
+.tl-table summary:hover { color: var(--sh-ink); }
+.tl-table .runs { margin-top: var(--sh-s4); }
+.tl-table th.num { text-align: right; }
+.tl-sort { font: inherit; font-weight: 600; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; white-space: nowrap; }
+.tl-sort:hover { color: var(--sh-ink); }
+.tl-table th[aria-sort] { color: var(--sh-ink); }
+
+@media (max-width: 760px) {
+  .tl-controls { gap: var(--sh-s4); }
+  .timeline-page > :not(.tl-page-head):not(.tl) { margin-inline: var(--sh-s6); }
+  .timeline-page > .tl { margin-inline: var(--sh-s4); }
+}

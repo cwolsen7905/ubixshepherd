@@ -31,6 +31,22 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('the end mark of a failed bar', () => {
+  it('stays in the broken colour and inside the plot for a thin bar ending at the right edge', () => {
+    const failed = data.runs.find((r) => r.state === 'failed')
+    expect(failed).toBeDefined()
+    if (!failed) return
+    const thin = { ...failed, started: BUSY_NOW - 20_000, ended: BUSY_NOW - 1_000, diagnosis: undefined }
+    const edited = { ...data, runs: data.runs.map((r) => (r.id === failed.id ? thin : r)) }
+    const { container } = chart({ data: edited, width: 300 })
+    const glyph = container.querySelector(`a[data-run="${failed.id}"] text.tl-glyph`) as SVGTextElement
+    expect(glyph).toHaveTextContent('✗')
+    expect(glyph).toHaveClass('tl-fail-glyph')
+    expect(Number(glyph.getAttribute('x'))).toBeLessThanOrEqual(300)
+    expect(glyph).toHaveAttribute('text-anchor', 'end')
+  })
+})
+
 describe('the timeline chart', () => {
   it('draws one track per lane that did something, grouped by repo', () => {
     const { container } = chart()

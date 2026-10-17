@@ -213,6 +213,52 @@ describe('the Timeline page', () => {
   })
 })
 
+describe('the Timeline view’s parts (VIEW-008)', () => {
+  afterEach(() => {
+    window.location.hash = ''
+  })
+
+  it('offers Today, Last 24 hours and Last 7 days as one segmented control', async () => {
+    const { container } = await show({ range: 'week' })
+    const seg = container.querySelector('nav.sh-segmented') as HTMLElement
+    expect([...seg.querySelectorAll('a')].map((a) => a.textContent)).toEqual(['Today', 'Last 24 hours', 'Last 7 days'])
+    expect(within(seg).getByRole('link', { name: 'Last 7 days' })).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('keys the agents by colour and the marks by glyph', async () => {
+    const { container } = await show()
+    const legend = screen.getByRole('navigation', { name: 'Agents' })
+    expect(legend.querySelectorAll('.tl-swatch').length).toBeGreaterThanOrEqual(4)
+    const key = container.querySelector('.tl-key-glyphs') as HTMLElement
+    for (const g of ['?', '◆', '✗', '✓', '⌀']) expect(key).toHaveTextContent(g)
+  })
+
+  it('draws the event marks on the track and the now line, groups by project, and the spend against the budget', async () => {
+    const { container } = await show()
+    await waitFor(() => expect(container.querySelectorAll('a.tl-run').length).toBeGreaterThan(100))
+    const glyphs = (sel: string) => [...container.querySelectorAll(sel)].map((e) => e.textContent)
+    expect(glyphs('a.tl-ask.is-open .tl-glyph')).toContain('?')
+    expect(glyphs('a.tl-ask.is-request .tl-glyph')).toEqual(['!'])
+    expect(glyphs('a.tl-merge .tl-glyph')).not.toHaveLength(0)
+    expect(glyphs('a.tl-merge .tl-glyph').every((g) => g === '◆')).toBe(true)
+    expect(glyphs('a.tl-run .tl-fail-glyph')).toContain('✗')
+    expect(container.querySelectorAll('.tl-group-head').length).toBeGreaterThan(1)
+    expect(container.querySelector('.tl-group-count')).toHaveTextContent(/\d+ lanes?/)
+    expect(container.querySelector('.tl-now-line')).not.toBeNull()
+    expect(container.querySelector('.tl-budget-label')).toHaveTextContent('$25 budget')
+    expect(container.querySelector('.tl-spend-line')).not.toBeNull()
+  })
+
+  it('opens a bar’s run in the side panel, where the open one is marked as selected', async () => {
+    const { container } = await show()
+    await waitFor(() => expect(container.querySelectorAll('a.tl-run').length).toBeGreaterThan(0))
+    const bar = container.querySelector('a.tl-run') as SVGAElement
+    expect(bar.getAttribute('href')).toMatch(/open=run%3A\d+/)
+    window.location.hash = bar.getAttribute('href') as string
+    await waitFor(() => expect(container.querySelector('a.tl-run[aria-current="true"]')).not.toBeNull())
+  })
+})
+
 describe('reading the history again', () => {
   beforeEach(() => {
     vi.useRealTimers()
