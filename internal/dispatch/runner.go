@@ -274,7 +274,11 @@ type proc struct {
 
 // Recover marks runs a previous daemon left running as interrupted. Call it once at
 // start, before any new run.
-func (r *Runner) Recover(ctx context.Context) error {
+func (r *Runner) Recover(ctx context.Context) error { return r.recover(ctx, "") }
+
+// recover is Recover, recording reason on the runs it marks (a restart's, when the
+// daemon stops during a drain).
+func (r *Runner) recover(ctx context.Context, reason string) error {
 	runs, err := r.Store.Runs(ctx, 0, store.RunRunning, 1000)
 	if err != nil {
 		return err
@@ -282,6 +286,7 @@ func (r *Runner) Recover(ctx context.Context) error {
 	for _, run := range runs {
 		now := time.Now().UTC()
 		run.State, run.Ended, run.Error = store.RunInterrupted, &now, "the daemon stopped while this run was going"
+		run.Reason = reason
 		if err := r.Store.UpdateRun(ctx, run); err != nil {
 			return err
 		}
@@ -949,6 +954,11 @@ func (r *Runner) Stop(ctx context.Context, id int64) error {
 	p, ok := r.procs[id]
 	if ok {
 		p.stopped = true
+		// A stop made while a restart drains the daemon is the restart's: it hurries
+		// the drain, and the run is continued after it.
+		if r.drain != nil {
+			p.restarting = true
+		}
 	}
 	r.mu.Unlock()
 	if !ok {
@@ -1123,7 +1133,13 @@ func (r *Runner) Active() int {
 func (r *Runner) Shutdown(ctx context.Context) {
 	r.mu.Lock()
 	r.closing = true
+	// A shutdown that comes while a restart drains the daemon, before it says drained, is
+	// the restart's: the runs it cuts off are continued after it.
+	restart := r.drain != nil
 	for _, p := range r.procs {
+		if restart && !p.stopped {
+			p.restarting = true
+		}
 		terminate(p.cmd)
 	}
 	r.mu.Unlock()
@@ -1137,6 +1153,10 @@ func (r *Runner) Shutdown(ctx context.Context) {
 			kill(p.cmd)
 		}
 		r.mu.Unlock()
+	}
+	if restart {
+		r.recover(context.Background(), store.ReasonRestart)
+		return
 	}
 	r.Recover(context.Background())
 }

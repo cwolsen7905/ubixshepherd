@@ -340,3 +340,139 @@ func TestAbandonedRestartContinuesTheRunsItStopped(t *testing.T) {
 	}
 	t.Fatal("the stopped run was not continued")
 }
+
+// resumedOnce runs a restart's start on the same store and returns the runs after it.
+func (f *fixture) resumedOnce(t *testing.T) []store.Run {
+	t.Helper()
+	ctx := context.Background()
+	t.Setenv("NAP", "0")
+	next := f.restarted(t)
+	if err := next.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := next.ResumeRestarted(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return runsOf(t, f.st)
+}
+
+// A shutdown that comes while the drain still waits (before "drained") cuts the runs off
+// for the restart, not as a crash, and the next daemon continues them.
+func TestShutdownBeforeDrainedIsARestartsCutOff(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(10 * time.Minute)
+	if d := f.runner.Draining(); d == nil || d.Drained {
+		t.Fatalf("drain = %+v, want under way and not drained", d)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	f.runner.Shutdown(sctx)
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunInterrupted || got.Reason != store.ReasonRestart {
+		t.Fatalf("run after the shutdown = %+v", got)
+	}
+	runs := f.resumedOnce(t)
+	if len(runs) != 2 || runs[0].Parent != run.ID || runs[0].Prompt != ResumePrompt {
+		t.Errorf("runs after the restart = %+v", runs)
+	}
+	f.wait(t, runs[0].ID)
+}
+
+// A shutdown with no drain is not a restart's: the run is interrupted without a reason
+// and is not continued.
+func TestShutdownWithoutADrainIsNotContinued(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	f.runner.Shutdown(sctx)
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunInterrupted || got.Reason != "" {
+		t.Fatalf("run = %+v", got)
+	}
+	if runs := f.resumedOnce(t); len(runs) != 1 {
+		t.Errorf("runs = %+v, want only the interrupted one", runs)
+	}
+}
+
+// A run stopped at the drain's deadline is continued once after the restart.
+func TestRunStoppedAtTheDrainDeadlineIsContinuedOnce(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(100 * time.Millisecond)
+	f.drained(t)
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.Reason != store.ReasonRestart {
+		t.Fatalf("run = %+v", got)
+	}
+	runs := f.resumedOnce(t)
+	if len(runs) != 2 || runs[0].Parent != run.ID || runs[0].Prompt != ResumePrompt {
+		t.Fatalf("runs = %+v", runs)
+	}
+	f.wait(t, runs[0].ID)
+	again := f.restarted(t)
+	again.Recover(ctx)
+	again.ResumeRestarted(ctx)
+	if n := len(runsOf(t, f.st)); n != 2 {
+		t.Errorf("%d runs after a second restart, want 2", n)
+	}
+}
+
+// A run stopped (as the desk did) while the daemon drains is the restart's and continues.
+func TestRunStoppedDuringADrainIsContinued(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(10 * time.Minute)
+	if err := f.runner.Stop(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.drained(t)
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.Reason != store.ReasonRestart {
+		t.Fatalf("run = %+v", got)
+	}
+	runs := f.resumedOnce(t)
+	if len(runs) != 2 || runs[0].Parent != run.ID {
+		t.Fatalf("runs = %+v", runs)
+	}
+	f.wait(t, runs[0].ID)
+}
+
+// A person's stop, with no restart, and one made before the drain began, are not continued.
+func TestAPersonsStopIsNotContinued(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.runner.Stop(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(100 * time.Millisecond)
+	f.drained(t)
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunStopped || got.Reason != "" {
+		t.Fatalf("run = %+v", got)
+	}
+	if runs := f.resumedOnce(t); len(runs) != 1 {
+		t.Errorf("runs = %+v, want only the stopped one", runs)
+	}
+}

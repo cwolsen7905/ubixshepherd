@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
@@ -235,5 +236,61 @@ func TestRestartDrainRefusesWhenTheDaemonGaveTheDrainUp(t *testing.T) {
 	done := fakeStatus{api.Status{Draining: &api.Draining{Drained: true}}}
 	if err := waitDrained(context.Background(), env, done, api.Draining{Runs: 1}, time.Minute); err != nil {
 		t.Errorf("drained daemon: %v", err)
+	}
+}
+
+// A daemon stopped by someone else while the restart waited for it to drain still gets a
+// new one started, and the restart says so.
+func TestRestartStartsADaemonWhenItWasStoppedDuringTheDrain(t *testing.T) {
+	h := newHarness(t, "", false)
+	var started int
+	oldDrain, oldStop, oldStart, oldRunning := restartDrain, restartStop, restartStart, restartRunning
+	t.Cleanup(func() {
+		restartDrain, restartStop, restartStart, restartRunning = oldDrain, oldStop, oldStart, oldRunning
+	})
+	restartDrain = func(context.Context, Env, time.Duration) error {
+		return errors.New("drain the daemon: connection refused")
+	}
+	restartRunning = func(context.Context, Env) (*client.Client, error) { return nil, nil }
+	restartStop = func(context.Context, Env) error { return nil }
+	restartStart = func(context.Context, Env) error { started++; return nil }
+	if err := daemonRestart(context.Background(), h.env, true, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if started != 1 || !strings.Contains(h.out.String(), "starting a new one") || !strings.Contains(h.out.String(), "restarted:") {
+		t.Errorf("started %d, output %q", started, h.out)
+	}
+}
+
+// A drain that failed with the daemon still running leaves it as it is.
+func TestRestartLeavesARunningDaemonWhenTheDrainFails(t *testing.T) {
+	h := newHarness(t, "", false)
+	var started, stopped int
+	oldDrain, oldStop, oldStart, oldRunning := restartDrain, restartStop, restartStart, restartRunning
+	t.Cleanup(func() {
+		restartDrain, restartStop, restartStart, restartRunning = oldDrain, oldStop, oldStart, oldRunning
+	})
+	restartDrain = func(context.Context, Env, time.Duration) error { return errors.New("the daemon gave up the drain") }
+	restartRunning = func(context.Context, Env) (*client.Client, error) { return &client.Client{}, nil }
+	restartStop = func(context.Context, Env) error { stopped++; return nil }
+	restartStart = func(context.Context, Env) error { started++; return nil }
+	if err := daemonRestart(context.Background(), h.env, true, time.Minute); err == nil {
+		t.Fatal("want an error")
+	}
+	if started != 0 || stopped != 0 {
+		t.Errorf("started %d, stopped %d", started, stopped)
+	}
+}
+
+// A new daemon that cannot start is an error that says why.
+func TestRestartReportsANewDaemonThatWillNotStart(t *testing.T) {
+	h := newHarness(t, "", false)
+	oldStop, oldStart := restartStop, restartStart
+	t.Cleanup(func() { restartStop, restartStart = oldStop, oldStart })
+	restartStop = func(context.Context, Env) error { return nil }
+	restartStart = func(context.Context, Env) error { return errors.New("port in use") }
+	err := daemonRestart(context.Background(), h.env, false, 0)
+	if err == nil || !strings.Contains(err.Error(), "port in use") || !strings.Contains(err.Error(), "did not start") {
+		t.Errorf("err = %v", err)
 	}
 }

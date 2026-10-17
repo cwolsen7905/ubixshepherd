@@ -377,9 +377,10 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 
 // The steps of a restart; tests replace them.
 var (
-	restartDrain = daemonDrain
-	restartStop  = daemonStop
-	restartStart = func(ctx context.Context, env Env) error { _, err := startDaemon(ctx, env, false); return err }
+	restartDrain   = daemonDrain
+	restartStop    = daemonStop
+	restartRunning = connectRunning
+	restartStart   = func(ctx context.Context, env Env) error { _, err := startDaemon(ctx, env, false); return err }
 )
 
 // daemonRestart stops the daemon and starts it again, draining it first when asked: no
@@ -387,13 +388,23 @@ var (
 func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Duration) error {
 	if drain {
 		if err := restartDrain(ctx, env, timeout); err != nil {
-			return err
+			// A daemon stopped by someone else while this restart waited (a shutdown that
+			// came before "drained") is the restart's business too: no daemon is left
+			// running, so go on and start one. Any other error leaves the daemon as it is.
+			if c, cerr := restartRunning(ctx, env); cerr != nil || c != nil {
+				return err
+			}
+			fmt.Fprintf(env.Stdout, "the daemon stopped while the restart waited for it (%v); starting a new one\n", err)
 		}
 	}
 	if err := restartStop(ctx, env); err != nil {
 		return err
 	}
-	return restartStart(ctx, env)
+	if err := restartStart(ctx, env); err != nil {
+		return fmt.Errorf("the old daemon stopped but a new one did not start: %w; run `shepherd daemon start`", err)
+	}
+	fmt.Fprintln(env.Stdout, "restarted: the new daemon is running; runs the restart cut off are continued")
+	return nil
 }
 
 // drainPoll is how often a restart looks at the drain.
