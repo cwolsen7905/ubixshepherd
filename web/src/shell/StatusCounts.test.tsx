@@ -95,11 +95,13 @@ describe('popLists', () => {
 
   it('builds each list from the one waiting list, cut at a whole word', () => {
     const l = popLists(snap, Date.parse('2026-10-10T12:00:00Z'))
-    expect(l.waiting).toHaveLength(3)
+    expect(l.waiting).toHaveLength(1)
     expect(l.waiting[0]?.href).toBe('#/decisions?d=4')
     expect(l.waiting[0]?.age).toBe('1h')
     expect(l.waiting[0]?.title.endsWith('…')).toBe(true)
     expect(l.waiting[0]?.title.length).toBeLessThanOrEqual(45)
+    expect(l.waiting.map((x) => x.full)).not.toContain('Needs a reviewer')
+    expect(l.waiting.map((x) => x.full)).not.toContain('Blocked by lane feat/other')
     expect(l.routing.map((x) => x.full)).toEqual(['Needs a reviewer'])
     expect(l.broken.map((x) => x.full)).toContain('Blocked by lane feat/other')
   })

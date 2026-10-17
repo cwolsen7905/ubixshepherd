@@ -8,6 +8,7 @@ import { LiveProvider } from '../state/context'
 import { DeskThread } from '../state/desk'
 import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, request, spend, status } from '../test/fixtures'
 import type { DeskApi } from '../api/desk'
+import { OfflineContext } from '../ui'
 import { ChatPage, Markdown } from './Chat'
 import { publishChat, useChatLink, type ChatLink } from '../shell/chatLink'
 
@@ -38,7 +39,7 @@ function liveWith(
   return new Live(api, still)
 }
 
-async function show(api: DeskApi, live = liveWith()) {
+async function show(api: DeskApi, live = liveWith(), offline = false) {
   FakeSource.all = []
   await act(async () => {
     await live.refresh()
@@ -47,9 +48,11 @@ async function show(api: DeskApi, live = liveWith()) {
     live.start()
   })
   render(
-    <LiveProvider live={live}>
-      <ChatPage make={(id) => new DeskThread(id, { api, open: (u) => new FakeSource(u) })} />
-    </LiveProvider>,
+    <OfflineContext.Provider value={{ offline, retryIn: offline ? 5 : null }}>
+      <LiveProvider live={live}>
+        <ChatPage make={(id) => new DeskThread(id, { api, open: (u) => new FakeSource(u) })} />
+      </LiveProvider>
+    </OfflineContext.Provider>,
   )
   await waitFor(() => expect(FakeSource.all.length).toBeGreaterThan(0))
   const src = FakeSource.get(0)
@@ -142,8 +145,10 @@ describe('ChatPage', () => {
     try {
       act(() => src.emit('assistant', deskEvent({ seq: 8, kind: 'assistant', text: 'one more' })))
       act(() => src.fail())
-      expect(await screen.findByText(/Chat reconnecting…, retrying in \ds/)).toBeInTheDocument()
-      expect(currentLink()?.connection).toBe('reconnecting')
+      await waitFor(() => expect(currentLink()?.connection).toBe('reconnecting'))
+      // One offline notice: the shell's banner. The thread keeps no stream line of its own.
+      expect(document.querySelector('.sh-conv-stream')).toBeEmptyDOMElement()
+      expect(screen.queryByText(/The daemon is not answering/)).toBeNull()
       expect(screen.getByRole('button', { name: 'Retry now' })).toBeInTheDocument()
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1100)
@@ -155,6 +160,19 @@ describe('ChatPage', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('turns Send off while the daemon is unreachable and keeps the draft', async () => {
+    const user = userEvent.setup()
+    const turn = vi.fn(async () => ({ workspace_id: 1, turn: 9, ahead: 1 }))
+    await show(fakeDeskApi({ turn }), liveWith(), true)
+    const box = screen.getByLabelText('Message to the front desk')
+    await user.type(box, 'hello{Enter}')
+    const send = screen.getByRole('button', { name: 'Send' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAttribute('title', expect.stringContaining('Offline'))
+    expect(turn).not.toHaveBeenCalled()
+    expect(box).toHaveValue('hello')
   })
 
   it('Enter sends, Shift+Enter adds a line, and the box empties on success', async () => {

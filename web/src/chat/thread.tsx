@@ -10,7 +10,7 @@ import { href, parse } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type ThreadItem } from '../state/desk'
 import { useNow } from '../hooks'
-import { useFollowBottom, Countdown, useThread, STREAM_LINE } from './md'
+import { useFollowBottom, useThread, STREAM_LINE } from './md'
 import { Button } from '../ui'
 import { cx } from '../ui/cx'
 import { Thread, ThreadRow, WorkFold, type ThreadEntry } from '../ui/Thread'
@@ -296,8 +296,9 @@ function ChatThread({
     wasConfirming.current = confirming
   }, [confirming])
 
-  const line = d.connection === 'live' ? null : STREAM_LINE[d.connection]
   const offline = d.connection === 'reconnecting'
+  // Reconnecting is told once, by the shell's offline banner; the thread keeps its Retry now button.
+  const line = d.connection === 'live' || offline ? null : STREAM_LINE[d.connection]
   const stopped = d.connection === 'signed-out' || d.connection === 'refused'
 
   // The topics holding something that waits on the person and has not been opened.
@@ -473,12 +474,6 @@ function ChatThread({
           {d.loadError ?? `You are signed out. ${SIGN_IN_HINT}`}
         </p>
       )}
-      {offline && d.loaded && (
-        <p className="sh-conv-problem" role="alert">
-          The daemon is not answering, so this conversation may be out of date. It reconnects by itself
-          {d.failures >= 3 ? `; if it keeps failing the daemon may have moved: ${SIGN_IN_HINT}` : '.'}
-        </p>
-      )}
       {d.loadError && !stopped && !d.loaded && (
         <p className="sh-conv-problem" role="alert">
           Could not read the conversation: {d.loadError}. Retrying.
@@ -502,7 +497,6 @@ function ChatThread({
             {line && (
               <>
                 {line.text}
-                {offline && <Countdown at={d.retryAt} />}
               </>
             )}
           </p>

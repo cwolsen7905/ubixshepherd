@@ -3,6 +3,8 @@ import { ApiError, laneApprove } from '../api/client'
 import type { LaneApproval, LaneApproved } from '../api/types'
 import { shortSha } from '../format'
 import { Button } from '../ui/Button'
+import { OFFLINE_SEND } from '../ui/ContextComposer'
+import { useOffline } from '../ui/offline'
 import { EmptyState } from '../ui/EmptyState'
 import '../styles/lane-approve.css'
 
@@ -24,6 +26,8 @@ export function LaneApprove({ laneId, refreshKey }: { laneId: number; refreshKey
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [result, setResult] = useState<LaneApproved | null>(null)
+  const { offline } = useOffline()
+  const offlineTitle = offline ? OFFLINE_SEND.replace('Send', 'Approve') : undefined
   const mounted = useRef(true)
   useEffect(() => {
     mounted.current = true
@@ -110,7 +114,7 @@ export function LaneApprove({ laneId, refreshKey }: { laneId: number; refreshKey
         {sha && <span className="faint">head <code>{shortSha(sha)}</code></span>}
       </p>
       {open && !view.approved && !confirming && (
-        <Button variant="primary" disabled={busy || !sha} onClick={() => setConfirming(true)}>
+        <Button variant="primary" disabled={busy || !sha || offline} title={offlineTitle} onClick={() => setConfirming(true)}>
           Approve !{view.mr}…
         </Button>
       )}
@@ -118,7 +122,7 @@ export function LaneApprove({ laneId, refreshKey }: { laneId: number; refreshKey
         <p className="lane-approve-confirm" role="group" aria-label="Confirm approval">
           Approve !{view.mr} at <code>{shortSha(sha)}</code>? This is your sign-off on the forge, for exactly this head. If the
           require-approval job has failed, it is retried so the pipeline can pass.
-          <Button variant="primary" disabled={busy} onClick={() => void approve()}>
+          <Button variant="primary" disabled={busy || offline} title={offlineTitle} onClick={() => void approve()}>
             Approve at {shortSha(sha)}
           </Button>
           <button type="button" className="link-button" disabled={busy} onClick={() => setConfirming(false)}>

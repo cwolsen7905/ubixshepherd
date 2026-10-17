@@ -8,7 +8,7 @@ import { StatusCounts, CountList } from './StatusCounts'
 import { type CountKind, type PopItem } from './statusItems'
 import { useSideWidth } from './useSideWidth'
 import { Button, Dialog, Divider, cx } from '../ui'
-import { attentionCount, type StatusCounts as Counts } from '../state/attention'
+import { inboxCount, type StatusCounts as Counts } from '../state/attention'
 import { pageTitle } from './title'
 import { useShellMode } from './useMedia'
 import type { NavKey } from './nav'
@@ -108,7 +108,7 @@ export function Shell({
   // A drag of the divider past 60% swaps the layouts: the page's own say, else the open item's.
   const swap = swapAction(route)
   const title = pageTitle(route, lanes)
-  const waitingCount = attentionCount(waiting)
+  const waitingCount = inboxCount(waiting)
   const style = { '--sh-side-w': `${w.width}px` } as CSSProperties
 
   return (
@@ -196,7 +196,9 @@ export function Shell({
             </>
           }
         >
-          <CountList kind={sheet} n={status.counts[sheet]} items={status.lists[sheet]} onPick={() => setSheet(null)} />
+          <div className="sh-count-sheet">
+            <CountList kind={sheet} n={status.counts[sheet]} items={status.lists[sheet]} onPick={() => setSheet(null)} />
+          </div>
         </Dialog>
       )}
     </div>

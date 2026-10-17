@@ -101,8 +101,9 @@ export function DecisionCard({
     [focused, options.join('\n')],
   )
 
-  // The inline card shows only the chip choice, so it never sends a draft kept for the page.
-  const words = inlineCard ? choice : own.trim() || choice
+  // The desktop inline card shows only the chip choice, so it never sends a draft kept for the page;
+  // the 390px card shows the own-answer field, and what is typed there wins over a picked chip.
+  const words = inlineCard && !mobile ? choice : own.trim() || choice
   const send = async () => {
     if (!words || sent.state !== 'idle') return
     setSent({ state: 'sending' })
@@ -181,9 +182,9 @@ export function DecisionCard({
           recommended={recommended}
           picked={choice}
           onPick={setChoice}
-          onSend={options.length > 0 ? () => void send() : undefined}
+          onSend={options.length > 0 || mobile ? () => void send() : undefined}
           sending={sent.state === 'sending'}
-          sendLabel={`“${clip(choice, 24)}”`}
+          sendLabel={`“${clip(words, 24)}”`}
           own={mobile ? own : undefined}
           onOwn={mobile ? (t) => { setOwn(t); setChoice('') } : undefined}
           done={answered}

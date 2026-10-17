@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DRAFT_EVENT, clearDraft, draftKey, readDraft, writeDraft } from '../model/chatDraft'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
-import { Button, ContextComposer } from '../ui'
+import { Button, ContextComposer, OFFLINE_SEND, useOffline } from '../ui'
 
 function Composer({
   thread, workspaceId, d, disabled, topicId, onSend,
@@ -24,6 +24,7 @@ function Composer({
   }
   const box = useRef<HTMLTextAreaElement>(null)
   const sending = d.sending
+  const { offline } = useOffline()
   // Words put in the draft from elsewhere (the rail's Start) show at once.
   useEffect(() => {
     const onDraft = (e: Event) => {
@@ -36,7 +37,7 @@ function Composer({
   }, [key])
 
   const send = async () => {
-    if (sending || disabled || !text.trim()) return
+    if (sending || disabled || offline || !text.trim()) return
     // The text stays until the daemon has taken it, so a refusal loses nothing.
     onSend()
     if (await thread.send(text, topicId)) {
@@ -94,7 +95,7 @@ function Composer({
         {d.busy && (
           <Button onClick={() => void thread.interrupt()}>Interrupt</Button>
         )}
-        <Button type="submit" variant="primary" disabled={sending || disabled || !text.trim()}>
+        <Button type="submit" variant="primary" disabled={sending || disabled || offline || !text.trim()} title={offline ? OFFLINE_SEND : undefined}>
           {sending ? 'Sending…' : 'Send'}
         </Button>
       </ContextComposer>

@@ -82,7 +82,7 @@ describe('Shell', () => {
     setWidth(1440)
     view()
     const nav = screen.getByRole('navigation', { name: 'Views' })
-    expect(within(nav).getByRole('link', { name: /Inbox/ })).toHaveTextContent('4')
+    expect(within(nav).getByRole('link', { name: /Inbox/ })).toHaveTextContent('3')
     expect(within(nav).getByRole('link', { name: /Next up/ })).toHaveTextContent('1')
     expect(within(nav).getByRole('link', { name: /Board/ })).not.toHaveTextContent(/\d/)
   })
@@ -170,8 +170,21 @@ describe('Shell', () => {
     const bar = screen.getByRole('banner')
     expect(within(bar).getByRole('button', { name: 'Menu' })).toBeInTheDocument()
     expect(within(bar).getByText('Runs')).toHaveClass('sh-mobile-title')
-    const count = within(bar).getByRole('link', { name: '4 waiting on you' })
+    const count = within(bar).getByRole('link', { name: '3 waiting on you' })
     expect(count).toHaveAttribute('href', '#/inbox')
+  })
+
+  it('gives the 390px status count sheet its sheet class', async () => {
+    setWidth(390)
+    const lists = { running: [], waiting: [], broken: [], routing: [] }
+    render(
+      <Shell route={parse('#/')} waiting={waiting} workspaces={[]} footer={null} status={{ counts: { running: 0, waiting: 2, broken: 0, routing: 0 }, lists }}>
+        <h1>Page</h1>
+      </Shell>,
+    )
+    await userEvent.click(screen.getByRole('link', { name: '2 waiting on you' }))
+    const card = document.querySelector('[data-component="CountList"]')
+    expect(card?.closest('.sh-count-sheet')).not.toBeNull()
   })
 
   it('leaves the count out of the bar when nothing waits', () => {

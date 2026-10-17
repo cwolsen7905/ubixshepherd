@@ -9,14 +9,22 @@ export function attentionCount(w: Waiting | null): number {
   return w?.count ?? 0
 }
 
+/** Kinds counted elsewhere: requests under "needs routing", blocked lanes under "broken". */
+const COUNTED_ELSEWHERE: WaitingItem['kind'][] = ['request', 'blocked']
+
+/** Items that wait on the person alone: everything but what needs routing or is broken. */
+export function waitingOnYou(w: Waiting | null): WaitingItem[] {
+  return (w?.items ?? []).filter((it) => !COUNTED_ELSEWHERE.includes(it.kind))
+}
+
 /** Items of one kind, e.g. the decisions and requests behind the sidebar's count. */
 export function attentionOf(w: Waiting | null, ...kinds: WaitingItem['kind'][]): WaitingItem[] {
   return (w?.items ?? []).filter((it) => kinds.includes(it.kind))
 }
 
-/** Decisions plus requests that need routing: the Decisions entry's count. */
+/** The Decisions entry's count: what waits on the person, as the sidebar's own count. */
 export function inboxCount(w: Waiting | null): number {
-  return attentionOf(w, 'decision', 'request').length
+  return w ? waitingOnYou(w).length : 0
 }
 
 /** Items that wait on the lane named `lane` of `repo`. */
@@ -34,7 +42,7 @@ export function attentionTitle(w: Waiting | null): string {
 export interface StatusCounts {
   /** Lanes with a run in flight: the board's working group. */
   running: number
-  /** Everything that waits on the person: the head badge, the title, the favicon. */
+  /** What waits on the person alone, not counted under broken or routing. */
   waiting: number
   /** The board's broken group plus blocked items, one per lane. */
   broken: number
@@ -58,7 +66,7 @@ export function statusCounts(snap: StatusInput): StatusCounts {
   }
   return {
     running: n.working,
-    waiting: attentionCount(snap.waiting),
+    waiting: waitingOnYou(snap.waiting).length,
     broken: lanes.size,
     routing: attentionOf(snap.waiting, 'request').length,
   }

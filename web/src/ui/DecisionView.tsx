@@ -1,8 +1,10 @@
 import { useId, useState, type ReactNode } from 'react'
 import { Button } from './Button'
 import { cx } from './cx'
+import { OFFLINE_SEND } from './ContextComposer'
 import { DecisionOptions, type DecisionOptionsProps } from './DecisionOptions'
 import { Kbd } from './Kbd'
+import { useOffline } from './offline'
 import './Decision.css'
 
 export type DecisionViewLayout = 'page' | 'mobile'
@@ -64,6 +66,7 @@ export function DecisionView({
   layout = 'page', kind, question, why, context, recommendation, options, picked, recommended, onPick, plan, own, onOwn, onSend, canSend, sending, onAsk, done, error, hasNext, label,
 }: DecisionViewProps) {
   const mobile = layout === 'mobile'
+  const { offline } = useOffline()
   const uid = useId()
   const [planOpen, setPlanOpen] = useState(true)
   return (
@@ -113,7 +116,7 @@ export function DecisionView({
             onChange={(e) => onOwn(e.target.value)}
           />
           <div className="sh-actions sh-decision-actions">
-            <Button variant="attention" className={cx(mobile && 'sh-tap')} disabled={!canSend || sending} onClick={onSend}>
+            <Button variant="attention" className={cx(mobile && 'sh-tap')} disabled={!canSend || sending || offline} title={offline ? OFFLINE_SEND : undefined} onClick={onSend}>
               {sending ? 'Sending…' : 'Send answer'}
             </Button>
             {onAsk && (

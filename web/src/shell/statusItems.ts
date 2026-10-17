@@ -2,7 +2,7 @@ import type { WaitingItem } from '../api/types'
 import { age } from '../format'
 import { boardItems, type BoardItem } from '../model/board'
 import { href } from '../router'
-import { attentionOf, type StatusInput } from '../state/attention'
+import { attentionOf, waitingOnYou, type StatusInput } from '../state/attention'
 import type { GlyphTone } from '../ui/StatusGlyph'
 
 /** The four status counts, in the sidebar's order. */
@@ -119,7 +119,7 @@ export function popLists(snap: StatusInput, now: number): Record<CountKind, PopI
   }
   return {
     running: items.filter((it) => it.group === 'working').map((it) => fromBoard(it, '●', 'live', now)),
-    waiting: (snap.waiting?.items ?? []).map((it) => fromWaiting(it, now)),
+    waiting: waitingOnYou(snap.waiting).map((it) => fromWaiting(it, now)),
     broken,
     routing: attentionOf(snap.waiting, 'request').map((it) => fromWaiting(it, now)),
   }

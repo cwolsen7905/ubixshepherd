@@ -1,7 +1,9 @@
 import type { MouseEvent, ReactNode } from 'react'
 import { Button } from './Button'
 import { cx } from './cx'
+import { OFFLINE_SEND } from './ContextComposer'
 import { DecisionOptions, type DecisionOptionsProps } from './DecisionOptions'
+import { useOffline } from './offline'
 import './Decision.css'
 
 export interface DecisionCardProps {
@@ -19,7 +21,7 @@ export interface DecisionCardProps {
   unseen?: boolean
   /** A click on the card, away from a link or a button, opens the decision. */
   onOpen?: () => void
-  /** Send the picked option. Absent: the card only offers to open the decision. */
+  /** Send the picked option, or at 390px the own answer when written. Absent: the card only offers to open the decision. */
   onSend?: () => void
   sending?: boolean
   /** The words of the send button: the picked option, cut short. */
@@ -48,8 +50,10 @@ export function DecisionCard({
     if (!onOpen || (e.target as HTMLElement).closest('a, button, input, textarea, [role="radio"]')) return
     onOpen()
   }
+  const { offline } = useOffline()
+  const ready = Boolean(picked) || (mobile && Boolean(own?.trim()))
   const send = (
-    <Button variant="attention" disabled={!picked || sending} onClick={onSend} className={cx(mobile && 'sh-tap sh-card-send')}>
+    <Button variant="attention" disabled={!ready || sending || offline} title={offline ? OFFLINE_SEND : undefined} onClick={onSend} className={cx(mobile && 'sh-tap sh-card-send')}>
       {sending ? 'Sending…' : mobile ? `Send answer: ${sendLabel ?? picked ?? ''}` : `Send: ${sendLabel ?? picked ?? ''}`}
     </Button>
   )
@@ -73,7 +77,7 @@ export function DecisionCard({
           {mobile && onOwn && (
             <div className="sh-card-own">
               <input className="sh-input sh-tap" value={own ?? ''} placeholder="Or write your own answer" aria-label={`Your own answer to ${label}`} onChange={(e) => onOwn(e.target.value)} />
-              {onSend && picked && send}
+              {onSend && send}
             </div>
           )}
           {!mobile && onSend && picked && (

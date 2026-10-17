@@ -41,6 +41,24 @@ function show(d = decision(), variant: 'page' | 'inline' | 'pane' = 'page') {
   )
 }
 
+describe('inline card at 390px', () => {
+  it('sends a typed own answer with no option picked, and the typed words win over a pick', async () => {
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <DecisionCard d={decision({ options: ['Stream', 'Buffer'] })} variant="inline" mobile />
+      </LiveProvider>,
+    )
+    const user = userEvent.setup()
+    expect(screen.getByRole('button', { name: /Send answer/ })).toBeDisabled()
+    await user.click(screen.getByRole('radio', { name: /Stream/ }))
+    await user.type(screen.getByLabelText(/Your own answer/), 'Neither, stream in chunks')
+    await user.click(screen.getByRole('button', { name: /Send answer/ }))
+    expect(answer).toHaveBeenCalledWith(decision().id, 'Neither, stream in chunks')
+  })
+})
+
 describe('splitQuestion', () => {
   it('takes the first line as the summary', () => {
     expect(splitQuestion(PLAN)).toMatchObject({ head: 'Add the decision card to the chat thread' })
