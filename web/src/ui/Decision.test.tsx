@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { OfflineContext } from './offline'
 import { ArtifactView } from './ArtifactView'
 import { DecisionCard } from './DecisionCard'
 import { DecisionOptions } from './DecisionOptions'
@@ -48,6 +49,26 @@ describe('DecisionCard', () => {
     expect(screen.getByRole('button', { name: 'Send answer: A' })).toHaveClass('sh-card-send')
     expect(screen.getByPlaceholderText('Or write your own answer')).toBeInTheDocument()
   })
+
+  it('lets the mobile card send a typed answer with no option picked', async () => {
+    const onSend = vi.fn()
+    const { rerender } = render(<DecisionCard mobile label="Decision 5" meta="" question="q" options={['A']} own="" onOwn={() => {}} onSend={onSend} />)
+    expect(screen.getByRole('button', { name: /Send answer/ })).toBeDisabled()
+    rerender(<DecisionCard mobile label="Decision 5" meta="" question="q" options={['A']} own="my words" sendLabel="“my words”" onOwn={() => {}} onSend={onSend} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Send answer: “my words”' }))
+    expect(onSend).toHaveBeenCalled()
+  })
+
+  it('turns Send off with the reason while offline', () => {
+    render(
+      <OfflineContext.Provider value={{ offline: true, retryIn: 4 }}>
+        <DecisionCard label="Decision 5" meta="" question="q" options={['A']} picked="A" onSend={() => {}} />
+      </OfflineContext.Provider>,
+    )
+    const send = screen.getByRole('button', { name: /Send: A/ })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAttribute('title', expect.stringContaining('Offline'))
+  })
 })
 
 const view = (over = {}) => (
@@ -68,6 +89,18 @@ describe('DecisionView', () => {
     expect(screen.getByText('The plan.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /docs\/plans\/x\.md/ }))
     expect(screen.queryByText('The plan.')).toBeNull()
+  })
+
+  it('turns Send answer off with the reason while offline, keeping what was typed', () => {
+    render(
+      <OfflineContext.Provider value={{ offline: true, retryIn: 3 }}>
+        {view({ canSend: true, own: 'my words' })}
+      </OfflineContext.Provider>,
+    )
+    const send = screen.getByRole('button', { name: 'Send answer' })
+    expect(send).toBeDisabled()
+    expect(send).toHaveAttribute('title', expect.stringContaining('Offline'))
+    expect(screen.getByLabelText(/Your own answer/)).toHaveValue('my words')
   })
 
   it('has Send answer off until there is an answer, and Ask the desk first', () => {

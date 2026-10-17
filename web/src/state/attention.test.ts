@@ -40,10 +40,11 @@ describe('statusCounts', () => {
     expect(statusCounts(input({ lanes: [l], runs, waiting: w })).broken).toBe(1)
   })
 
-  it('counts a request as routing and as waiting', () => {
-    const c = statusCounts(input({ waiting: waiting(req(4)) }))
-    expect(c.routing).toBe(1)
-    expect(c.waiting).toBe(1)
+  it('keeps the four counts disjoint: a request or blocked item is not also waiting on you', () => {
+    const decision: WaitingItem = { kind: 'decision', action: 'answer', decision_id: 1, title: 'd' }
+    const lanes = [lane({ id: 1, name: 'a' })]
+    const c = statusCounts(input({ lanes, waiting: waiting(decision, req(4), blocked({ lane_id: 1, lane: 'a' })) }))
+    expect(c).toEqual({ running: 0, waiting: 1, broken: 1, routing: 1 })
   })
 })
 

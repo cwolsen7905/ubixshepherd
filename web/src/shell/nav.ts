@@ -1,5 +1,5 @@
 import { href, type Route } from '../router'
-import { attentionCount, attentionOf } from '../state/attention'
+import { attentionOf, inboxCount } from '../state/attention'
 import type { Waiting } from '../api/types'
 
 export type NavKey = 'inbox' | 'chat' | 'board' | 'next' | 'artifacts' | 'runs' | 'timeline' | 'history' | 'files' | 'rules' | 'projects' | 'usage' | 'settings' | 'status'
@@ -63,7 +63,7 @@ export const NAV: NavGroup[] = [
 
 /** The count beside each entry, all read from the one attention list. */
 export function navCounts(w: Waiting | null): Partial<Record<NavKey, number>> {
-  return { inbox: attentionCount(w), next: attentionOf(w, 'next').length, board: 0 }
+  return { inbox: inboxCount(w), next: attentionOf(w, 'next').length, board: 0 }
 }
 
 /** What a count means, for the badge's accessible name. */

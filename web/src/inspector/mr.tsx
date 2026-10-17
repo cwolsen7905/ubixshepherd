@@ -14,7 +14,7 @@ import { neighbour, waitingKey } from '../model/waitingStep'
 import { inboxOpen } from '../pages/Inbox'
 import { go, href, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
-import { Button, EmptyState, Kbd, StatusGlyph, Tabs } from '../ui'
+import { Button, EmptyState, Kbd, OFFLINE_SEND, StatusGlyph, Tabs, useOffline } from '../ui'
 import { PageHeader, PageTabs, pageTabIds, usePageTabBase, type PageChrome } from '../ui/PageHeader'
 import '../pages/Inbox.css'
 import { LaneRuns } from './lane'
@@ -58,6 +58,8 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [approved, setApproved] = useState(false)
+  const { offline } = useOffline()
+  const offlineTitle = offline ? OFFLINE_SEND.replace('Send', 'Approve') : undefined
   const [failure, setFailure] = useState<string | null>(null)
   const mounted = useRef(true)
   useEffect(() => {
@@ -181,13 +183,13 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
       {open && confirming && (
         <p className="mr-confirm" role="group" aria-label="Confirm approval">
           Approve !{mr} at <code>{shortSha(sha)}</code>? This is your sign-off on the forge for exactly this head. If the require-approval job has failed, it is retried so the pipeline can pass.
-          <Button variant="attention" disabled={busy} onClick={() => void approve()}>Approve at {shortSha(sha)}</Button>
+          <Button variant="attention" disabled={busy || offline} title={offlineTitle} onClick={() => void approve()}>Approve at {shortSha(sha)}</Button>
           <button type="button" className="sh-link mr-review-ask" disabled={busy} onClick={() => setConfirming(false)}>Not yet</button>
         </p>
       )}
       <div className="mr-actions">
         {open && !view.approved && !approved && !confirming && (
-          <Button variant="attention" disabled={busy || !sha} onClick={() => setConfirming(true)}>Approve !{mr}</Button>
+          <Button variant="attention" disabled={busy || !sha || offline} title={offlineTitle} onClick={() => setConfirming(true)}>Approve !{mr}</Button>
         )}
         <button type="button" className="sh-link" onClick={onReview}>Review changes</button>
         <span className="faint mr-next"><Kbd keys="]" />skip to next</span>
