@@ -146,7 +146,7 @@ describe('NextPage', () => {
     expect(within(first).getByText('1')).toBeInTheDocument()
     expect(screen.getByText(/^Open \d+$/)).toBeInTheDocument()
     expect(screen.getByText(/^Started \d+$/)).toBeInTheDocument()
-    expect(screen.getByText(/^Rejected \d+$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Dropped \d+$/)).toBeInTheDocument()
     expect(screen.getByText('Starts when a slot frees, while Keep going is on')).toBeInTheDocument()
   })
 

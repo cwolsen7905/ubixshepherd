@@ -78,7 +78,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     () => ({
       open: items.filter((it) => !isClosed(it) && it.state !== 'started').length,
       started: items.filter((it) => it.state === 'started').length,
-      rejected: items.filter((it) => it.stored_state === 'dropped').length,
+      dropped: items.filter((it) => it.stored_state === 'dropped').length,
     }),
     [items],
   )
@@ -157,9 +157,9 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
       <header className="next-head">
         <h1>Next up</h1>
         <span className="next-head-chips">
-          <Chip>Open {counts.open}</Chip>
+          <span title="Approved, planned and deferred items that have not started"><Chip>Open {counts.open}</Chip></span>
           <Chip>Started {counts.started}</Chip>
-          <Chip>Rejected {counts.rejected}</Chip>
+          <Chip>Dropped {counts.dropped}</Chip>
         </span>
         <span className="next-head-right">
           <span className="sh-faint next-head-hint">Starts when a slot frees, while Keep going is on</span>
@@ -185,7 +185,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
 
           {list !== null && items.length === 0 && matrix.length === 0 && (
             <EmptyState title="Nothing is planned">
-              Add an item above, or run <code>shepherd next seed</code>.
+              Add an item below, or run <code>shepherd next seed</code>.
             </EmptyState>
           )}
 
@@ -198,7 +198,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
 
           {queueItems.length > 0 && (
             <section className="next-section" aria-label="Queued">
-              <GroupHeader variant="section" label="Queued" hint="in order; drag to reorder" />
+              <GroupHeader variant="section" label="Queued" hint="in order; drag to reorder within a state" />
               <ol className="sh-rows">{openQueue.map(renderRow(queueItems))}</ol>
               {closedQueue.length > 0 && (
                 <>
@@ -335,7 +335,7 @@ function NextRow({
     if (!movable) return
     const fromId = Number(e.dataTransfer.getData('text/plain'))
     const from = all.findIndex((x) => x.id === fromId)
-    if (from < 0 || from === flatIdx) return
+    if (from < 0 || from === flatIdx || all[from].stored_state !== it.stored_state) return
     const dir = flatIdx < from ? 'up' : 'down'
     const steps = Math.abs(flatIdx - from)
     onMove(fromId, dir, steps)
@@ -368,8 +368,13 @@ function NextRow({
       onKeyDown={handleKeyDown}
       aria-current={isNext || focused ? 'true' : undefined}
     >
-      <span className="next-row-num" aria-hidden="true">
-        {movable && !it.proposed ? flatIdx + 1 : ''}
+      <span className="next-row-num">
+        {movable && !it.proposed && (
+          <>
+            <span aria-hidden="true">{flatIdx + 1}</span>
+            <span className="visually-hidden">Position {flatIdx + 1}; drag to reorder within its state, or select it and use the move buttons</span>
+          </>
+        )}
       </span>
       <span className="sh-glyph" title={mark.label} aria-label={mark.label}>
         {isNext ? NEXT_MARKER.glyph : mark.glyph}
@@ -381,7 +386,7 @@ function NextRow({
           {it.proposed && <Chip>proposed</Chip>}
           {it.state === 'started' && <Chip>started</Chip>}
           {it.state === 'done' && <Chip>done</Chip>}
-          {it.state === 'dropped' && <Chip>rejected</Chip>}
+          {it.state === 'dropped' && <Chip>dropped</Chip>}
           {it.stored_state === 'deferred' && it.state !== 'done' && <Chip>deferred</Chip>}
           {it.source === 'chat' && it.state === 'planned' && <Chip>chat</Chip>}
         </p>
