@@ -197,7 +197,15 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
                 const lane = laneOf(e)
                 return (
                   <li key={e.id}>
-                    <div className="sh-row sh-row--time history-row" tabIndex={0} data-component="HistoryRow">
+                    <div
+                      className="sh-row sh-row--time history-row"
+                      tabIndex={0}
+                      data-component="HistoryRow"
+                      onClick={(ev) => to && !(ev.target as HTMLElement).closest('a') && go(to)}
+                      onKeyDown={(ev) => {
+                        if (to && ev.key === 'Enter' && ev.target === ev.currentTarget) go(to)
+                      }}
+                    >
                       <time className="history-time" dateTime={e.created}>{clockTime(e.created, now).slice(-5)}</time>
                       <StatusGlyph glyph={m.glyph} tone={glyphTone(m.tone)} label={m.label} />
                       <span className="sh-row-main">

@@ -2,7 +2,7 @@ import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
-import { feedItem, lane, project, status } from '../test/fixtures'
+import { feedItem, lane, project, run, status } from '../test/fixtures'
 import { HistoryPage, mentions } from './History'
 
 const NOW = Date.parse('2026-10-10T15:00:00Z')
@@ -16,7 +16,7 @@ async function show(props: Parameters<typeof HistoryPage>[0] = {}) {
     feedItem({ id: 3, kind: 'mr', text: 'blog: opened !7', ref: 8, created: '2026-10-09T09:05:00Z' }),
   ]
   const api = {
-    status: async () => status(), lanes: async () => [lane()], runs: async () => [], decisions: async () => [], requests: async () => [],
+    status: async () => status(), lanes: async () => [lane()], runs: async () => [run({ id: 10, lane_id: 1 })], decisions: async () => [], requests: async () => [],
     spend: async () => null,
     feedLatest: async () => ({ items: [], events: [], last: 3 }),
     feed: async (after: number) => (after === 0 ? { items, events: ['run_passed', 'decision_answered', 'mr'], last: 3 } : { items: [], events: [], last: after }),
@@ -50,6 +50,22 @@ describe('the History page', () => {
     expect(rows[1]).toHaveTextContent('run 10')
     expect(within(rows[1] as HTMLElement).getAllByRole('link')[0]).toHaveAttribute('href', '#/runs/10/log')
     expect(screen.getByRole('region', { name: 'Yesterday' })).toHaveTextContent('blog: opened !7')
+  })
+
+  it('opens an entry on Enter or a click on its row, and the lane link still works', async () => {
+    await show()
+    const today = await screen.findByRole('region', { name: 'Today' })
+    const row = within(today).getAllByRole('listitem')[1] as HTMLElement
+    const line = row.querySelector('.history-row') as HTMLElement
+    line.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(window.location.hash).toBe('#/runs/10/log')
+    window.location.hash = ''
+    await userEvent.click(line)
+    expect(window.location.hash).toBe('#/runs/10/log')
+    window.location.hash = ''
+    await userEvent.click(within(row).getByRole('link', { name: 'feat/login' }))
+    expect(window.location.hash).toBe('#/lanes/1')
   })
 
   it('filters by kind, project and search text', async () => {
