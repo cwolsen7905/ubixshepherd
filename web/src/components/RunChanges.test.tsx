@@ -30,4 +30,31 @@ describe('RunChanges', () => {
     expect(screen.getByText('outside scope')).toBeInTheDocument()
     vi.unstubAllGlobals()
   })
+
+  it('forgets whether the previous run was the latest while it reads the next one', async () => {
+    const r10 = run()
+    const r11 = run({ id: 11 })
+    const diff = {
+      lane_id: 1, lane: 'feat/login', branch: 'feat/login', base: 'dev', base_ref: 'origin/dev', head: 'def456', mode: 'stat',
+      read_at: '2026-10-08T10:04:00Z', commits_total: 0, out_of_scope: 0, commits: [],
+      committed: [], uncommitted: [{ path: 'src/wip.ts', status: 'modified', added: 1, removed: 0, in_scope: true }], untracked: [],
+    }
+    let release: () => void = () => {}
+    let reads = 0
+    vi.stubGlobal('fetch', async (u: string) => {
+      if (u.includes('/v1/runs?')) {
+        reads++
+        if (reads > 1) await new Promise<void>((res) => { release = res })
+        return new Response(JSON.stringify([r10]), { status: 200 })
+      }
+      return new Response(JSON.stringify(u.includes('/diff') ? diff : {}), { status: 200 })
+    })
+    const { rerender } = render(<RunChanges run={r10} now={NOW} />)
+    expect(await screen.findByRole('region', { name: /Uncommitted/ })).toBeInTheDocument()
+    rerender(<RunChanges run={r11} now={NOW} />)
+    expect(await screen.findByText('Reading…')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: /Uncommitted/ })).toBeNull()
+    release()
+    vi.unstubAllGlobals()
+  })
 })

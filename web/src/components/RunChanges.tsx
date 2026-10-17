@@ -13,6 +13,7 @@ export function RunChanges({ run, now }: { run: RunView; now: number }) {
   const laneId = run.lane_id
   const runId = run.id
   useEffect(() => {
+    setLatest(null)
     let current = true
     api.runs(laneId, 1).then(
       (rs) => current && setLatest(Array.isArray(rs) && rs[0]?.id === runId),
