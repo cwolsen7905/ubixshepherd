@@ -23,8 +23,19 @@ describe('ChangesList', () => {
     expect(screen.getByRole('heading', { name: /Untracked/ })).toBeInTheDocument()
     expect(screen.getByText('1 outside scope')).toBeInTheDocument()
     const row = screen.getByText('other/x.go').closest('li') as HTMLElement
-    expect(within(row).getByText('outside scope')).toBeInTheDocument()
-    expect(document.querySelector('[data-component="ChangesList"]')).toHaveAttribute('data-variant', 'list')
+    // Outside scope is the lantern-ink row, the words in its title.
+    expect(row).toHaveClass('is-outside')
+    expect(row.title).toMatch(/outside scope/)
+    expect(within(row).getByText('M')).toHaveClass('sh-change-s--M')
+  })
+
+  it('shows letter colours, +n/-n and the open link on the row', () => {
+    render(<ChangesList read={read} worktree="/w" editorUrl="cursor://file/{path}" variant="list" />)
+    const row = screen.getByText('src/auth.go').closest('li') as HTMLElement
+    expect(within(row).getByText('M')).toHaveClass('sh-change-s--M')
+    expect(within(row).getByText('+3')).toHaveClass('sh-add')
+    expect(within(row).getByText('-1')).toHaveClass('sh-del')
+    expect(within(row).getByRole('link', { name: /in editor/ })).toHaveAttribute('href', expect.stringMatching(/^cursor:\/\/file\//))
   })
 
   it('list: rows do not expand', () => {

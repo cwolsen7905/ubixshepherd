@@ -86,7 +86,10 @@ describe('the run page', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Changes' }))
     expect(await screen.findByText('run commit')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: /Uncommitted/ })).toHaveTextContent("in the lane's worktree now")
-    expect(screen.getByText('outside scope')).toBeInTheDocument()
+    // The run's own file is marked outside scope by the design row: lantern title, no plain text.
+    const row = screen.getByText('docs/x.md').closest('li') as HTMLElement
+    expect(row).toHaveClass('is-outside')
+    expect(row.title).toMatch(/outside scope/)
     vi.unstubAllGlobals()
   })
 

@@ -50,7 +50,10 @@ describe('Changes', () => {
     expect(calls).toEqual(['/v1/lanes/4/diff?mode=stat'])
     const committed = screen.getByRole('region', { name: /Committed/ })
     expect(within(committed).getByText('web/a.ts')).toBeInTheDocument()
-    expect(within(committed).getByText('outside scope')).toBeInTheDocument()
+    // Outside scope is the lantern-ink row: the title names it, no plain text.
+    const outside = within(committed).getByText('docs/out.md').closest('li') as HTMLElement
+    expect(outside).toHaveClass('is-outside')
+    expect(outside.title).toMatch(/outside scope/)
     expect(within(committed).getByText('+9')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: /Uncommitted/ })).toHaveTextContent('web/b.ts')
     expect(screen.getByRole('region', { name: /Untracked/ })).toHaveTextContent('binary, 2048 bytes')
@@ -128,7 +131,9 @@ describe('Changes narrowed to a run', () => {
     expect(screen.getByRole('region', { name: /Uncommitted/ })).toHaveTextContent("in the lane's worktree now")
     expect(screen.getByRole('region', { name: /Untracked/ })).toHaveTextContent('new.bin')
     // web/a.ts is on the run's Outside list though the read called it in scope.
-    expect(within(screen.getByRole('region', { name: /Committed/ })).getAllByText('outside scope')).toHaveLength(2)
+    const outside = within(screen.getByRole('region', { name: /Committed/ })).getByText('web/a.ts').closest('li') as HTMLElement
+    expect(outside).toHaveClass('is-outside')
+    expect(outside.title).toMatch(/outside scope/)
     expect(screen.getByText('gate stale')).toBeInTheDocument()
   })
 
