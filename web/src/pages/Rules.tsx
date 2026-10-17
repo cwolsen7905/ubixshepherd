@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { config as configApi } from '../api/client'
 import type { ConfigDoc } from '../api/types'
-import { EmptyState, GroupHeader, ListRow } from '../ui'
+import { Chip, EmptyState, GroupHeader } from '../ui'
+import './Rules.css'
+
+export type Verdict = 'refuse' | 'hold' | 'proceed'
 
 export type RuleLayer = 'built-in' | 'workspace' | 'project' | 'repo'
 
@@ -16,6 +19,8 @@ export interface Rule {
   holder: string
   /** What it allows, in words. */
   allows: string
+  /** What the rule does to an agent. */
+  verdict: Verdict
 }
 
 export const LAYERS: { id: RuleLayer; label: string; hint: string }[] = [
@@ -31,19 +36,20 @@ type Verb = (typeof AUTONOMY)[number]
 const NAMES: Record<Verb, string> = { push: 'Push', merge: 'Merge', tag: 'Tag', deploy: 'Deploy' }
 
 /** What a choice of one autonomy field lets happen. */
-export function allows(verb: Verb, value: string): { holder: string; text: string } {
+/** The verdict follows the effect: an agent or Shepherd acting proceeds, a person's action holds the agent. */
+export function allows(verb: Verb, value: string): { holder: string; text: string; verdict: Verdict } {
   const v = value || 'human'
   if (verb === 'push') {
-    if (v === 'agent') return { holder: 'agent', text: "An agent may push its own lane's branch during its run." }
-    if (v === 'shepherd') return { holder: 'shepherd', text: "Shepherd pushes a lane's branch and opens its merge request once the repo gate passes." }
-    return { holder: 'person', text: 'Only the person pushes a lane.' }
+    if (v === 'agent') return { holder: 'agent', verdict: 'proceed', text: "An agent may push its own lane's branch during its run." }
+    if (v === 'shepherd') return { holder: 'shepherd', verdict: 'proceed', text: "Shepherd pushes a lane's branch and opens its merge request once the repo gate passes." }
+    return { holder: 'person', verdict: 'hold', text: 'Only the person pushes a lane.' }
   }
   if (verb === 'merge') {
-    if (v === 'agent') return { holder: 'agent', text: "An agent may arm merge-when-pipeline-succeeds on its own lane's merge request. The forge's approvals, pipelines and threads still gate it." }
-    return { holder: 'person', text: 'Only the person merges, through the approval flow.' }
+    if (v === 'agent') return { holder: 'agent', verdict: 'proceed', text: "An agent may arm merge-when-pipeline-succeeds on its own lane's merge request. The forge's approvals, pipelines and threads still gate it." }
+    return { holder: 'person', verdict: 'hold', text: 'Only the person merges, through the approval flow.' }
   }
-  if (v === 'agent') return { holder: 'agent', text: `An agent may ${verb} without asking.` }
-  return { holder: 'person', text: `Only the person may ${verb}.` }
+  if (v === 'agent') return { holder: 'agent', verdict: 'proceed', text: `An agent may ${verb} without asking.` }
+  return { holder: 'person', verdict: 'hold', text: `Only the person may ${verb}.` }
 }
 
 function autonomyOf(o: unknown): Partial<Record<Verb, string>> {
@@ -56,23 +62,23 @@ function autonomyOf(o: unknown): Partial<Record<Verb, string>> {
 /** The rules the config holds today, layer by layer. Crook's own rule files are not read yet. */
 export function rulesFrom(doc: ConfigDoc): Rule[] {
   const out: Rule[] = [
-    { id: 'built-in:own-work', layer: 'built-in', source: 'Shepherd', name: 'Approval', holder: 'person', allows: 'An agent never approves its own work.' },
+    { id: 'built-in:own-work', layer: 'built-in', source: 'Shepherd', name: 'Approval', holder: 'person', allows: 'An agent never approves its own work.', verdict: 'refuse' },
   ]
   for (const v of AUTONOMY) {
     const a = allows(v, 'human')
-    out.push({ id: `built-in:${v}`, layer: 'built-in', source: 'Shepherd', name: NAMES[v], holder: a.holder, allows: a.text })
+    out.push({ id: `built-in:${v}`, layer: 'built-in', source: 'Shepherd', name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
   }
   const base = autonomyOf(doc.defaults?.effective)
   for (const v of AUTONOMY) {
     const a = allows(v, base[v] ?? '')
-    out.push({ id: `workspace:${v}`, layer: 'workspace', source: 'config defaults', name: NAMES[v], holder: a.holder, allows: a.text })
+    out.push({ id: `workspace:${v}`, layer: 'workspace', source: 'config defaults', name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
   }
   for (const name of Object.keys(doc.projects ?? {}).sort()) {
     const set = autonomyOf(doc.projects[name]?.raw)
     for (const v of AUTONOMY) {
       if (set[v] === undefined) continue
       const a = allows(v, set[v])
-      out.push({ id: `project:${name}:${v}`, layer: 'project', source: `project ${name}`, name: NAMES[v], holder: a.holder, allows: a.text })
+      out.push({ id: `project:${name}:${v}`, layer: 'project', source: `project ${name}`, name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
     }
   }
   for (const name of Object.keys(doc.repos ?? {}).sort()) {
@@ -81,7 +87,7 @@ export function rulesFrom(doc: ConfigDoc): Rule[] {
     for (const v of AUTONOMY) {
       if (!(p?.overridden ?? []).includes(`autonomy.${v}`)) continue
       const a = allows(v, eff[v] ?? '')
-      out.push({ id: `repo:${name}:${v}`, layer: 'repo', source: `repo ${name}`, name: NAMES[v], holder: a.holder, allows: a.text })
+      out.push({ id: `repo:${name}:${v}`, layer: 'repo', source: `repo ${name}`, name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
     }
   }
   return out
@@ -100,51 +106,71 @@ export function RulesPage() {
       live = false
     }
   }, [])
+  const [view, setView] = useState<'rules' | 'shadow'>('rules')
   const rules = useMemo(() => (state?.doc ? rulesFrom(state.doc) : []), [state])
 
   return (
     <div className="page page-wide rules-page" data-component="Rules">
       <header className="page-head">
         <h1>Rules</h1>
-        <p className="page-sub faint">What agents may do unasked, from the built-in rules down to each repo. A lower layer overrides the one above it.</p>
+        <div className="page-chips">
+          <Chip kind="filter" selected={view === 'rules'} onClick={() => setView('rules')}>
+            Rules <span className="rules-n">{rules.length}</span>
+          </Chip>
+          <Chip kind="filter" selected={view === 'shadow'} onClick={() => setView('shadow')}>Shadow log</Chip>
+        </div>
+        <div className="page-actions rules-mode">
+          <span className="faint">Mode</span>
+          <div className="sh-segmented" role="group" aria-label="Mode">
+            <button type="button" aria-pressed="true" disabled>Enforce</button>
+            <button type="button" aria-pressed="false" disabled>Shadow</button>
+          </div>
+        </div>
       </header>
-      {state?.error && <p className="tone-bad">Could not load the rules: {state.error}</p>}
-      {!state && <p className="faint">Loading…</p>}
-      {state?.doc &&
-        LAYERS.map((l) => {
-          const mine = rules.filter((r) => r.layer === l.id)
-          return (
-            <section key={l.id} aria-label={l.label}>
-              <GroupHeader label={l.label} hint={l.hint} />
-              {mine.length === 0 ? (
-                <p className="faint rules-none">Nothing is set at this layer.</p>
-              ) : (
-                <ul className="rules-list">
-                  {mine.map((r) => (
-                    <li key={r.id}>
-                      <ListRow
-                        variant="file"
-                        glyph="✓"
-                        tone="ok"
-                        glyphLabel="in force"
-                        title={`${r.name}: ${r.holder}`}
-                        sub={`${r.source} · ${r.allows}`}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )
-        })}
-      <section aria-label="Proposed by Shepherd">
-        <GroupHeader label="Proposed by Shepherd" hint="Rules waiting for your yes" />
-        <EmptyState title="No proposed rules.">Shepherd proposes a rule once it learns a pattern in your decisions. That needs Crook's rule files, which are not built yet.</EmptyState>
-      </section>
-      <section aria-label="Shadow log">
-        <GroupHeader label="Shadow log" hint="What a rule would have decided" />
-        <EmptyState title="The shadow log is empty.">Crook's verdict log is not built yet, so nothing is recorded here.</EmptyState>
-      </section>
+      <p className="rules-note faint">Mode is fixed until Crook's rule engine lands: the rules below are enforced as the config sets them.</p>
+      {view === 'shadow' ? (
+        <section aria-label="Shadow log">
+          <GroupHeader label="Shadow log" hint="What a rule would have decided" />
+          <EmptyState title="No shadow verdicts yet.">They appear once Crook logs them.</EmptyState>
+        </section>
+      ) : (
+        <>
+        <p className="rules-order">Later layers win: a repo rule overrides its project, which overrides the workspace, which overrides built-in.</p>
+        {state?.error && <p className="tone-bad rules-pad">Could not load the rules: {state.error}</p>}
+        {!state && <p className="faint rules-pad">Loading…</p>}
+        <section aria-label="Proposed by Shepherd">
+          <GroupHeader label="Proposed by Shepherd" hint="learned from your answers · runs in shadow until you approve" />
+          <EmptyState title="No proposed rules.">Shepherd proposes a rule once it learns a pattern in your decisions. That needs Crook's rule files, which are not built yet.</EmptyState>
+        </section>
+        {state?.doc &&
+          LAYERS.map((l) => {
+            const mine = rules.filter((r) => r.layer === l.id)
+            return (
+              <section key={l.id} aria-label={l.label}>
+                <GroupHeader label={l.label} hint={l.hint} />
+                {mine.length === 0 ? (
+                  <p className="faint rules-none">Nothing is set at this layer.</p>
+                ) : (
+                  <table className="rules-table">
+                    <tbody>
+                      {mine.map((r) => (
+                        <tr key={r.id}>
+                          <td className="rules-id"><code>{r.id}</code></td>
+                          <td className="rules-what">
+                            {r.name}: {r.holder}. <span className="rules-allows">{r.allows}</span>
+                          </td>
+                          <td className="rules-verdict-col"><span className={`sh-tag rules-verdict--${r.verdict}`}>{r.verdict}</span></td>
+                          <td className="rules-source"><code>{r.source}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }
