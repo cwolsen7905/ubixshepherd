@@ -527,6 +527,26 @@ func TestOpenCodeNoteIsByModel(t *testing.T) {
 	}
 }
 
+// A run's prompt carries the note for its model: the small-model limits for a
+// local run, the standard rules for a hosted one.
+func TestOpenCodeRunPromptCarriesTheModelsNote(t *testing.T) {
+	promptOf := func(t *testing.T, model string) string {
+		t.Helper()
+		f := openCodeFixture(t, "ok")
+		run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Model: model, Prompt: "fix the typo"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stdinOf(t, f.wait(t, run.ID))
+	}
+	if in := promptOf(t, "qwen3-coder:30b"); !strings.Contains(in, "small local model") || !strings.Contains(in, "Do not write tests") {
+		t.Errorf("local run's prompt lacks the small-model limits: %s", in)
+	}
+	if in := promptOf(t, "openrouter/moonshotai/kimi-k2.7-code"); strings.Contains(in, "small local model") || !strings.Contains(in, "tests included") {
+		t.Errorf("hosted run's prompt lacks the standard rules: %s", in)
+	}
+}
+
 // The window in the config is the local endpoint's; a hosted model's is left unknown.
 func TestOpenCodeUsageWindowIsLocalOnly(t *testing.T) {
 	old := openCodeSettings

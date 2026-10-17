@@ -519,7 +519,15 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		if pc != nil {
 			workspace, repoRules = cfg.Defaults.Brief, cfg.Repos[repo.Name].Brief
 		}
-		note := Standing(ad.Note, workspace, pc, repoRules)
+		// An adapter whose note differs by the run's model (NoteFor) contributes the
+		// run's own note; "" keeps Note.
+		adapterNote := ad.Note
+		if ad.NoteFor != nil {
+			if n := ad.NoteFor(Opts{Model: req.Model}); n != "" {
+				adapterNote = n
+			}
+		}
+		note := Standing(adapterNote, workspace, pc, repoRules)
 		if sn := StillNeeded(r.itemOfLane(ctx, lane.ID), lane.Base); sn != "" {
 			note = strings.TrimSpace(note + "\n" + sn)
 		}
