@@ -86,6 +86,9 @@ export function Divider({
     onCommit(next)
   }
 
+  // An item open full width has no side panel to size: its rule would run through the page.
+  if (/[?&]open=[^&]*\/full(?:&|$)/.test(window.location.hash)) return null
+
   const l = limits()
   return (
     <>

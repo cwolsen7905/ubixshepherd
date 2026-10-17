@@ -304,7 +304,7 @@ function Spend({
       {band.budget > 0 && (
         <>
           <line className="tl-budget" x1={0} x2={width} y1={band.budgetY} y2={band.budgetY} />
-          <text className="tl-budget-label" x={width - 4} y={Math.max(11, band.budgetY - 4)} textAnchor="end">
+          <text className="tl-budget-label" x={Math.min(width, layout.nowX) - 6} y={Math.max(11, band.budgetY - 4)} textAnchor="end">
             ${Math.round(band.budget)} budget{band.overBudget ? ', over budget' : ''}
           </text>
         </>

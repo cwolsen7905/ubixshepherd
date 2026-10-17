@@ -24,14 +24,18 @@
 .sh-runs--list td { vertical-align: top; }
 
 .sh-runs-glyph { width: 2rem; }
-.sh-runs-run { width: 5rem; white-space: nowrap; }
+/* table-layout is fixed, so the widths must be on the header row: the first row sets every column. */
+.sh-runs--list th:nth-child(1) { width: 2rem; }
+.sh-runs--list th:nth-child(2) { width: 4rem; }
+.sh-runs--list th:nth-child(4) { width: 11rem; }
+.sh-runs--list th:nth-child(5) { width: 6rem; }
+.sh-runs-run { width: 4rem; white-space: nowrap; }
 
 .sh-runs-lane {
   min-width: 0;
   width: auto;
 }
 
-.sh-runs-result,
 .sh-runs-lane .sh-cell-meta,
 .sh-runs-result .sh-cell-meta {
   display: block;
@@ -47,11 +51,11 @@
 }
 
 .sh-runs-result {
-  width: 8rem;
+  width: 11rem;
 }
 
 .sh-runs-cost {
-  width: 5rem;
+  width: 6rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -59,7 +63,8 @@
 
 @media (max-width: 760px) {
   .sh-runs--list .sh-runs-lane,
-  .sh-runs--list .sh-runs-result {
+  .sh-runs--list .sh-runs-result,
+  .sh-runs--list th:nth-child(4) {
     width: auto;
   }
 }
