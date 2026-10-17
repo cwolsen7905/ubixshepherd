@@ -14,7 +14,6 @@
 .rules-source { text-align: right; color: var(--sh-muted); }
 .rules-allows { color: var(--sh-muted); }
 .rules-table .sh-tag.rules-verdict--refuse { border-color: var(--sh-broken); color: var(--sh-broken); }
-.rules-table .sh-tag.rules-verdict--ask { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
 .rules-table .sh-tag.rules-verdict--proceed { border-color: var(--sh-lichen); color: var(--sh-lichen); }
 .rules-table .sh-tag.rules-verdict--hold { border-color: var(--sh-control); color: var(--sh-muted); }
 @media (max-width: 760px) {

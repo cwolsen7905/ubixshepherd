@@ -4,7 +4,7 @@ import type { ConfigDoc } from '../api/types'
 import { Chip, EmptyState, GroupHeader } from '../ui'
 import './Rules.css'
 
-export type Verdict = 'refuse' | 'hold' | 'ask' | 'proceed'
+export type Verdict = 'refuse' | 'hold' | 'proceed'
 
 export type RuleLayer = 'built-in' | 'workspace' | 'project' | 'repo'
 
