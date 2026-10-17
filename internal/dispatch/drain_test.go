@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -258,4 +259,24 @@ func waitHeldEmpty(t *testing.T, f *fixture) {
 		}
 	}
 	t.Fatal("the held start never went")
+}
+
+// failingDelete is a store whose held starts cannot be removed.
+type failingDelete struct{ store.Store }
+
+func (failingDelete) DeleteHeldStart(context.Context, int64) error { return errors.New("disk full") }
+
+func TestHeldStartIsNotRunTwiceWhenItsRowWillNotGo(t *testing.T) {
+	f := napFixture(t, "0")
+	ctx := context.Background()
+	b, _ := json.Marshal(StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "once"})
+	f.st.AddHeldStart(ctx, store.HeldStart{Request: string(b), Why: "x"})
+	f.runner.Store = failingDelete{f.st}
+	f.runner.RunHeld(ctx)
+	f.runner.Wait()
+	f.runner.RunHeld(ctx)
+	f.runner.Wait()
+	if n := len(runsOf(t, f.st)); n != 1 {
+		t.Errorf("%d runs for one held start", n)
+	}
 }

@@ -203,6 +203,21 @@ func (r *Runner) continued(ctx context.Context, run store.Run) (bool, error) {
 	return false, nil
 }
 
+// dropHeld removes a held start's row. A row that cannot be removed is remembered as
+// done, so the start is not made a second time; the row goes at the next try or the next
+// start of the daemon.
+func (r *Runner) dropHeld(ctx context.Context, id int64) {
+	if err := r.Store.DeleteHeldStart(ctx, id); err != nil {
+		r.Log.Error("remove held start", "id", id, "err", err)
+		if r.consumed == nil {
+			r.consumed = map[int64]bool{}
+		}
+		r.consumed[id] = true
+		return
+	}
+	delete(r.consumed, id)
+}
+
 // RunHeld starts what was held, in the order it was asked for. A start that is held
 // again (a run cap, the daily budget) stays for the next try; one refused for good is
 // dropped and said so. It does nothing while draining.
@@ -227,11 +242,16 @@ func (r *Runner) RunHeld(ctx context.Context) {
 			r.Store.DeleteHeldStart(ctx, h.ID)
 			continue
 		}
+		if r.consumed[h.ID] {
+			// Started already; only its row would not go (see below).
+			r.dropHeld(ctx, h.ID)
+			continue
+		}
 		req.Auto = h.Auto
 		run, err := r.start(ctx, req, true)
 		switch {
 		case err == nil:
-			r.Store.DeleteHeldStart(ctx, h.ID)
+			r.dropHeld(ctx, h.ID)
 			r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started after the restart (%s)", run.ID, h.Why)
 		case errors.Is(err, ErrHeld):
 			r.Log.Info("held start waits", "id", h.ID, "why", err)

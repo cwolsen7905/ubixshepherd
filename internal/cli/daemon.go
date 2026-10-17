@@ -386,13 +386,46 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 // drainPoll is how often a restart looks at the drain.
 const drainPoll = 500 * time.Millisecond
 
+// connectRunning is a client for the running daemon, nil when none is running. A
+// daemon that is there but does not answer (after a few tries) is an error, so a restart
+// does not go on without draining it.
+func connectRunning(ctx context.Context, env Env) (*client.Client, error) {
+	var err error
+	for try := 0; try < 3; try++ {
+		var c *client.Client
+		if c, err = connect(ctx, env); err == nil {
+			return c, nil
+		}
+		if _, serr := os.Stat(env.Layout.Runtime()); serr != nil {
+			return nil, nil // no runtime file: no daemon
+		}
+		if rt, rerr := daemon.ReadRuntime(env.Layout.Runtime()); rerr != nil || !processAlive(rt.PID) {
+			return nil, nil // a file left by a daemon that is gone
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+	return nil, fmt.Errorf("the daemon is running but did not answer (%v); it was left as it is. Try again, or restart without --drain", err)
+}
+
+func processAlive(pid int) bool {
+	p, err := os.FindProcess(pid)
+	return err == nil && p.Signal(syscall.Signal(0)) == nil
+}
+
 // daemonDrain has a running daemon stop starting runs and wait, up to timeout, for the
 // agents going to finish; those still going then are stopped, their sessions kept, and
 // continued after the restart. It returns when the daemon has nothing running. A daemon
 // that is not running has nothing to drain.
 func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
-	c, err := connect(ctx, env)
+	c, err := connectRunning(ctx, env)
 	if err != nil {
+		return err
+	}
+	if c == nil {
 		return nil
 	}
 	d, err := c.Drain(ctx, timeout)
@@ -421,7 +454,8 @@ func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
 			return fmt.Errorf("drain the daemon: %w", err)
 		}
 		if st.Draining == nil {
-			break // the daemon gave the drain up; restart as asked
+			// The daemon gave the drain up (its grace ran out): runs may be going again.
+			return errors.New("the daemon gave up the drain; it was left running. Run the restart again")
 		}
 		d = *st.Draining
 		if d.Runs != last && !d.Drained {

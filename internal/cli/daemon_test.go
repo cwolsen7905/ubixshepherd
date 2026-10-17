@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -137,5 +138,23 @@ func TestDrainWithAZeroTimeoutIsToday(t *testing.T) {
 	}
 	if h.run("daemon", "status"); strings.Contains(h.out.String(), "drain") {
 		t.Errorf("the daemon was drained: %q", h.out)
+	}
+}
+
+func TestConnectRunningTellsNoDaemonFromAnUnansweringOne(t *testing.T) {
+	l := paths.Layout{Home: t.TempDir()}
+	env := Env{Stdout: io.Discard, Stderr: io.Discard, Layout: l, Cwd: l.Home}
+	if c, err := connectRunning(context.Background(), env); c != nil || err != nil {
+		t.Errorf("no runtime file: %v %v", c, err)
+	}
+	// A file left by a daemon that is gone is no daemon.
+	os.WriteFile(l.Runtime(), []byte(`{"addr":"127.0.0.1:1","pid":2147483646,"token":"x"}`), 0o600)
+	if c, err := connectRunning(context.Background(), env); c != nil || err != nil {
+		t.Errorf("stale runtime file: %v %v", c, err)
+	}
+	// A live process that does not answer is an error: the restart must not go on.
+	os.WriteFile(l.Runtime(), []byte(fmt.Sprintf(`{"addr":"127.0.0.1:1","pid":%d,"token":"x"}`, os.Getpid())), 0o600)
+	if c, err := connectRunning(context.Background(), env); c != nil || err == nil {
+		t.Errorf("unanswering daemon: %v %v", c, err)
 	}
 }

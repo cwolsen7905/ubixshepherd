@@ -427,6 +427,9 @@ func (s *Server) draining() *api.Draining {
 	return &api.Draining{Runs: d.Runs, Until: d.Until, Drained: d.Drained}
 }
 
+// maxDrainSeconds caps how long a restart may wait for the agents.
+const maxDrainSeconds = 24 * 60 * 60
+
 // drain answers POST /v1/drain: from now no run starts (a start is held and goes after
 // the restart), and the agents going are given the timeout to finish, then stopped with
 // their sessions kept.
@@ -441,6 +444,10 @@ func (s *Server) drain(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.TimeoutSeconds < 0 {
 		writeError(w, http.StatusBadRequest, errors.New("timeout_seconds must not be negative"))
+		return
+	}
+	if req.TimeoutSeconds > maxDrainSeconds {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("timeout_seconds must be at most %d (24 hours)", maxDrainSeconds))
 		return
 	}
 	s.Runner.Drain(time.Duration(req.TimeoutSeconds) * time.Second)

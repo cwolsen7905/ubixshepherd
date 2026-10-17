@@ -124,6 +124,9 @@ func TestDrainRefusesANegativeTimeout(t *testing.T) {
 	if code := call(t, ts, s.Token, "POST", api.PathDrain, api.DrainRequest{TimeoutSeconds: -1}, nil); code != http.StatusBadRequest {
 		t.Errorf("negative timeout: %d", code)
 	}
+	if code := call(t, ts, s.Token, "POST", api.PathDrain, api.DrainRequest{TimeoutSeconds: 10_000_000_000}, nil); code != http.StatusBadRequest {
+		t.Errorf("huge timeout: %d", code)
+	}
 	// An agent's token cannot drain the daemon.
 	worker, _ := s.MintWorker(1)
 	if code := call(t, ts, worker, "POST", api.PathDrain, api.DrainRequest{TimeoutSeconds: 1}, nil); code != http.StatusForbidden {

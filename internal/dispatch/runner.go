@@ -125,6 +125,8 @@ type Runner struct {
 	drain *drainState
 	// heldMu serialises the work of starting what was held.
 	heldMu sync.Mutex
+	// consumed holds the ids of held starts that began but whose row would not go.
+	consumed map[int64]bool
 	// outOf holds the agents out of quota, by name, until their limit lifts. It lives
 	// with the daemon: a restart tries each agent again.
 	outOf   map[string]outOfQuota
