@@ -173,6 +173,14 @@ describe('ProjectPage', () => {
     expect((t?.textContent ?? '').length).toBeLessThanOrEqual(101)
   })
 
+  it('leaves no stray markers when the cut lands inside bold or code', async () => {
+    const q = decision({ id: 7, question: `${'x '.repeat(45)}**bold words that run on and on and on` })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [q] })
+    await show(<ProjectPage name="shop" />)
+    const t = (await screen.findAllByText(/^(x )+bold( \w+)*…$/))[0]
+    expect(t?.textContent).not.toContain('*')
+  })
+
   it('links lane, decision and run rows to their inspector addresses', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="shop" />)

@@ -59,7 +59,20 @@ function questionTitle(q: string): string {
   // No heading: the first sentence if it is short enough, else a cut at a word.
   const sentence = /^.{1,100}?[.?!](?=\s)/.exec(line)?.[0]
   if (sentence) return sentence
-  return line.slice(0, TITLE_MAX).replace(/\s+\S*$/, '') + '…'
+  return dropOpenMarkers(line.slice(0, TITLE_MAX).replace(/\s+\S*$/, '')) + '…'
+}
+
+/** A cut can leave a markdown marker unclosed: drop the last of any marker that now appears an odd number of times. */
+function dropOpenMarkers(text: string): string {
+  let out = text
+  for (const m of ['**', '`', '*', '_']) {
+    const n = out.split(m).length - 1
+    if (n % 2 === 1) {
+      const at = out.lastIndexOf(m)
+      out = out.slice(0, at) + out.slice(at + m.length)
+    }
+  }
+  return out
 }
 
 /** A lane row: the lane over its repo and gate, the merge request at the right. A link to

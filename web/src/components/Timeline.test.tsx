@@ -234,9 +234,9 @@ describe('the legend', () => {
 })
 
 describe('budgetLabelAt', () => {
-  it('ends left of the now line, and starts at the left edge when there is no room', () => {
-    expect(budgetLabelAt(1000, 900)).toEqual({ x: 894, anchor: 'end' })
-    expect(budgetLabelAt(1000, 1200)).toEqual({ x: 994, anchor: 'end' })
-    expect(budgetLabelAt(1000, 60)).toEqual({ x: 4, anchor: 'start' })
+  it('ends left of the now line, and is left out when there is no room', () => {
+    expect(budgetLabelAt(1000, 900)).toBe(894)
+    expect(budgetLabelAt(1000, 1200)).toBe(994)
+    expect(budgetLabelAt(1000, 60)).toBeNull()
   })
 })
