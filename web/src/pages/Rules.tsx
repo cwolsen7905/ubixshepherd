@@ -79,7 +79,7 @@ export function rulesFrom(doc: ConfigDoc): Rule[] {
     const p = doc.repos[name]
     const eff = autonomyOf(p?.effective)
     for (const v of AUTONOMY) {
-      if (v !== 'merge' && v !== 'push' && !(p?.overridden ?? []).includes(`autonomy.${v}`)) continue
+      if (!(p?.overridden ?? []).includes(`autonomy.${v}`)) continue
       const a = allows(v, eff[v] ?? '')
       out.push({ id: `repo:${name}:${v}`, layer: 'repo', source: `repo ${name}`, name: NAMES[v], holder: a.holder, allows: a.text })
     }

@@ -21,7 +21,8 @@ describe('rulesFrom', () => {
     expect(rules.filter((r) => r.layer === 'project').map((r) => r.source)).toEqual(['project shop'])
     const repo = rules.filter((r) => r.layer === 'repo')
     expect(repo.find((r) => r.id === 'repo:acme-api:merge')).toMatchObject({ holder: 'agent', source: 'repo acme-api' })
-    expect(repo.find((r) => r.id === 'repo:web:merge')?.allows).toMatch(/Only the person merges/)
+    // An inherited value is the workspace's, not the repo's own.
+    expect(repo.find((r) => r.id === 'repo:web:merge')).toBeUndefined()
     expect(repo.find((r) => r.id === 'repo:web:tag')?.holder).toBe('agent')
     expect(repo.find((r) => r.id === 'repo:acme-api:tag')).toBeUndefined()
   })

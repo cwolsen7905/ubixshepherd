@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { feedItem, lane, project, status } from '../test/fixtures'
-import { HistoryPage } from './History'
+import { HistoryPage, mentions } from './History'
 
 const NOW = Date.parse('2026-10-10T15:00:00Z')
 const still: Clock = { now: () => NOW, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -74,5 +74,15 @@ describe('the History page', () => {
     await show()
     await userEvent.click(await screen.findByRole('button', { name: 'Merges' }))
     expect(window.location.hash).toBe('#/history?kind=merge')
+  })
+})
+
+describe('mentions', () => {
+  it('matches whole names only', () => {
+    expect(mentions('api: opened !7', 'api')).toBe(true)
+    expect(mentions('run 3 in lane feat/login', 'feat/login')).toBe(true)
+    expect(mentions('api-gateway: opened !7', 'api')).toBe(false)
+    expect(mentions('a rapid run', 'api')).toBe(false)
+    expect(mentions('x (api) y', 'api')).toBe(true)
   })
 })

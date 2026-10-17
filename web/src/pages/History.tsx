@@ -30,6 +30,12 @@ export function entryHref(e: FeedEntry): string | undefined {
   return undefined
 }
 
+/** Whether `text` names `name` as a whole word, so a repo `api` does not match `api-gateway` or `rapid`. */
+export function mentions(text: string, name: string): boolean {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(^|[^\\w/.-])${esc}($|[^\\w.-])`).test(text)
+}
+
 function dayKey(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -47,11 +53,19 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
   const snap = useSnapshot()
   const now = useNow(60_000)
   const [list, setList] = useState<ProjectSummary[]>([])
+  const [listed, setListed] = useState(false)
   const [text, setText] = useState(q)
   const root = useRef<HTMLDivElement>(null)
   useEffect(() => {
     let live = true
-    projectsApi.list().then((p) => live && setList(p.projects), () => {})
+    projectsApi.list().then(
+      (p) => {
+        if (!live) return
+        setList(p.projects)
+        setListed(true)
+      },
+      () => live && setListed(true),
+    )
     return () => {
       live = false
     }
@@ -73,7 +87,7 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
     () =>
       [...snap.feed]
         .reverse()
-        .filter((e) => (!events || events.includes(e.event)) && (!names || names.some((n) => e.text.includes(n))))
+        .filter((e) => (!events || events.includes(e.event)) && (!names || names.some((n) => mentions(e.text, n))))
         .filter((e) => !needle || `${e.text} ${markFor(e.event).label}`.toLowerCase().includes(needle)),
     [snap.feed, events, names, needle],
   )
@@ -128,8 +142,8 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
         ))}
       </div>
       {days.length === 0 ? (
-        <EmptyState title={snap.ready ? 'Nothing matches.' : 'Loading…'}>
-          {snap.ready && (kind || project || needle ? 'Clear a filter to see more.' : 'Nothing has happened in the feed yet.')}
+        <EmptyState title={snap.ready && (listed || !project) ? 'Nothing matches.' : 'Loading…'}>
+          {snap.ready && (listed || !project) && (kind || project || needle ? 'Clear a filter to see more.' : 'Nothing has happened in the feed yet.')}
         </EmptyState>
       ) : (
         days.map((d) => (

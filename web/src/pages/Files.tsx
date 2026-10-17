@@ -18,6 +18,12 @@ export function FilesPage({ repo = 0, lane = 0, gitRef = '' }: { repo?: number; 
   const lanes = snap.lanes.filter((l) => l.repo_id === repoId)
   const target = chosen && chosen.repo_id === repoId ? chosen : (lanes[0] ?? null)
   const [draft, setDraft] = useState(gitRef)
+  // The address is the truth: a repo or lane change that clears the ref clears the field.
+  const [seen, setSeen] = useState(gitRef)
+  if (seen !== gitRef) {
+    setSeen(gitRef)
+    setDraft(gitRef)
+  }
 
   const pick = (o: { repo?: number; lane?: number; ref?: string }) => go(href.files(o))
 
