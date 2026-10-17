@@ -81,14 +81,23 @@ export function StoredArtifactView({
   const effectiveMode = mode === 'compare' && !older ? 'view' : mode
 
   if (error && !artifact) {
-    return (
-      <div className="sh-artifact-error">
+    const failed = (
+      <>
         <p className="tone-bad">Could not read artifact {id}: {error}</p>
         <button type="button" className="sh-link" onClick={reload}>
           Retry
         </button>
-      </div>
+      </>
     )
+    // On its own page the way back stays, so a failed deep link is not a dead end.
+    if (layout === 'page') {
+      return (
+        <ArtifactView layout="page" backLabel="← Artifacts" backHref={backHref} onBack={onBack} title={`Artifact ${id}`}>
+          {failed}
+        </ArtifactView>
+      )
+    }
+    return <div className="inspector-body">{failed}</div>
   }
   if (!artifact) return <Skeleton lines={4} />
 

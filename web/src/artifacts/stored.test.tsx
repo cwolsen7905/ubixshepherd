@@ -50,4 +50,12 @@ describe('StoredArtifactView', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
     expect(calls.some((c) => c.path === '/v1/artifacts/12/discard')).toBe(true)
   })
+
+  it('keeps the way back and a retry when a page-layout artifact fails to load', async () => {
+    stub([])
+    render(<StoredArtifactView id={99} layout="page" backHref="#/artifacts" />)
+    expect(await screen.findByText(/Could not read artifact 99/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /← Artifacts/ })).toHaveAttribute('href', '#/artifacts')
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
 })
