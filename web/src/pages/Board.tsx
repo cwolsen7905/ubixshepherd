@@ -158,6 +158,7 @@ export function BoardPage({
                       className="row"
                       href={op ? openHref(op) : href.decisions()}
                       aria-current={op && isOpenNow(op) ? 'true' : undefined}
+                      data-selected={i === clamped ? 'true' : undefined}
                       onFocus={() => setSel(i)}
                       onClick={op ? openClick(op) : (e) => (e.preventDefault(), go(href.decisions()))}
                     >

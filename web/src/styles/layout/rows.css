@@ -31,6 +31,8 @@
 .group-needs .row:hover { background: color-mix(in srgb, var(--lantern) 12%, var(--lantern-wash)); }
 .row:focus-visible { outline-offset: -2px; }
 .row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--lichen); }
+/* The keyboard cursor (j/k) is its own state, apart from the row the inspector holds. */
+.row[data-selected="true"] { background: var(--hover); }
 .row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-lane { font-weight: 600; }
 .row-agent, .row-repo { color: var(--muted); }
