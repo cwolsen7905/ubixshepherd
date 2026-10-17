@@ -152,7 +152,16 @@ export function InboxPage({ kind }: { kind?: string }) {
     }
   }, [workspaceIds, snap.decisions.length, snap.waiting?.version])
 
-  const at = cursor ?? openKey(items, open) ?? null
+  // The row whose panel is open: the shared openKey knows decisions and questions only, so merge
+  // requests (and lanes) match through inboxOpen. A panel that changes drops the cursor.
+  const openRow = open ? items.find((it) => { const o = inboxOpen(it); return o !== null && o.kind === open.kind && o.id === open.id }) : undefined
+  const openAt = (openRow ? waitingKey(openRow) : openKey(items, open)) ?? null
+  const [seenOpen, setSeenOpen] = useState(openAt)
+  if (seenOpen !== openAt) {
+    setSeenOpen(openAt)
+    setCursor(null)
+  }
+  const at = cursor ?? openAt
   const move = (dir: 'up' | 'down') => {
     const it = neighbour(items, at, dir)
     if (it) setCursor(waitingKey(it))

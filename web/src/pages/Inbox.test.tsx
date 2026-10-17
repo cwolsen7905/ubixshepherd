@@ -7,6 +7,7 @@ import type { Waiting, WaitingItem } from '../api/types'
 import { ApiError, history, laneApprove, laneChanges, nextUp, waitingOnYou } from '../api/client'
 import { STEP_EVENT } from '../model/waitingStep'
 import { MrInspector } from '../inspector/mr'
+import { InspectorFrame } from '../inspector/Inspector'
 import { InboxPage } from './Inbox'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -169,6 +170,14 @@ describe('InboxPage', () => {
     expect(decodeURIComponent(window.location.hash)).toContain('open=mr:3')
   })
 
+  it('marks the row of the open merge request as selected', async () => {
+    window.location.hash = '#/inbox?open=mr:3'
+    await show()
+    const row = screen.getByRole('button', { name: /Add retries/ })
+    expect(row).toHaveClass('is-selected')
+    expect(row).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('filters the groups with the chips', async () => {
     await show()
     await userEvent.click(screen.getByRole('button', { name: /^Broken/ }))
@@ -189,6 +198,8 @@ describe('InboxPage', () => {
   })
 })
 
+let liveOf: Live | undefined
+
 describe('MR approval panel', () => {
   const diff = {
     lane_id: 3, lane: 'b', branch: 'feat/x', base: 'dev', base_ref: 'dev', head: '4be7d19c0000', mode: 'stat', read_at: '2026-10-08T10:00:00Z',
@@ -200,7 +211,7 @@ describe('MR approval panel', () => {
 
   async function panel() {
     const api = {
-      status: async () => status(), lanes: async () => [lane({ id: 3, branch: 'feat/x' })], runs: async () => [], decisions: async () => [], requests: async () => [], spend: async () => spend(),
+      status: async () => status(), lanes: async () => [lane({ id: 3, branch: 'feat/x', mr: 12, mr_state: 'open' }), lane({ id: 4, branch: 'feat/other', mr: 43, mr_state: 'open' })], runs: async () => [], decisions: async () => [], requests: async () => [], spend: async () => spend(),
       feedLatest: async () => ({ items: [], events: [], last: 0 }), feed: async (after: number) => ({ items: [], events: [], last: after }), next: async () => [],
     } as unknown as Api
     const live = new Live(api, still, async () => waiting)
@@ -209,12 +220,31 @@ describe('MR approval panel', () => {
       await live.readWaiting()
     })
     window.location.hash = '#/inbox?open=mr:3'
+    liveOf = live
     render(
       <LiveProvider live={live}>
         <MrInspector open={{ kind: 'mr', id: 3 }} />
       </LiveProvider>,
     )
   }
+
+  it('names the selected merge request in the crumbs and the title, and its row is selected', async () => {
+    vi.spyOn(laneApprove, 'read').mockResolvedValue(view)
+    vi.spyOn(laneChanges, 'diff').mockResolvedValue(diff as never)
+    await panel()
+    if (!liveOf) throw new Error('no live')
+    // The panel and the list share the address: open=mr:3 is lane 3's merge request, !12.
+    const { unmount } = render(
+      <LiveProvider live={liveOf}>
+        <InspectorFrame open={{ kind: 'mr', id: 3 }} mode="split">page</InspectorFrame>
+      </LiveProvider>,
+    )
+    const aside = await screen.findByRole('complementary')
+    expect(within(aside).getByText('feat/x')).toBeInTheDocument()
+    expect(within(aside).getByText('MR !12')).toBeInTheDocument()
+    expect(within(aside).queryByText('feat/other')).toBeNull()
+    unmount()
+  })
 
   it('asks the question with the head, the commits and what is outside scope', async () => {
     vi.spyOn(laneApprove, 'read').mockResolvedValue(view)

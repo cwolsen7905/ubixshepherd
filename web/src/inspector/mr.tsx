@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ApiError, laneApprove, laneChanges } from '../api/client'
 import type { LaneApproval, LaneDiff, LaneView } from '../api/types'
 import { LaneArtifactsPanel } from '../artifacts'
-import { advanceFrom } from '../chat/strip'
+import { showWaiting } from '../chat/strip'
 import { Changes } from '../components/Changes'
 import { laneSource } from '../conversation/api'
 import { Conversation } from '../conversation/Conversation'
@@ -10,7 +10,8 @@ import { since, shortSha } from '../format'
 import { useNow } from '../hooks'
 import { draftKey, prefillDraft } from '../model/chatDraft'
 import { deskWorkspace } from '../model/next'
-import { waitingKey } from '../model/waitingStep'
+import { neighbour, waitingKey } from '../model/waitingStep'
+import { inboxOpen } from '../pages/Inbox'
 import { go, href, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
 import { Button, EmptyState, Kbd, Tabs } from '../ui'
@@ -117,7 +118,12 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
       if (!mounted.current) return
       setConfirming(false)
       setApproved(true)
-      advanceFrom(items, key)
+      // The next merge request opens here (the shared step only knows decisions and questions).
+      const next = neighbour(items, key, 'down', key)
+      const to = next ? inboxOpen(next) : null
+      if (to) go(withOpen(window.location.hash, to))
+      else if (next) showWaiting(next)
+      else go(withOpen(window.location.hash, undefined))
       void live.readWaiting()
     } catch (e) {
       if (!mounted.current) return
