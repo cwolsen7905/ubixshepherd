@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { usd } from '../format'
 import { budgetUse, heroSub, type CardRow } from '../model/spend'
 import { href } from '../router'
-import { Count, EmptyState, GroupHeader, ListRow, Meter, Skeleton, StatusGlyph } from '../ui'
+import { EmptyState, GroupHeader, ListRow, Meter, Skeleton, StatusGlyph } from '../ui'
 
 /** The big spend figure: today's dollars, "of $X today", "near budget" past 80% of the cap. */
 export function SpendHero({ usdToday, budget, sub, offline }: { usdToday: number; budget: number; sub: { of: string; note: string }; offline: boolean }) {
@@ -76,13 +76,13 @@ export function HoldsCard({ holds, now }: { holds: { agent: string; until: strin
 }
 
 /** A 14-day day as the chart's axis names it: "Oct 3". */
-function dayShort(day: string): string {
+export function dayShort(day: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
   if (!m) return day
   return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1]} ${Number(m[3])}`
 }
 
-function clockShort(iso: string, now: number): string {
+export function clockShort(iso: string, now: number): string {
   const t = new Date(iso)
   if (isNaN(t.getTime())) return iso
   const hm = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`
@@ -159,11 +159,6 @@ export function UsageLoading(): ReactNode {
 
 export function UsageError({ error }: { error: string }): ReactNode {
   return <p className="sh-spend-error">Could not load usage: {error}</p>
-}
-
-/** The pending bar's count, for tests: how many quota holds the view shows. */
-export function HoldsCount({ n }: { n: number }): ReactNode {
-  return <Count count={n} tone="attention" showZero label="agents held" />
 }
 
 export { heroSub }
