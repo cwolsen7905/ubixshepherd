@@ -76,6 +76,9 @@ type Adapter struct {
 	Effort EffortMode
 	// Note is added to the brief: what this CLI's permissions need the agent to know.
 	Note string
+	// NoteFor, when set, returns the run's own note: for a CLI whose note differs
+	// by the run's model (a local one or a hosted one). "" falls back to Note.
+	NoteFor func(o Opts) string
 	// Read turns a line of the agent's output into the run log's line and any cost.
 	Read func(line string) Output
 	// ReadFor, when set, starts the run's own Read: for a CLI whose output reads
@@ -332,8 +335,12 @@ var adapters = map[string]Adapter{
 		NewSession: func(context.Context, string, string) (string, error) { return "", nil },
 		SessionIn:  openCodeSession,
 		// opencode -s opens its TUI on the session, in the lane's worktree.
-		Attach:  func(session, _ string) []string { return []string{"-s", session} },
-		Note:    "You run on a small local model, so keep to small mechanical edits. Make one tool call at a time through the tool interface, never write a tool call out as text. Shepherd's tools are named shepherd_ask_human, shepherd_ask_shepherd and shepherd_report. Commit with `git add` then `git commit`. Do not write tests in a typed codebase: stop and say so instead.",
+		Attach: func(session, _ string) []string { return []string{"-s", session} },
+		// The note differs by the run's model: the small-model limits for a local
+		// model, the standard rules for a hosted one. Note stays the local note,
+		// for a caller that does not ask NoteFor.
+		Note:    openCodeLocalNote,
+		NoteFor: func(o Opts) string { return openCodeNote(o.Model) },
 		Read:    openCodeOutput,
 		ReadFor: func(o Opts) func(string) Output { return openCodeReader(o.Model) },
 		// A hosted model's cost is OpenCode's price-table figure, not the provider's bill.
