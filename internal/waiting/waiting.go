@@ -129,6 +129,13 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 		return out, err
 	}
 	for _, it := range items {
+		// A suggestion that the item may be done: the person decides. It stands in for the
+		// other reasons the item might wait, so it shows once.
+		if wi, ok := suggestedNextItem(ctx, st, it); ok {
+			out.Items = append(out.Items, wi)
+			out.Counts.Next++
+			continue
+		}
 		if it.State == store.NextApproved && it.LaneID != 0 {
 			if wi, ok := closedNextItem(ctx, st, it); ok {
 				out.Items = append(out.Items, wi)
@@ -404,6 +411,33 @@ func pathsIn(q string) []string {
 		out = append(out, tok)
 	}
 	return out
+}
+
+// suggestedNextItem is an item that is neither done nor dropped and carries a suggestion
+// ("done?" or "done or drop?"): something noticed it may be finished, and only the person
+// says so. The action is decide: done, drop (when the suggestion offers it) or still
+// needed, which dismisses it. An item whose lane's merge was seen is left to settle as
+// done instead.
+func suggestedNextItem(ctx context.Context, st store.Store, it store.NextItem) (api.WaitingItem, bool) {
+	if it.Suggestion == "" || it.State == store.NextDone || it.State == store.NextDropped {
+		return api.WaitingItem{}, false
+	}
+	wi := api.WaitingItem{
+		Kind: api.WaitingNext, Action: "decide", Repo: it.Repo, NextID: it.ID,
+		Title: oneLine(it.Title), Detail: oneLine(it.Suggestion),
+		Since: firstTime(it.Suggested, it.Updated, it.Created),
+	}
+	if it.LaneID != 0 {
+		l, err := st.Lane(ctx, it.LaneID)
+		if err == nil {
+			lf, _ := st.LaneForge(ctx, l.ID)
+			if l.State == store.LaneClosed && merged(lf) {
+				return api.WaitingItem{}, false
+			}
+			wi.Lane, wi.LaneID = l.Name, l.ID
+		}
+	}
+	return wi, true
 }
 
 // closedNextItem is an approved Next-up item whose linked lane closed without the

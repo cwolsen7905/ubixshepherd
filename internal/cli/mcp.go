@@ -427,13 +427,15 @@ func mcpTools() []mcpTool {
 			Name:        "next_add",
 			Description: "Put an item on the next-up list: when the person asks (\"put X on the list\"), or when the person and you agreed in chat on concrete work not being started now (call next_list first to avoid a duplicate; the note quotes what the person said; tell them you added it). It starts planned. Never add work from your own ideas the person has not discussed. Approval is the person's: pass approved only when the person's own words in this turn approve it, never your guess.",
 			InputSchema: obj(map[string]any{
-				"title":    map[string]any{"type": "string", "description": "One line naming the work: one merge request's worth."},
-				"repo":     map[string]any{"type": "string", "description": "The repo it is for, by its name in the workspace."},
-				"plan":     map[string]any{"type": "string", "description": "The plan doc, a path under the repo (docs/lane-diff.md)."},
-				"lane":     map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
-				"note":     map[string]any{"type": "string"},
-				"approved": map[string]any{"type": "boolean", "description": "Only when the person approved it in their own words in this turn."},
-				"propose":  map[string]any{"type": "boolean", "description": "Put it up for the person's approval, so it waits in Waiting on you. Leave unset for work agreed in chat: that shows as planned from chat and waits on no one."},
+				"title":      map[string]any{"type": "string", "description": "One line naming the work: one merge request's worth."},
+				"repo":       map[string]any{"type": "string", "description": "The repo it is for, by its name in the workspace."},
+				"plan":       map[string]any{"type": "string", "description": "The plan doc, a path under the repo (docs/lane-diff.md)."},
+				"lane":       map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
+				"note":       map[string]any{"type": "string"},
+				"done_when":  map[string]any{"type": "string", "description": "One line, how to tell the item is done (the acceptance test)."},
+				"depends_on": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Ids of the items that must be done first; this item then shows as blocked until they are."},
+				"approved":   map[string]any{"type": "boolean", "description": "Only when the person approved it in their own words in this turn."},
+				"propose":    map[string]any{"type": "boolean", "description": "Put it up for the person's approval, so it waits in Waiting on you. Leave unset for work agreed in chat: that shows as planned from chat and waits on no one."},
 			}, "title"),
 			args: func(a map[string]any) ([]string, error) {
 				if str(a, "title") == "" {
@@ -444,6 +446,16 @@ func mcpTools() []mcpTool {
 					if v := str(a, k); v != "" {
 						out = append(out, "--"+k, v)
 					}
+				}
+				if v := str(a, "done_when"); v != "" {
+					out = append(out, "--done-when", v)
+				}
+				deps, err := dependsArg(a)
+				if err != nil {
+					return nil, err
+				}
+				if deps != "" {
+					out = append(out, "--depends", deps)
 				}
 				if ok, _ := a["approved"].(bool); ok {
 					out = append(out, "--approved")
@@ -456,17 +468,19 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name: "next_update",
-			Description: "Change a next-up item: its title, note, plan, repo or lane hint, and, only in a turn the person started and with their own words, its state or place. " +
+			Description: "Change a next-up item: its title, note, plan, repo or lane hint, its done_when line or depends_on ids (text, not state), and, only in a turn the person started and with their own words, its state or place. " +
 				"Shepherd refuses a state or move outside such a turn: propose it to the person instead. started and done are derived from the item's lane, not set.",
 			InputSchema: obj(map[string]any{
-				"id":    map[string]any{"type": "integer"},
-				"title": map[string]any{"type": "string"},
-				"note":  map[string]any{"type": "string"},
-				"plan":  map[string]any{"type": "string"},
-				"repo":  map[string]any{"type": "string"},
-				"lane":  map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
-				"state": map[string]any{"type": "string", "enum": []string{"planned", "approved", "deferred", "dropped", "done"}, "description": "The person's call."},
-				"move":  map[string]any{"type": "string", "enum": []string{"top", "up", "down"}, "description": "The person's call: the order is the priority."},
+				"id":         map[string]any{"type": "integer"},
+				"title":      map[string]any{"type": "string"},
+				"note":       map[string]any{"type": "string"},
+				"plan":       map[string]any{"type": "string"},
+				"repo":       map[string]any{"type": "string"},
+				"lane":       map[string]any{"type": "string", "description": "The name the lane for it is expected to have."},
+				"done_when":  map[string]any{"type": "string", "description": "One line, how to tell the item is done; empty clears it."},
+				"depends_on": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}, "description": "Ids of the items that must be done first, replacing the list; empty clears it."},
+				"state":      map[string]any{"type": "string", "enum": []string{"planned", "approved", "deferred", "dropped", "done"}, "description": "The person's call."},
+				"move":       map[string]any{"type": "string", "enum": []string{"top", "up", "down"}, "description": "The person's call: the order is the priority."},
 			}, "id"),
 			args: func(a map[string]any) ([]string, error) {
 				id, ok := a["id"].(float64)
@@ -478,6 +492,16 @@ func mcpTools() []mcpTool {
 					if _, ok := a[k]; ok {
 						out = append(out, "--"+k, str(a, k))
 					}
+				}
+				if _, ok := a["done_when"]; ok {
+					out = append(out, "--done-when", str(a, "done_when"))
+				}
+				if _, ok := a["depends_on"]; ok {
+					deps, err := dependsArg(a)
+					if err != nil {
+						return nil, err
+					}
+					out = append(out, "--depends", deps)
 				}
 				if len(out) == 3 {
 					return nil, fmt.Errorf("say what to change")
@@ -884,6 +908,27 @@ func mcpTools() []mcpTool {
 func str(a map[string]any, k string) string {
 	s, _ := a[k].(string)
 	return s
+}
+
+// dependsArg reads depends_on, an array of item ids, as the comma list --depends takes.
+func dependsArg(a map[string]any) (string, error) {
+	raw, ok := a["depends_on"]
+	if !ok || raw == nil {
+		return "", nil
+	}
+	list, ok := raw.([]any)
+	if !ok {
+		return "", fmt.Errorf("depends_on must be an array of item ids")
+	}
+	ids := make([]string, 0, len(list))
+	for _, v := range list {
+		n, ok := v.(float64)
+		if !ok || n < 1 || n != float64(int64(n)) {
+			return "", fmt.Errorf("depends_on must be an array of item ids")
+		}
+		ids = append(ids, fmt.Sprint(int64(n)))
+	}
+	return strings.Join(ids, ","), nil
 }
 
 func strs(a map[string]any, k string) ([]string, error) {

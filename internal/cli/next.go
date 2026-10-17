@@ -35,6 +35,9 @@ func runNext(ctx context.Context, env Env, args []string) error {
 	title := fs.String("title", "", "update: a new title")
 	state := fs.String("state", "", "update: planned, approved, deferred, dropped or done")
 	move := fs.String("move", "", "update: top, up or down")
+	doneWhen := fs.String("done-when", "", "add, update: one line, how to tell the item is done")
+	depends := fs.String("depends", "", "add, update: ids of the items this one needs done first, comma separated (empty clears)")
+	dismiss := fs.Bool("dismiss", false, "update: dismiss the item's done? suggestion (still needed)")
 	dry := fs.Bool("dry-run", false, "seed: say what would be added")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -78,7 +81,12 @@ func runNext(ctx context.Context, env Env, args []string) error {
 		if len(pos) != 1 {
 			return errUsage
 		}
-		req := api.NextAdd{Title: pos[0], Repo: *repo, Plan: *plan, Lane: *lane, Note: *note, Propose: *propose}
+		req := api.NextAdd{Title: pos[0], Repo: *repo, Plan: *plan, Lane: *lane, Note: *note, Propose: *propose, DoneWhen: *doneWhen}
+		if set["depends"] {
+			if req.DependsOn, err = parseDepends(*depends); err != nil {
+				return err
+			}
+		}
 		if *approved {
 			req.State = store.NextApproved
 		}
@@ -133,14 +141,29 @@ func runNext(ctx context.Context, env Env, args []string) error {
 			return err
 		}
 		return printNextChange(env, v, *asJSON, "linked to lane "+target.Name)
-	case "update":
+	case "update", "edit":
 		id, err := nextID(pos, 1)
 		if err != nil {
 			return err
 		}
 		req := api.NextUpdate{Move: *move,
 			Title: optional(set, "title", *title), Repo: optional(set, "repo", *repo), Plan: optional(set, "plan", *plan),
-			Lane: optional(set, "lane", *lane), Note: optional(set, "note", *note), State: optional(set, "state", *state)}
+			Lane: optional(set, "lane", *lane), Note: optional(set, "note", *note), State: optional(set, "state", *state),
+			DoneWhen: optional(set, "done-when", *doneWhen)}
+		if set["depends"] {
+			deps, err := parseDepends(*depends)
+			if err != nil {
+				return err
+			}
+			if deps == nil {
+				deps = []int64{}
+			}
+			req.DependsOn = &deps
+		}
+		if *dismiss {
+			none := ""
+			req.Suggestion = &none
+		}
 		v, err := c.UpdateNextItem(ctx, id, req)
 		if err != nil {
 			return err
@@ -153,6 +176,38 @@ func runNext(ctx context.Context, env Env, args []string) error {
 		return nextSeed(ctx, env, c, *repo, *dry)
 	}
 	return errUsage
+}
+
+// parseDepends reads "3,7" as item ids; an empty list is none.
+func parseDepends(s string) ([]int64, error) {
+	var out []int64
+	for _, f := range strings.Split(s, ",") {
+		f = strings.TrimSpace(f)
+		if f == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(strings.TrimPrefix(f, "#"), 10, 64)
+		if err != nil || id <= 0 {
+			return nil, fmt.Errorf("--depends takes item ids like 3,7, not %q", f)
+		}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// blockedLine is "blocked on #3, #7" for the items an item still waits on.
+func blockedLine(v api.NextItemView) string {
+	if len(v.BlockedOn) == 0 {
+		return ""
+	}
+	parts := make([]string, len(v.BlockedOn))
+	for i, b := range v.BlockedOn {
+		parts[i] = fmt.Sprintf("#%d", b.ID)
+		if b.State == store.NextDropped {
+			parts[i] += " (dropped: re-plan or drop this too)"
+		}
+	}
+	return "blocked on " + strings.Join(parts, ", ")
 }
 
 // optional is the flag's value when it was passed, nil when it was not, so an empty
@@ -226,6 +281,12 @@ func writeNextList(w io.Writer, l api.NextList) {
 		if v.Why != "" {
 			fmt.Fprintf(w, "        %s: decide whether it is deferred or dropped\n", v.Why)
 		}
+		if line := blockedLine(v); line != "" {
+			fmt.Fprintf(w, "        %s\n", line)
+		}
+		if v.Suggestion != "" {
+			fmt.Fprintf(w, "        suggestion: %s (accept with: shepherd next done %d; dismiss with: shepherd next update %d --dismiss)\n", v.Suggestion, v.ID, v.ID)
+		}
 	}
 	if l.NextUp != 0 {
 		fmt.Fprintln(w, "\n> is next: the first approved item with no lane.")
@@ -262,6 +323,16 @@ func writeNextItem(w io.Writer, v api.NextItemView) {
 	row("MR link", v.MRURL)
 	row("chosen", v.Stored)
 	row("why", v.Why)
+	row("done when", v.DoneWhen)
+	if len(v.DependsOn) > 0 {
+		ids := make([]string, len(v.DependsOn))
+		for i, d := range v.DependsOn {
+			ids[i] = "#" + strconv.FormatInt(d, 10)
+		}
+		row("depends", strings.Join(ids, ", "))
+	}
+	row("blocked", strings.TrimPrefix(blockedLine(v), "blocked on "))
+	row("suggest", v.Suggestion)
 	row("note", v.Note)
 	row("source", v.Source)
 	row("added", age(v.Created)+" ago")

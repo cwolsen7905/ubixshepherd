@@ -27,6 +27,10 @@ type NextAdd struct {
 	Lane  string `json:"lane,omitempty"`
 	Note  string `json:"note,omitempty"`
 	State string `json:"state,omitempty"`
+	// DoneWhen is one line, the acceptance test; DependsOn are the ids of the items
+	// that must be done first.
+	DoneWhen  string  `json:"done_when,omitempty"`
+	DependsOn []int64 `json:"depends_on,omitempty"`
 	// Propose, from the front desk, puts the item up for the person's approval: it
 	// waits in "Waiting on you". Without it a desk item is work registered from chat.
 	Propose bool `json:"propose,omitempty"`
@@ -42,6 +46,12 @@ type NextUpdate struct {
 	Lane  *string `json:"lane,omitempty"`
 	MR    *string `json:"mr,omitempty"`
 	Note  *string `json:"note,omitempty"`
+	// DoneWhen and DependsOn replace the stored value; an empty one clears it.
+	DoneWhen  *string  `json:"done_when,omitempty"`
+	DependsOn *[]int64 `json:"depends_on,omitempty"`
+	// Suggestion replaces the item's "done?" suggestion; empty dismisses it, which also
+	// resets the weekly re-check's clock. Only the person acts on a suggestion.
+	Suggestion *string `json:"suggestion,omitempty"`
 	// State is planned, approved, deferred, dropped or done. started is derived and
 	// cannot be set.
 	State *string `json:"state,omitempty"`
@@ -49,6 +59,14 @@ type NextUpdate struct {
 	LaneID *int64 `json:"lane_id,omitempty"`
 	// Move is top, up or down within the item's state.
 	Move string `json:"move,omitempty"`
+}
+
+// NextBlocker is a dependency that is not done yet.
+type NextBlocker struct {
+	ID    int64  `json:"id"`
+	Title string `json:"title"`
+	// State is the dependency's effective state; a dropped one keeps the item blocked.
+	State string `json:"state"`
 }
 
 // NextSourceMatrix is the Source of a row read through from a repo's work matrix.
@@ -71,6 +89,15 @@ type NextItemView struct {
 	// Proposed marks an item an agent or the desk added that the person has not approved.
 	Proposed bool   `json:"proposed,omitempty"`
 	Note     string `json:"note,omitempty"`
+	// DoneWhen, DependsOn and BlockedOn: the acceptance line, the items this one waits
+	// for, and those of them not done. Blocked is derived, never stored, and a blocked
+	// item is never NextUp.
+	DoneWhen  string        `json:"done_when,omitempty"`
+	DependsOn []int64       `json:"depends_on,omitempty"`
+	BlockedOn []NextBlocker `json:"blocked_on,omitempty"`
+	// Suggestion is a "done?" or "done or drop?" line something noticed; the person
+	// accepts it by acting or dismisses it.
+	Suggestion string `json:"suggestion,omitempty"`
 	// LaneID, LaneName and LaneState describe the linked lane; MR, MRURL and MRState its
 	// merge request as the forge last said, or the MR recorded on the item.
 	LaneID    int64  `json:"lane_id,omitempty"`

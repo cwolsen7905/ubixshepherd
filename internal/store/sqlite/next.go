@@ -11,14 +11,22 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-const nextCols = `id, title, repo, plan, lane, lane_id, mr, state, rank, source, note, created, updated, done_at`
+const nextCols = `id, title, repo, plan, lane, lane_id, mr, state, rank, source, note, created, updated, done_at,
+	done_when, depends_on, suggestion, suggested, checked`
 
 func scanNext(sc interface{ Scan(...any) error }) (store.NextItem, error) {
 	var it store.NextItem
-	var created, updated, done string
+	var created, updated, done, deps, suggested, checked string
 	err := sc.Scan(&it.ID, &it.Title, &it.Repo, &it.Plan, &it.Lane, &it.LaneID, &it.MR, &it.State, &it.Rank,
-		&it.Source, &it.Note, &created, &updated, &done)
+		&it.Source, &it.Note, &created, &updated, &done, &it.DoneWhen, &deps, &it.Suggestion, &suggested, &checked)
 	it.Created, it.Updated = parseTime(created), parseTime(updated)
+	it.DependsOn = store.ParseDeps(deps)
+	if suggested != "" {
+		it.Suggested = parseTime(suggested)
+	}
+	if checked != "" {
+		it.Checked = parseTime(checked)
+	}
 	if done != "" {
 		t := parseTime(done)
 		it.DoneAt = &t
@@ -53,11 +61,15 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 	if it.Source == "" {
 		it.Source = store.NextByPerson
 	}
+	it.DoneWhen = strings.TrimSpace(it.DoneWhen)
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return it, err
 	}
 	defer tx.Rollback()
+	if it.DependsOn, err = checkDeps(ctx, tx, 0, it.DependsOn); err != nil {
+		return it, err
+	}
 	rank, err := bottomRank(ctx, tx, it.State)
 	if err != nil {
 		return it, err
@@ -67,9 +79,10 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 	if it.State == store.NextDone {
 		done = t
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO next_items (title, repo, plan, lane, lane_id, mr, state, rank, source, note, created, updated, done_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		it.Title, it.Repo, it.Plan, it.Lane, it.LaneID, it.MR, it.State, rank, it.Source, it.Note, t, t, done)
+	res, err := tx.ExecContext(ctx, `INSERT INTO next_items (title, repo, plan, lane, lane_id, mr, state, rank, source, note, created, updated, done_at, done_when, depends_on)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		it.Title, it.Repo, it.Plan, it.Lane, it.LaneID, it.MR, it.State, rank, it.Source, it.Note, t, t, done,
+		it.DoneWhen, store.FormatDeps(it.DependsOn))
 	if err != nil {
 		return it, err
 	}
@@ -78,6 +91,52 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 		return it, err
 	}
 	return s.NextItem(ctx, id)
+}
+
+// checkDeps returns deps without repeats and checks them for item id (0 for one not yet
+// added): each must be another item, and the list must not close a cycle.
+func checkDeps(ctx context.Context, tx *sql.Tx, id int64, deps []int64) ([]int64, error) {
+	if len(deps) == 0 {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, depends_on FROM next_items`)
+	if err != nil {
+		return nil, err
+	}
+	all := map[int64][]int64{}
+	for rows.Next() {
+		var n int64
+		var d string
+		if err := rows.Scan(&n, &d); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		all[n] = store.ParseDeps(d)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	seen := map[int64]bool{}
+	var out []int64
+	for _, d := range deps {
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		if d == id {
+			return nil, fmt.Errorf("%w: item %d cannot depend on itself", store.ErrConflict, id)
+		}
+		if _, ok := all[d]; !ok {
+			return nil, fmt.Errorf("%w: no item %d to depend on", store.ErrConflict, d)
+		}
+		out = append(out, d)
+	}
+	if id != 0 && store.DependencyCycle(id, out, all) {
+		return nil, fmt.Errorf("%w: those dependencies would make item %d wait on itself", store.ErrConflict, id)
+	}
+	return out, nil
 }
 
 // bottomRank is the rank after the last item of a state.
@@ -147,6 +206,14 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 	if p.LaneID != nil {
 		it.LaneID = *p.LaneID
 	}
+	if p.DoneWhen != nil {
+		it.DoneWhen = strings.TrimSpace(*p.DoneWhen)
+	}
+	if p.DependsOn != nil {
+		if it.DependsOn, err = checkDeps(ctx, tx, id, *p.DependsOn); err != nil {
+			return it, err
+		}
+	}
 	if p.State != nil && *p.State != it.State {
 		if !validNextState(*p.State) {
 			return it, fmt.Errorf("unknown state %q", *p.State)
@@ -160,6 +227,20 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 		}
 	}
 	t := now()
+	if p.Suggestion != nil {
+		it.Suggestion = strings.TrimSpace(*p.Suggestion)
+		it.Suggested = time.Time{}
+		if it.Suggestion != "" {
+			it.Suggested = time.Now().UTC()
+		}
+	}
+	if p.Checked != nil {
+		it.Checked = p.Checked.UTC()
+	}
+	// A suggestion is about an item still open: finishing or dropping it answers it.
+	if it.State == store.NextDone || it.State == store.NextDropped {
+		it.Suggestion, it.Suggested = "", time.Time{}
+	}
 	if it.State == store.NextDone && it.DoneAt == nil {
 		d := time.Now().UTC()
 		if p.DoneAt != nil {
@@ -171,9 +252,18 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 	if it.DoneAt != nil {
 		done = it.DoneAt.UTC().Format(time.RFC3339Nano)
 	}
+	var suggested, checked string
+	if !it.Suggested.IsZero() {
+		suggested = it.Suggested.UTC().Format(time.RFC3339Nano)
+	}
+	if !it.Checked.IsZero() {
+		checked = it.Checked.UTC().Format(time.RFC3339Nano)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE next_items SET title = ?, repo = ?, plan = ?, lane = ?, lane_id = ?, mr = ?,
-		state = ?, rank = ?, note = ?, updated = ?, done_at = ? WHERE id = ?`,
-		it.Title, it.Repo, it.Plan, it.Lane, it.LaneID, it.MR, it.State, it.Rank, it.Note, t, done, id); err != nil {
+		state = ?, rank = ?, note = ?, updated = ?, done_at = ?, done_when = ?, depends_on = ?, suggestion = ?,
+		suggested = ?, checked = ? WHERE id = ?`,
+		it.Title, it.Repo, it.Plan, it.Lane, it.LaneID, it.MR, it.State, it.Rank, it.Note, t, done,
+		it.DoneWhen, store.FormatDeps(it.DependsOn), it.Suggestion, suggested, checked, id); err != nil {
 		return it, err
 	}
 	if err := tx.Commit(); err != nil {

@@ -1,6 +1,10 @@
 # Next-up guards: keeping the list current
 
 Status: **proposed**; the maintainer approved all five guards ("go with all of it").
+Built so far: guard 1 (watcher and lane close), expiry, the migration, `done_when` and
+`depends_on` (with `blocked_on` and a cycle check) through the API, CLI and MCP, and the
+suggestion actions in Waiting on you. Not yet: what *writes* a suggestion (the still-needed
+brief's `ALREADY DONE:` report and the weekly re-check), duplicate warnings and the drift check.
 This note is the design; the code lands in separate merge requests, one per guard where
 practical. Read [backlog-next.md](../backlog-next.md) first: this extends the Next-up list
 it built.
@@ -165,6 +169,17 @@ state change's own line.
 | done on merge | the system, on the forge's word; recorded |
 | expiry of an unapproved *proposal* to deferred | the system, on the clock; recorded; reversible |
 | everything else (re-check, already-done, drift, duplicates) | suggestion only |
+
+## Suggestions in Waiting on you
+
+An item that is not done or dropped and carries a `suggestion` shows in Waiting on you as
+kind `next`, action `decide`, the suggestion line as the detail. A suggestion that starts
+`done or drop?` offers Done, Drop and Still needed; any other (`done?`) offers Done and
+Still needed. Done and Drop are the state change, and either clears the suggestion. Still
+needed is `PATCH` with an empty `suggestion`: it clears the line and stamps `checked`, so
+the weekly re-check starts over. Only the person may do any of these; the desk may in a
+turn the person started. An item whose lane's merge was seen is left to settle as done, not
+asked about.
 
 ## Delivery
 

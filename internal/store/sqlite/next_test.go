@@ -2,8 +2,10 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -108,5 +110,56 @@ func TestGateResultsAndBadge(t *testing.T) {
 	}
 	if g, _ := db.LastGateResult(ctx, lane.ID); g == nil || g.SHA != "aaa" {
 		t.Errorf("last = %+v", g)
+	}
+}
+
+func TestNextItemGuardFields(t *testing.T) {
+	ctx := context.Background()
+	db, err := Open(ctx, filepath.Join(t.TempDir(), "s.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	a, _ := db.AddNextItem(ctx, store.NextItem{Title: "a", DoneWhen: "  a lists as done "})
+	b, err := db.AddNextItem(ctx, store.NextItem{Title: "b", DependsOn: []int64{a.ID, a.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.DoneWhen != "a lists as done" || len(b.DependsOn) != 1 || b.DependsOn[0] != a.ID {
+		t.Fatalf("stored: %+v %+v", a, b)
+	}
+	if _, err := db.AddNextItem(ctx, store.NextItem{Title: "c", DependsOn: []int64{99}}); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("unknown dependency: %v", err)
+	}
+	self, cycle := []int64{a.ID}, []int64{b.ID}
+	if _, err := db.UpdateNextItem(ctx, a.ID, store.NextPatch{DependsOn: &self}); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("self dependency: %v", err)
+	}
+	if _, err := db.UpdateNextItem(ctx, a.ID, store.NextPatch{DependsOn: &cycle}); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("cycle: %v", err)
+	}
+	none := []int64{}
+	if it, err := db.UpdateNextItem(ctx, b.ID, store.NextPatch{DependsOn: &none}); err != nil || len(it.DependsOn) != 0 {
+		t.Errorf("clear: %v %+v", err, it)
+	}
+
+	// A suggestion is stamped when set, cleared with its stamp, and answered by finishing.
+	sug := "done?: the work landed in abc123"
+	it, err := db.UpdateNextItem(ctx, a.ID, store.NextPatch{Suggestion: &sug})
+	if err != nil || it.Suggestion != sug || it.Suggested.IsZero() {
+		t.Fatalf("suggest: %v %+v", err, it)
+	}
+	empty := ""
+	if it, _ = db.UpdateNextItem(ctx, a.ID, store.NextPatch{Suggestion: &empty}); it.Suggestion != "" || !it.Suggested.IsZero() {
+		t.Errorf("dismiss: %+v", it)
+	}
+	db.UpdateNextItem(ctx, a.ID, store.NextPatch{Suggestion: &sug})
+	done := store.NextDone
+	if it, _ = db.UpdateNextItem(ctx, a.ID, store.NextPatch{State: &done}); it.Suggestion != "" {
+		t.Errorf("done keeps the suggestion: %+v", it)
+	}
+	at := time.Now().Add(-time.Hour)
+	if it, _ = db.UpdateNextItem(ctx, b.ID, store.NextPatch{Checked: &at}); it.Checked.IsZero() {
+		t.Errorf("checked not stored: %+v", it)
 	}
 }

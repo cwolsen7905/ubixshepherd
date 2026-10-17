@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api, ApiError, waitingOnYou } from '../api/client'
+import { api, ApiError, nextUp, waitingOnYou } from '../api/client'
 import type { DecisionView, WaitingItem } from '../api/types'
 import { splitQuestion } from '../components/DecisionCard'
 import { Glyph } from '../components/Glyph'
 import { inline } from '../conversation/Markdown'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
-import { neighbour, openKey, waitingKey } from '../model/waitingStep'
+import { isSuggestion, neighbour, openKey, SUGGESTION_LABEL, suggestionChoices, suggestionPatch, waitingKey, type SuggestionChoice } from '../model/waitingStep'
 import { go, href, parse, useFocusTarget, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
 import '../styles/pages/inbox.css'
@@ -80,7 +80,7 @@ export function InboxPage({ kind }: { kind?: string }) {
   const [done, setDone] = useState<DecisionView[] | null>(null)
   const open = parse(window.location.hash).open
   const [notes, setNotes] = useState<Record<string, { text: string; bad: boolean }>>({})
-  const [shipping, setShipping] = useState<string | null>(null)
+  const [shipping, setBusy] = useState<string | null>(null)
   // A deep link (including the old #/decisions?d=N) scrolls its decision to the middle and marks it.
   const openDecision = open?.kind === 'decision' ? open.id : undefined
   const lit = useFocusTarget(openDecision, all.some((it) => it.decision_id === openDecision), (id) => `[data-decision-id="${id}"]`)
@@ -88,7 +88,7 @@ export function InboxPage({ kind }: { kind?: string }) {
   const ship = async (it: WaitingItem) => {
     const key = waitingKey(it)
     if (!it.lane_id) return
-    setShipping(key)
+    setBusy(key)
     try {
       const r = await waitingOnYou.ship(it.lane_id)
       setNotes((n) => ({ ...n, [key]: { text: r.message || 'Shipped.', bad: false } }))
@@ -96,7 +96,24 @@ export function InboxPage({ kind }: { kind?: string }) {
       const text = e instanceof ApiError || e instanceof Error ? e.message : String(e)
       setNotes((n) => ({ ...n, [key]: { text: `Not shipped: ${text}`, bad: true } }))
     } finally {
-      setShipping(null)
+      setBusy(null)
+      void live.readWaiting()
+    }
+  }
+
+  // Answering a "done?" suggestion is the person's click: done, drop, or still needed.
+  const settle = async (it: WaitingItem, choice: SuggestionChoice) => {
+    const key = waitingKey(it)
+    if (!it.next_id) return
+    setBusy(key)
+    try {
+      await nextUp.update(it.next_id, suggestionPatch(choice))
+      setNotes((n) => Object.fromEntries(Object.entries(n).filter(([k]) => k !== key)))
+    } catch (e) {
+      const text = e instanceof ApiError || e instanceof Error ? e.message : String(e)
+      setNotes((n) => ({ ...n, [key]: { text: `Not changed: ${text}`, bad: true } }))
+    } finally {
+      setBusy(null)
       void live.readWaiting()
     }
   }
@@ -213,11 +230,19 @@ export function InboxPage({ kind }: { kind?: string }) {
                     >
                       <span className="inbox-kind faint">{KIND_LABEL[it.kind]}</span>
                       <span className="inbox-title">{inline(splitQuestion(it.title).head || it.title)}</span>
+                      {isSuggestion(it) && it.detail ? <span className="inbox-suggestion">{it.detail}</span> : null}
                       <span className="inbox-meta faint">
                         {where}
                         {it.since ? ` · waiting ${since(it.since, now)}` : ''}
                       </span>
                     </button>
+                    {isSuggestion(it)
+                      ? suggestionChoices(it).map((c) => (
+                          <button key={c} type="button" className="inbox-act" disabled={shipping === waitingKey(it)} onClick={() => void settle(it, c)}>
+                            {SUGGESTION_LABEL[c]}
+                          </button>
+                        ))
+                      : null}
                     {it.action === 'ship' && it.lane_id ? (
                       <button type="button" className="inbox-act" disabled={shipping === waitingKey(it)} onClick={() => void ship(it)}>
                         {shipping === waitingKey(it) ? 'Shipping…' : 'Ship'}

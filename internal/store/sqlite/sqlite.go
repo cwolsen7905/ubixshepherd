@@ -461,6 +461,14 @@ var migrations = []string{
 		UNIQUE (artifact_id, kind, ref)
 	);
 	CREATE INDEX artifact_links_ref ON artifact_links (kind, ref);`,
+	// Next-up guards (docs/design/next-up-guards.md): the acceptance line, the items an
+	// item waits on (ids, comma separated), the one-line "done?" suggestion with when it
+	// was made, and when the weekly re-check last ran.
+	`ALTER TABLE next_items ADD COLUMN done_when  TEXT NOT NULL DEFAULT '';
+	ALTER TABLE next_items ADD COLUMN depends_on TEXT NOT NULL DEFAULT '';
+	ALTER TABLE next_items ADD COLUMN suggestion TEXT NOT NULL DEFAULT '';
+	ALTER TABLE next_items ADD COLUMN suggested  TEXT NOT NULL DEFAULT '';
+	ALTER TABLE next_items ADD COLUMN checked    TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
