@@ -75,10 +75,10 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('mergeRule', () => {
   it('reads the repo profile first, then the defaults, then you', () => {
-    expect(mergeRule(configDoc, 'acme-api')).toBe('agent merges')
-    expect(mergeRule(configDoc, 'other')).toBe('you merge')
-    expect(mergeRule(null, 'acme-api')).toBe('you merge')
-    expect(mergeRule({} as ConfigDoc, 'acme-api')).toBe('you merge')
+    expect(mergeRule(configDoc, 'acme-api')).toBe('Rule: agent merges')
+    expect(mergeRule(configDoc, 'other')).toBe('By a person')
+    expect(mergeRule(null, 'acme-api')).toBe('By a person')
+    expect(mergeRule({} as ConfigDoc, 'acme-api')).toBe('By a person')
   })
 })
 
@@ -86,25 +86,31 @@ describe('ProjectsPage', () => {
   it('lists each project with its repos, merge rule, lanes, spend and needs-you count', async () => {
     daemon({ projects: [project({ waiting: 1, running: 2, lanes: 3 }), unassigned()] })
     await show(<ProjectsPage />)
-    const shop = screen.getByRole('link', { name: 'shop' }).closest('section') as HTMLElement
+    const shop = screen.getByRole('link', { name: 'shop' }).closest('tr') as HTMLElement
     expect(within(shop).getByText('acme-api')).toBeInTheDocument()
-    expect(within(shop).getByText(/agent merges/)).toBeInTheDocument()
-    expect(within(shop).getByText(/3 open/)).toBeInTheDocument()
-    expect(within(shop).getByText(/waiting on you/)).toBeInTheDocument()
+    expect(within(shop).getByText(/Rule: agent merges/)).toBeInTheDocument()
+    expect(within(shop).getByText('3')).toBeInTheDocument()
+    expect(within(shop).getByText('1 waiting')).toBeInTheDocument()
     expect(within(shop).getByRole('meter')).toHaveAttribute('aria-valuetext', '$1.50 of $10.00')
-    const un = screen.getByRole('link', { name: 'Unassigned' }).closest('section') as HTMLElement
+    const un = screen.getByRole('link', { name: 'Unassigned' }).closest('tr') as HTMLElement
     expect(within(un).getByText('docs')).toBeInTheDocument()
-    expect(within(un).getByText(/you merge/)).toBeInTheDocument()
+    expect(within(un).getByText('By a person')).toBeInTheDocument()
     expect(within(un).queryByRole('meter')).toBeNull()
     expect(screen.getByRole('link', { name: 'Unassigned' })).toHaveAttribute('href', '#/unassigned')
     expect(screen.getByRole('link', { name: 'shop' })).toHaveAttribute('href', '#/projects/shop')
   })
 
+  it('summarises projects, repos and open lanes in the header', async () => {
+    daemon({ projects: [project({ lanes: 3 }), unassigned()] })
+    await show(<ProjectsPage />)
+    expect(screen.getByText(/2 projects · 2 repos · \d+ open lanes/)).toBeInTheDocument()
+  })
+
   it('shows zero waiting as faint words, never as a badge', async () => {
     daemon({ projects: [project({ waiting: 0, lanes: 1 }), unassigned()] })
     await show(<ProjectsPage />)
-    const shop = screen.getByRole('link', { name: 'shop' }).closest('section') as HTMLElement
-    expect(within(shop).getByText('0 waiting on you')).toHaveClass('sh-faint')
+    const shop = screen.getByRole('link', { name: 'shop' }).closest('tr') as HTMLElement
+    expect(within(shop).getByText('Nothing')).toHaveClass('sh-faint')
     expect(shop.querySelector('[data-component="Count"]')).toBeNull()
   })
 
