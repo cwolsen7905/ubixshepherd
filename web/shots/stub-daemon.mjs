@@ -9,6 +9,7 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import zlib from 'node:zlib'
 
 const dist = path.resolve(process.argv[2] ?? 'dist')
 const port = Number(process.argv[3] || process.env.SHOTS_PORT || 5199)
@@ -213,12 +214,13 @@ const lanes = () => BUSY ? busyNow().lanes : [
 const run = (id, lane_id, ln, repo, state, endedMinAgo, o = {}) => ({
   id, lane_id, agent: 'claude', model: 'claude-sonnet-5-5', prompt: 'Implement the change described in the lane brief.',
   state, log: '', start_sha: 'a1b2c3d', end_sha: state === 'running' ? undefined : 'e4f5a6b', commits: 2,
-  started: ago(endedMinAgo + 9), ended: state === 'running' ? undefined : ago(endedMinAgo),
+  started: ago(endedMinAgo + (o.minutes ?? 9)), ended: state === 'running' ? undefined : ago(endedMinAgo),
   cost_usd: Math.round((0.4 + id / 7) * 100) / 100, lane: ln, repo, worktree: `/work/${repo}-${lane_id}`, ...o,
 })
 const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
-  run(15, 1, 'feat/login-sessions', 'acme-api', 'succeeded', 48, { commits: 3, prompt: 'Store session tokens server side with a 12 hour expiry.' }),
-  run(16, 2, 'fix/cache-invalidation', 'acme-api', 'succeeded', 26, { prompt: 'Invalidate the product cache when a price changes.' }),
+  run(14, 2, 'fix/cache-invalidation', 'acme-api', 'failed', 140, { minutes: 22, commits: 0, exit_code: 1, error: 'make check failed: TestPriceChange timed out after 30s', prompt: 'Invalidate the product cache when a price changes.' }),
+  run(15, 1, 'feat/login-sessions', 'acme-api', 'succeeded', 48, { minutes: 31, commits: 3, prompt: 'Store session tokens server side with a 12 hour expiry.' }),
+  run(16, 2, 'fix/cache-invalidation', 'acme-api', 'succeeded', 26, { minutes: 14, prompt: 'Invalidate the product cache when a price changes.' }),
   run(17, 4, 'feat/export-csv', 'acme-web', 'running', 0, {
     prompt: 'Add a CSV export to the orders table.',
     progress: { line: 'running make check (2 commits, 9m)', step: 'running make check', commits: 2, elapsed_seconds: 540 },
@@ -227,8 +229,8 @@ const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
     agent: 'opencode', model: 'acme-large', prompt: 'Split the queue worker into a poller and a handler.',
     progress: { line: 'editing worker/poller.go (1 commit, 6m)', step: 'editing worker/poller.go', commits: 1, elapsed_seconds: 360 },
   }),
-  run(19, 3, 'chore/bump-deps', 'acme-web', 'succeeded', 1500, { agent: 'cursor', prompt: 'Bump the minor versions of the dependencies.' }),
-  run(20, 6, 'docs/install-guide', 'acme-docs', 'succeeded', 75, { agent: 'copilot', prompt: 'Write an install guide for Linux and macOS.' }),
+  run(19, 3, 'chore/bump-deps', 'acme-web', 'succeeded', 1500, { minutes: 6, agent: 'cursor', prompt: 'Bump the minor versions of the dependencies.' }),
+  run(20, 6, 'docs/install-guide', 'acme-docs', 'succeeded', 75, { minutes: 17, agent: 'copilot', prompt: 'Write an install guide for Linux and macOS.' }),
 ]
 
 const PLAN_MD = `# Export orders as CSV
@@ -429,7 +431,10 @@ function configDoc() {
     effective: { daemon: { budget: 25, max_runs: 4, poll: '60s' }, keep_going: { cap: 5 }, web: { editor_url: 'vscode://file/{path}' } },
     defaults: { raw: {}, effective: { gate: 'make check', autonomy: { push: 'human', merge: 'human' }, agent: { model: { claude: 'anthropic/claude-sonnet-5-5', opencode: 'acme/acme-large' } } }, overridden: [] },
     repos,
-    projects: { acme: { raw: { repos: SAMPLE_REPOS }, effective: { repos: SAMPLE_REPOS } } },
+    projects: {
+      acme: { raw: { repos: ['acme-api', 'acme-web'], autonomy: { push: 'shepherd' } }, effective: { repos: ['acme-api', 'acme-web'] } },
+      'acme-docs': { raw: { repos: ['acme-docs'] }, effective: { repos: ['acme-docs'] } },
+    },
     sections: [
       { id: 'daemon', label: 'Daemon', root: ['daemon'], fields: [FIELD(['budget'], 'number', 'Daily budget (USD)'), FIELD(['max_runs'], 'number', 'Max runs'), FIELD(['poll'], 'string', 'Poll', { restart: true })] },
       { id: 'keep_going', label: 'Keep going', root: ['keep_going'], fields: [FIELD(['cap'], 'number', 'Spend cap (USD)', { risk: true })] },
@@ -479,9 +484,10 @@ function deskStream(req, res, u) {
 
 // A lane's changes: a few commits, one file outside the scope, one uncommitted, one untracked.
 function laneDiff(id, file) {
+  const ln = lanes().find((l) => l.id === id) ?? lanes()[0]
   const f = (path, status, added, removed, o = {}) => ({ path, status, added, removed, in_scope: true, ...o })
   const base = {
-    lane_id: id, lane: 'feat/login-sessions', repo: 'acme-api', branch: 'feat/login-sessions', base: 'dev', base_ref: 'origin/dev',
+    lane_id: id, lane: ln.name, repo: ln.repo, branch: ln.branch, base: 'dev', base_ref: 'origin/dev',
     merge_base: '9f1c2ab0', head: '4be7d19c33aa', mode: file ? 'file' : 'stat', read_at: new Date().toISOString(),
     commits: [
       { sha: '1a2b3c4d5e6f', subject: 'feat(auth): store sessions server side', author: 'Claude', date: ago(95), files: 3 },
@@ -510,6 +516,164 @@ function laneDiff(id, file) {
 }
 
 
+
+// A tiny PNG for the image artifact: a gradient with a bar chart, drawn with zlib only.
+function samplePng() {
+  const W = 480, H = 270
+  const raw = Buffer.alloc((W * 3 + 1) * H)
+  const bars = [0.35, 0.6, 0.45, 0.8, 0.55, 0.9, 0.7]
+  for (let y = 0; y < H; y++) {
+    raw[y * (W * 3 + 1)] = 0
+    for (let x = 0; x < W; x++) {
+      const o = y * (W * 3 + 1) + 1 + x * 3
+      let c = [24 + (y * 30) / H, 38 + (y * 40) / H, 58 + (x * 30) / W]
+      const b = Math.floor((x - 40) / 56)
+      if (b >= 0 && b < bars.length && (x - 40) % 56 < 40 && y > H - 30 - bars[b] * (H - 80) && y < H - 30) c = [214, 168, 70]
+      if (y === H - 30 && x > 30 && x < W - 20) c = [200, 205, 215]
+      raw[o] = c[0]; raw[o + 1] = c[1]; raw[o + 2] = c[2]
+    }
+  }
+  const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0 })
+  const crc = (buf) => { let c = 0xffffffff; for (const b of buf) c = crcTable[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0 }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length)
+    const td = Buffer.concat([Buffer.from(type), data])
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td))
+    return Buffer.concat([len, td, c])
+  }
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
+const EXPORT_TS = `// Streams orders into a Blob as they arrive, so memory stays flat.
+export async function exportOrders(rows: AsyncIterable<Order>): Promise<Blob> {
+  const parts: string[] = [HEADER]
+  for await (const order of rows) {
+    parts.push(quote(order) + '\\n')
+  }
+  return new Blob(parts, { type: 'text/csv' })
+}
+
+function quote(o: Order): string {
+  return [o.id, o.customer, o.total].map((f) => /[",\\n]/.test(String(f)) ? '"' + String(f).replace(/"/g, '""') + '"' : String(f)).join(',')
+}
+`
+const SESSION_GO = `package auth
+
+import (
+\t"context"
+\t"database/sql"
+\t"errors"
+)
+
+// Open reads a session from the store; an expired or revoked session is ErrExpired.
+func (s *Store) Open(ctx context.Context, id string) (*Session, error) {
+\tif id == "" {
+\t\treturn nil, ErrNoSession
+\t}
+\tsess, err := s.rows.Get(ctx, id)
+\tif err != nil {
+\t\tif errors.Is(err, sql.ErrNoRows) {
+\t\t\treturn nil, ErrExpired
+\t\t}
+\t\treturn nil, err
+\t}
+\treturn sess, nil
+}
+`
+const README_MD = `# acme
+
+Orders, sessions and the web storefront.
+
+## Layout
+
+- \`internal/auth\`: sessions, stored server side.
+- \`web/orders\`: the orders table and its CSV export.
+- \`docs\`: install guide and plans.
+
+Run \`make check\` before every push.
+`
+// The files each lane's worktree holds, by path; a directory lists its children.
+const FILES = {
+  'README.md': README_MD,
+  'Makefile': 'check:\n\tgofmt -l .\n\tgo vet ./...\n\tgo test ./...\n',
+  'internal/auth/session.go': SESSION_GO,
+  'internal/auth/session_test.go': 'package auth\n\nimport "testing"\n\nfunc TestOpenExpired(t *testing.T) {\n\tt.Skip("sample")\n}\n',
+  'internal/auth/logout.go': 'package auth\n\n// Logout drops the session row and the cookie.\nfunc (s *Store) Logout(id string) error { return nil }\n',
+  'web/orders/export.ts': EXPORT_TS,
+  'web/orders/table.tsx': 'export function OrdersTable() {\n  return null\n}\n',
+  'docs/plans/export-csv.md': PLAN_MD,
+  'docs/install.md': '# Install\n\nDownload the archive for your system and put the binary on your path.\n',
+}
+function fileNode(p) {
+  p = p.replace(/\/$/, '')
+  const name = (x) => x.split('/').pop()
+  if (Object.hasOwn(FILES, p)) return { path: p, name: name(p), kind: 'file', size: FILES[p].length, mime: 'text/plain', data: FILES[p] }
+  const prefix = p === '' ? '' : p + '/'
+  const kids = new Map()
+  for (const f of Object.keys(FILES)) {
+    if (!f.startsWith(prefix)) continue
+    const rest = f.slice(prefix.length)
+    const first = rest.split('/')[0]
+    if (rest.includes('/')) kids.set(first, { path: prefix + first, name: first, kind: 'dir' })
+    else kids.set(first, { path: f, name: first, kind: 'file', size: FILES[f].length })
+  }
+  if (kids.size === 0 && p !== '') return null
+  const children = [...kids.values()].sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1))
+  return { path: p, name: p === '' ? '' : name(p), kind: 'dir', children }
+}
+
+// Stored artifacts: a plan kept local, an image, a committed code file and an undecided one.
+const ARTIFACTS = () => [
+  { id: 1, workspace_id: 1, repo_id: 2, lane_id: 4, run_id: 17, path: 'docs/plans/export-csv.md', title: 'CSV export plan', kind: 'markdown', source: 'run', intent: 'keep', intent_by: 'person', state: 'kept', size: PLAN_MD.length, created: ago(30), updated: ago(9), pinned: true,
+    versions: [{ artifact_id: 1, sha256: 'a'.repeat(64), size: 1900, run_id: 17, seen: ago(30), snapshotted: ago(30) }, { artifact_id: 1, sha256: 'b'.repeat(64), size: PLAN_MD.length, run_id: 17, seen: ago(9), snapshotted: ago(9) }],
+    links: [{ artifact_id: 1, kind: 'decision', ref: '5', created: ago(8) }] },
+  { id: 2, workspace_id: 1, repo_id: 2, lane_id: 4, run_id: 17, path: 'docs/img/orders-by-week.png', kind: 'image', source: 'run', intent: 'keep', intent_by: 'agent', state: 'live', size: 18200, created: ago(20), updated: ago(20),
+    versions: [{ artifact_id: 2, sha256: 'c'.repeat(64), size: 18200, run_id: 17, seen: ago(20), snapshotted: ago(20) }] },
+  { id: 3, workspace_id: 1, repo_id: 2, lane_id: 4, run_id: 17, path: 'web/orders/export.ts', kind: 'code', source: 'run', intent: 'commit', intent_by: 'agent', state: 'committed', size: EXPORT_TS.length, created: ago(25), updated: ago(5),
+    versions: [{ artifact_id: 3, sha256: 'd'.repeat(64), size: EXPORT_TS.length, run_id: 17, seen: ago(5), snapshotted: ago(5) }] },
+  { id: 4, workspace_id: 1, repo_id: 1, lane_id: 1, run_id: 15, path: 'scratch/session-notes.txt', kind: 'text', source: 'run', intent: 'undecided', intent_by: '', state: 'live', size: 412, created: ago(95), updated: ago(70),
+    versions: [{ artifact_id: 4, sha256: 'e'.repeat(64), size: 412, run_id: 15, seen: ago(70) }] },
+]
+const ARTIFACT_TEXT = { 1: PLAN_MD, 3: EXPORT_TS, 4: 'Session expiry: 12 hours, sliding.\nRevoke on logout and on password change.\nOpen: should the cookie carry only the id?\n' }
+const laneArtifactList = (id) => ({
+  lane_id: id, lane: lanes().find((l) => l.id === id)?.name ?? '', globs: ['docs/**', 'scratch/**'],
+  artifacts: ARTIFACTS().filter((a) => a.lane_id === id).map((a) => ({ path: a.path, kind: a.kind, source: a.source, status: a.state, size: a.size, readable: true, ...(a.kind === 'image' ? { mime: 'image/png' } : {}) })),
+})
+
+// Closed lanes for History and Done today: one merged by a person's approval, one by a repo rule.
+const closedLanes = () => [
+  { ...lane(7, 2, 'acme-web', 'feat/lane-diff-web', { mr: 40, mr_state: 'merged', activity: 180, by: 'mr', created: 1500 }), state: 'closed', closed: ago(180), outcome: 'merged', runs: 4, cost_usd: 3.1 },
+  { ...lane(8, 3, 'acme-docs', 'docs/changelog-0-9', { mr: 38, mr_state: 'merged', activity: 240, by: 'mr', created: 1400 }), state: 'closed', closed: ago(240), outcome: 'merged', runs: 2, cost_usd: 0.9 },
+  { ...lane(9, 1, 'acme-api', 'fix/rate-limit-header', { mr: 36, mr_state: 'merged', activity: 2900, by: 'mr', created: 3200 }), state: 'closed', closed: ago(2900), outcome: 'merged', runs: 3, cost_usd: 1.7 },
+  { ...lane(10, 2, 'acme-web', 'chore/old-spike', { activity: 4400, by: 'commit', created: 5000 }), state: 'closed', closed: ago(4400), outcome: 'dropped', runs: 1, cost_usd: 0.4 },
+]
+
+const BRIEF = { project: 'acme', approved: { text: 'Acme ships orders, sessions and the storefront. Priorities this week: the CSV export, then login sessions.', approved_at: ago(2000) }, age_text: '1d 9h', max_age: 7 * 24 * 3600e9 }
+const projectDetail = (name) => {
+  const inProject = name === 'acme' ? ['acme-api', 'acme-web'] : [name]
+  const ls = lanes().filter((l) => inProject.includes(l.repo))
+  return {
+    name, repos: inProject, lanes: ls.length, running: ls.filter((l) => l.id === 4 || l.id === 5).length,
+    decisions: 1, requests: 1, waiting: 2, spend_today: 14.3, budget: { amount: 25, cap: 'soft', period: 'day', since: ago(9000), spent: 14.3 },
+    open_lanes: ls, runs: runs().filter((r) => ls.some((l) => l.id === r.lane_id)), pending_decisions: decisions().filter((d) => d.state === 'open'), pending_requests: requests(),
+    ...(name === 'acme' ? { brief: BRIEF } : {}),
+  }
+}
+const workFor = (name) => ({
+  project: name,
+  repos: name !== 'acme' ? [{ repo: name, found: false, rows: [], warnings: [] }] : [{ repo: 'acme-api', found: true, ref: 'origin/dev', blob: '3f2a1c4', warnings: [], rows: [
+    { id: 'A-1', area: 'Sessions', item: 'Store sessions server side', status: 'doing', lane: 'feat/login-sessions', lane_id: 1, pr: 41, pr_url: 'https://git.example/acme/acme-api/-/merge_requests/41', repo: 'acme-api' },
+    { id: 'A-2', area: 'Sessions', item: 'Revoke all sessions on password change', status: 'todo', repo: 'acme-api' },
+    { id: 'A-3', area: 'Cache', item: 'Invalidate product cache on price change', status: 'blocked', lane: 'fix/cache-invalidation', lane_id: 2, pr: 42, notes: 'pipeline failing', repo: 'acme-api' },
+    { id: 'A-4', area: 'Webhooks', item: 'Retry with backoff', status: 'done', pr: 35, repo: 'acme-api' },
+  ] }, { repo: 'acme-web', found: true, ref: 'origin/dev', blob: '7a8b9c0', warnings: [], rows: [
+    { id: 'W-1', area: 'Orders', item: 'Export the orders table as CSV', status: 'doing', lane: 'feat/export-csv', lane_id: 4, pr: 43, repo: 'acme-web' },
+    { id: 'W-2', area: 'Orders', item: 'Filter orders by status', status: 'todo', repo: 'acme-web' },
+  ] }],
+  drift: [{ kind: 'lane_untracked', repo: 'acme-web', lane: 'chore/bump-deps', lane_id: 3, text: 'chore/bump-deps has no row in the work file' }],
+})
+
 // The next-up list (docs/backlog-next.md), held in memory so the page's actions work in the stub.
 const nextItems = (() => {
   const it = (id, stored, rank, title, o = {}) => ({
@@ -521,7 +685,10 @@ const nextItems = (() => {
       repo: 'acme-web', plan: 'docs/csv-export.md', lane: 'feat/export-csv', lane_id: 4, lane_name: 'feat/export-csv', lane_state: 'open',
       state: 'started', running: true, mr: '!43', mr_url: 'https://git.example/acme/acme-web/-/merge_requests/43', mr_state: 'open', age: 5000,
     }),
-    it(2, 'approved', 3, 'Retry failed webhooks with a backoff', { repo: 'acme-api', plan: 'docs/webhooks.md', age: 1500 }),
+    it(2, 'approved', 3, 'Retry failed webhooks with a backoff', {
+      repo: 'acme-api', plan: 'docs/webhooks.md', age: 1500, depends_on: [3],
+      blocked_on: [{ id: 3, title: 'Lane diff step 3: gate record, badge and the run page range view', state: 'approved' }],
+    }),
     it(4, 'planned', 4, 'Widen a lane scope when the person approves it in a decision', { repo: 'acme-api', age: 600 }),
     it(5, 'planned', 5, 'Answered decisions read with no time bound', { source: 'agent', proposed: true, repo: 'acme-api', note: 'Found while reading the decisions page: older answers are cut off.', age: 90 }),
     it(6, 'deferred', 6, 'In-app editor for a lane diff', { repo: 'acme-web', plan: 'docs/lane-diff.md', age: 9000 }),
@@ -588,7 +755,7 @@ http.createServer((req, res) => {
   if (p === '/v1/desk/stream') return deskStream(req, res, u)
   if (p === '/v1/feed/stream') return sse(res)
   if (p === '/v1/status') return json(res, status(u.searchParams.get('detail') === '1'))
-  if (p === '/v1/web/session') return json(res, { role: 'operator', csrf: 'shots', allow_settings: false })
+  if (p === '/v1/web/session') return json(res, { role: 'operator', csrf: 'shots', allow_settings: true })
   if (p === '/v1/lanes') return json(res, lanes())
   if (p === '/v1/config' && req.method === 'GET') return json(res, configDoc())
   if (p === '/v1/config/preview') return configPreview(req, res)
@@ -613,6 +780,7 @@ http.createServer((req, res) => {
     const states = (u.searchParams.get('state') || '').split(',').filter(Boolean)
     return json(res, requests().filter((q) => states.length === 0 || states.includes(q.state)))
   }
+  if (p === '/v1/unassigned/work') return json(res, { project: 'Unassigned', repos: [{ repo: 'acme-mobile', found: false, rows: [], warnings: [] }], drift: [] })
   if (p === '/v1/spend') return json(res, spend())
   if (p === '/v1/keep-going') return json(res, { on: true, spent_usd: 3.4, cap_usd: 5, runs_now: 2, max_runs: 3 })
   if (p === '/v1/feed') {
@@ -626,8 +794,10 @@ http.createServer((req, res) => {
   if (p === '/v1/desk/status') return json(res, { workspace_id: 1, busy: false, queued: 0, attached: 1, session: 'shots', model: 'claude-sonnet-5-5', wake: 'attached' })
   if (p === '/v1/history/lanes') {
     const since = Date.parse(u.searchParams.get('since') || '') || 0
-    const closed = BUSY ? busyNow().closedLanes : []
-    return json(res, closed.filter((l) => Date.parse(l.closed) >= since).map((l) => ({ ...l, runs: l.runs ?? 0, cost_usd: l.cost_usd ?? 0 })))
+    const closed = BUSY ? busyNow().closedLanes : closedLanes()
+    const id = Number(u.searchParams.get('lane_id') || 0)
+    const all = [...closed, ...(id ? lanes() : [])]
+    return json(res, all.filter((l) => (id ? l.id === id : Date.parse(l.closed) >= since)).map((l) => ({ ...l, runs: l.runs ?? 0, cost_usd: l.cost_usd ?? 0 })))
   }
   if (p === '/v1/history/runs') {
     const since = Date.parse(u.searchParams.get('since') || '') || 0
@@ -643,21 +813,42 @@ http.createServer((req, res) => {
     })
   }
 
-  // GET /v1/artifacts/{id} and its content: the plan decision 5 links to.
-  if ((m = p.match(/^\/v1\/artifacts\/1(\/content)?$/))) {
-    track(m[1] ? '/v1/artifacts/{id}/content' : '/v1/artifacts/{id}')
-    if (m[1]) { res.writeHead(200, { 'content-type': 'text/markdown' }); return res.end(PLAN_MD) }
-    return json(res, { id: 1, workspace_id: 1, repo_id: 2, lane_id: 4, run_id: 17, path: 'docs/plans/export-csv.md', kind: 'markdown', source: 'run', intent: 'keep', intent_by: 'person', state: 'live', size: 4198, created: ago(30), updated: ago(9), versions: [] })
+  // Stored artifacts: the list, one row, and its content (an image is a PNG, the rest text).
+  if (p === '/v1/artifacts') {
+    const f = (k) => Number(u.searchParams.get(k) || 0)
+    const state = u.searchParams.get('state'), kind = u.searchParams.get('kind')
+    return json(res, ARTIFACTS().filter((x) => (!f('lane_id') || x.lane_id === f('lane_id')) && (!f('run_id') || x.run_id === f('run_id')) && (!state || x.state === state) && (!kind || x.kind === kind)))
+  }
+  if ((m = p.match(/^\/v1\/artifacts\/(\d+)(\/content)?$/))) {
+    const a = ARTIFACTS().find((x) => x.id === +m[1])
+    if (!a) return json(res, { error: 'no such artifact' }, 404)
+    if (!m[2]) return json(res, a)
+    if (a.kind === 'image') { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(samplePng()) }
+    res.writeHead(200, { 'content-type': a.kind === 'markdown' ? 'text/markdown' : 'text/plain' })
+    return res.end(ARTIFACT_TEXT[a.id] ?? '')
+  }
+  if ((m = p.match(/^\/v1\/lanes\/(\d+)\/artifacts(\/content)?$/))) {
+    if (!m[2]) return json(res, laneArtifactList(+m[1]))
+    const rel = u.searchParams.get('path') ?? ''
+    const a = ARTIFACTS().find((x) => x.lane_id === +m[1] && x.path === rel)
+    if (a?.kind === 'image') { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(samplePng()) }
+    res.writeHead(200, { 'content-type': 'text/plain' })
+    return res.end(a ? (ARTIFACT_TEXT[a.id] ?? '') : '')
+  }
+  if ((m = p.match(/^\/v1\/lanes\/(\d+)\/files$/))) {
+    const node = fileNode(u.searchParams.get('path') ?? '')
+    return node ? json(res, node) : json(res, { error: 'no such path' }, 404)
   }
 
   // GET /v1/waiting: everything that waits on the person, with a version that moves.
   if (p === '/v1/waiting') {
     const version = 3
-    return json(res, { version, count: 5, counts: { decisions: 1, mrs: 1, ship: 0, next: 0, questions: 1, blocked: 1, scope: 0, requests: 1 }, items: [
+    return json(res, { version, count: 6, counts: { decisions: 1, mrs: 1, ship: 0, next: 1, questions: 1, blocked: 1, scope: 0, requests: 1 }, items: [
       { kind: 'decision', action: 'answer', repo: 'acme-web', lane: 'feat/export-csv', lane_id: 4, decision_id: 5, title: 'CSV export: stream or buffer?', detail: 'run 17', since: ago(8) },
       { kind: 'mr', action: 'approve', repo: 'acme-api', lane: 'feat/login-sessions', lane_id: 1, mr: 41, title: '!41 pipeline passed', detail: 'waits for merge', since: ago(35) },
-      { kind: 'question', action: 'reply', repo: 'acme-api', title: 'Front desk: how is the login MR doing?', detail: 'turn 6', since: ago(4) },
+      { kind: 'question', action: 'reply', repo: 'acme-infra', question_id: 2, turn: 11, title: 'Should we bump the Go minor version in acme-infra?', detail: 'front desk, turn 11', since: ago(2) },
       { kind: 'blocked', action: 'open', repo: 'acme-api', lane: 'fix/cache-invalidation', lane_id: 2, title: 'Pipeline failed !42', detail: 'agent continued once', since: ago(14) },
+      { kind: 'next', action: 'approve', repo: 'acme-api', next_id: 5, title: 'Answered decisions read with no time bound', detail: 'proposed by an agent', since: ago(90) },
       { kind: 'request', action: 'route', repo: 'acme-api', lane: 'refactor/queue-worker', lane_id: 5, request_id: 3, title: 'Which lane owns the shared retry helper in internal/retry?', detail: 'from opencode', since: ago(5) },
     ]})
   }
@@ -752,7 +943,9 @@ http.createServer((req, res) => {
   // GET /v1/lanes/{id}/approval: a lane's merge request, as the approval control shows it.
   if ((m = p.match(/^\/v1\/lanes\/(\d+)\/approval$/))) {
     track('/v1/lanes/{id}/approval')
-    return json(res, { supported: true, mr: 41, mr_url: 'https://git.example/acme/acme-api/-/merge_requests/41', mr_state: 'opened', sha: 'abc123', approved: false, pipeline: 310 })
+    const ln = lanes().find((l) => l.id === +m[1])
+    if (!ln?.mr) return json(res, { supported: true, approved: false })
+    return json(res, { supported: true, mr: ln.mr, mr_url: ln.mr_url, mr_state: 'opened', sha: '4be7d19c33aa91f0', approved: false, pipeline: ln.pipeline, pipeline_status: ln.pipeline_status === 'passed' ? 'success' : ln.pipeline_status })
   }
 
   // POST /v1/fold/review: judge a repo's worktrees (no apply).
@@ -830,8 +1023,7 @@ http.createServer((req, res) => {
   // GET /v1/projects: list projects.
   if (p === '/v1/projects') {
     return json(res, { projects: [
-      { name: 'acme-api', unassigned: false, repos: ['acme-api'], lanes: 2, running: 1, decisions: 0, requests: 0, waiting: 1, spend_today: 8.2 },
-      { name: 'acme-web', unassigned: false, repos: ['acme-web'], lanes: 2, running: 1, decisions: 1, requests: 0, waiting: 1, spend_today: 6.1 },
+      { name: 'acme', unassigned: false, repos: ['acme-api', 'acme-web'], lanes: 5, running: 2, decisions: 1, requests: 1, waiting: 4, spend_today: 14.3, budget: { amount: 25, cap: 'soft', period: 'day', since: ago(9000), spent: 14.3 } },
       { name: 'acme-docs', unassigned: false, repos: ['acme-docs'], lanes: 1, running: 0, decisions: 0, requests: 0, waiting: 0, spend_today: 1.4 },
     ]})
   }
@@ -839,7 +1031,7 @@ http.createServer((req, res) => {
   // GET /v1/projects/{name}: project detail.
   if ((m = p.match(/^\/v1\/projects\/([^/]+)$/))) {
     track('/v1/projects/{name}')
-    return json(res, { name: decodeURIComponent(m[1]), repos: [decodeURIComponent(m[1])], lanes: 2, running: 1, decisions: 0, requests: 0, waiting: 1, spend_today: 8.2, open_lanes: [], runs: [], pending_decisions: [], pending_requests: [] })
+    return json(res, projectDetail(decodeURIComponent(m[1])))
   }
 
   // GET /v1/unassigned: unassigned repos.
@@ -850,7 +1042,7 @@ http.createServer((req, res) => {
   // GET /v1/projects/{name}/work: project work matrix.
   if ((m = p.match(/^\/v1\/projects\/([^/]+)\/work$/))) {
     track('/v1/projects/{name}/work')
-    return json(res, { project: decodeURIComponent(m[1]), repos: [{ repo: decodeURIComponent(m[1]), found: true, rows: [], warnings: [] }], drift: [] })
+    return json(res, workFor(decodeURIComponent(m[1])))
   }
 
   // GET /v1/usage: usage stats.
@@ -858,8 +1050,17 @@ http.createServer((req, res) => {
     return json(res, {
       from: u.searchParams.get('from') || '2026-10-01', to: u.searchParams.get('to') || '2026-10-14',
       total: { count: 47, measured: 47, input_tokens: 1200000, cache_read_tokens: 800000, cache_creation_tokens: 200000, output_tokens: 340000, peak_context: 128000, over_200k: 0, compactions: 3, cost_usd: 20.4, credits: 0.4 },
-      runs: { count: 32, measured: 32, input_tokens: 900000, output_tokens: 280000, cost_usd: 14.6 },
-      desk: { count: 15, measured: 15, input_tokens: 300000, output_tokens: 60000, cost_usd: 5.8 },
+      runs: { count: 32, measured: 32, input_tokens: 900000, cache_read_tokens: 620000, cache_creation_tokens: 150000, output_tokens: 280000, peak_context: 128000, over_200k: 0, compactions: 3, cost_usd: 14.6 },
+      desk: { count: 15, measured: 15, input_tokens: 300000, cache_read_tokens: 180000, cache_creation_tokens: 40000, output_tokens: 60000, peak_context: 90000, over_200k: 0, compactions: 0, cost_usd: 5.8 },
+      by_model: [
+        { key: 'claude-sonnet-5-5', agent: 'claude', model: 'claude-sonnet-5-5', count: 24, measured: 24, input_tokens: 700000, cache_read_tokens: 500000, cache_creation_tokens: 120000, output_tokens: 190000, peak_context: 128000, over_200k: 0, compactions: 3, cost_usd: 11.2 },
+        { key: 'acme-large', agent: 'opencode', model: 'acme-large', count: 8, measured: 8, input_tokens: 200000, cache_read_tokens: 0, cache_creation_tokens: 0, output_tokens: 90000, peak_context: 64000, over_200k: 0, compactions: 0, cost_usd: 3.4 },
+      ],
+      desk_by_model: [{ key: 'claude-sonnet-5-5', agent: 'claude', model: 'claude-sonnet-5-5', count: 15, measured: 15, input_tokens: 300000, cache_read_tokens: 180000, cache_creation_tokens: 40000, output_tokens: 60000, peak_context: 90000, over_200k: 0, compactions: 0, cost_usd: 5.8 }],
+      by_lane: [
+        { key: 'acme-web/feat/export-csv', repo: 'acme-web', lane: 'feat/export-csv', count: 9, measured: 9, input_tokens: 300000, cache_read_tokens: 200000, cache_creation_tokens: 50000, output_tokens: 80000, peak_context: 120000, over_200k: 0, compactions: 1, cost_usd: 6.1 },
+        { key: 'acme-api/feat/login-sessions', repo: 'acme-api', lane: 'feat/login-sessions', count: 7, measured: 7, input_tokens: 250000, cache_read_tokens: 160000, cache_creation_tokens: 30000, output_tokens: 60000, peak_context: 98000, over_200k: 0, compactions: 1, cost_usd: 4.4 },
+      ],
     })
   }
 

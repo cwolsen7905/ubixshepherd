@@ -5,7 +5,8 @@
 #   CHROME        path to Chrome or Chromium (default: found on this machine)
 #   SHOTS_PORT    port for the stub daemon (default 5199)
 #   SHOTS_OUT     output directory (default web/shots/out)
-#   SHOTS_SIZE    CSS pixels, WxH (default 1440x900)
+#   SHOTS_SIZE    CSS pixels, WxH (default 1440x900); several, space separated, each
+#                 optionally WxH@scale ("1440x900 2560x1440@1 390x844"), go to out/WxH/
 #   SHOTS_SCALE   device scale factor (default 2)
 #   SHOTS_THEMES  "light dark", or one of them (default both)
 #   SHOTS_PAGES   page names to take, "timeline board" (default all)
@@ -20,8 +21,6 @@ out=${SHOTS_OUT:-$here/out}
 size=${SHOTS_SIZE:-1440x900}
 scale=${SHOTS_SCALE:-2}
 themes=${SHOTS_THEMES:-light dark}
-w=${size%x*}
-h=${size#*x}
 
 chrome=${CHROME:-}
 if [ -z "$chrome" ]; then
@@ -46,8 +45,16 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 
-CHROME="$chrome" SHOTS_BASE="http://127.0.0.1:$port" SHOTS_OUT="$out" SHOTS_W="$w" SHOTS_H="$h" \
-  SHOTS_SCALE="$scale" SHOTS_THEMES="$themes" SHOTS_PAGES="${SHOTS_PAGES:-}" node "$here/shoot.mjs"
+for one in $size; do
+  dir=$out
+  # With several sizes each gets its own directory.
+  [ "$size" != "$one" ] && dir=$out/${one%@*}
+  mkdir -p "$dir"
+  sc=$scale
+  case $one in *@*) sc=${one#*@}; one=${one%@*};; esac
+  CHROME="$chrome" SHOTS_BASE="http://127.0.0.1:$port" SHOTS_OUT="$dir" SHOTS_W="${one%x*}" SHOTS_H="${one#*x}" \
+    SHOTS_SCALE="$sc" SHOTS_THEMES="$themes" SHOTS_PAGES="${SHOTS_PAGES:-}" node "$here/shoot.mjs"
+done
 
 # STUB_STRICT answers an unstubbed route with 501; fail the run so a stale stub is not missed.
 missing=$(curl -sf "http://127.0.0.1:$port/__shots/missing" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).missing.join("\n")))')

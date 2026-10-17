@@ -12,18 +12,28 @@ It needs Node 22 or later and Chrome or Chromium. The script starts `stub-daemon
 which serves the built app and canned `/v1` answers (acme-* repos on `git.example`),
 drives headless Chrome over the DevTools protocol (`shoot.mjs`), and stops both.
 
-It takes the chat page (with the backlog rail, and again on its Next up view), the next-up
-list, the board, a lane, a run log, decisions
-and the timeline, each in `-light` and `-dark`, named `<page>-<theme>.png`. The stub holds the next-up list in memory, so its actions work. Every shot
-emulates `prefers-reduced-motion: reduce`, so the timeline's pulse and breathing are frozen
-and a shot repeats; its static markers are drawn for that.
+It takes every view and the detail pages, each in `-light` and `-dark`, named
+`<page>-<theme>.png`: the Conversation (the thread, with work shown, the return card and a
+decision swapped in), the Inbox (a merge request in the side panel and as a page, a decision
+in the main body), the Board, a lane (panel and page, with its Changes, Files, Artifacts and
+Runs tabs, and a closed lane), Next up (with an item blocked by another), Artifacts (a plan kept
+local, an image, a committed code file, an undecided one), Files, Runs (the run panel, a run
+page, a failed run and the run log), the Timeline, History, Projects and one project, Rules,
+Usage, Settings and Status. `SHOTS_PAGES` lists the names. The stub holds the next-up list in
+memory, so its actions work. Every shot emulates `prefers-reduced-motion: reduce`, so the
+timeline's pulse and breathing are frozen and a shot repeats; its static markers are drawn for that.
+
+Several sizes in one go: `SHOTS_SIZE="1440x900 2560x1440@1 390x844" web/shots/shots.sh` writes
+`out/1440x900/`, `out/2560x1440/` and `out/390x844/`; `@1` sets that size's device scale factor.
+The Inbox shots wait 16 seconds, because the page reads what finished today again only after
+15 seconds once the workspace is known.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `CHROME` | found on this machine | Chrome or Chromium executable |
 | `SHOTS_PORT` | `5199` | the stub's port |
 | `SHOTS_OUT` | `web/shots/out` | where the images go |
-| `SHOTS_SIZE` | `1440x900` | CSS pixels |
+| `SHOTS_SIZE` | `1440x900` | CSS pixels, or several sizes separated by spaces |
 | `SHOTS_SCALE` | `2` | device scale factor |
 | `SHOTS_THEMES` | `light dark` | themes to take |
 | `SHOTS_PAGES` | all | page names to take, such as `timeline board` |
@@ -49,7 +59,9 @@ The default stub's history endpoints answer with its few runs, so the timeline h
 without `BUSY`.
 
 The stub's data is built from the current time, so ages stay believable. It covers
-decisions waiting, a failed pipeline, an idle lane, runs in flight, a merge request
+the acme sample (repos `acme-api`, `acme-web` and `acme-docs` on `git.example`, one project
+of the first two, closed and merged lanes, stored artifacts with a generated PNG, a files tree
+per lane, a work matrix per project, usage by model and lane), decisions waiting, a failed pipeline, an idle lane, runs in flight, a merge request
 waiting for a merge, spend near its warning, a quota hold, the forge's poll status, and
 the lane fields `last_activity`, `last_activity_by`, `mr_created`, `mr_updated`,
 `pipeline_started` and `pipeline_finished`. It serves the front desk's event stream
