@@ -8,11 +8,17 @@ const permission = (): Perm => (typeof Notification === 'undefined' ? 'unsupport
 /** True when a notification may be shown now: the person opted in, the browser agrees. */
 export const mayNotify = (on: boolean) => on && permission() === 'granted'
 
-/** Shows a browser notification for an item that waits on the person; never for routine news. */
-export function notifyWaiting(it: WaitingItem, onClick: () => void) {
-  if (!notifiable(it) || permission() !== 'granted') return
+/** Shows one browser notification for what newly waits on the person (a count when several); never for routine news. */
+export function notifyWaiting(items: readonly WaitingItem[], onClick: () => void) {
+  const waits = items.filter(notifiable)
+  const [first] = waits
+  if (!first || permission() !== 'granted') return
   try {
-    const n = new Notification(announceText(it), { body: it.title, tag: `shepherd:${it.kind}:${it.decision_id ?? it.question_id ?? 0}` })
+    const one = waits.length === 1
+    const n = new Notification(one ? announceText(first) : `${waits.length} new items waiting on you`, {
+      body: one ? first.title : waits.map((w) => w.title).join(', '),
+      tag: 'shepherd:waiting',
+    })
     n.onclick = () => {
       window.focus()
       onClick()

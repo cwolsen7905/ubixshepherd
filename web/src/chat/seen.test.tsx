@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
 import type { WaitingItem } from '../api/types'
 import { AwayBlock, Announcer } from './seen'
@@ -29,5 +29,19 @@ describe('Announcer', () => {
     })
     expect(region.textContent).toBe('New decision from feat/x')
     expect(document.activeElement).toBe(before)
+  })
+})
+
+describe('Announcer clearing', () => {
+  it('clears the text after a quiet re-render, not only on the next announcement', async () => {
+    vi.useFakeTimers()
+    const { rerender } = render(<Announcer items={[dec(1)]} />)
+    rerender(<Announcer items={[dec(1), dec(2)]} />)
+    await act(async () => void vi.advanceTimersByTime(10))
+    expect(screen.getByRole('status').textContent).toBe('New decision from feat/x')
+    rerender(<Announcer items={[dec(1), dec(2)]} />)
+    await act(async () => void vi.advanceTimersByTime(8100))
+    expect(screen.getByRole('status').textContent).toBe('')
+    vi.useRealTimers()
   })
 })
