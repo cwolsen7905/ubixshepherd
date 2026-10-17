@@ -17,7 +17,7 @@ GO_PKGS := ./cmd/... ./internal/...
 # The built web UI is embedded from here (internal/webui). Only its .gitignore is tracked.
 WEBUI_DIR := internal/webui/app
 
-.PHONY: build web install test check core-boundary script-check cross dist release-notes clean
+.PHONY: build web install test check check-keep-going core-boundary script-check cross dist release-notes clean
 
 # Build the web UI (web/) into the binary. It needs Node 22 or later; without npm, or
 # with NO_WEB=1, the binary builds without a fresh UI and serves whatever is in
@@ -61,6 +61,16 @@ check: core-boundary script-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
 	go test $(GO_PKGS)
+
+# The keep-going checks (KEEP-C-01 to C-12 in the keep-going spec) are tests behind a
+# build tag. They fail until the daemon-side drive lands, so this is not part of check.
+# The -run pattern also picks up the existing untagged keep-going and stall tests in the
+# package: they must keep passing alongside the checks.
+check-keep-going:
+	@go test -v -count=1 -tags keepgoing_checks ./internal/daemon -run 'KeepGoing|Stall|Linked|Unlinked' > .keepgoing-checks.log 2>&1; \
+	status=$$?; grep -E '^(--- |ok|FAIL|panic)' .keepgoing-checks.log; \
+	if [ $$status -ne 0 ] && ! grep -q -E '^--- ' .keepgoing-checks.log; then cat .keepgoing-checks.log; fi; \
+	rm -f .keepgoing-checks.log; exit $$status
 
 # The install script is not Go: parse it, so it cannot rot unseen.
 script-check:
