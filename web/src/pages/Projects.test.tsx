@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ConfigDoc, ProjectDetail, ProjectList, ProjectWork } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -158,6 +158,19 @@ describe('ProjectPage', () => {
     expect(title.tagName).toBe('STRONG')
     expect(document.body.textContent).not.toContain('**')
     expect(document.body.textContent).not.toContain('See ')
+  })
+
+  it('cuts a headingless one-line decision to its first sentence, or a word boundary', async () => {
+    const sentence = decision({ id: 5, question: 'Should the export stream rows? It can also buffer the whole file first and then write it out in one go to disk.' })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [sentence] })
+    await show(<ProjectPage name="shop" />)
+    expect(await screen.findByText('Should the export stream rows?')).toBeInTheDocument()
+    cleanup()
+    const run = decision({ id: 6, question: 'word '.repeat(60).trim() })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [run] })
+    await show(<ProjectPage name="shop" />)
+    const t = (await screen.findAllByText(/^word( word)+…$/))[0]
+    expect((t?.textContent ?? '').length).toBeLessThanOrEqual(101)
   })
 
   it('links lane, decision and run rows to their inspector addresses', async () => {

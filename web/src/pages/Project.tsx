@@ -49,10 +49,17 @@ function BriefText({ brief, heading, stale, draft }: { brief: ProjectBrief; head
   )
 }
 
+const TITLE_MAX = 100
+
 /** The short title of a decision: its heading line, or the first line when it has none. */
 function questionTitle(q: string): string {
   const { head, body } = splitQuestion(q)
-  return head || body.split('\n')[0] || q
+  const line = head || body.split('\n')[0] || q
+  if (line.length <= TITLE_MAX) return line
+  // No heading: the first sentence if it is short enough, else a cut at a word.
+  const sentence = /^.{1,100}?[.?!](?=\s)/.exec(line)?.[0]
+  if (sentence) return sentence
+  return line.slice(0, TITLE_MAX).replace(/\s+\S*$/, '') + '…'
 }
 
 /** A lane row: the lane over its repo and gate, the merge request at the right. A link to

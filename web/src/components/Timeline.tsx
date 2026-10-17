@@ -283,6 +283,15 @@ function Group({
 
 // --- Spend ------------------------------------------------------------------------
 
+/** About what "$25 budget, over budget" needs at the label's size: left of this the label would run off the edge. */
+const BUDGET_LABEL_MIN = 120
+
+/** The label ends left of the now line; when that leaves no room it starts at the left edge instead. */
+export function budgetLabelAt(width: number, nowX: number): { x: number; anchor: 'start' | 'end' } {
+  const end = Math.min(width, nowX) - 6
+  return end < BUDGET_LABEL_MIN ? { x: 4, anchor: 'start' } : { x: end, anchor: 'end' }
+}
+
 function Spend({
   band, layout, width, onTip,
 }: { band: SpendBand; layout: TimelineLayout; width: number; onTip: OnTip }) {
@@ -296,6 +305,7 @@ function Spend({
     const at = spendAt(band, t)
     onTip({ kind: 'spend', at: t, cum: at.cum, ...(at.step ? { step: at.step } : {}), budget: band.budget }, e.clientX, e.clientY)
   }
+  const label = budgetLabelAt(width, layout.nowX)
   return (
     <svg className="tl-spend-svg" width={width} height={band.height} role="img" aria-label={`Spend so far today: ${band.total.toFixed(2)} dollars${band.budget > 0 ? ` of ${band.budget} budget` : ''}`}>
       <path className="tl-spend-fill" d={band.fill} />
@@ -304,7 +314,7 @@ function Spend({
       {band.budget > 0 && (
         <>
           <line className="tl-budget" x1={0} x2={width} y1={band.budgetY} y2={band.budgetY} />
-          <text className="tl-budget-label" x={Math.min(width, layout.nowX) - 6} y={Math.max(11, band.budgetY - 4)} textAnchor="end">
+          <text className="tl-budget-label" x={label.x} textAnchor={label.anchor} y={Math.max(11, band.budgetY - 4)}>
             ${Math.round(band.budget)} budget{band.overBudget ? ', over budget' : ''}
           </text>
         </>

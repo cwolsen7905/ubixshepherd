@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { assemble, type TimelineData } from '../model/timeline'
 import { busyDay, BUSY_NOW } from '../model/timeline.fixtures'
-import { TimelineChart, type TimelineChartProps } from './Timeline'
+import { budgetLabelAt, TimelineChart, type TimelineChartProps } from './Timeline'
 import { TimelineLegend } from './TimelineLegend'
 
 // The chart is hundreds of SVG nodes: under a loaded machine a test can take seconds, so the
@@ -230,5 +230,13 @@ describe('the legend', () => {
     const on = within(nav).getByRole('link', { name: 'cursor' })
     expect(on).toHaveAttribute('aria-current', 'true')
     expect(on).toHaveAttribute('href', '#/timeline?range=24h')
+  })
+})
+
+describe('budgetLabelAt', () => {
+  it('ends left of the now line, and starts at the left edge when there is no room', () => {
+    expect(budgetLabelAt(1000, 900)).toEqual({ x: 894, anchor: 'end' })
+    expect(budgetLabelAt(1000, 1200)).toEqual({ x: 994, anchor: 'end' })
+    expect(budgetLabelAt(1000, 60)).toEqual({ x: 4, anchor: 'start' })
   })
 })
