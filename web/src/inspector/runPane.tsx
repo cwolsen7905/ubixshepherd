@@ -4,7 +4,8 @@ import type { Decision, RunView } from '../api/types'
 import { Conversation } from '../conversation/Conversation'
 import { laneSource } from '../conversation/api'
 import { useNow } from '../hooks'
-import { LogTab, RunChanges } from '../pages/Log'
+import { RunChanges } from '../pages/Log'
+import { RunLog } from '../ui/RunLog'
 import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
 import { withOpen } from '../router'
 
@@ -75,7 +76,7 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
           <Conversation source={source} run={run.id} now={now} />
         </div>
         <div hidden={tab !== 'log'}>
-          <LogTab id={run.id} state={run.state} active={tab === 'log'} onDone={onDone} />
+          <RunLog id={run.id} state={run.state} active={tab === 'log'} variant={run.state === 'running' ? 'live' : 'finished'} onDone={onDone} />
         </div>
         {tab === 'changes' && <RunChanges run={run} now={now} />}
         {tab === 'asked' && <Asked runId={run.id} />}

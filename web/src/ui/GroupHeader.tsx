@@ -5,6 +5,7 @@ import { StatusGlyph, type GlyphTone } from './StatusGlyph'
 export type GroupHeaderVariant = 'section' | 'status' | 'project'
 
 export interface GroupHeaderProps {
+  id?: string
   /** `section`: a label with an optional hint (Inbox, Next up). `status`: glyph, label and count (Board's status groups). `project`: name, meta and spend. */
   variant?: GroupHeaderVariant
   label: ReactNode
@@ -24,10 +25,10 @@ export interface GroupHeaderProps {
 }
 
 /** A group's header: `.sh-group-h` for sections and statuses, `.sh-project-h` for a project. */
-export function GroupHeader({ variant = 'section', label, hint, glyph, glyphTone = 'idle', count, warn, meta, spend }: GroupHeaderProps) {
+export function GroupHeader({ id, variant = 'section', label, hint, glyph, glyphTone = 'idle', count, warn, meta, spend }: GroupHeaderProps) {
   if (variant === 'project') {
     return (
-      <div className="sh-project-h" data-component="GroupHeader" data-variant="project">
+      <div id={id} className="sh-project-h" data-component="GroupHeader" data-variant="project">
         <b>{label}</b>
         {meta && <span className="sh-project-h-meta">{meta}</span>}
         {spend && <span className="sh-project-h-spend">{spend}</span>}
@@ -35,10 +36,11 @@ export function GroupHeader({ variant = 'section', label, hint, glyph, glyphTone
     )
   }
   return (
-    <div className={cx('sh-group-h', warn && 'sh-group-h--warn', variant === 'status' && 'sh-group-h--status')} data-component="GroupHeader" data-variant={variant}>
+    <div id={id} className={cx('sh-group-h', warn && 'sh-group-h--warn', variant === 'status' && 'sh-group-h--status')} data-component="GroupHeader" data-variant={variant}>
       {variant === 'status' && glyph && <StatusGlyph glyph={glyph} tone={glyphTone} />}
       {label}
       {variant === 'status' && count !== undefined && <span className="sh-group-h-n">{count}</span>}
+      {variant === 'status' && meta && <span className="sh-group-h-meta">{meta}</span>}
       {variant === 'section' && hint && <span className="sh-group-h-hint">{hint}</span>}
     </div>
   )

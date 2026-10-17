@@ -1,85 +1,34 @@
-import { useEffect, useMemo, useState } from 'react'
-import { api, config, history } from '../api/client'
-import type { LaneRecord, LaneView, RequestView, RunView } from '../api/types'
+import { useEffect, useState } from 'react'
+import { api, history } from '../api/client'
+import type { LaneView, RequestView, RunView } from '../api/types'
 import { BackLink } from '../components/BackLink'
-import { Changes } from '../components/Changes'
-import { LaneApprove } from '../components/LaneApprove'
-import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
-import { EventGlyph, Glyph } from '../components/Glyph'
-import { GateBadge } from '../components/GateBadge'
-import { MrBadge } from '../components/MrBadge'
-import { RunFailure } from '../components/RunFailure'
-import { clockTime, costNote, duration, runCost, shortSha, since } from '../format'
-import { boardItems, GROUP_NAMES } from '../model/board'
-import { ending } from '../model/history'
-import { aboutLane, type Refs } from '../model/feed'
-import { GROUP_MARKS } from '../model/groups'
-import { editorHref } from '../editorLink'
 import { useNow } from '../hooks'
-import { href } from '../router'
 import { useLive, useSnapshot } from '../state/context'
+import { LaneDetail, defaultLaneDetailTab, type LaneDetailTab } from '../ui/LaneDetail'
+import { rememberedTab } from '../ui/LaneDetailMemory'
 import { laneSource } from '../conversation/api'
-import { LaneArtifactsPanel } from '../artifacts'
-import { Conversation } from '../conversation/Conversation'
-import type { ConversationSource } from '../conversation/types'
 import '../styles/conversation.css'
-
-/** A run's state as the feed event that reports it, for its glyph. */
-export const RUN_EVENT: Record<RunView['state'], string> = {
-  running: 'run_started',
-  succeeded: 'run_passed',
-  failed: 'run_failed',
-  interrupted: 'run_interrupted',
-  stopped: 'run_interrupted',
-}
 
 interface LaneData {
   runs: RunView[]
-  decisionRuns: Map<number, number>
   requests: RequestView[]
 }
 
-/** How often a lane with a running run reads its runs again, for the progress line. */
 export const PROGRESS_POLL = 5000
 
-type Tab = 'overview' | 'conversation' | 'changes' | 'artifacts'
-
-const TAB_NAMES: Record<Tab, string> = { overview: 'Overview', conversation: 'Conversation', changes: 'Changes', artifacts: 'Artifacts' }
-
-const DAEMON_PATH_NOTE = 'The path is on the machine the daemon runs on; the editor opens it on this one.'
-
 /** `conversation` replaces the daemon's reader; tests give it a fake. */
-export function LanePage({ id, conversation }: { id: number; conversation?: (laneId: number) => ConversationSource }) {
-  const [tab, setTab] = useState<Tab>('overview')
-  const source = useMemo(() => (conversation ?? laneSource)(id), [conversation, id])
+export function LanePage({ id, conversation }: { id: number; conversation?: (laneId: number) => import('../conversation/types').ConversationSource }) {
+  const [picked, setPicked] = useState<LaneDetailTab | null>(null)
   const snap = useSnapshot()
   const live = useLive()
   const now = useNow()
   const [data, setData] = useState<LaneData | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  // Bumped after a fix is taken, to read the runs again at once.
   const [reload, setReload] = useState(0)
-  // The editor link template (web.editor_url); null until read, or when it cannot be read.
-  const [editorUrl, setEditorUrl] = useState<string | null>(null)
-  useEffect(() => {
-    let current = true
-    config.get().then(
-      (doc) => {
-        const web = (doc.effective?.web ?? {}) as { editor_url?: unknown }
-        if (current && typeof web.editor_url === 'string') setEditorUrl(web.editor_url)
-      },
-      () => {},
-    )
-    return () => {
-      current = false
-    }
-  }, [])
-  // The daemon lists open lanes only; a closed lane is read from its history record, or
-  // failing that (an older daemon) known from its runs.
+  const feedLast = snap.feed.at(-1)?.id ?? 0
+
   const listed = snap.lanes.find((l) => l.id === id)
-  const [record, setRecord] = useState<LaneRecord | null>(null)
+  const [record, setRecord] = useState<import('../api/types').LaneRecord | null>(null)
   const unlisted = listed === undefined
-  const feedId = snap.feed.at(-1)?.id
   useEffect(() => {
     if (!unlisted) return
     let current = true
@@ -90,28 +39,24 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
     return () => {
       current = false
     }
-  }, [id, unlisted, feedId])
-  const lane: LaneView | undefined = listed ?? record ?? (data?.runs[0] ? closedLane(id, data.runs[0]) : undefined)
+  }, [id, unlisted, feedLast])
   const known = listed ?? record
+  const lane: LaneView | undefined = listed ?? record ?? (data?.runs[0] ? closedLane(id, data.runs[0]) : undefined)
 
-  // Reload the lane's runs and what the feed's refs point at whenever the feed moves.
-  const feedLast = snap.feed.at(-1)?.id ?? 0
   useEffect(() => {
     let current = true
-    Promise.all([api.runs(id, 200), api.decisions(''), api.requests('')]).then(
-      ([runs, ds, requests]) => {
+    Promise.all([api.runs(id, 200), api.requests('')]).then(
+      ([runs, requests]) => {
         if (!current) return
-        setData({ runs, decisionRuns: new Map(ds.map((d) => [d.id, d.run_id])), requests })
-        setError(null)
+        setData({ runs, requests })
       },
-      (e: unknown) => current && setError(e instanceof Error ? e.message : String(e)),
+      (e: unknown) => current && console.error(e),
     )
     return () => {
       current = false
     }
   }, [id, feedLast, reload])
 
-  // A run's progress changes without a feed event: read again while one is going.
   const going = data?.runs[0]?.state === 'running'
   useEffect(() => {
     if (!going) return
@@ -119,27 +64,11 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
     return () => window.clearInterval(t)
   }, [going])
 
-  // Opening a lane is looking at it: what finished there is no longer news.
   const latest = data?.runs[0]
   useEffect(() => {
     if (latest?.ended) live.markSeen(`run:${latest.id}`)
     if (lane?.closed) live.markSeen(`lane:${lane.id}`)
   }, [live, latest?.id, latest?.ended, lane?.id, lane?.closed])
-
-  const timeline = useMemo(() => {
-    if (!lane || !data) return []
-    const refs: Refs = { runs: data.runs, decisionRuns: data.decisionRuns, requests: data.requests }
-    return snap.feed.filter((it) => aboutLane(it, lane, refs)).reverse()
-  }, [snap.feed, lane, data])
-
-  const group = useMemo(() => {
-    if (!lane) return undefined
-    return boardItems({ ...snap, lanes: [lane], decisions: [], requests: [] })[0]?.group
-  }, [snap, lane])
-
-  const openLane = known && known.state === 'open' ? known : undefined
-  const finishedLanes = useFinishedLanes(openLane ? [openLane] : [], feedLast)
-  const review = openLane ? finishedLanes.get(openLane.id) : undefined
 
   if (!lane) {
     const known = snap.ready && data
@@ -151,254 +80,26 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
     )
   }
 
-  const runs = data?.runs ?? []
-  const decisions = snap.decisions.filter((d) => d.lane === lane.name && d.repo === lane.repo)
+  // The panel's tab carries over; failing that, to-review lanes open on Changes.
+  const tab = picked ?? rememberedTab(lane.id) ?? (lane.state === 'closed' ? 'overview' : defaultLaneDetailTab(lane, data?.runs))
 
   return (
     <div className="page lane">
       <BackLink />
-      <header className="page-head lane-head">
-        <h1>
-          {group && <Glyph glyph={GROUP_MARKS[group].glyph} tone={GROUP_MARKS[group].tone} label={GROUP_NAMES[group]} />}
-          {lane.name}
-        </h1>
-        <p className="page-sub lane-sub">
-          <span>{lane.repo}</span>
-          <span>
-            <code>{lane.branch}</code>
-            {lane.base && <> onto <code>{lane.base}</code></>}
-          </span>
-          {known && <span>{lane.state === 'closed' ? `closed ${since(lane.closed, now)} ago` : `opened ${since(lane.created, now)} ago`}</span>}
-          {record && lane.state === 'closed' && <span title={ending(record).title}>{ending(record).text}</span>}
-          {group && <span>{GROUP_NAMES[group]}</span>}
-        </p>
-      </header>
-
-      {openLane && (
-        <p className="lane-actions">
-          {review && <FinishedMark review={review} lastRun={latest?.state} detail />}
-          <LaneCloseButton lane={openLane} running={runs.some((r) => r.state === 'running')} />
-        </p>
-      )}
-
-      {!known && (
-        <p className="lane-note faint">
-          This lane is closed or not listed by the daemon, so its scope and merge request are not shown; its runs and
-          timeline are.
-        </p>
-      )}
-
-      {decisions.length > 0 && (
-        <p className="lane-decisions">
-          <Glyph glyph="?" tone="warn" label="decision waiting" />
-          <span>
-            {decisions.length === 1 ? 'A decision waits on you: ' : `${decisions.length} decisions wait on you: `}
-            {decisions.map((d, i) => (
-              <span key={d.id}>
-                {i > 0 && ', '}
-                <a href={href.decisions(d.id)}>{d.question.length > 80 ? d.question.slice(0, 79) + '…' : d.question}</a>
-              </span>
-            ))}
-          </span>
-        </p>
-      )}
-
-      <div className="lane-tabs" role="tablist" aria-label="Lane views">
-        {(['overview', 'conversation', 'changes', 'artifacts'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            id={`lane-tab-${t}`}
-            className="lane-tab"
-            aria-selected={tab === t}
-            aria-controls="lane-panel"
-            onClick={() => setTab(t)}
-          >
-            {TAB_NAMES[t]}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'conversation' && (
-        <div id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-conversation">
-          <Conversation source={source} refreshKey={feedLast} now={now} />
-        </div>
-      )}
-
-      {tab === 'changes' && known && (
-        <>
-          {lane.state === 'open' && <LaneApprove laneId={lane.id} refreshKey={feedLast} />}
-          <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={editorUrl} refreshKey={feedLast} now={now} />
-        </>
-      )}
-      {tab === 'changes' && !known && (
-        <p id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-changes" className="lane-note faint">
-          This lane is closed or not listed by the daemon, so there is no worktree to read.
-        </p>
-      )}
-
-      {tab === 'artifacts' && known && lane.state === 'open' && (
-        <div id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-artifacts">
-          <LaneArtifactsPanel laneId={lane.id} refreshKey={feedLast} />
-        </div>
-      )}
-      {tab === 'artifacts' && !(known && lane.state === 'open') && (
-        <p id="lane-panel" role="tabpanel" aria-labelledby="lane-tab-artifacts" className="lane-note faint">
-          This lane is closed or not listed by the daemon, so there is no worktree to read.
-        </p>
-      )}
-
-      <div className="lane-grid" id={tab === 'overview' ? 'lane-panel' : undefined} role={tab === 'overview' ? 'tabpanel' : undefined} aria-labelledby={tab === 'overview' ? 'lane-tab-overview' : undefined} hidden={tab !== 'overview'}>
-        <section className="lane-main" aria-labelledby="runs-h">
-          <h2 id="runs-h" className="section-h">Runs</h2>
-          {error && <p className="tone-bad">Could not load the runs: {error}</p>}
-          {data && runs.length === 0 && <p className="faint">No agent has run in this lane yet.</p>}
-          {latest?.state === 'running' && latest.progress && (
-            <p className="lane-progress" aria-live="polite">
-              <Glyph glyph="▸" tone="ok" label="running" /> Run {latest.id}: {latest.progress.line}
-            </p>
-          )}
-          {latest?.diagnosis && (
-            <RunFailure run={latest} onFixed={() => void live.refresh().then(() => setReload((n) => n + 1))} />
-          )}
-          {runs.length > 0 && <RunsTable runs={runs} now={now} />}
-
-          <h2 className="section-h">Timeline</h2>
-          {timeline.length === 0 ? (
-            <p className="faint">Nothing in the recent feed about this lane.</p>
-          ) : (
-            <ol className="timeline">
-              {timeline.map((it) => (
-                <li key={it.id}>
-                  <EventGlyph event={it.event} />
-                  <time dateTime={it.created} title={it.created}>
-                    {clockTime(it.created, now)}
-                  </time>
-                  <span className="timeline-text">{it.text}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-
-        <aside className="lane-facts" aria-label="Lane details">
-          <Forge lane={lane} />
-          {lane.gate && (
-            <p className="gate faint">
-              <GateBadge gate={lane.gate} now={now} />
-            </p>
-          )}
-          <dl>
-            <dt>Scope</dt>
-            <dd>
-              <ul className="scope">
-                {lane.scope.map((s) => (
-                  <li key={s}>
-                    <code>{s}</code>
-                  </li>
-                ))}
-              </ul>
-            </dd>
-            <dt>Commits</dt>
-            <dd>
-              {known && (
-                <p className="lane-changes-link">
-                  <button type="button" className="link-button" onClick={() => setTab('changes')}>See the changes</button>
-                </p>
-              )}
-              {runs.some((r) => r.commits > 0) ? (
-                <ul className="commits">
-                  {runs.filter((r) => r.commits > 0).map((r) => (
-                    <li key={r.id}>
-                      <code>{shortSha(r.start_sha)}..{shortSha(r.end_sha)}</code> {r.commits} by run {r.id}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="faint">None from Shepherd's runs</span>
-              )}
-            </dd>
-            <dt>Worktree</dt>
-            <dd>
-              <code className="path">{lane.worktree}</code>
-              {(() => {
-                const link = editorHref(editorUrl, lane.worktree)
-                return link && (
-                  <> <a href={link} title={`Open the worktree in your editor. ${DAEMON_PATH_NOTE}`}>open in editor</a></>
-                )
-              })()}
-            </dd>
-            <dt>Opened by</dt>
-            <dd>{origin(lane)}</dd>
-          </dl>
-        </aside>
-      </div>
+      <LaneDetail
+        lane={lane}
+        runs={data?.runs ?? []}
+        now={now}
+        tab={tab}
+        onTab={setPicked}
+        feedLast={feedLast}
+        conversation={conversation ?? laneSource}
+        full
+        known={known !== undefined}
+        record={record ?? undefined}
+      />
     </div>
   )
-}
-
-function RunsTable({ runs, now }: { runs: RunView[]; now: number }) {
-  return (
-    <table className="runs">
-      <thead>
-        <tr>
-          <th scope="col"><span className="visually-hidden">Outcome</span></th>
-          <th scope="col">Run</th>
-          <th scope="col">Agent</th>
-          <th scope="col">Model</th>
-          <th scope="col">Outcome</th>
-          <th scope="col" className="num">Took</th>
-          <th scope="col" className="num">Cost</th>
-          <th scope="col">Started</th>
-        </tr>
-      </thead>
-      <tbody>
-        {runs.map((r) => (
-          <tr key={r.id}>
-            <td><EventGlyph event={RUN_EVENT[r.state]} /></td>
-            <td><a href={href.log(r.id)}>{r.id}</a>{r.parent ? <span className="faint" title={`continues run ${r.parent}`}> ↰{r.parent}</span> : null}</td>
-            <td>{r.agent}</td>
-            <td className="faint">{r.model ?? ''}</td>
-            <td title={r.error ?? undefined}>
-              {r.state}
-              {r.exit_code !== undefined && r.exit_code !== 0 && <span className="faint"> (exit {r.exit_code})</span>}
-              {r.outside?.length ? <span className="tone-bad" title={r.outside.join(', ')}> outside scope</span> : null}
-            </td>
-            <td className="num">{duration(r.started, r.ended, now)}</td>
-            <td className="num" title={costNote(r)}>{runCost(r)}</td>
-            <td className="faint" title={r.started}>{clockTime(r.started, now)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  )
-}
-
-function Forge({ lane }: { lane: LaneView }) {
-  if (!lane.mr) return <p className="forge faint">No merge request yet.</p>
-  const pipelineUrl = pipelineLink(lane)
-  return (
-    <p className="forge">
-      <MrBadge lane={lane} />
-      <span className="faint">{lane.mr_state}</span>
-      {lane.pipeline ? (
-        <span>
-          {pipelineUrl ? <a href={pipelineUrl} target="_blank" rel="noreferrer">pipeline {lane.pipeline}</a> : `pipeline ${lane.pipeline}`}{' '}
-          <span className="faint">{lane.pipeline_status}</span>
-        </span>
-      ) : (
-        <span className="faint">no pipeline seen</span>
-      )}
-    </p>
-  )
-}
-
-/** The daemon gives a pipeline's id but not its URL; on GitLab it sits beside the MR's. */
-function pipelineLink(lane: LaneView): string | null {
-  if (!lane.mr_url || !lane.pipeline) return null
-  const m = /^(.*)\/-\/merge_requests\/\d+$/.exec(lane.mr_url)
-  return m ? `${m[1]}/-/pipelines/${lane.pipeline}` : null
 }
 
 function closedLane(id: number, r: RunView): LaneView {
@@ -406,11 +107,4 @@ function closedLane(id: number, r: RunView): LaneView {
     id, repo_id: 0, name: r.lane, repo: r.repo, branch: r.lane, base: '', worktree: r.worktree,
     scope: [], state: 'closed', created: r.started, origin: {},
   }
-}
-
-function origin(l: LaneView): string {
-  const o = l.origin
-  if (!o.via) return 'unknown'
-  const parts = [o.agent, o.run ? `run ${o.run}` : '', o.detail].filter(Boolean)
-  return parts.length ? `${o.via} (${parts.join(', ')})` : o.via
 }

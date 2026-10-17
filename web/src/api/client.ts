@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, DeskQuestion, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
+  ConfigChange, ConfigDoc, DeskQuestion, LaneFileNode, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -186,6 +186,12 @@ export const laneChanges = {
   /** The file list; with `file`, that file's patch; with `run`, narrowed to that run's range. */
   diff: (laneId: number, file?: string, run?: number) =>
     get<LaneDiff>(`/v1/lanes/${laneId}/diff?${qs({ ...(file === undefined ? { mode: 'stat' } : { file }), ...(run ? { run } : {}) })}`),
+}
+
+/** A lane's worktree files or any repo ref. Read-only. */
+export const laneFiles = {
+  read: (laneId: number, path = '', ref?: string) =>
+    get<LaneFileNode>(`/v1/lanes/${laneId}/files?${qs({ ...(path ? { path } : {}), ...(ref ? { ref } : {}) })}`),
 }
 
 /** Closing a lane, and judging whether its work is done. */

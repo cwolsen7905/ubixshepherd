@@ -400,3 +400,51 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-modal--sheet::before { content: ""; display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--sh-control); margin: 0 auto 8px; }
 .sh-modal--sheet .sh-modal-foot { padding: 8px 10px 0; margin-top: 0; }
 .sh-modal--sheet .sh-modal-foot .sh-btn { flex: 1; min-height: 44px; }
+
+/* Board groups and rows: a group header with a count and range filter, rows in a plain list. */
+.board-group, .board-project { margin: 0 0 var(--sh-s6); }
+.board-rows { list-style: none; margin: 0; padding: 0; }
+.board-row-wrap { margin: 0; }
+.board-row[data-selected="true"] .sh-row { box-shadow: inset 2px 0 0 var(--sh-lichen); }
+.sh-group-h-n { font-weight: 400; color: var(--sh-faint); }
+.sh-group-h-meta { margin-left: auto; font-weight: 400; }
+.sh-project-h-spend { margin-left: auto; }
+.project-group-body { padding-left: var(--sh-s4); }
+.project-group-empty, .group-note { padding: var(--sh-s3) var(--sh-s5); margin: 0; font-size: var(--sh-t-small); }
+
+/* LaneDetail: the same body in the side panel and as a page. */
+.lane-detail { display: flex; flex-direction: column; gap: var(--sh-s6); min-width: 0; }
+.lane-detail-head h1 { margin: 0; font-size: var(--sh-t-view); font-weight: 600; }
+.lane-detail-status { display: flex; flex-wrap: wrap; gap: var(--sh-s2) var(--sh-s5); align-items: baseline; margin: 0 0 var(--sh-s6); font-size: var(--sh-t-small); }
+.lane-detail-overview .lane-note, .lane-detail .lane-note { font-size: var(--sh-t-small); }
+.lane-detail-overview .lane-progress, .lane-detail-overview .lane-decisions { margin: 0 0 var(--sh-s6); font-size: var(--sh-t-small); }
+.lane-detail-action { display: flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; margin: var(--sh-s8) 0 var(--sh-s6); }
+.lane-detail .sh-tabpanel { padding-top: var(--sh-s6); }
+.lane-detail .scope, .lane-detail .commits { list-style: none; margin: 0; padding: 0; }
+.lane-detail code { font-family: var(--sh-mono); font-size: var(--sh-t-meta); }
+
+/* RunsTable. */
+.sh-runs { width: 100%; border-collapse: collapse; font-size: var(--sh-t-small); }
+.sh-runs th { text-align: left; font-weight: 600; color: var(--sh-muted); padding: var(--sh-s2) var(--sh-s4); border-bottom: 1px solid var(--sh-rule); white-space: nowrap; }
+.sh-runs td { padding: var(--sh-s3) var(--sh-s4); border-bottom: 1px solid var(--sh-rule); }
+.sh-runs .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sh-run-list { list-style: none; margin: 0; padding: 0; font-size: var(--sh-t-small); }
+.sh-run-list li { padding: var(--sh-s3) 0; }
+
+/* FileBrowser: a tree, and beside it a viewer. */
+.sh-file-browser { display: block; min-width: 0; }
+.sh-file-browser--viewer { display: grid; grid-template-columns: minmax(10rem, 16rem) minmax(0, 1fr); gap: var(--sh-s6); align-items: start; }
+.sh-file-tree ul { list-style: none; margin: var(--sh-s3) 0 0; padding: 0; }
+.sh-file-tree-item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: var(--sh-s4); align-items: baseline; width: 100%; text-align: left; background: none; border: 0; border-radius: var(--sh-r); padding: var(--sh-s2) var(--sh-s4); color: var(--sh-ink); font: inherit; font-size: var(--sh-t-small); cursor: pointer; }
+.sh-file-tree-item:hover { background: var(--sh-sunk); }
+.sh-file-tree-item[aria-current="true"] { background: var(--sh-lichen-wash); outline: 1px solid var(--sh-lichen); }
+.sh-file-tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--sh-mono); font-size: var(--sh-t-meta); }
+.sh-file-viewer { min-width: 0; border: 1px solid var(--sh-rule); border-radius: var(--sh-r); background: var(--sh-raised); }
+.sh-file-viewer-head { display: flex; gap: var(--sh-s4); align-items: baseline; padding: var(--sh-s3) var(--sh-s5); border-bottom: 1px solid var(--sh-rule); font-size: var(--sh-t-small); }
+.sh-file-viewer-body { margin: 0; padding: var(--sh-s5); overflow: auto; max-height: 60vh; font-family: var(--sh-mono); font-size: var(--sh-t-meta); white-space: pre; }
+.sh-file-viewer > p { padding: var(--sh-s5); margin: 0; }
+@container (max-width: 40rem) { .sh-file-browser--viewer { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 40rem) { .sh-file-browser--viewer { grid-template-columns: minmax(0, 1fr); } }
+.board-project > .sh-project-h { padding-inline: var(--sh-s5); }
+.board-row-wrap .row-actions { margin: 0; padding: 0 var(--sh-s5) var(--sh-s2); font-size: var(--sh-t-meta); }
+.lane-detail .sh-tabs { overflow-x: auto; }

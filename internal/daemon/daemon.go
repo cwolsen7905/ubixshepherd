@@ -190,6 +190,8 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathLanes+"/{id}/diff", desk|web, api.LaneDiff(s.Fold))
 	handle("GET "+api.PathLanes+"/{id}/artifacts", desk|web, api.LaneArtifacts(s.Fold))
 	handle("GET "+api.PathLanes+"/{id}/artifacts/content", desk|web, api.LaneArtifactContent(s.Fold))
+	// The files of a lane's worktree or any repo ref: read-only, for the desk and browser.
+	handle("GET "+api.PathLanes+"/{id}/files", desk|web, api.LaneFiles(s.Fold))
 	handle("GET "+api.PathFoldGC, desk, s.foldGC)
 	handle("POST "+api.PathPrePush, worker, s.prePush)
 	handle("POST /v1/repos/{id}/hook", operatorOnly, s.repoHook)

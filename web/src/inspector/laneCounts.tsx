@@ -22,11 +22,11 @@ export function useLaneCounts(laneId: number, refreshKey: number): LaneCounts {
       // A late answer for a lane we have left is dropped.
       const put = (c: LaneCounts) => last.current.laneId === laneId && setCounts((prev) => ({ ...(prev.laneId === laneId ? prev : {}), laneId, ...c }))
       laneChanges.diff(laneId).then(
-        (d) => put({ changes: d.committed.length + d.uncommitted.length + d.untracked.length + (d.files_more ?? 0) }),
+        (d) => put({ changes: [d.committed, d.uncommitted, d.untracked].reduce((n, l) => n + (l?.length ?? 0), d.files_more ?? 0) }),
         () => undefined,
       )
       laneArtifacts(laneId).then(
-        (a) => put({ artifacts: a.artifacts.length }),
+        (a) => put({ artifacts: a.artifacts?.length ?? 0 }),
         () => undefined,
       )
     }

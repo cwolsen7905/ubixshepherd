@@ -5,27 +5,27 @@ import { RangeFilter } from '../components/RangeFilter'
 import { DEFAULT_RANGE, ending, finished, RANGE_PHRASE, rangeStart } from '../model/history'
 import { useHistory } from '../state/history'
 import type { Range } from '../router'
-import { canDismiss, counts, countsText, GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
+import { canDismiss, counts, countsText, GROUP_NAMES, latestRuns, type BoardItem, type Group } from '../model/board'
 import {
-  collapseKey, groupByProject, type ProjectGroup, readCollapsed, readView, summaryText, writeCollapsed, writeView, type BoardView,
+  collapseKey, groupByProject, type ProjectGroup, readView, summaryText, writeView, type BoardView,
 } from '../model/projects'
 import { useProjectList } from '../state/projects'
 import { projectHref } from './Projects'
-import '../styles/projects.css'
-import '../styles/pages/board.css'
-import { Button, Chip, EmptyState, Popover } from '../ui'
-import { GROUP_MARKS } from '../model/groups'
-import { Glyph } from '../components/Glyph'
+import { useNow, useKeys } from '../hooks'
+import { go, href } from '../router'
+import { useLive, useSnapshot } from '../state/context'
+import { isOpenNow, itemOpen, openHref } from '../components/BacklogOpen'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
-import { GateBadge } from '../components/GateBadge'
-import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
-import { useKeys, useNow } from '../hooks'
-import { go, href } from '../router'
-import { isOpenNow, itemOpen, openClick, openHref, openRow } from '../components/BacklogOpen'
-import { useLive, useSnapshot } from '../state/context'
-
+import { ListRow, GroupHeader, Chip, EmptyState, Popover } from '../ui'
+import { glyphTone } from '../ui/StatusGlyph'
+import { GROUP_MARKS } from '../model/groups'
+import type { Tone } from '../model/marks'
+import { MrBadge } from '../components/MrBadge'
+import { GateBadge } from '../components/GateBadge'
+import '../styles/projects.css'
+import '../styles/pages/board.css'
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -35,20 +35,36 @@ function shortModel(model: string): string {
   return i >= 0 ? model.slice(i + 1) : model
 }
 
-function AgentCell({ agent, model }: { agent?: string; model?: string }) {
-  const short = model ? shortModel(model) : null
-  return (
-    <span className="row-agent">
-      <span className="row-agent-name">{agent ?? ''}</span>
-      {short && <span className="row-model" title={model}>{short}</span>}
-    </span>
-  )
+function agentSub(it: BoardItem): string {
+  const parts: string[] = []
+  if (it.agent) parts.push(it.agent)
+  if (it.run?.model) parts.push(shortModel(it.run.model))
+  parts.push(it.detail)
+  return parts.join(' · ')
 }
+
+/**
+ * A row of the board. Held and idle lanes are not in the model's groups (they need nothing from
+ * anyone); the page adds them, marked by `row`, so the model and the terminal's dock stay as they are.
+ */
+type Row = BoardItem & { row?: 'held' | 'idle' }
+type RowGroup = Group | 'held' | 'idle'
+
+/** Top to bottom: what needs the person first, what needs no one last. */
+const ROW_GROUPS: readonly RowGroup[] = ['needs', 'broken', 'review', 'working', 'held', 'idle', 'done']
+const ROW_NAMES: Record<RowGroup, string> = { ...GROUP_NAMES, held: 'held', idle: 'idle' }
+const ROW_MARKS: Record<RowGroup, { glyph: string; tone: Tone }> = {
+  ...GROUP_MARKS,
+  held: { glyph: '‖', tone: 'muted' },
+  idle: { glyph: '○', tone: 'muted' },
+}
+const rowGroup = (it: Row): RowGroup => it.row ?? it.group
+
+const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
 
 /** A project with no open lane and nothing on the board has nothing to show: it folds. */
 const isQuiet = (g: ProjectGroup) => g.items.length === 0 && g.summary.open === 0
 
-/** Dismissed runs: how many are hidden, whether they show, and the toggle. */
 export interface DismissedControl {
   count: number
   show: boolean
@@ -56,12 +72,29 @@ export interface DismissedControl {
 }
 
 export function BoardPage({
-  items, range = DEFAULT_RANGE, dismissed,
+  items: listed, range = DEFAULT_RANGE, dismissed,
 }: { items: BoardItem[]; range?: Range; dismissed?: DismissedControl }) {
   const snap = useSnapshot()
   const live = useLive()
   const now = useNow()
   const [sel, setSel] = useState(0)
+  const quotaHolds = snap.status?.detail?.quota_holds
+  const items: Row[] = useMemo(() => {
+    const onBoard = new Set(listed.flatMap((it) => (it.laneId === undefined ? [] : [it.laneId])))
+    const latest = latestRuns(snap.runs)
+    const extra: Row[] = []
+    for (const l of snap.lanes) {
+      if (l.state !== 'open' || onBoard.has(l.id)) continue
+      const run = latest.get(l.id)
+      const hold = run && quotaHolds?.find((h) => h.agent === run.agent && Date.parse(h.until) > now)
+      extra.push({
+        key: `lane:${l.id}`, group: 'done', row: hold ? 'held' : 'idle', name: l.name, laneId: l.id, repo: l.repo,
+        agent: run?.agent, lane: l, run, at: run?.ended ?? l.created,
+        detail: hold ? `held: out of quota until ${clock(hold.until)}` : 'idle',
+      })
+    }
+    return [...listed, ...extra.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))]
+  }, [listed, snap.lanes, snap.runs, quotaHolds, now])
   const rows = useRef<(HTMLAnchorElement | HTMLDivElement | null)[]>([])
 
   const closed = useHistory(range, async (ids) => {
@@ -72,16 +105,14 @@ export function BoardPage({
 
   const projects = useProjectList()
   const [view, setView] = useState<BoardView | null>(() => readView(window.localStorage))
-  const [collapsed, setCollapsed] = useState(() => readCollapsed(window.localStorage))
   const list = projects.data?.projects
-  // Grouping needs a project to group by; Unassigned alone is the flat board.
   const hasProjects = !!list?.some((p) => !p.unassigned)
   const grouped = hasProjects && (view ?? 'grouped') === 'grouped'
   const groups = useMemo(() => (grouped && list ? groupByProject(items, list) : []), [grouped, list, items])
   const [quietOpen, setQuietOpen] = useState(false)
   const quiet = useMemo(() => groups.filter(isQuiet), [groups])
   const active = useMemo(() => groups.filter((g) => !isQuiet(g)), [groups])
-  const shown = grouped ? active.filter((g) => !collapsed.has(collapseKey(g))).reduce((n, g) => n + g.items.length, 0) : items.length
+  const shown = grouped ? active.reduce((n, g) => n + g.items.length, 0) : items.length
   const total = shown + done.length
   const choose = (v: BoardView) => {
     setView(v)
@@ -93,14 +124,7 @@ export function BoardPage({
       () => setDismissError(null),
       (e) => setDismissError(e instanceof Error ? e.message : String(e)),
     )
-  const toggle = (key: string) => {
-    const next = new Set(collapsed)
-    if (!next.delete(key)) next.add(key)
-    setCollapsed(next)
-    writeCollapsed(window.localStorage, next)
-  }
 
-  // Which open lanes the daemon judges finished, for the marker and the close button.
   const finishedLanes = useFinishedLanes(
     useMemo(() => items.flatMap((it) => (it.lane && !it.decision && !it.request ? [it.lane] : [])), [items]),
     snap.feed.at(-1)?.id ?? 0,
@@ -126,72 +150,63 @@ export function BoardPage({
     return <p className="empty">{snap.error ? 'Waiting for the daemon.' : 'Loading lanes…'}</p>
   }
 
+  const idle = items.filter((it) => it.row === 'idle').length
+  const held = items.filter((it) => it.row === 'held').length
+  const summary = [
+    countsText(counts(items.filter((it) => !it.row))),
+    held > 0 ? `${held} held` : '',
+    idle > 0 ? `${idle} idle` : '',
+  ].filter(Boolean).join(' · ')
+
   let index = -1
-  const renderGroups = (its: BoardItem[]) => {
-    const byGroup = new Map<Group, BoardItem[]>()
-    for (const it of its) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it])
-    return GROUPS.flatMap((g) => {
+  const renderGroups = (its: Row[]) => {
+    const byGroup = new Map<RowGroup, Row[]>()
+    for (const it of its) byGroup.set(rowGroup(it), [...(byGroup.get(rowGroup(it)) ?? []), it])
+    return ROW_GROUPS.flatMap((g) => {
       const list = byGroup.get(g)
       return list ? [{ g, list }] : []
-    }).map(({ g, list }) => (
-        <section key={g} className={`group group-${g}`} aria-labelledby={`group-${g}`}>
-          <h2 id={`group-${g}`} className="section-h group-head">
-            <Glyph glyph={GROUP_MARKS[g].glyph} tone={GROUP_MARKS[g].tone} label="" />
-            <span className="group-name">{sentence(GROUP_NAMES[g])}</span>
-            <span className="group-count">{list.length}</span>
-            {g === 'done' && (
-              <Button variant="ghost" size="small" onClick={() => live.clearDone()}>
-                Mark all seen <kbd>c</kbd>
-              </Button>
-            )}
-          </h2>
-          <ul className="rows">
+    }).map(({ g, list }) => {
+      const mark = ROW_MARKS[g]
+      return (
+        <section key={g} className="board-group" aria-labelledby={`group-${g}`}>
+          <GroupHeader
+            id={`group-${g}`}
+            variant="status"
+            glyph={mark.glyph}
+            glyphTone={glyphTone(mark.tone)}
+            label={sentence(ROW_NAMES[g])}
+            count={list.length}
+            warn={g === 'needs'}
+          />
+          <ul className="board-rows">
             {list.map((it) => {
               const i = ++index
               const op = itemOpen(it)
-              const mark = GROUP_MARKS[it.group]
-              const dr = it.run
-              const body = (
-                <>
-                  <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={sentence(GROUP_NAMES[it.group])} />
-                  <span className="row-lane">{it.name}</span>
-                  <AgentCell agent={it.agent} model={it.run?.model} />
-                  <span className="row-repo">{it.repo}</span>
-                  <span className="row-mr">{it.lane && <MrBadge lane={it.lane} link={false} />}{it.lane?.gate && <> <GateBadge gate={it.lane.gate} /></>}</span>
-                  <span className="row-detail">{it.detail}</span>
-                  <span className="row-age" title={it.at}>
-                    {since(it.at, now)}
-                  </span>
-                </>
+              const runId = it.run?.id
+              const row = (
+                <ListRow
+                  ref={(el: HTMLAnchorElement | HTMLDivElement | null) => {
+                    rows.current[i] = el
+                  }}
+                  variant="lane"
+                  glyph={it.glyph ?? mark.glyph}
+                  tone={it.glyph ? 'idle' : glyphTone(mark.tone)}
+                  glyphLabel={sentence(ROW_NAMES[g])}
+                  title={it.name}
+                  titleAttr={it.key}
+                  sub={agentSub(it)}
+                  right={it.lane ? <><MrBadge lane={it.lane} /> {it.lane.gate && <GateBadge gate={it.lane.gate} />}</> : undefined}
+                  age={since(it.at, now)}
+                  selected={op ? isOpenNow(op) : i === clamped}
+                  onSelect={() => setSel(i)}
+                  href={op ? openHref(op) : it.request ? href.decisions() : undefined}
+                />
               )
               return (
-                <li key={it.key}>
-                  {op || it.request ? (
-                    <a
-                      ref={(el) => {
-                        rows.current[i] = el
-                      }}
-                      className="row"
-                      href={op ? openHref(op) : href.decisions()}
-                      aria-current={op && isOpenNow(op) ? 'true' : undefined}
-                      data-selected={i === clamped ? 'true' : undefined}
-                      onFocus={() => setSel(i)}
-                      onClick={op ? openClick(op) : (e) => (e.preventDefault(), go(href.decisions()))}
-                    >
-                      {body}
-                    </a>
-                  ) : (
-                    <div
-                      ref={(el) => {
-                        rows.current[i] = el
-                      }}
-                      className="row"
-                      tabIndex={0}
-                      onFocus={() => setSel(i)}
-                    >
-                      {body}
-                    </div>
-                  )}
+                <li key={it.key} className="board-row-wrap">
+                  <div className="board-row" data-selected={i === clamped ? 'true' : undefined} onClick={() => setSel(i)}>
+                    {row}
+                  </div>
                   {it.lane && it.lane.state === 'open' && !it.decision && !it.request && (
                     <p className="row-actions lane-close-row">
                       {(() => {
@@ -203,20 +218,20 @@ export function BoardPage({
                       </Popover>
                     </p>
                   )}
-                  {dr && (canDismiss(it) || (dismissed?.show && dr.dismissed)) && (
+                  {it.run && runId !== undefined && (canDismiss(it) || (dismissed?.show && it.run.dismissed)) && (
                     <p className="row-actions">
-                      {dr.dismissed ? (
-                        <button type="button" className="link-button" onClick={() => void dismiss(dr.id, true)}>
-                          Undismiss run {dr.id}
+                      {it.run.dismissed ? (
+                        <button type="button" className="link-button" onClick={() => void dismiss(runId, true)}>
+                          Undismiss run {runId}
                         </button>
                       ) : (
                         <button
                           type="button"
                           className="link-button"
                           title="Clear this run from the board. Its log and record stay in history."
-                          onClick={() => void dismiss(dr.id)}
+                          onClick={() => void dismiss(runId)}
                         >
-                          Dismiss run {dr.id}
+                          Dismiss run {runId}
                         </button>
                       )}
                     </p>
@@ -229,14 +244,15 @@ export function BoardPage({
             })}
           </ul>
         </section>
-    ))
+      )
+    })
   }
 
   return (
     <div className="board">
       <header className="page-head">
         <h1>Board</h1>
-        <p className="page-sub">{countsText(counts(items)) || 'Nothing needs you right now.'}</p>
+        <p className="page-sub">{summary || 'Nothing needs you right now.'}</p>
         <div className="page-actions">
           {hasProjects && (
             <span className="board-view" role="group" aria-label="View">
@@ -264,68 +280,45 @@ export function BoardPage({
       )}
       {grouped
         ? active.map((g) => {
-            const key = collapseKey(g)
-            const open = !collapsed.has(key)
             const id = `project-${g.unassigned ? 'unassigned' : g.name}`
             return (
-              <section key={key} className="project-group" aria-labelledby={id}>
-                <h2 id={id} className="section-h project-group-head">
-                  <button type="button" className="project-toggle" aria-expanded={open} onClick={() => toggle(key)}>
-                    <span className="caret" aria-hidden="true">
-                      {open ? '▾' : '▸'}
-                    </span>
-                    {g.title}
-                  </button>
-                  <span className="project-summary">{summaryText(g.summary, (n) => usd(n) || '$0.00')}</span>
-                  <a
-                    href={projectHref({ name: g.name, unassigned: g.unassigned })}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      go(projectHref({ name: g.name, unassigned: g.unassigned }))
-                    }}
-                  >
-                    Open
-                  </a>
-                </h2>
-                {open && (
-                  <div className="project-group-body">
-                    {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items)}
-                  </div>
-                )}
+              <section key={g.name} className="board-project" aria-labelledby={id}>
+                <GroupHeader
+                  id={id}
+                  variant="project"
+                  label={g.title}
+                  meta={summaryText(g.summary, (n) => usd(n) || '$0.00')}
+                  spend={(
+                    <button type="button" className="link-button" onClick={() => go(projectHref({ name: g.name, unassigned: g.unassigned }))}>
+                      Open
+                    </button>
+                  )}
+                />
+                <div className="project-group-body">
+                  {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items as Row[])}
+                </div>
               </section>
             )
           })
         : renderGroups(items)}
       {grouped && quiet.length > 0 && (
         <section className="quiet-projects" aria-label="Quiet projects">
-          <h2 className="section-h">
-            <button
-              type="button"
-              className="project-toggle"
-              aria-expanded={quietOpen}
-              onClick={() => setQuietOpen((o) => !o)}
-            >
-              <span className="caret" aria-hidden="true">
-                {quietOpen ? '▾' : '▸'}
-              </span>
-              {quiet.length} quiet {quiet.length === 1 ? 'project' : 'projects'}
-            </button>
-          </h2>
+          <button
+            type="button"
+            className="project-toggle"
+            aria-expanded={quietOpen}
+            onClick={() => setQuietOpen((o) => !o)}
+          >
+            <span className="caret" aria-hidden="true">{quietOpen ? '▾' : '▸'}</span>
+            {quiet.length} quiet {quiet.length === 1 ? 'project' : 'projects'}
+          </button>
           {quietOpen && (
             <ul className="quiet-list">
               {quiet.map((g) => {
                 const to = projectHref({ name: g.name, unassigned: g.unassigned })
                 return (
                   <li key={collapseKey(g)}>
-                    <a
-                      href={to}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        go(to)
-                      }}
-                    >
-                      {g.title}
-                    </a>
+                    <a href={to} onClick={(e) => { e.preventDefault(); go(to) }}>{g.title}</a>
                     <span className="faint">{summaryText(g.summary, (n) => usd(n) || '$0.00')}</span>
                   </li>
                 )
@@ -334,22 +327,11 @@ export function BoardPage({
           )}
         </section>
       )}
-      <FinishedSection
-        lanes={done}
-        range={range}
-        loading={closed.loading && closed.data === null}
-        error={closed.error}
-        offset={shown}
-        now={now}
-        selected={clamped}
-        onSelect={setSel}
-        rows={rows}
-      />
+      <FinishedSection lanes={done} range={range} loading={closed.loading && closed.data === null} error={closed.error} offset={shown} now={now} selected={clamped} onSelect={setSel} rows={rows} />
     </div>
   )
 }
 
-/** Closed lanes, newest first: what ran and how it ended. Rows go on after the board's own. */
 function FinishedSection({
   lanes, range, loading, error, offset, now, selected, onSelect, rows,
 }: {
@@ -365,63 +347,46 @@ function FinishedSection({
 }) {
   const phrase = RANGE_PHRASE[range]
   return (
-    <section className="group group-finished" aria-labelledby="group-finished">
-      <h2 id="group-finished" className="section-h group-head">
-        <Glyph glyph="−" tone="muted" label="" />
-        <span className="group-name">Finished</span>
-        <span className="group-count">{lanes.length}</span>
-        <RangeFilter range={range} href={href.board} />
-      </h2>
+    <section className="board-group group-finished" aria-labelledby="group-finished">
+      <GroupHeader
+        id="group-finished"
+        variant="status"
+        glyph="−"
+        glyphTone="idle"
+        label="Finished"
+        count={lanes.length}
+        meta={<RangeFilter range={range} href={href.board} />}
+      />
       {error && <p className="group-note tone-bad">Could not load closed lanes: {error}</p>}
       {loading && !error && <p className="group-note faint">Loading…</p>}
       {!loading && !error && lanes.length === 0 && <p className="group-note faint">No lane closed {phrase}.</p>}
-      {lanes.length > 0 && (
-        <ul className="rows">
+      {!loading && !error && lanes.length > 0 && (
+        <ul className="board-rows">
           {lanes.map((l, n) => {
             const i = offset + n
             const end = ending(l)
-            const cost = runCost(l) || usd(0)
+            const finishedTone = glyphTone(end.tone)
+            const rightTone: 'ok' | 'bad' | 'muted' = end.tone === 'ok' ? 'ok' : 'muted'
             return (
-              <li key={l.id}>
-              <div {...openRow({ kind: 'lane', id: l.id })} className="row row-finished" tabIndex={-1} data-selected={i === selected ? 'true' : undefined}>
-                <Glyph glyph="−" tone={end.tone} label="closed" />
-                <span className="row-lane">
-                  <a
-                    ref={(el) => {
-                      rows.current[i] = el
-                    }}
-                    className="row-link"
-                    href={openHref({ kind: 'lane', id: l.id })}
-                    onFocus={() => onSelect(i)}
-                    onClick={openClick({ kind: 'lane', id: l.id })}
-                  >
-                    {l.name}
-                  </a>
-                </span>
-                <span className="row-repo">{l.repo}</span>
-                <span className="row-end" title={end.title}>
-                  <span className={`tone-${end.tone}`}>{end.text}</span>
-                  {l.mr ? (
-                    <>
-                      {' '}
-                      {l.mr_url ? (
-                        <a className="row-mr-link" href={l.mr_url} target="_blank" rel="noreferrer">
-                          !{l.mr}
-                        </a>
-                      ) : (
-                        <span>!{l.mr}</span>
-                      )}
-                    </>
-                  ) : null}
-                </span>
-                <span className="row-runs">
-                  {l.runs} {l.runs === 1 ? 'run' : 'runs'}
-                </span>
-                <span className="row-cost">{cost}</span>
-                <span className="row-age" title={l.closed}>
-                  {since(l.closed, now)} ago
-                </span>
-              </div>
+              <li key={l.id} className="board-row-wrap">
+                <ListRow
+                  ref={(el: HTMLAnchorElement | HTMLDivElement | null) => {
+                    rows.current[i] = el
+                  }}
+                  variant="lane"
+                  glyph="−"
+                  tone={finishedTone}
+                  glyphLabel="closed"
+                  title={l.name}
+                  sub={`${l.repo} · ${end.text} · ${l.runs} ${l.runs === 1 ? 'run' : 'runs'} · ${runCost(l) || usd(0)}`}
+                  right={l.mr ? `!${l.mr}` : undefined}
+                  rightTone={rightTone}
+                  age={`${since(l.closed, now)} ago`}
+                  selected={i === selected}
+                  onSelect={() => onSelect(i)}
+                  href={openHref({ kind: 'lane', id: l.id })}
+                  titleAttr={end.title}
+                />
               </li>
             )
           })}
