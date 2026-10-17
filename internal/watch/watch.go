@@ -50,6 +50,8 @@ type Watcher struct {
 	reviewed map[int64]time.Time
 	// approvalRead is what each lane's approval was last read for (approval.go).
 	approvalRead map[int64]approvalRead
+	// reviewRead is what was done about each lane's AI review job (airreview.go).
+	reviewRead map[int64]reviewRead
 	// closedRead is when the forge was last asked about a closed lane's request, by lane
 	// id (nextdone.go).
 	closedRead map[int64]closedPoll
@@ -263,6 +265,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane,
 	}
 
 	w.approval(ctx, f, lane, mr, prev, &next)
+	w.aiReview(ctx, f, lane, mr)
 	w.reviewThreads(ctx, f, lane, mr, &next, wc)
 
 	// Act only on a merge seen happening. A request already merged the first time

@@ -5,11 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // RequireApprovalJob is the name of the CI job that holds a merge request until a person
 // has signed off (bin/ci/require-approval.sh).
 const RequireApprovalJob = "require-approval"
+
+// AIReviewJob is the name of the pipeline's AI review job. It is advisory (never red); it
+// exits UnreviewedExit when it could not review.
+const AIReviewJob = "ai-review-mr"
+
+// UnreviewedExit is the exit code of an AI review job that did not review.
+const UnreviewedExit = 75
+
+// Unreviewed says whether a job's log shows it did not review: its summary says
+// UNREVIEWED, or the runner reports exit code 75.
+func Unreviewed(log string) bool {
+	return strings.Contains(log, "UNREVIEWED") || strings.Contains(log, fmt.Sprintf("exit code %d", UnreviewedExit))
+}
 
 // Approvals is who has signed off on a merge request.
 type Approvals struct {

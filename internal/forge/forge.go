@@ -67,6 +67,9 @@ type Thread struct {
 	// cannot link a discussion id, only a note.
 	NoteID int64  `json:"note_id,omitempty"`
 	URL    string `json:"url,omitempty"`
+	// Notes is how many notes the thread has, system notes aside: it grows when anyone
+	// replies, so a count above the one handed back says the thread was answered.
+	Notes int `json:"notes,omitempty"`
 }
 
 // Title is a short link text for the thread: its first note's first line, cut.
@@ -109,6 +112,16 @@ type Linker interface {
 	JobURL(id int64) string
 	// ThreadURL is the link to the first note of a merge request's discussion.
 	ThreadURL(ctx context.Context, mr int, discussion string) (string, error)
+}
+
+// ThreadCommander is a Forge that can say, as shell commands for an agent, how to reply
+// on a review thread and resolve it. The agent runs them with its own login; Shepherd
+// holds no token.
+type ThreadCommander interface {
+	// ReplyCommand posts a note on the discussion; the agent fills in the body.
+	ReplyCommand(mr int, discussion string) string
+	// ResolveCommand resolves the discussion.
+	ResolveCommand(mr int, discussion string) string
 }
 
 // ThreadReader is a Forge that can list a request's review threads. GitLab can.
@@ -240,6 +253,14 @@ func (g *GitLab) ThreadURL(ctx context.Context, mr int, discussion string) (stri
 		return "", fmt.Errorf("discussion %s on !%d has no notes", discussion, mr)
 	}
 	return fmt.Sprintf("%s#note_%d", g.MRURL(mr), d.Notes[0].ID), nil
+}
+
+func (g *GitLab) ReplyCommand(mr int, discussion string) string {
+	return fmt.Sprintf("glab api -X POST '%s/merge_requests/%d/discussions/%s/notes' -f body='...'", g.project(), mr, url.PathEscape(discussion))
+}
+
+func (g *GitLab) ResolveCommand(mr int, discussion string) string {
+	return fmt.Sprintf("glab api -X PUT '%s/merge_requests/%d/discussions/%s' -f resolved=true", g.project(), mr, url.PathEscape(discussion))
 }
 
 func (g *GitLab) project() string { return "projects/" + url.PathEscape(g.Project) }
@@ -486,6 +507,11 @@ func (d glDiscussion) thread() (Thread, bool) {
 	}
 	first := d.Notes[0]
 	t := Thread{ID: d.ID, Author: first.Author.Username, NoteID: first.ID}
+	for _, n := range d.Notes {
+		if !n.System {
+			t.Notes++
+		}
+	}
 	if p := first.Position; p != nil {
 		t.File, t.Line = p.NewPath, p.NewLine
 		if t.File == "" {
