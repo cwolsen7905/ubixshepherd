@@ -9,6 +9,17 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Added
+
+- `shepherd chat`: the dock names a lane's project (`shop/feat-login`) when more than one
+  project has items. `/dock` opens the whole dock, and `/group` or `p` there groups it by
+  project with a summary line each; the choice and the folded projects are remembered.
+  A project at 80% of its budget cap, or at a hard cap that holds runs, gets a dock row.
+
+### Interface changes
+
+- Settings: the daemon accepts two new keys, `dock.group` and `dock.collapsed`.
+
 ## [0.5.0-beta.1] - 2026-10-17
 
 A beta of uBixShepherd with a redesigned web UI built from one design system, a

@@ -61,40 +61,29 @@ Unassigned has its own path so that no project name can clash with it. A project
 summary is built from the daemon's own reads (lanes, runs, decisions, requests, spend
 rollup and the live configuration); nothing new is stored.
 
-## Later: the chat dock
+## The chat dock
 
-Design notes only; `internal/chat` is not touched by this work. The terminal dock
-(`internal/chat/dock.go`) already shows what the Board shows, as a counts row and
-attention-sorted items within a budget of a third of the screen. Bringing projects in
-should keep that budget and the sort, and add grouping only where it earns its rows.
+`shepherd chat`'s dock (`internal/chat`) shows projects without giving up its sort by
+urgency or its budget of a third of the screen. See [chat.md](chat.md) for the keys.
 
-- **Counts row stays global.** Today's `2 needs you · 1 broken · 3 working` is the glance
-  that matters; per-project counts would make it wider than a narrow terminal. Keep it,
-  and put the project in the item rows.
-- **Name the project on the item, not a header.** A header per project costs a row each
-  and the dock has six or so. Prefix a lane with its project when more than one project
-  has items (`shop/feat-login`), the way the dock already qualifies a lane name two repos
-  share (`laneClashes`). With one project, or none, it shows nothing new.
-- **Group only on demand.** Sorting by urgency is the dock's point; grouping by project
-  breaks it. Offer a toggle, as the web does: a key or a `/group` command switches the
-  expanded dock (the Ctrl-O view, which has room) to project headers with a summary
-  line each (`shop  3 open · 1 running · 1 waiting · $1.20`), and leaves the compact dock
-  sorted by urgency. Remember the choice and the collapsed projects in the client's
-  settings (`/v1/settings`), as the desk model is, not a file of the dock's own.
-- **Share the arithmetic.** The grouping and summary rules are small and live in the web
-  model (`web/src/model/projects.ts`). The terminal needs the same numbers, so the
-  summary is worth computing once, in the daemon, as `GET /v1/projects` already does, and
-  the dock should read it rather than re-derive it. The one exception is running and
-  waiting, which the web counts from the rows; the dock has the same rows, and should do
-  the same, so a summary never disagrees with what is listed.
-- **Budget pressure is the one thing worth a warning colour.** A project at 80% of its
-  cap, or at a hard cap and holding runs, deserves a dock row of its own even when its
-  lanes are quiet, in the broken tone for a hard hold and the warn tone otherwise. It is
-  already a feed item when it happens; the dock should keep it as state while it lasts.
-- **The front desk gets the same view.** Its operator tools can read `GET /v1/projects`
-  and answer "what is the shop project doing?" without reading every lane. Worth adding
-  as a tool once the shape has settled in the web; the desk reads only, so nothing about
-  approvals changes.
-- **Open questions for the person:** whether Unassigned should be hidden in the dock when
-  it holds only idle lanes; and whether a project's spend belongs in the compact dock at
-  all, or only in the expanded view.
+- **The counts row is global.** `2 needs you · 1 broken · 3 working` is the glance that
+  matters, and per-project counts would not fit a narrow terminal.
+- **The project is in the item row.** When more than one project has items, a lane shows
+  as `shop/feat-login`, the way the dock already qualifies a lane name two repos share.
+  An item of Unassigned has no prefix. With one project, or none, or a daemon that does
+  not list projects, nothing changes.
+- **Grouping is on demand and only in the expanded dock.** `/dock` opens the whole dock;
+  `p` there, or `/group`, switches it to a header per project with a summary line
+  (`shop  3 open · 1 running · 1 waiting · $1.20`). The compact dock stays sorted by
+  urgency. The number keys `1` to `9`, or `/group collapse <project>`, fold a project.
+  The choice and the folded projects are kept in the daemon's settings (`dock.group` and
+  `dock.collapsed`), as the desk's model is.
+- **Open lanes and spend come from `GET /v1/projects`; running and waiting come from the
+  dock's own rows**, so a summary always agrees with what is listed.
+- **Unassigned is hidden when it has nothing to show**, that is, when it holds only idle
+  lanes. A project with no open lanes and no items is hidden too.
+- **A project's spend is shown only in the expanded dock.** The compact dock's rows are
+  for what needs action.
+- **Budget pressure has a row of its own while it lasts**, even when the project's lanes
+  are quiet: in the warn tone from 80% of a cap, and in the broken tone, marked
+  `runs held`, for a hard cap that is reached.

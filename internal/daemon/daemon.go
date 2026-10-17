@@ -1585,7 +1585,9 @@ func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
 }
 
 // Settings the daemon keeps for clients, by name; anything else is refused.
-var settingKeys = map[string]bool{"desk.session": true, "desk.agent": true, "desk.model": true}
+// dock.group and dock.collapsed are the chat dock's choices: grouping by project, and the
+// collapsed projects as a JSON list of names.
+var settingKeys = map[string]bool{"desk.session": true, "desk.agent": true, "desk.model": true, "dock.group": true, "dock.collapsed": true}
 
 func (s *Server) getSetting(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")

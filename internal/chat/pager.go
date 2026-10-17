@@ -25,6 +25,7 @@ type pager struct {
 	matches   []int  // lines that match term
 	cur       int    // the current match, an index into matches
 	note      string // "not found" and the like
+	hint      string // the footer, when not the default
 }
 
 const pagerHint = "/ search · n/N next/prev · g/G top/bottom · PgUp/PgDn · q back"
@@ -235,7 +236,11 @@ func (p *pager) view() string {
 	for len(rows) < h+1 {
 		rows = append(rows, "")
 	}
-	foot := styleInfo.Render(pagerHint)
+	hint := pagerHint
+	if p.hint != "" {
+		hint = p.hint
+	}
+	foot := styleInfo.Render(hint)
 	if p.searching {
 		foot = "/" + p.query + "█"
 	}

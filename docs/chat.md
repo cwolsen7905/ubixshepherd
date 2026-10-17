@@ -38,6 +38,23 @@ it. The chat reads the mode with its panel, and the event text it sends the desk
 (see [keep-going.md](keep-going.md)). The desk can also turn the mode on when asked in
 words, and off at any time.
 
+## The dock and projects
+
+The dock under the thread sorts by urgency. When the daemon lists projects and more than
+one has items, a lane carries its project: `shop/feat-login`. The counts row stays global.
+
+`/dock` opens the whole dock full screen. There, `p` (or `/group`) groups it by project,
+each with a header such as `shop  3 open · 1 running · 1 waiting · $1.20`; the keys `1` to
+`9` fold a project, and `/group collapse <project>` and `/group expand <project>` do the
+same from the input (`unassigned` names the repos in no project). `/group on` and
+`/group off` set grouping without toggling. The choice and the folded projects are kept in
+the daemon's settings, so the next chat starts as you left it. Unassigned shows only when
+it has something in the dock. A project's spend shows in this view, not in the compact dock.
+
+A project at 80% of its budget cap gets a row of its own in the dock for as long as it
+lasts, and one at a hard cap that is reached shows it as `runs held`. See
+[web-projects.md](web-projects.md) for how projects are built.
+
 ## What it does not do
 
 - **Interactive programs** (editors, pagers, anything that reads the terminal) are not
