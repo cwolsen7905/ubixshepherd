@@ -23,7 +23,9 @@ const ResumePrompt = "Shepherd restarted while you were working. Carry on where 
 // restart and lets starts go again (the command that asked for it died, say).
 var DrainGrace = 2 * time.Minute
 
-// drainStopWait is how long, after the runs are told to stop, a drain waits for them to end.
+// drainStopWait is how long, after the runs are told to stop, before a drain says it is
+// still waiting for them to end (it does not give up: the daemon is not drained, and so
+// not stopped, while a run is being recorded).
 const drainStopWait = 30 * time.Second
 
 type drainState struct {
@@ -80,7 +82,8 @@ wait:
 	select {
 	case <-done:
 	case <-time.After(drainStopWait):
-		r.Log.Warn("runs still ending after the drain", "runs", r.Active())
+		r.Log.Warn("runs are still ending; the drain waits for them", "runs", r.Active())
+		<-done
 	}
 	r.mu.Lock()
 	if r.drain == d {

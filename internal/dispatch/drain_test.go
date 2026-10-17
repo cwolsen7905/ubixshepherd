@@ -280,3 +280,15 @@ func TestHeldStartIsNotRunTwiceWhenItsRowWillNotGo(t *testing.T) {
 		t.Errorf("%d runs for one held start", n)
 	}
 }
+
+func TestDrainIsNotDrainedWhileARunIsStillBeingRecorded(t *testing.T) {
+	f := napFixture(t, "0")
+	f.runner.wg.Add(1) // a run's end, still being recorded
+	f.runner.Drain(time.Minute)
+	time.Sleep(300 * time.Millisecond)
+	if d := f.runner.Draining(); d == nil || d.Drained {
+		t.Fatalf("drained with a run still ending: %+v", d)
+	}
+	f.runner.wg.Done()
+	f.drained(t)
+}
