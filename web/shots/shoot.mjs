@@ -10,10 +10,19 @@ const ALL_PAGES = [
   ['chat', '#/chat'],
   ['chat-next', '#/chat', { rail: 'Next up' }],
   ['next', '#/next'],
+  // The blocked item's detail opens in the page.
+  ['next-item', '#/next?item=2'],
   ['board', '#/board'],
+  // The lane in the side panel (Overview, then Changes), and as a page.
+  ['lane-panel', '#/board?open=lane%3A4'],
+  ['lane-panel-changes', '#/board?open=lane%3A4/changes'],
   ['lane', '#/lanes/4'],
   // A third element names a tab to open and a file to expand on that page.
   ['lane-changes', '#/lanes/4', { tab: 'Changes', file: 'internal/auth/session.go' }],
+  ['lane-files', '#/lanes/4', { tab: 'Files', click: [['README.md', '.sh-file-tree-item']] }],
+  ['lane-artifacts', '#/lanes/4', { tab: 'Artifacts' }],
+  ['lane-runs', '#/lanes/4', { tab: 'Runs' }],
+  ['lane-closed', '#/lanes/7'],
   ['run-log', '#/runs/17/log'],
   ['decisions', '#/decisions'],
   ['timeline', '#/timeline'],
@@ -22,10 +31,40 @@ const ALL_PAGES = [
   ['conversation-work', '#/', { click: [['Show work', 'summary']] }],
   ['conversation-away', '#/', { top: true, storage: () => ({ 'shepherd.seen.v1': JSON.stringify({ seen: [], looked: Date.now() - 3 * 3600_000, notify: false }) }) }],
   ['conversation-decision', '#/?open=decision%3A5'],
+  // The Inbox, a merge request in the side panel and as a page, and a decision in the main body.
+  // Done today is read once the workspaces are known, and a second read waits 15 seconds.
+  ['inbox', '#/inbox', { wait: 16000 }],
+  ['inbox-mr', '#/inbox?open=mr%3A1', { wait: 16000 }],
+  ['inbox-mr-changes', '#/inbox?open=mr%3A1/changes'],
+  ['inbox-mr-page', '#/inbox?open=mr%3A1/full'],
+  ['inbox-decision', '#/inbox?open=decision%3A5'],
+  ['decision-page', '#/inbox?open=decision%3A5/full'],
+  // Artifacts: the list, a plan kept local, an image, a committed code file, an undecided one.
+  ['artifacts', '#/artifacts'],
+  ['artifact-plan', '#/artifacts?open=artifact%3A1'],
+  ['artifact-page', '#/artifacts?open=artifact%3A1/full'],
+  ['artifact-image', '#/artifacts?open=artifact%3A2/full'],
+  ['artifact-code', '#/artifacts?open=artifact%3A3/full'],
+  ['artifact-undecided', '#/artifacts?open=artifact%3A4'],
+  ['files', '#/files?lane=4', { click: [['README.md', '.sh-file-tree-item']] }],
+  ['files-tree', '#/files?lane=1', { click: [['internal', '.sh-file-tree-item'], ['auth', '.sh-file-tree-item'], ['session.go', '.sh-file-tree-item']] }],
+  ['runs', '#/runs'],
+  ['run-panel', '#/runs?open=run%3A17'],
+  ['run-page', '#/runs?open=run%3A17/full'],
+  ['run-failed', '#/runs?open=run%3A14'],
+  ['history', '#/history'],
+  ['projects', '#/projects'],
+  ['project', '#/projects/acme'],
+  ['rules', '#/rules'],
+  ['usage', '#/usage'],
+  ['settings', '#/settings'],
+  ['status', '#/status'],
 ]
 // SHOTS_PAGES names the pages to take ("timeline board"); by default, all of them.
 const only = (SHOTS_PAGES ?? '').split(/\s+/).filter(Boolean)
 const PAGES = only.length ? ALL_PAGES.filter(([name]) => only.includes(name)) : ALL_PAGES
+const unknown = only.filter((n) => !ALL_PAGES.some(([name]) => name === n))
+if (unknown.length) throw new Error(`no such page: ${unknown.join(' ')}`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'shots-chrome-'))
@@ -88,11 +127,18 @@ async function shot(name, route, theme, steps) {
     await sleep(250)
   }
   await sleep(1500) // the stub's streamed events arrive over about two seconds
+  if (steps?.wait) await sleep(steps.wait)
   if (steps) {
     const click = (text, role) => s('Runtime.evaluate', { expression: `(() => { const el = [...document.querySelectorAll('${role}')].find((e) => e.textContent.includes(${JSON.stringify(text)})); el?.click(); return !!el })()`, returnByValue: true })
     if (steps.rail) await click(steps.rail, '.backlog-views button')
-    if (steps.tab) await click(steps.tab, '[role=tab]')
-    for (const [text, selector] of steps.click ?? []) await click(text, selector)
+    if (steps.tab) {
+      await click(steps.tab, '[role=tab]')
+      await sleep(800)
+    }
+    for (const [text, selector] of steps.click ?? []) {
+      await click(text, selector)
+      await sleep(400)
+    }
     if (steps.top) await s('Runtime.evaluate', { expression: "document.querySelector('[data-component=Thread]').scrollTop = 0" })
     await sleep(800)
     if (steps.file) await click(steps.file, '.change-toggle')
