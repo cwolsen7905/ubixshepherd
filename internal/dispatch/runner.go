@@ -33,9 +33,15 @@ var ErrRefused = errors.New("refused")
 // limit, the daily budget. Shepherd tries such a run again later.
 var ErrHeld = errors.New("held")
 
+// ErrQueued is wrapped by a hold that Shepherd has written down and will carry out by
+// itself: a start asked for while a restart drains the daemon. It is also ErrHeld.
+var ErrQueued = errors.New("queued")
+
 type refusal struct {
 	msg  string
 	held bool
+	// queued: the start was kept for after the restart (see Runner.Drain).
+	queued bool
 	// rule is the Crook rule behind the refusal, "" for one Crook did not make.
 	rule string
 }
@@ -51,7 +57,7 @@ func ruleOf(err error) string {
 
 func (r refusal) Error() string { return r.msg }
 func (r refusal) Is(target error) bool {
-	return target == ErrRefused || (r.held && target == ErrHeld)
+	return target == ErrRefused || (r.held && target == ErrHeld) || (r.queued && target == ErrQueued)
 }
 
 func refuse(format string, a ...any) error { return refusal{msg: fmt.Sprintf(format, a...)} }
@@ -115,6 +121,12 @@ type Runner struct {
 	// closing: Shutdown has begun. No run starts, and the runs it stops are recorded
 	// as interrupted, with nothing set off by their end.
 	closing bool
+	// drain is set while a restart waits for the runs to end (see drain.go).
+	drain *drainState
+	// heldMu serialises the work of starting what was held.
+	heldMu sync.Mutex
+	// consumed holds the ids of held starts that began but whose row would not go.
+	consumed map[int64]bool
 	// outOf holds the agents out of quota, by name, until their limit lifts. It lives
 	// with the daemon: a restart tries each agent again.
 	outOf   map[string]outOfQuota
@@ -242,6 +254,9 @@ func (r *Runner) Conf() config.Config {
 type proc struct {
 	cmd     *exec.Cmd
 	stopped bool
+	// restarting: a drained restart is stopping this run; it ends interrupted, with
+	// the reason restart, and is continued after the restart.
+	restarting bool
 	// token is the run's worker token, hidden in its output; revoke ends it.
 	token  string
 	revoke func()
@@ -278,7 +293,18 @@ func (r *Runner) Recover(ctx context.Context) error {
 
 // Start starts an agent in a lane and returns at once; the run is watched in the
 // background and recorded when it exits.
+//
+// While a restart drains the daemon a start the person asked for is queued, not
+// refused: the error wraps ErrQueued (and ErrHeld), and the run starts after the
+// restart.
 func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error) {
+	return r.start(ctx, req, false)
+}
+
+// start is Start; fromQueue says the start is one that was held, so a hold for the
+// drain is only a hold and is not queued a second time.
+func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (store.Run, error) {
+	asked := req
 	cfg := r.Conf()
 	var parent store.Run
 	// inherited is the model a continued run carries from its parent: unlike one asked
@@ -378,6 +404,9 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.drain != nil {
+		return store.Run{}, r.holdForRestart(ctx, asked, lane, fromQueue)
+	}
 	if r.closing {
 		return store.Run{}, held("the daemon is stopping; start the run when it is back")
 	}
@@ -647,10 +676,13 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	code := p.cmd.ProcessState.ExitCode()
 	run.ExitCode = &code
 	r.mu.Lock()
-	stopped, closing, idled := p.stopped, r.closing, p.idled
+	stopped, closing, idled, restarting := p.stopped, r.closing, p.idled, p.restarting
 	delete(r.procs, run.ID)
 	r.mu.Unlock()
 	switch {
+	case restarting:
+		// Stopped on purpose for a restart: the next start continues it.
+		run.State, run.Reason, run.Error = store.RunInterrupted, store.ReasonRestart, "stopped for a restart of Shepherd"
 	case stopped:
 		run.State = store.RunStopped
 	case idled:
@@ -750,6 +782,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if !quotaUntil.IsZero() {
 		r.feed(ctx, store.FeedRunQuota, run.ID, "run %d: %s is out of quota (%s); Shepherd holds %s runs until %s",
 			run.ID, run.Agent, clip(limit.Text, 160), run.Agent, quotaUntil.Format("Jan 2 15:04"))
+	}
+	if restarting {
+		// The restart is under way: nothing is routed or pushed now, and the next start
+		// continues this run.
+		return
 	}
 	if closing {
 		// The daemon is stopping: answers and requests wait for its next start, and a

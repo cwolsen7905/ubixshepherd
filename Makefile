@@ -8,6 +8,8 @@ CORE_DIRS := cmd internal
 PRODUCT_PATTERN := ubixcore|ubixvault|ubixops|replikate|ubixos
 
 PREFIX ?= $(HOME)/.local/bin
+# How long `make install` waits for running agents before it restarts the daemon (0: at once).
+DRAIN_TIMEOUT ?= 10m
 
 # Go packages: web/node_modules can hold Go code of its own, which is not ours to check.
 GO_PKGS := ./cmd/... ./internal/...
@@ -47,7 +49,8 @@ install: build
 	@cp bin/shepherd $(PREFIX)/.shepherd.new && mv -f $(PREFIX)/.shepherd.new $(PREFIX)/shepherd
 	@echo "installed $(PREFIX)/shepherd ($(VERSION))"
 	@if SHEPHERD_NO_AUTOSTART=1 $(PREFIX)/shepherd daemon status | grep -q 'running, pid'; then \
-		$(PREFIX)/shepherd daemon restart && \
+		echo "restarting the daemon: waiting up to $(DRAIN_TIMEOUT) for running agents (they are continued after); DRAIN_TIMEOUT=0 restarts at once"; \
+		$(PREFIX)/shepherd daemon restart --drain --timeout $(DRAIN_TIMEOUT) && \
 		echo "the daemon runs in the background now; watch it: tail -f $${SHEPHERD_HOME:-$$HOME/.shepherd}/daemon.log"; \
 	fi
 

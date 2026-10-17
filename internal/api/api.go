@@ -21,6 +21,7 @@ const (
 	PathRepos      = "/v1/repos"
 	PathResolve    = "/v1/resolve"
 	PathShutdown   = "/v1/shutdown"
+	PathDrain      = "/v1/drain"
 	PathLanes      = "/v1/lanes"
 	PathFoldGC     = "/v1/fold/gc"
 	PathPrePush    = "/v1/hook/pre-push"
@@ -256,6 +257,9 @@ type RunView struct {
 	Lane     string `json:"lane"`
 	Repo     string `json:"repo"`
 	Worktree string `json:"worktree"`
+	// Held is set, with the run left empty, when the start was not made but kept to go
+	// after a restart (the answer is 202): it says why.
+	Held string `json:"held,omitempty"`
 	// Usage is what the run's tokens and context came to, once it has ended and its
 	// agent reported any; nil on a run still going and on runs from before it was kept.
 	// Only a single run's view (GET /v1/runs/{id}) carries it.
@@ -311,6 +315,41 @@ type Status struct {
 	// Detail is set only when asked for with StatusDetailQuery, and not for an agent's
 	// token: every command probes status first, and most need none of it.
 	Detail *StatusDetail `json:"detail,omitempty"`
+	// Draining is set while a restart waits for the agents to finish; absent otherwise.
+	Draining *Draining `json:"draining,omitempty"`
+}
+
+// Draining is a restart's wait: new starts are held, and the agents going have until
+// Until to finish.
+type Draining struct {
+	// Runs are the agents still going.
+	Runs  int       `json:"runs"`
+	Until time.Time `json:"until"`
+	// Drained: nothing is going, and the daemon can be stopped.
+	Drained bool `json:"drained"`
+}
+
+// Text is the drain in a few words: "draining (2 runs, 4m left)".
+func (d Draining) Text(now time.Time) string {
+	if d.Drained {
+		return "drained (restarting)"
+	}
+	left := max(d.Until.Sub(now), 0).Round(time.Second)
+	in := left.String()
+	if left >= time.Minute {
+		in = fmt.Sprintf("%dm", int(left.Round(time.Minute)/time.Minute))
+	}
+	runs := fmt.Sprintf("%d runs", d.Runs)
+	if d.Runs == 1 {
+		runs = "1 run"
+	}
+	return fmt.Sprintf("draining (%s, %s left)", runs, in)
+}
+
+// DrainRequest is the body of POST /v1/drain: start draining for a restart, giving the
+// agents going this many seconds to finish before they are stopped.
+type DrainRequest struct {
+	TimeoutSeconds int `json:"timeout_seconds"`
 }
 
 // StatusDetailQuery is the query that asks GET /v1/status for Status.Detail.

@@ -92,3 +92,20 @@ func TestBriefViewRoundTrip(t *testing.T) {
 		t.Errorf("path = %q", got)
 	}
 }
+
+func TestDrainingText(t *testing.T) {
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		d    Draining
+		want string
+	}{
+		{Draining{Runs: 2, Until: now.Add(4 * time.Minute)}, "draining (2 runs, 4m left)"},
+		{Draining{Runs: 1, Until: now.Add(30 * time.Second)}, "draining (1 run, 30s left)"},
+		{Draining{Runs: 1, Until: now.Add(-time.Second)}, "draining (1 run, 0s left)"},
+		{Draining{Drained: true}, "drained (restarting)"},
+	} {
+		if got := c.d.Text(now); got != c.want {
+			t.Errorf("%+v = %q, want %q", c.d, got, c.want)
+		}
+	}
+}

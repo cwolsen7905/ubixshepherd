@@ -68,6 +68,8 @@ func classifyEnd(in endInfo) (d store.Diagnosis, ok bool) {
 	case in.Idled:
 		d.Kind = store.DiagHung
 		d.Summary = fmt.Sprintf("hung: printed nothing for %s, so Shepherd stopped it", in.Idle)
+	case run.Reason == store.ReasonRestart:
+		d.Kind, d.Summary = store.DiagInterrupted, "Shepherd restarted while this run was going; it is continued after the restart"
 	case in.Closing:
 		d.Kind, d.Summary = store.DiagInterrupted, "the daemon stopped while this run was going"
 	case run.State == store.RunFailed && !in.QuotaUntil.IsZero():

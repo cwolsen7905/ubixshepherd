@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -49,6 +50,9 @@ func runStatus(ctx context.Context, env Env, args []string) error {
 	}
 	w := env.Stdout
 	fmt.Fprintf(w, "daemon   running, pid %d, version %s, since %s\n", st.PID, st.Version, st.Started.Local().Format("2006-01-02 15:04"))
+	if st.Draining != nil {
+		fmt.Fprintf(w, "         %s\n", st.Draining.Text(time.Now()))
+	}
 	fmt.Fprintf(w, "store    %s\n", st.Store)
 	fmt.Fprintf(w, "config   %s\n", st.Config)
 	if sp, err := c.SpendToday(ctx); err == nil {

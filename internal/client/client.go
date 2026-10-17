@@ -149,6 +149,14 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, api.PathShutdown, nil, &out)
 }
 
+// Drain has the daemon stop starting runs and wait for the agents going to finish, for
+// at most timeout (0: stop them at once); a start asked for meanwhile goes after the
+// restart.
+func (c *Client) Drain(ctx context.Context, timeout time.Duration) (api.Draining, error) {
+	var out api.Draining
+	return out, c.do(ctx, http.MethodPost, api.PathDrain, api.DrainRequest{TimeoutSeconds: int(timeout.Seconds())}, &out)
+}
+
 func (c *Client) Lanes(ctx context.Context, workspaceID, repoID int64) ([]api.LaneView, error) {
 	var out []api.LaneView
 	q := fmt.Sprintf("%s?workspace_id=%d", api.PathLanes, workspaceID)
@@ -617,12 +625,20 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 		defer resp.Body.Close()
 		var e api.Error
 		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
-			return nil, fmt.Errorf("daemon: %s", e.Error)
+			return nil, &StatusError{Code: resp.StatusCode, msg: "daemon: " + e.Error}
 		}
-		return nil, fmt.Errorf("daemon: %s", resp.Status)
+		return nil, &StatusError{Code: resp.StatusCode, msg: "daemon: " + resp.Status}
 	}
 	return resp, nil
 }
+
+// StatusError is a daemon's non-2xx answer, with the HTTP status it came with.
+type StatusError struct {
+	Code int
+	msg  string
+}
+
+func (e *StatusError) Error() string { return e.msg }
 
 // unreachable is a remote daemon that did not answer through its tunnel. It matches
 // ErrNoDaemon so a caller that reconnects on that (the chat) does so over ssh as well.

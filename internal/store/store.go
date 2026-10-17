@@ -146,6 +146,16 @@ const (
 	RunInterrupted = "interrupted" // the daemon stopped while it ran
 )
 
+// Reasons an interrupted run carries beyond its error text. A crash leaves it empty.
+const (
+	// ReasonRestart: a drained restart stopped the run on purpose; the next start
+	// continues it once.
+	ReasonRestart = "restart"
+	// ReasonRestartDropped: the next start could not continue a restart-interrupted run
+	// (its lane closed, say) and will not try again.
+	ReasonRestartDropped = "restart-dropped"
+)
+
 // Run is one agent started in one lane, and what came of it.
 type Run struct {
 	ID     int64  `json:"id"`
@@ -160,12 +170,15 @@ type Run struct {
 	StartSHA string `json:"start_sha"`
 	EndSHA   string `json:"end_sha,omitempty"`
 	// Commits made during the run, and any files they changed outside the lane's scope.
-	Commits  int        `json:"commits"`
-	Outside  []string   `json:"outside,omitempty"`
-	ExitCode *int       `json:"exit_code,omitempty"`
-	Error    string     `json:"error,omitempty"`
-	Started  time.Time  `json:"started"`
-	Ended    *time.Time `json:"ended,omitempty"`
+	Commits  int      `json:"commits"`
+	Outside  []string `json:"outside,omitempty"`
+	ExitCode *int     `json:"exit_code,omitempty"`
+	Error    string   `json:"error,omitempty"`
+	// Reason says why an interrupted run was interrupted when Shepherd chose to
+	// (ReasonRestart); empty for a crash and for every other state.
+	Reason  string     `json:"reason,omitempty"`
+	Started time.Time  `json:"started"`
+	Ended   *time.Time `json:"ended,omitempty"`
 	// Session is the agent's own conversation id; a run that continues another shares
 	// it, and Parent is the run it follows.
 	Session string `json:"session,omitempty"`
@@ -187,6 +200,18 @@ type Run struct {
 	// Dismissed is when the person cleared the run from the board's attention group; nil
 	// when they have not. The run and its log stay in history.
 	Dismissed *time.Time `json:"dismissed,omitempty"`
+}
+
+// HeldStart is a run start that waits for the daemon's next start: asked for while a
+// restart drained the daemon, or the continuation of a run the restart interrupted.
+// Request is the dispatch.StartRequest as JSON.
+type HeldStart struct {
+	ID      int64  `json:"id"`
+	Request string `json:"request"`
+	Why     string `json:"why"`
+	// Auto: Shepherd's own start (a resume), which the daily budget holds.
+	Auto    bool      `json:"auto,omitempty"`
+	Created time.Time `json:"created"`
 }
 
 // Dismissable reports whether a run in this state can be dismissed: one that ended
@@ -861,6 +886,13 @@ type Store interface {
 	// with nil clears the mark. ErrNotFound for no such run, ErrConflict for a run that
 	// is running or succeeded. UpdateRun never touches the mark.
 	DismissRun(ctx context.Context, id int64, at *time.Time) error
+	// AddHeldStart queues a start for later; HeldStarts lists the queue oldest first;
+	// DeleteHeldStart removes an entry (a missing one is not an error).
+	AddHeldStart(ctx context.Context, h HeldStart) (HeldStart, error)
+	HeldStarts(ctx context.Context) ([]HeldStart, error)
+	DeleteHeldStart(ctx context.Context, id int64) error
+	// SetRunReason sets a run's Reason and nothing else of it.
+	SetRunReason(ctx context.Context, id int64, reason string) error
 
 	AddEvent(ctx context.Context, e Event) (Event, error)
 	Events(ctx context.Context, runID int64) ([]Event, error)

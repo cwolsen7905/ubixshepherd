@@ -469,6 +469,16 @@ var migrations = []string{
 	ALTER TABLE next_items ADD COLUMN suggestion TEXT NOT NULL DEFAULT '';
 	ALTER TABLE next_items ADD COLUMN suggested  TEXT NOT NULL DEFAULT '';
 	ALTER TABLE next_items ADD COLUMN checked    TEXT NOT NULL DEFAULT '';`,
+	// Why Shepherd interrupted a run on purpose ('restart'), and the starts that wait for
+	// the daemon's next start.
+	`ALTER TABLE runs ADD COLUMN reason TEXT NOT NULL DEFAULT '';
+	CREATE TABLE held_starts (
+		id      INTEGER PRIMARY KEY AUTOINCREMENT,
+		request TEXT NOT NULL,
+		why     TEXT NOT NULL DEFAULT '',
+		auto    INTEGER NOT NULL DEFAULT 0,
+		created TEXT NOT NULL
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -764,14 +774,14 @@ func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
 	return r, err
 }
 
-const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits, dismissed, cost_estimated`
+const runCols = `id, lane_id, agent, model, prompt, state, pid, log, start_sha, end_sha, commits, outside, exit_code, error, started, ended, session, parent, cost_usd, credits, session_usd, session_credits, dismissed, cost_estimated, reason`
 
 func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 	var r store.Run
 	var outside, started, ended, dismissed string
 	var exit sql.NullInt64
 	if err := sc.Scan(&r.ID, &r.LaneID, &r.Agent, &r.Model, &r.Prompt, &r.State, &r.PID, &r.Log,
-		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits, &dismissed, &r.CostEstimated); err != nil {
+		&r.StartSHA, &r.EndSHA, &r.Commits, &outside, &exit, &r.Error, &started, &ended, &r.Session, &r.Parent, &r.CostUSD, &r.Credits, &r.SessionUSD, &r.SessionCredits, &dismissed, &r.CostEstimated, &r.Reason); err != nil {
 		return r, err
 	}
 	if err := json.Unmarshal([]byte(outside), &r.Outside); err != nil {
@@ -825,9 +835,9 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
 			exit_code = ?, error = ?, ended = ?, session = ?, cost_usd = ?, credits = ?,
-			session_usd = ?, session_credits = ?, cost_estimated = ? WHERE id = ?`,
+			session_usd = ?, session_credits = ?, cost_estimated = ?, reason = ? WHERE id = ?`,
 		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits,
-		r.SessionUSD, r.SessionCredits, r.CostEstimated, r.ID)
+		r.SessionUSD, r.SessionCredits, r.CostEstimated, r.Reason, r.ID)
 	return err
 }
 
