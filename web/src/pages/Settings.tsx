@@ -240,8 +240,9 @@ const KEYS: [string, string[]][] = [
 const bareModel = (m: string) => m.slice(m.indexOf('/') + 1)
 
 /** An agent's sub-line: today's lanes and spend, or when its quota hold lifts. */
-function AgentLine({ agent, model, today, hold, now }: { agent: string; model: string; today?: AgentToday; hold?: { until: string }; now: number }) {
+function AgentLine({ agent, model, today, hold, now }: { agent: string; model: string; today?: AgentToday | null; hold?: { until: string }; now: number }) {
   if (hold) return <div className="sh-setting-desc" data-agent={agent}><StatusGlyph glyph="‖" tone="idle" label="Held" /> Out of quota until {clockTime(hold.until, now)}</div>
+  if (today === null) return null
   if (!today && !model) return <div className="sh-setting-desc" data-agent={agent}>Uses its CLI’s own default model</div>
   const { lanes, usd: spent, more } = today ?? { lanes: 0, usd: 0, more: false }
   return <div className="sh-setting-desc" data-agent={agent}>{lanes}{more ? '+' : ''} {lanes === 1 && !more ? 'lane' : 'lanes'} · {usd(spent) || '$0.00'} today</div>
@@ -336,7 +337,8 @@ const AGENT_REFRESH_MS = 30_000
 interface AgentToday { lanes: number; usd: number; more: boolean }
 
 function useAgentToday(workspaces: number[], agents: string[]) {
-  const [rows, setRows] = useState<Map<string, AgentToday>>(new Map())
+  // null until a read has answered, and again after one fails: the page then says nothing of usage.
+  const [rows, setRows] = useState<Map<string, AgentToday> | null>(null)
   const key = workspaces.join(',')
   const names = agents.join(',')
   useEffect(() => {
@@ -358,7 +360,7 @@ function useAgentToday(workspaces: number[], agents: string[]) {
           if (!live) return
           setRows(new Map(all.flatMap(([a, v]) => (v ? [[a, v] as const] : []))))
         },
-        () => undefined,
+        () => live && setRows(null),
       )
     }
     load()
@@ -687,7 +689,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
                     <b>{a}</b>{' '}
                     {typeof m === 'string' && m ? <code className="sh-setting-model" title={m}>{bareModel(m)}</code> : null}
                   </div>
-                  <AgentLine agent={a} model={typeof m === 'string' && m ? m : ''} today={today.get(a)} hold={holds.find((h) => h.agent === a)} now={now} />
+                  <AgentLine agent={a} model={typeof m === 'string' && m ? m : ''} today={today === null ? null : (today.get(a) ?? undefined)} hold={holds.find((h) => h.agent === a)} now={now} />
                 </div>
                 <a className="sh-btn" href={href.settings('defaults')} aria-label={`Configure ${a}`}>Configure</a>
               </div>

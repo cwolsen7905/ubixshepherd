@@ -146,6 +146,29 @@ describe('SettingsPage sections', () => {
     expect(screen.getByRole('button', { name: 'Merging for api: By a person' })).toHaveTextContent('By a person')
   })
 
+  it('says nothing of an agent\'s usage before it loads or when the read fails, then lanes and spend today', async () => {
+    const body = { version: '1', workspaces: [{ id: 1, name: 'acme' }], detail: { forge: { last_poll: new Date().toISOString() } } }
+    const claude = (path: string) => path.startsWith('/v1/history/runs') && path.includes('agent=claude')
+    // A failed read: no figures, no zeros.
+    daemon(doc(), (_m, p) => (p === '/v1/status?detail=1' ? json(body) : p.startsWith('/v1/history/runs') ? json({ error: 'down' }, 500) : undefined))
+    const failed = render(<SettingsPage />)
+    await screen.findByText('Daily cap')
+    await screen.findByText(/Polled \d+s ago/)
+    expect(document.querySelector('[data-agent="claude"]')).toBeNull()
+    failed.unmount()
+    // A read that answers: claude's totals, and nothing shown before they arrive.
+    daemon(doc(), (_m, p) => {
+      if (p === '/v1/status?detail=1') return json(body)
+      if (claude(p)) return json({ runs: [{ id: 1, lane_id: 7, agent: 'claude', cost_usd: 2 }], count: 1, cost_usd: 2, credits: 0, agents: ['claude'], lanes: [] })
+      if (p.startsWith('/v1/history/runs')) return json({ runs: [], count: 0, cost_usd: 0, credits: 0, agents: [], lanes: [] })
+      return undefined
+    })
+    render(<SettingsPage />)
+    await screen.findByText('Daily cap')
+    expect(document.querySelector('[data-agent="claude"]')).toBeNull()
+    expect(await screen.findByText('1 lane · $2.00 today')).toBeInTheDocument()
+  })
+
   it('writes nothing before Save: staging previews only, Discard drops it', async () => {
     const seen = daemon(doc(), (_m, p) => (p === '/v1/config/preview' ? diffOf('-    budget: 20\n+    budget: 25\n') : undefined))
     const user = userEvent.setup()
