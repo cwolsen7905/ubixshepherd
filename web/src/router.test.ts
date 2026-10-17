@@ -80,6 +80,9 @@ describe('open=', () => {
       open: { kind: 'lane', id: 4, tab: 'changes' },
     })
     expect(parse('#/runs/3/log?open=run:17/log')).toEqual({ page: 'log', run: 3, open: { kind: 'run', id: 17, tab: 'log' } })
+    expect(parse('#/board?open=mr:4/changes')).toEqual({ page: 'board', open: { kind: 'mr', id: 4, tab: 'changes' } })
+    expect(parse('#/board?open=lane:4/artifacts/full')).toEqual({ page: 'board', open: { kind: 'lane', id: 4, tab: 'artifacts', full: true } })
+    expect(parse('#/board?open=run:4/full')).toEqual({ page: 'board', open: { kind: 'run', id: 4, full: true } })
     expect(parse('#/nope?open=artifact:12')).toEqual({ page: 'missing', path: '/nope', open: { kind: 'artifact', id: 12 } })
   })
 
@@ -98,5 +101,8 @@ describe('open=', () => {
     expect(withOpen('#/board?range=week&open=run%3A17', undefined)).toBe('#/board?range=week')
     expect(withOpen('#/?open=decision:5', undefined)).toBe('#/')
     expect(parse(withOpen('#/board', o))).toEqual({ page: 'board', open: o })
+    const full = { kind: 'lane', id: 4, tab: 'changes', full: true }
+    expect(parse(withOpen('#/board', full))).toEqual({ page: 'board', open: full })
+    expect(parse(withOpen('#/board', { kind: 'mr', id: 4, full: true }))).toEqual({ page: 'board', open: { kind: 'mr', id: 4, full: true } })
   })
 })

@@ -4,6 +4,8 @@ import { DecisionPane } from './decisionPane'
 import { QuestionPane } from './questionPane'
 import { useMode, type Mode } from './useMode'
 import { LaneInspector } from './lane'
+import { MrInspector } from './mr'
+import { RunInspector } from './runPane'
 import { ArtifactInspector } from './artifactPane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
@@ -39,6 +41,10 @@ function InspectorBody({ open }: { open: Open }) {
       return <QuestionPane key={open.id} id={open.id} />
     case 'artifact':
       return <ArtifactInspector key={open.id} id={open.id} />
+    case 'run':
+      return <RunInspector key={open.id} id={open.id} tab={open.tab} full={open.full} />
+    case 'mr':
+      return <MrInspector open={open} />
     default:
       return <Placeholder open={open} />
   }
@@ -54,7 +60,7 @@ function InspectorFoot({ open }: { open: Open }) {
 
 /** The lane an open item belongs to, as the breadcrumb names it. Unknown items show no parent. */
 function parentLane(open: Open, snap: ReturnType<typeof useSnapshot>): string | undefined {
-  if (open.kind === 'lane') return snap.lanes.find((l) => l.id === open.id)?.branch
+  if (open.kind === 'lane' || open.kind === 'mr') return snap.lanes.find((l) => l.id === open.id)?.branch
   if (open.kind === 'decision') return snap.decisions.find((d) => d.id === open.id)?.lane
   if (open.kind === 'run') return snap.runs.find((r) => r.id === open.id)?.lane
   return undefined
@@ -62,36 +68,87 @@ function parentLane(open: Open, snap: ReturnType<typeof useSnapshot>): string | 
 
 /** The page an item has of its own, for "Open as page". */
 function pageFor(open: Open): string | undefined {
-  if (open.kind === 'lane') return href.lane(open.id)
+  if (open.kind === 'lane' || open.kind === 'mr') return href.lane(open.id)
   if (open.kind === 'run') return href.log(open.id)
+  if (open.kind === 'decision') return href.decisions(open.id)
+  if (open.kind === 'artifact') return `#/artifacts?view=${open.id}`
   return undefined
 }
 
-/** The breadcrumb row: where the item lives, what it is, then Open as page and Close. */
+/**
+ * Whether the open view is cramped at the split pane's 576 px: a diff or a file list beside a
+ * viewer, a long log, a rendered file. These get "Open full width". The rest (a lane's
+ * overview, conversation and runs, a decision, a question) read well in a narrow column.
+ */
+export function isWide(open: Open): boolean {
+  const tab = open.tab
+  if (open.kind === 'lane' || open.kind === 'mr') return tab === 'changes' || tab === 'artifacts'
+  if (open.kind === 'run') return tab === 'log' || tab === 'changes'
+  return open.kind === 'artifact'
+}
+
+/** The words for a tab in the breadcrumb. */
+const section = (tab: string | undefined) => (tab ? tab.charAt(0).toUpperCase() + tab.slice(1) : undefined)
+
+/** The title chip's words: "run 5", or the merge request as the forge numbers it. */
+function titleOf(open: Open, snap: ReturnType<typeof useSnapshot>): string {
+  if (open.kind !== 'mr') return `${open.kind} ${open.id}`
+  const mr = snap.lanes.find((l) => l.id === open.id)?.mr
+  return mr ? `MR !${mr}` : `MR of lane ${open.id}`
+}
+
+/** The same item without `full`: the way back from a full-width view. */
+export function leaveFull(open: Open) {
+  go(withOpen(window.location.hash, { kind: open.kind, id: open.id, ...(open.tab ? { tab: open.tab } : {}) }))
+}
+
+/**
+ * The one header: where the item lives (lane, then the tab), what it is as a chip, then
+ * Open full width, Open as page and Close. A full-width view swaps Close for a back arrow.
+ */
 function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject<HTMLHeadingElement | null> }) {
   const snap = useSnapshot()
   const parent = parentLane(open, snap)
   const page = pageFor(open)
+  const tab = section(open.tab)
   return (
     <header className="inspector-head">
+      {open.full && (
+        <button type="button" className="ui-btn ui-btn-ghost inspector-back" onClick={() => leaveFull(open)} aria-label="Back to the inspector">
+          <span aria-hidden="true">←</span> Back
+        </button>
+      )}
       {parent && (
         <>
           <span className="inspector-crumb">{parent}</span>
           <span aria-hidden="true">›</span>
         </>
       )}
-      <h2 id="inspector-title" ref={heading} tabIndex={-1}>
-        {open.kind} {open.id}
+      {tab && (
+        <>
+          <span className="inspector-crumb">{tab}</span>
+          <span aria-hidden="true">›</span>
+        </>
+      )}
+      <h2 id="inspector-title" ref={heading} tabIndex={-1} className="inspector-chip">
+        {titleOf(open, snap)}
       </h2>
       <span className="inspector-head-actions">
+        {!open.full && isWide(open) && (
+          <button type="button" className="ui-btn ui-btn-ghost" onClick={() => go(withOpen(window.location.hash, { ...open, full: true }))}>
+            Open full width
+          </button>
+        )}
         {page && (
           <a className="ui-btn ui-btn-ghost" href={page}>
             Open as page
           </a>
         )}
-        <button type="button" className="ui-btn ui-btn-ghost" onClick={closeInspector} aria-label="Close inspector">
-          Close <Kbd keys="Esc" />
-        </button>
+        {!open.full && (
+          <button type="button" className="ui-btn ui-btn-ghost" onClick={closeInspector} aria-label="Close inspector">
+            Close <Kbd keys="Esc" />
+          </button>
+        )}
       </span>
     </header>
   )
@@ -110,6 +167,7 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
   const heading = useRef<HTMLHeadingElement>(null)
   const from = useRef<Element | null>(null)
   const shown = Boolean(open)
+  const full = Boolean(open?.full)
 
   // The shell sits outside the frame, so in a modal mode everything beside the dialog's
   // ancestors goes inert too (the scrim stays live, so a click on it can close). This effect
@@ -150,7 +208,8 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
         const inside = box.contains(a)
         if (!modal && !inside && a !== document.body) return
         e.preventDefault()
-        closeInspector()
+        if (open?.full) leaveFull(open)
+        else closeInspector()
         return
       }
       if (e.key !== 'Tab' || !modal) return
@@ -173,19 +232,19 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [shown, modal])
+  }, [shown, modal, open])
 
   return (
-    <div className={`inspector-frame${shown ? ` is-${mode}` : ''}`}>
-      <div className="inspector-page" inert={shown && modal ? true : undefined}>
+    <div className={`inspector-frame${shown ? ` is-${mode}` : ''}${full ? ' is-full' : ''}`}>
+      <div className="inspector-page" inert={shown && modal ? true : undefined} hidden={full}>
         {children}
       </div>
       {open && (
         <>
-          {modal && <div className="inspector-scrim" onClick={closeInspector} aria-hidden="true" />}
+          {modal && !full && <div className="inspector-scrim" onClick={closeInspector} aria-hidden="true" />}
           <aside
             ref={aside}
-            className={`inspector inspector-${mode}`}
+            className={`inspector inspector-${mode}${full ? ' inspector-full' : ''}`}
             role={modal ? 'dialog' : undefined}
             aria-modal={modal ? true : undefined}
             aria-labelledby="inspector-title"

@@ -1,4 +1,4 @@
-import { useMemo, type KeyboardEvent } from 'react'
+import { useMemo } from 'react'
 import { LaneArtifactsPanel } from '../artifacts'
 import { Changes } from '../components/Changes'
 import { LaneApprove } from '../components/LaneApprove'
@@ -11,16 +11,36 @@ import { since } from '../format'
 import { useNow } from '../hooks'
 import { go, href, withOpen, type Open } from '../router'
 import { useSnapshot } from '../state/context'
+import { Tabs } from '../ui'
+import { tabLabel, useLaneCounts } from './laneCounts'
 import '../styles/conversation.css'
 
-export const LANE_TABS = ['overview', 'conversation', 'changes', 'artifacts'] as const
+export const LANE_TABS = ['overview', 'conversation', 'changes', 'artifacts', 'runs'] as const
 export type LaneTab = (typeof LANE_TABS)[number]
-
-const TAB_NAMES: Record<LaneTab, string> = { overview: 'Overview', conversation: 'Conversation', changes: 'Changes', artifacts: 'Artifacts' }
 
 /** The tab in an `open=lane:4/changes` address; anything else is the overview. */
 export function laneTab(tab: string | undefined): LaneTab {
   return (LANE_TABS as readonly string[]).includes(tab ?? '') ? (tab as LaneTab) : 'overview'
+}
+
+/** A lane's runs, newest first; each opens in the inspector. */
+export function LaneRuns({ laneId }: { laneId: number }) {
+  const snap = useSnapshot()
+  const now = useNow()
+  const runs = snap.runs.filter((r) => r.lane_id === laneId).sort((a, b) => b.id - a.id)
+  if (runs.length === 0) return <p className="faint">This lane has not run an agent yet.</p>
+  return (
+    <ul className="lane-runs">
+      {runs.map((r) => (
+        <li key={r.id}>
+          <a href={withOpen(window.location.hash, { kind: 'run', id: r.id })}>Run {r.id}</a>{' '}
+          <span className="faint">
+            {r.agent} · {r.state} · {since(r.started, now)} ago
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 /**
@@ -34,19 +54,11 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
   const lane = snap.lanes.find((l) => l.id === open.id)
   const source = useMemo(() => (conversation ?? laneSource)(open.id), [conversation, open.id])
   const feedLast = snap.feed.at(-1)?.id ?? 0
+  const counts = useLaneCounts(open.id, feedLast)
+  const runCount = snap.runs.filter((r) => r.lane_id === open.id).length
 
-  const select = (t: LaneTab) => go(withOpen(window.location.hash, { kind: 'lane', id: open.id, ...(t === 'overview' ? {} : { tab: t }) }))
-
-  // Arrows, Home and End move between tabs (the WAI-ARIA tabs pattern); only the selected one is tabbable.
-  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
-    const n = LANE_TABS.length
-    const to = e.key === 'ArrowRight' ? (i + 1) % n : e.key === 'ArrowLeft' ? (i + n - 1) % n : e.key === 'Home' ? 0 : e.key === 'End' ? n - 1 : -1
-    if (to < 0) return
-    e.preventDefault()
-    const t = LANE_TABS[to] as LaneTab
-    select(t)
-    document.getElementById(`lane-inspector-tab-${t}`)?.focus()
-  }
+  const select = (t: string) =>
+    go(withOpen(window.location.hash, { kind: 'lane', id: open.id, ...(t === 'overview' ? {} : { tab: t }), ...(open.full ? { full: true } : {}) }))
 
   if (!lane) {
     return (
@@ -57,67 +69,58 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
     )
   }
 
+  const items = [
+    {
+      id: 'overview',
+      label: 'Overview',
+      content: (
+        <dl className="lane-facts">
+          <dt>Repo</dt>
+          <dd>{lane.repo}</dd>
+          <dt>Branch</dt>
+          <dd>
+            <code>{lane.branch}</code>
+            {lane.base && <> onto <code>{lane.base}</code></>}
+          </dd>
+          <dt>Opened</dt>
+          <dd>{since(lane.created, now)} ago</dd>
+          <dt>Merge request</dt>
+          <dd>{lane.mr ? <><MrBadge lane={lane} /> <span className="faint">{lane.mr_state}</span></> : <span className="faint">None yet</span>}</dd>
+          {lane.gate && (
+            <>
+              <dt>Gate</dt>
+              <dd><GateBadge gate={lane.gate} now={now} /></dd>
+            </>
+          )}
+          <dt>Scope</dt>
+          <dd>
+            <ul className="scope">
+              {lane.scope.map((s) => (
+                <li key={s}><code>{s}</code></li>
+              ))}
+            </ul>
+          </dd>
+        </dl>
+      ),
+    },
+    { id: 'conversation', label: 'Conversation', content: <Conversation source={source} refreshKey={feedLast} now={now} /> },
+    {
+      id: 'changes',
+      label: tabLabel('Changes', counts.changes),
+      content: (
+        <>
+          {lane.state === 'open' && <LaneApprove laneId={lane.id} refreshKey={feedLast} />}
+          <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={null} refreshKey={feedLast} now={now} />
+        </>
+      ),
+    },
+    { id: 'artifacts', label: tabLabel('Artifacts', counts.artifacts), content: <LaneArtifactsPanel laneId={lane.id} refreshKey={feedLast} /> },
+    { id: 'runs', label: tabLabel('Runs', runCount), content: <LaneRuns laneId={lane.id} /> },
+  ]
+
   return (
     <div className="inspector-body lane-inspector">
-      <p className="lane-sub">
-        <strong>{lane.name}</strong> <span className="faint">{lane.repo}</span>{' '}
-        <a href={href.lane(lane.id)}>Open as page</a>
-      </p>
-      <div className="lane-tabs" role="tablist" aria-label="Lane views">
-        {LANE_TABS.map((t, i) => (
-          <button
-            key={t}
-            type="button"
-            role="tab"
-            id={`lane-inspector-tab-${t}`}
-            className="lane-tab"
-            aria-selected={tab === t}
-            aria-controls="lane-inspector-panel"
-            tabIndex={tab === t ? 0 : -1}
-            onKeyDown={(e) => onTabKey(e, i)}
-            onClick={() => select(t)}
-          >
-            {TAB_NAMES[t]}
-          </button>
-        ))}
-      </div>
-      <div id="lane-inspector-panel" role="tabpanel" aria-labelledby={`lane-inspector-tab-${tab}`}>
-        {tab === 'overview' && (
-          <dl className="lane-facts">
-            <dt>Branch</dt>
-            <dd>
-              <code>{lane.branch}</code>
-              {lane.base && <> onto <code>{lane.base}</code></>}
-            </dd>
-            <dt>Opened</dt>
-            <dd>{since(lane.created, now)} ago</dd>
-            <dt>Merge request</dt>
-            <dd>{lane.mr ? <><MrBadge lane={lane} /> <span className="faint">{lane.mr_state}</span></> : <span className="faint">None yet</span>}</dd>
-            {lane.gate && (
-              <>
-                <dt>Gate</dt>
-                <dd><GateBadge gate={lane.gate} now={now} /></dd>
-              </>
-            )}
-            <dt>Scope</dt>
-            <dd>
-              <ul className="scope">
-                {lane.scope.map((s) => (
-                  <li key={s}><code>{s}</code></li>
-                ))}
-              </ul>
-            </dd>
-          </dl>
-        )}
-        {tab === 'conversation' && <Conversation source={source} refreshKey={feedLast} now={now} />}
-        {tab === 'changes' && (
-          <>
-            {lane.state === 'open' && <LaneApprove laneId={lane.id} refreshKey={feedLast} />}
-            <Changes laneId={lane.id} worktree={lane.worktree} editorUrl={null} refreshKey={feedLast} now={now} />
-          </>
-        )}
-        {tab === 'artifacts' && <LaneArtifactsPanel laneId={lane.id} refreshKey={feedLast} />}
-      </div>
+      <Tabs items={items} value={tab} onChange={select} label="Lane views" />
     </div>
   )
 }
