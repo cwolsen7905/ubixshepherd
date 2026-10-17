@@ -1,7 +1,7 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
-import type { MatrixRow, NextList } from '../api/types'
+import type { MatrixRow, NextItem, NextList } from '../api/types'
 import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { lane, nextItem, spend, status } from '../test/fixtures'
@@ -42,7 +42,7 @@ const everything: NextList = {
     nextItem({ id: 6, title: 'Agreed', rank: 4, state: 'planned', stored_state: 'planned', source: 'chat' }),
     nextItem({ id: 4, title: 'Later', rank: 4, state: 'deferred', stored_state: 'deferred' }),
     nextItem({ id: 5, title: 'Shipped', rank: 5, state: 'done', stored_state: 'done', mr: '!40', mr_state: 'merged' }),
-  ],
+  ] as NextItem[],
 }
 
 const matrixList: NextList = {
@@ -123,34 +123,51 @@ describe('NextPage', () => {
     const chat = screen.getByText('Agreed').closest('li') as HTMLElement
     expect(within(chat).getByText('chat')).toBeInTheDocument()
     expect(within(chat).queryByText('proposed')).toBeNull()
-    expect(screen.getByRole('heading', { name: /Approved/ })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Deferred/ })).toBeInTheDocument()
+    const queue = screen.getByRole('region', { name: /Queue/ })
+    expect(within(queue).getByText('Approved')).toBeInTheDocument()
+    expect(within(queue).getByText('Deferred')).toBeInTheDocument()
     expect(screen.queryByText('Shipped')).toBeNull()
     await userEvent.click(screen.getByRole('checkbox', { name: /Show done and dropped/ }))
     expect(await screen.findByText('Shipped')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: /Done/ })).toBeInTheDocument()
+    const queue2 = screen.getByRole('region', { name: /Queue/ })
+    expect(within(queue2).getByText('Done')).toBeInTheDocument()
   })
 
-  it('changes a state, moves an item and links a lane through the API', async () => {
-    const { api } = show()
+  it('selects a row and opens the detail panel', async () => {
+    show()
     const idea = (await screen.findByText('Idea')).closest('li') as HTMLElement
-    await userEvent.click(within(idea).getByRole('button', { name: 'Approve' }))
+    await userEvent.click(idea)
+    expect(idea).toHaveClass('is-selected')
+    expect(screen.getByRole('complementary', { name: /Details for Idea/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Approve and queue' })).toBeInTheDocument()
+  })
+
+  it('changes a state, moves an item and links a lane through the detail panel', async () => {
+    const { api } = show()
+    await screen.findByText('Idea')
+    await userEvent.click(screen.getByText('Idea').closest('li') as HTMLElement)
+    await userEvent.click(screen.getByRole('button', { name: 'Approve and queue' }))
     expect(api.update).toHaveBeenCalledWith(3, { state: 'approved' })
+
     const second = screen.getByText('Second approved').closest('li') as HTMLElement
-    await userEvent.click(within(second).getByRole('button', { name: /up$/ }))
+    await userEvent.click(second)
+    await userEvent.click(screen.getByRole('button', { name: /up$/ }))
     expect(api.update).toHaveBeenCalledWith(2, { move: 'up' })
-    await userEvent.click(within(second).getByRole('button', { name: 'Link…' }))
-    await userEvent.click(within(second).getByRole('button', { name: /acme-api\/feat\/export-csv/ }))
+
+    await userEvent.selectOptions(screen.getByLabelText('Link to lane'), '4')
     expect(api.update).toHaveBeenCalledWith(2, { lane_id: 4 })
   })
 
   it('cannot move the first item up or the last item down', async () => {
     show()
     const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
-    expect(within(first).getByRole('button', { name: /up$/ })).toBeDisabled()
-    expect(within(first).getByRole('button', { name: /down$/ })).toBeEnabled()
+    await userEvent.click(first)
+    expect(screen.getByRole('button', { name: /up$/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /down$/ })).toBeEnabled()
+
     const second = screen.getByText('Second approved').closest('li') as HTMLElement
-    expect(within(second).getByRole('button', { name: /down$/ })).toBeDisabled()
+    await userEvent.click(second)
+    expect(screen.getByRole('button', { name: /down$/ })).toBeDisabled()
   })
 
   it('adds an item as planned, or approved when asked', async () => {
@@ -169,15 +186,17 @@ describe('NextPage', () => {
   it('shows a refusal as the daemon worded it', async () => {
     const api = { add: vi.fn(), update: vi.fn(async () => { throw new ApiError(403, 'only the person may approve') }) }
     show(api)
-    const idea = (await screen.findByText('Idea')).closest('li') as HTMLElement
-    await userEvent.click(within(idea).getByRole('button', { name: 'Approve' }))
+    await screen.findByText('Idea')
+    await userEvent.click(screen.getByText('Idea').closest('li') as HTMLElement)
+    await userEvent.click(screen.getByRole('button', { name: 'Approve and queue' }))
     expect(await screen.findByText('only the person may approve')).toBeInTheDocument()
   })
 
   it('Start puts the request in the chat draft and goes to the chat page', async () => {
     show()
     const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
-    await userEvent.click(within(first).getByRole('button', { name: 'Start' }))
+    await userEvent.click(first)
+    await userEvent.click(screen.getByRole('button', { name: 'Start' }))
     expect(localStorage.getItem('shepherd.chat.draft.0')).toBe('Open a lane for next-up item 1: First approved')
     expect(window.location.hash).toBe('#/')
   })
@@ -185,9 +204,10 @@ describe('NextPage', () => {
   it('a startable approved item still offers Defer and Drop beside Start', async () => {
     show()
     const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
-    expect(within(first).getByRole('button', { name: 'Start' })).toBeInTheDocument()
-    expect(within(first).getByRole('button', { name: 'Defer' })).toBeInTheDocument()
-    expect(within(first).getByRole('button', { name: 'Drop' })).toBeInTheDocument()
+    await userEvent.click(first)
+    expect(screen.getByRole('button', { name: 'Start' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Defer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Drop' })).toBeInTheDocument()
   })
 
   it('shows matrix rows read-only, blocked first, with no actions', async () => {
@@ -199,7 +219,7 @@ describe('NextPage', () => {
     )
     const todo = (await screen.findByText('Typed work orders')).closest('li') as HTMLElement
     const blocked = screen.getByText('Needs a decision').closest('li') as HTMLElement
-    expect(screen.getByRole('heading', { name: /From work matrix/ })).toBeInTheDocument()
+    expect(screen.getByText('From work matrix')).toBeInTheDocument()
     expect(blocked.compareDocumentPosition(todo) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(within(todo).queryByRole('button')).toBeNull()
     expect(within(blocked).getByRole('link', { name: /PR #12/ })).toHaveAttribute('href', 'https://example.com/pull/12')
@@ -225,7 +245,8 @@ describe('NextPage', () => {
     const matrix = screen.getByRole('region', { name: /From work matrix/ })
     expect(within(matrix).getByText('Typed work orders')).toBeInTheDocument()
     expect(within(queue).queryByText('Typed work orders')).toBeNull()
-    await userEvent.click(within(waiting).getByRole('button', { name: 'Approve' }))
+    await userEvent.click(within(waiting).getByText('Idea'))
+    await userEvent.click(screen.getByRole('button', { name: 'Approve and queue' }))
     expect(api.update).toHaveBeenCalledWith(3, { state: 'approved' })
   })
 
@@ -235,7 +256,7 @@ describe('NextPage', () => {
       items: [
         nextItem({ id: 1, title: 'Idea', rank: 1, state: 'planned', stored_state: 'planned', proposed: true, source: 'agent' }),
         nextItem({ id: 2, title: 'Agreed plan', rank: 2, state: 'planned', stored_state: 'planned' }),
-      ],
+      ] as NextItem[],
     }
     render(
       <LiveProvider live={live()}>
@@ -243,8 +264,28 @@ describe('NextPage', () => {
       </LiveProvider>,
     )
     await screen.findByText('Agreed plan')
+    await userEvent.click(screen.getByText('Agreed plan').closest('li') as HTMLElement)
     expect(screen.getByRole('button', { name: 'Move Agreed plan up' })).toBeDisabled()
+    await userEvent.click(screen.getByText('Idea').closest('li') as HTMLElement)
     expect(screen.getByRole('button', { name: 'Move Idea down' })).toBeDisabled()
+  })
+
+  it('shows a blocked-by tag from blocked_on data', async () => {
+    const list: NextList = {
+      next_up: 0,
+      items: [
+        nextItem({ id: 1, title: 'Blocked item', rank: 1 }),
+      ] as NextItem[],
+    }
+    ;(list.items[0] as any).blocked_on = [{ id: 7, title: 'Earlier thing', state: 'approved' }]
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    const tag = await screen.findByText(/blocked by #7/)
+    expect(tag).toHaveClass('sh-tag', 'sh-tag--blocked')
+    expect(tag).not.toHaveClass('sh-tag--warn')
   })
 
   it('says so when nothing is planned', async () => {
@@ -256,67 +297,114 @@ describe('NextPage', () => {
     expect(await screen.findByText('Nothing is planned')).toBeInTheDocument()
   })
 
-  it('reads the list again when a plan event arrives on the feed', async () => {
-    const load = vi.fn(async (): Promise<NextList> => everything)
+  it('opens the detail panel when Enter is pressed on a focused row', async () => {
     render(
-      <LiveProvider live={live([{ id: 9, kind: 'plan', text: 'next-up item 3 approved: Idea', created: '2026-10-08T10:00:00Z' }])}>
-        <NextPage load={load} api={{ add: vi.fn(), update: vi.fn() }} />
+      <LiveProvider live={live()}>
+        <NextPage load={async () => everything} api={{ add: vi.fn(), update: vi.fn() }} />
       </LiveProvider>,
     )
-    await screen.findByText('First approved')
-    await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(2))
+    const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
+    first.focus()
+    await userEvent.keyboard('{enter}')
+    expect(screen.getByRole('complementary', { name: /Details for First approved/ })).toBeInTheDocument()
   })
 
-  it('opens the inspector on a linked row click and Enter, not via action buttons', async () => {
-    window.location.hash = '#/next'
+  it('drag reorder moves the dragged item toward the drop target', async () => {
+    const api = { add: vi.fn(), update: vi.fn(async () => ({})) }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => everything} api={api} />
+      </LiveProvider>,
+    )
+    const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
+    const second = screen.getByText('Second approved').closest('li') as HTMLElement
+    const store: Record<string, string> = {}
+    const dataTransfer = {
+      setData: (type: string, value: string) => { store[type] = value },
+      getData: (type: string) => store[type] ?? '',
+      effectAllowed: '',
+      dropEffect: '',
+    }
+    fireEvent.dragStart(first, { dataTransfer })
+    fireEvent.dragOver(second, { dataTransfer })
+    fireEvent.drop(second, { dataTransfer })
+    expect(api.update).toHaveBeenCalledWith(1, { move: 'down' })
+  })
+
+  it('drag reorder stops on the first failed move', async () => {
     const list: NextList = {
-      ...everything,
+      next_up: 1,
       items: [
-        nextItem({ id: 7, title: 'Linked', state: 'approved', stored_state: 'approved', lane_id: 4, lane: 'feat/export-csv', lane_name: 'feat/export-csv' }),
-        nextItem({ id: 8, title: 'Startable', state: 'approved', stored_state: 'approved' }),
-      ],
+        nextItem({ id: 1, title: 'A', rank: 1 }),
+        nextItem({ id: 2, title: 'B', rank: 2 }),
+        nextItem({ id: 3, title: 'C', rank: 3 }),
+      ] as NextItem[],
+    }
+    let calls = 0
+    const api = {
+      add: vi.fn(),
+      update: vi.fn(async () => {
+        calls++
+        if (calls === 1) throw new ApiError(403, 'cannot move')
+        return {}
+      }),
     }
     render(
       <LiveProvider live={live()}>
-        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
+        <NextPage load={async () => list} api={api} />
       </LiveProvider>,
     )
-    const linked = (await screen.findByText('Linked')).closest('li') as HTMLElement
-    await userEvent.click(screen.getByText('Linked'))
-    expect(window.location.hash).toContain('open=lane%3A4')
-    await waitFor(() => expect(linked).toHaveClass('row-open'))
-
-    window.location.hash = '#/next'
-    await userEvent.type(linked, '{enter}')
-    expect(window.location.hash).toContain('open=lane%3A4')
-
-    const startable = screen.getByText('Startable').closest('li') as HTMLElement
-    window.location.hash = '#/next'
-    await userEvent.click(within(startable).getByRole('button', { name: 'Start' }))
-    expect(window.location.hash).not.toContain('open=lane')
-
-    window.location.hash = '#/next'
-    await userEvent.click(within(startable).getByRole('button', { name: 'Link…' }))
-    expect(window.location.hash).not.toContain('open=lane')
+    const a = (await screen.findByText('A')).closest('li') as HTMLElement
+    const c = screen.getByText('C').closest('li') as HTMLElement
+    const store: Record<string, string> = {}
+    const dataTransfer = {
+      setData: (type: string, value: string) => { store[type] = value },
+      getData: (type: string) => store[type] ?? '',
+      effectAllowed: '',
+      dropEffect: '',
+    }
+    fireEvent.dragStart(a, { dataTransfer })
+    fireEvent.dragOver(c, { dataTransfer })
+    fireEvent.drop(c, { dataTransfer })
+    expect(api.update).toHaveBeenCalledTimes(1)
+    expect(api.update).toHaveBeenCalledWith(1, { move: 'down' })
+    expect(await screen.findByText('cannot move')).toBeInTheDocument()
   })
-
-  it('does not open the inspector when Space is pressed on a button inside a linked row', async () => {
-    window.location.hash = '#/next'
-    const list: NextList = {
-      ...everything,
+  describe('a row linked to a lane', () => {
+    const linked: NextList = {
+      next_up: 0,
       items: [
         nextItem({ id: 7, title: 'Linked', state: 'approved', stored_state: 'approved', lane_id: 4, lane: 'feat/export-csv', lane_name: 'feat/export-csv' }),
-      ],
+      ] as NextItem[],
     }
-    render(
-      <LiveProvider live={live()}>
-        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
-      </LiveProvider>,
-    )
-    const linked = (await screen.findByText('Linked')).closest('li') as HTMLElement
-    const defer = within(linked).getByRole('button', { name: 'Defer' })
-    defer.focus()
-    await userEvent.keyboard(' ')
-    expect(window.location.hash).toBe('#/next')
+    const showLinked = async () => {
+      window.location.hash = '#/next'
+      render(
+        <LiveProvider live={live()}>
+          <NextPage load={async () => linked} api={{ add: vi.fn(), update: vi.fn() }} />
+        </LiveProvider>,
+      )
+      return (await screen.findByText('Linked')).closest('li') as HTMLElement
+    }
+
+    it('opens the lane in the inspector on click, and still selects the row', async () => {
+      await showLinked()
+      await userEvent.click(screen.getByText('Linked'))
+      expect(window.location.hash).toContain('open=lane%3A4')
+      expect(screen.getByRole('complementary', { name: /Details for Linked/ })).toBeInTheDocument()
+    })
+
+    it('opens the lane on Enter', async () => {
+      const row = await showLinked()
+      row.focus()
+      await userEvent.keyboard('{enter}')
+      expect(window.location.hash).toContain('open=lane%3A4')
+    })
+
+    it('opens the lane from its own link without a second open', async () => {
+      const row = await showLinked()
+      await userEvent.click(within(row).getByRole('link', { name: /lane feat\/export-csv/ }))
+      expect(window.location.hash).toContain('open=lane%3A4')
+    })
   })
 })

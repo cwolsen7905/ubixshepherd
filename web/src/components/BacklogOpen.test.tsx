@@ -2,7 +2,7 @@ import { cleanup, waitFor, fireEvent, render, screen } from '@testing-library/re
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { memo } from 'react'
-import { itemOpen, openLink, openClick, openHref, openRow, useHashOpen } from './BacklogOpen'
+import { isInner, itemOpen, openLink, openClick, openHref, openRow, useHashOpen } from './BacklogOpen'
 
 beforeEach(() => {
   window.location.hash = '#/board'
@@ -57,5 +57,16 @@ describe('a table row', () => {
     render(<table><tbody><tr {...openRow(o)}><td><a href="#/log/9">log</a></td></tr></tbody></table>)
     await userEvent.click(screen.getByRole('link'))
     expect(window.location.hash).toBe('#/log/9')
+  })
+})
+
+describe('isInner', () => {
+  it('is true for events from a link, button or field, false for the row itself', () => {
+    const row = document.createElement('li')
+    row.innerHTML = '<a>l</a><button>b</button><span>s</span>'
+    const of = (sel: string) => ({ target: row.querySelector(sel) as EventTarget })
+    expect(isInner(of('a'))).toBe(true)
+    expect(isInner(of('button'))).toBe(true)
+    expect(isInner(of('span'))).toBe(false)
   })
 })
