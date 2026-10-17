@@ -135,7 +135,7 @@ function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject
       </h2>
       <span className="inspector-head-actions">
         {!open.full && isWide(open) && (
-          <button type="button" className="ui-btn ui-btn-ghost" onClick={() => go(withOpen(window.location.hash, { ...open, full: true }))}>
+          <button type="button" className="ui-btn ui-btn-ghost inspector-full-btn" onClick={() => go(withOpen(window.location.hash, { ...open, full: true }))}>
             Open full width
           </button>
         )}
@@ -196,6 +196,15 @@ export function InspectorFrame({ open, children, mode: forced }: { open?: Open; 
       if (el instanceof HTMLElement && el.isConnected) el.focus()
     }
   }, [shown])
+
+  // Open full width and Back swap one header button for the other, which drops focus with the
+  // old one: put it on the button that took its place. Not on first open (the heading has it).
+  const wasFull = useRef(full)
+  useEffect(() => {
+    if (wasFull.current === full) return
+    wasFull.current = full
+    aside.current?.querySelector<HTMLElement>(full ? '.inspector-back' : '.inspector-full-btn')?.focus()
+  }, [full])
 
   useEffect(() => {
     if (!shown) return

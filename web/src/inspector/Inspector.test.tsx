@@ -84,6 +84,18 @@ describe('InspectorFrame', () => {
     expect(window.location.hash).toBe('#/?open=lane%3A4%2Fchanges')
   })
 
+  it('moves focus to the swapped-in button when entering and leaving full width', async () => {
+    const user = userEvent.setup()
+    window.location.hash = '#/?open=lane:4/changes'
+    const { rerender } = render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
+    await user.click(screen.getByRole('button', { name: 'Open full width' }))
+    rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes', full: true }} mode="split">page</InspectorFrame>)
+    expect(screen.getByRole('button', { name: 'Back to the inspector' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Back to the inspector' }))
+    rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
+    expect(screen.getByRole('button', { name: 'Open full width' })).toHaveFocus()
+  })
+
   it('leaves a full-width view on Esc instead of closing', async () => {
     const user = userEvent.setup()
     window.location.hash = '#/?open=lane:4/artifacts/full'
