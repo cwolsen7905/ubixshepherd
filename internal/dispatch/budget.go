@@ -287,9 +287,16 @@ func (r *Runner) overBudget(ctx context.Context, cfg config.Config) string {
 // talkative desk cannot starve a project. The caller never asks for a run the person
 // started.
 func (r *Runner) overBudgetIn(ctx context.Context, cfg config.Config, repo string) string {
+	why, _ := r.budgetHold(ctx, cfg, repo)
+	return why
+}
+
+// budgetHold is overBudgetIn, and says too whether the line that holds is the workspace's
+// daily ceiling, which Crook names as its own rule.
+func (r *Runner) budgetHold(ctx context.Context, cfg config.Config, repo string) (why string, daily bool) {
 	lines, err := BudgetLines(ctx, r.Store, cfg)
 	if err != nil {
-		return ""
+		return "", false
 	}
 	project, _ := cfg.ProjectOf(repo)
 	for _, l := range lines {
@@ -297,11 +304,11 @@ func (r *Runner) overBudgetIn(ctx context.Context, cfg config.Config, repo strin
 			continue
 		}
 		if l.Kind == LineWorkspace && l.Period == config.PeriodDay {
-			return fmt.Sprintf("today's spend, $%.2f, has reached the daily budget of $%.2f (%s); Shepherd holds the runs it would start on its own until tomorrow or a higher budget", l.Spent, l.Amount, l.Key)
+			return fmt.Sprintf("today's spend, $%.2f, has reached the daily budget of $%.2f (%s); Shepherd holds the runs it would start on its own until tomorrow or a higher budget", l.Spent, l.Amount, l.Key), true
 		}
-		return fmt.Sprintf("%s spend, $%.2f, has reached %s budget of $%.2f (%s); Shepherd holds the runs it would start on its own until %s", l.label(), l.Spent, l.who(), l.Amount, l.Key, l.lifts())
+		return fmt.Sprintf("%s spend, $%.2f, has reached %s budget of $%.2f (%s); Shepherd holds the runs it would start on its own until %s", l.label(), l.Spent, l.who(), l.Amount, l.Key, l.lifts()), false
 	}
-	return ""
+	return "", false
 }
 
 // DeskHeld says why the front desk should not take a turn on its own, or "": its own

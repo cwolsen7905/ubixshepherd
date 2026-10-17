@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -102,5 +103,42 @@ func TestPushRefusesForbiddenMessage(t *testing.T) {
 	r.RemoteSHA = remote
 	if v, err := f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{r}); err != nil || !v.OK {
 		t.Errorf("old forbidden commit already pushed: %+v %v", v, err)
+	}
+}
+
+// The pre-push verdicts name the Crook rule that decided.
+func TestCheckPushToRules(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	l := f.open("work")
+	f.commit(l.Worktree, "src/ok.go")
+	ref := []PushRef{pushRef(t, l.Worktree, "work")}
+	check := func(remote string, refs []PushRef) Verdict {
+		t.Helper()
+		v, err := f.fold.CheckPushTo(ctx, &l, &f.repo, l.Worktree, remote, refs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if v := check("origin", ref); !v.OK || v.rule != crook.RuleDefault {
+		t.Errorf("no run, in scope: %+v (rule %q)", v, v.rule)
+	}
+	if _, err := f.fold.Store.CreateRun(ctx, store.Run{LaneID: l.ID, Agent: "claude", Prompt: "x", State: store.RunRunning, Log: "l"}); err != nil {
+		t.Fatal(err)
+	}
+	if v := check("origin", ref); v.OK || v.rule != crook.RulePushAutonomy || !strings.HasPrefix(v.Problems[0], "agent run ") {
+		t.Errorf("agent run, push: human: %+v (rule %q)", v, v.rule)
+	}
+	agentProfile(f, PushAgent)
+	if v := check("elsewhere", ref); v.OK || v.rule != crook.RulePushAutonomy || !strings.Contains(v.Problems[0], `this pushes to "elsewhere"`) {
+		t.Errorf("agent run, other remote: %+v (rule %q)", v, v.rule)
+	}
+	if v := check("origin", ref); !v.OK {
+		t.Errorf("agent run, own branch to origin: %+v", v)
+	}
+	f.commit(l.Worktree, "docs/stray.md")
+	if v := check("origin", []PushRef{pushRef(t, l.Worktree, "work")}); v.OK || v.rule != crook.RuleScopePush || !strings.Contains(v.Problems[0], "docs/stray.md") {
+		t.Errorf("outside scope: %+v (rule %q)", v, v.rule)
 	}
 }

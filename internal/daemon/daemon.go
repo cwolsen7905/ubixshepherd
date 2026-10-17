@@ -23,6 +23,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
@@ -152,7 +153,7 @@ func NewLogger() *slog.Logger {
 func (s *Server) Handler() http.Handler {
 	s.background()
 	mux := http.NewServeMux()
-	handle := func(pattern string, a access, h http.HandlerFunc) { mux.HandleFunc(pattern, guard(a, h)) }
+	handle := func(pattern string, a access, h http.HandlerFunc) { mux.HandleFunc(pattern, guard(pattern, a, h)) }
 	const desk, worker, own, web = forDesk, forWorker, ownRun, forWeb
 	handle("GET "+api.PathStatus, desk|worker, s.status)
 	// The release check's cached answer, and dismissing its notice: the person's, so not
@@ -1630,8 +1631,7 @@ func (s *Server) answerDecision(w http.ResponseWriter, r *http.Request) {
 // records one only in a turn the person started.
 func (s *Server) personsApproval(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p := principalOf(r.Context()); p.Role == RoleDesk && !p.Human {
-			writeError(w, http.StatusForbidden, errors.New("the front desk may approve a brief only in a turn the person started; bring the draft to them"))
+		if !s.personsOnly(w, r, crook.ActionBriefApprove) {
 			return
 		}
 		h(w, r)

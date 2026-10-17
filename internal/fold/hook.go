@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/scope"
@@ -50,6 +51,9 @@ type Verdict struct {
 	Lane     string   `json:"lane,omitempty"`
 	Problems []string `json:"problems,omitempty"`
 	Notes    []string `json:"notes,omitempty"`
+	// rule is the Crook rule that decided, for tests and logs; it is not part of the
+	// hook's JSON.
+	rule string
 }
 
 // PushAgent is the autonomy.push value that lets an agent push its own lane branch. It is
@@ -79,16 +83,16 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 	if lane != nil {
 		v.Lane = lane.Name
 		if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
-			switch {
-			case repo == nil || prof.Autonomy.Push != PushAgent:
-				v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) is going in lane %s; agents Shepherd starts never push. Review the lane's commits when it ends, then push yourself",
-					running[0].ID, running[0].Agent, lane.Name))
-			case !isOrigin(ctx, dir, remote):
-				v.Problems = append(v.Problems, fmt.Sprintf("agent run %d (%s) in lane %s may push only to the repo's origin; this pushes to %q",
-					running[0].ID, running[0].Agent, lane.Name, remote))
+			push := ""
+			if repo != nil {
+				push = prof.Autonomy.Push
 			}
-			if len(v.Problems) > 0 {
-				v.OK = false
+			d := crook.Decide(ctx, crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker, Facts: crook.Facts{
+				Push: push, ToOrigin: push == PushAgent && isOrigin(ctx, dir, remote), Remote: remote,
+				Run: running[0].ID, Agent: running[0].Agent, Lane: lane.Name,
+			}})
+			if !d.OK() {
+				v.OK, v.Problems, v.rule = false, []string{d.Reason}, d.Rule
 				return v, nil
 			}
 		}
@@ -150,7 +154,9 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 			}
 		}
 	}
-	v.OK = len(v.Problems) == 0
+	// What the scope, branch, message and tag checks found is Crook's floor.
+	d := crook.Decide(ctx, crook.Request{Action: crook.ActionPrePush, Actor: crook.ActorWorker, Facts: crook.Facts{Problems: v.Problems}})
+	v.OK, v.rule = d.OK(), d.Rule
 	return v, nil
 }
 

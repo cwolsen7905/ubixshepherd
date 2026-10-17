@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/waiting"
@@ -29,11 +30,10 @@ const (
 // answer to a decision it is the person's: an agent's token never reaches these routes,
 // and the front desk does it only in a turn the person started.
 func personsNext(r *http.Request) bool {
-	p := principalOf(r.Context())
-	return p.Role != RoleDesk || p.Human
+	return crook.Decide(r.Context(), crook.Request{Action: crook.ActionNextChoose, Actor: principalOf(r.Context()).actor()}).OK()
 }
 
-var errNotPersons = errors.New("the front desk may approve, defer, drop, finish or reorder an item only in a turn the person started; propose it and bring it to them")
+var errNotPersons = errors.New(crook.PersonOnlyReason(crook.ActionNextChoose))
 
 // nextView joins an item with its lane and what the forge last said, and derives its
 // state. It reads only; settleNext persists a merge it sees.

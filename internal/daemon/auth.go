@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -46,6 +47,20 @@ type principal struct {
 	Turn int64
 	// web is a browser's session (RoleWeb).
 	web *webSession
+}
+
+// actor is who Crook sees acting for the principal: the front desk is the person's only
+// in a turn they started.
+func (p principal) actor() crook.Actor {
+	switch p.Role {
+	case RoleWorker:
+		return crook.ActorWorker
+	case RoleDesk:
+		if !p.Human {
+			return crook.ActorDesk
+		}
+	}
+	return crook.ActorPerson
 }
 
 type principalKey struct{}
@@ -190,38 +205,48 @@ const (
 )
 
 // guard refuses a request from a role the route is not for, before its handler runs.
-func guard(a access, h http.HandlerFunc) http.HandlerFunc {
+// Crook makes the call; the route's pattern names the action.
+func guard(pattern string, a access, h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		p := principalOf(r.Context())
-		switch p.Role {
-		case RoleOperator:
-		case RoleDesk:
-			if a&forDesk == 0 {
-				writeError(w, http.StatusForbidden, errors.New("the front desk's token cannot do this; it is the person's"))
-				return
-			}
-		case RoleWeb:
-			if a&(forDesk|forWeb) == 0 {
-				writeError(w, http.StatusForbidden, errors.New("a browser session cannot do this; use the shepherd command"))
-				return
-			}
-		case RoleWorker:
-			if a&(forWorker|ownRun) == 0 {
-				writeError(w, http.StatusForbidden, errors.New("an agent's token cannot do this; ask the person (ask_human) or another lane (ask_shepherd)"))
-				return
-			}
-			if a&ownRun != 0 {
-				if id, err := strconv.ParseInt(r.PathValue("id"), 10, 64); err != nil || id != p.Run {
-					writeError(w, http.StatusForbidden, fmt.Errorf("an agent's token is for run %d only", p.Run))
-					return
-				}
-			}
-		default:
+		v, known := routeVerdict(pattern, a, r)
+		switch {
+		case !known:
 			writeError(w, http.StatusUnauthorized, errors.New("missing, wrong or revoked token"))
-			return
+		case !v.OK():
+			writeError(w, http.StatusForbidden, errors.New(v.Reason))
+		default:
+			h(w, r)
 		}
-		h(w, r)
 	}
+}
+
+// routeVerdict is Crook's answer to whether the caller's role may call the route; known
+// is false for a request with no role Shepherd knows.
+func routeVerdict(pattern string, a access, r *http.Request) (crook.Verdict, bool) {
+	p := principalOf(r.Context())
+	rf := crook.RouteFacts{}
+	switch p.Role {
+	case RoleOperator:
+	case RoleDesk:
+		if a&forDesk == 0 {
+			rf.Denied = crook.DeniedDesk
+		}
+	case RoleWeb:
+		if a&(forDesk|forWeb) == 0 {
+			rf.Denied = crook.DeniedWeb
+		}
+	case RoleWorker:
+		if a&(forWorker|ownRun) == 0 {
+			rf.Denied = crook.DeniedWorker
+		} else if a&ownRun != 0 {
+			if id, err := strconv.ParseInt(r.PathValue("id"), 10, 64); err != nil || id != p.Run {
+				rf.Denied, rf.Run = crook.DeniedOtherRun, p.Run
+			}
+		}
+	default:
+		return crook.Verdict{}, false
+	}
+	return crook.Decide(r.Context(), crook.Request{Action: crook.RouteAction(pattern), Actor: p.actor(), Facts: crook.Facts{Route: &rf}}), true
 }
 
 // workerLane is the lane of the run a worker's token is for, or nil when the request is
@@ -257,10 +282,26 @@ func clientName(r *http.Request) string {
 // about the swarm.
 func (s *Server) personsAnswer(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if p := principalOf(r.Context()); p.Role == RoleDesk && !p.Human {
-			writeError(w, http.StatusForbidden, errors.New("the front desk may record an answer only in a turn the person started; bring the decision to them"))
+		if !s.personsOnly(w, r, crook.ActionDecisionAnswer) {
 			return
 		}
 		h(w, r)
 	}
+}
+
+// personsOnly asks Crook whether the caller may take an action that is the person's. When
+// it may not, the request is answered with a 403 and the reason.
+func (s *Server) personsOnly(w http.ResponseWriter, r *http.Request, a crook.Action) bool {
+	v := personVerdict(r.Context(), a)
+	if v.OK() {
+		return true
+	}
+	writeError(w, http.StatusForbidden, errors.New(v.Reason))
+	return false
+}
+
+// personVerdict is Crook's answer to whether the caller in ctx may take a person-only
+// action.
+func personVerdict(ctx context.Context, a crook.Action) crook.Verdict {
+	return crook.Decide(ctx, crook.Request{Action: a, Actor: principalOf(ctx).actor()})
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -42,7 +43,7 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 		return
 	}
 	prof := r.Conf().Profile(repo.Name)
-	if prof.Autonomy.Push != config.Shepherd {
+	if !shipVerdict(ctx, repo, lane, prof).OK() {
 		return
 	}
 	r.pushTags(ctx, lane, repo, prof)
@@ -119,9 +120,8 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		return out, err
 	}
 	prof := r.Conf().Profile(repo.Name)
-	if prof.Autonomy.Push != config.Shepherd {
-		return out, refuse("%s has not opted in to Shepherd pushing (its profile's autonomy.push is %q, not %q): push lane %s yourself",
-			repo.Name, prof.Autonomy.Push, config.Shepherd, lane.Name)
+	if v := shipVerdict(ctx, repo, lane, prof); !v.OK() {
+		return out, refusal{msg: v.Reason, rule: v.Rule}
 	}
 	tagged := r.pushTags(ctx, lane, repo, prof)
 	if prof.Gate == "" {
@@ -467,4 +467,11 @@ func Unpushed(ctx context.Context, lane store.Lane) int {
 	var n int
 	fmt.Sscan(strings.TrimSpace(out), &n)
 	return n
+}
+
+// shipVerdict is Crook's answer to whether Shepherd may push the lane: only a repo that
+// has opted in with autonomy.push: shepherd.
+func shipVerdict(ctx context.Context, repo store.Repo, lane store.Lane, prof config.Profile) crook.Verdict {
+	return crook.Decide(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon,
+		Facts: crook.Facts{Repo: repo.Name, Lane: lane.Name, Push: prof.Autonomy.Push}})
 }
