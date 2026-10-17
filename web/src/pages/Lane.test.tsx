@@ -100,6 +100,46 @@ describe('the Conversation tab', () => {
     expect(screen.getByRole('heading', { name: 'Timeline' })).toBeInTheDocument()
   })
 
+  describe('Esc on the page', () => {
+    afterEach(() => {
+      document.querySelectorAll('[data-test-dialog]').forEach((d) => d.remove())
+    })
+
+    it('closes the page to the Board, though a hidden or closed dialog is in the DOM', async () => {
+      const hidden = document.createElement('div')
+      hidden.setAttribute('role', 'dialog')
+      hidden.setAttribute('data-test-dialog', '')
+      hidden.hidden = true
+      const closed = document.createElement('dialog')
+      closed.setAttribute('data-test-dialog', '')
+      document.body.append(hidden, closed)
+      window.location.hash = '#/lanes/1'
+      await showLane(source())
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/board')
+    })
+
+    it('with an open dialog closes the dialog only, then the next Esc closes the page', async () => {
+      const dlg = document.createElement('dialog')
+      dlg.setAttribute('data-test-dialog', '')
+      dlg.setAttribute('open', '')
+      // A native dialog closes on Esc as the key's default action, after the page has seen it.
+      document.addEventListener('keydown', function close(e) {
+        if (e.key !== 'Escape') return
+        document.removeEventListener('keydown', close)
+        setTimeout(() => dlg.removeAttribute('open'), 0)
+      })
+      document.body.append(dlg)
+      window.location.hash = '#/lanes/1'
+      await showLane(source())
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/lanes/1')
+      await waitFor(() => expect(dlg).not.toHaveAttribute('open'))
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/board')
+    })
+  })
+
   it('draws one thread with a divider per run, and markdown for agent text', async () => {
     await showLane(source())
     await screen.findByText('Fix the login redirect.')
