@@ -182,10 +182,11 @@ Known limits at the end of this section for what is not built yet.
   the runs they cut off.** `shepherd daemon restart --drain` holds new starts (with the
   reason "Shepherd is restarting"), waits for running agents, and at the timeout stops
   the rest gracefully with their sessions kept. The new daemon continues each such run
-  once and starts what was held, and a crash-interrupted run is left alone. A shutdown
-  that arrives while the drain waits, or a stop made during one, is treated as the
-  restart's; a stop the person made stays theirs; and the restart starts a new daemon
-  even if the old one was stopped under it, saying why when it cannot.
+  once and starts what was held, and a crash-interrupted run is left alone. Only the runs
+  the drain itself stops are continued: those it stops at its deadline, and those a
+  shutdown stops while the drain is under way. Any stop made during a drain by a person
+  or the desk stays stopped. The restart starts a new daemon even if the old one was
+  stopped under it, saying why when it cannot.
 - **A run that stops without finishing is continued once, then fails.** An exit with
   uncommitted changes and no commit (or, for OpenCode, no change at all) that did not
   ask or report is continued once in its session; a second such end fails with "ended
