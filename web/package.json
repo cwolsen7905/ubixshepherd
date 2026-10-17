@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
+    "lint:style": "vitest run src/test/styleLint.test.ts",
     "test": "vitest run",
     "check": "npm run typecheck && npm run lint && npm run test"
   },

@@ -1,13 +1,7 @@
 /* Projects: the budget meter, the board groups and the Work matrix. The list and the project page are in pages/project.css. */
 
 .budget { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); }
-.meter {
-  display: inline-block; width: 6rem; height: 0.5rem; vertical-align: middle;
-  background: var(--rule); border-radius: var(--radius); overflow: hidden;
-}
-.meter-fill { display: block; height: 100%; background: var(--lichen); }
-.meter.tone-warn .meter-fill { background: var(--lantern); }
-.meter.tone-bad .meter-fill { background: currentColor; }
+.budget .sh-meter { display: inline-block; width: 6rem; vertical-align: middle; }
 
 /* The board, grouped by project. */
 .board-tools { display: flex; align-items: center; gap: var(--s-3); padding: 0 var(--pad); font-size: var(--t-sm); color: var(--muted); }

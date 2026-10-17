@@ -9,6 +9,8 @@ describe('Button', () => {
     render(<Button variant="attention" size="small">Answer</Button>)
     const b = screen.getByRole('button', { name: 'Answer' })
     expect(b).toHaveAttribute('type', 'button')
+    expect(b).toHaveClass('sh-btn', 'sh-btn--warn', 'sh-btn--sm')
+    // The old names stay as hooks for pages and tests not yet moved.
     expect(b).toHaveClass('ui-btn-attention', 'ui-btn-sm')
   })
   it('does not fire when disabled', async () => {

@@ -1,5 +1,6 @@
-/* Shepherd's tokens. Fog and slate by day, night pasture by night: calm enough to leave
-   open all day, with the one warm colour (the lantern) kept for what waits on the person. */
+/* The old variable names, kept as aliases of the design's --sh-* tokens (tokens.css) so pages
+   that have not moved yet keep working. New code uses --sh-* and the .sh-* classes. Each step
+   of the UI build removes the aliases its pages no longer read. */
 
 /* IBM Plex, self-hosted from public/fonts (SIL OFL 1.1, see OFL.txt). Latin subset. */
 @font-face {
@@ -41,131 +42,83 @@
 :root {
   color-scheme: light dark;
 
-  --field: #eef1f4;      /* page */
-  --sheet: #f8fafb;      /* raised: the bar, open panels */
-  --ink: #1c2630;        /* text */
-  --muted: #4a5763;      /* secondary text */
-  --faint: #5d6a75;      /* tertiary: ages, labels, timestamps; 4.5:1 on every surface */
-  --rule: #d5dce2;       /* hairlines */
-  --line: var(--rule);   /* a hairline on a chip or pill */
-  --control-border: #7a868f; /* edges of inputs, options and buttons; 3:1 on every surface */
-  --rule-strong: var(--control-border); /* conversation.css still reads this one for its rules */
-  --hover: #e3e8ec;
+  --field: var(--sh-field);
+  --sheet: var(--sh-surface);
+  --ink: var(--sh-ink);
+  --muted: var(--sh-muted);
+  --faint: var(--sh-faint);
+  --rule: var(--sh-rule);
+  --line: var(--sh-rule);
+  --control-border: var(--sh-control);
+  --rule-strong: var(--sh-control);
+  --hover: var(--sh-sunk);
 
-  --lichen: #3e6e5c;     /* accent: working, links, focus */
-  --lichen-wash: #e1ece6; /* selected rows, picked options */
-  --lantern: #9a6200;    /* needs you: fills, bands, borders */
-  --lantern-ink: #845300; /* needs you, as text: 4.5:1 on the wash */
-  --lantern-wash: #f7ead2;
-  --broken: #b42318;     /* failed */
-  --broken-wash: #f8e1de;
-  --ok: #2f7349;         /* passed, merged */
-  --brand: #0f62fe;      /* the uBix mark and name: 4.7:1 on the bar */
-  --focus: var(--lichen); /* focus ring and halo; one colour, so a theme changes it in one place */
+  --lichen: var(--sh-lichen);
+  --lichen-wash: var(--sh-lichen-wash);
+  --lantern: var(--sh-lantern);
+  --lantern-ink: var(--sh-lantern-ink);
+  --lantern-wash: var(--sh-lantern-wash);
+  --broken: var(--sh-broken);
+  --broken-wash: color-mix(in srgb, var(--sh-broken) 12%, var(--sh-raised));
+  --ok: var(--sh-ok);
+  --brand: var(--sh-brand);
+  --focus: var(--sh-lichen);
 
-  /* The kit's surfaces (web/src/ui). Four steps, field to raised; --sheet stays for pages not
-     yet moved. Wells are --sunk, floating things are --raised. */
-  --surface: #f9fafb;    /* sidebar, page heads, composer area */
-  --raised: #ffffff;     /* inspector, cards, inputs, dialogs */
-  --sunk: #e4e9ee;       /* selected nav item, your own messages, wells */
-  --kit-field: #eef1f4;  /* the planned page colour; --field itself is unchanged until pages move */
+  --surface: var(--sh-surface);
+  --raised: var(--sh-raised);
+  --sunk: var(--sh-sunk);
+  --kit-field: var(--sh-field);
 
-  /* Elevation, for what floats: dialogs and popovers. Everything else stays flat. */
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.14);
-  --shadow-2: 0 8px 28px rgb(0 0 0 / 0.28);
+  --shadow-1: 0 1px 2px color-mix(in srgb, var(--sh-ink) 14%, transparent);
+  --shadow-2: var(--sh-shadow-pop);
 
-  --font-ui: "IBM Plex Sans", "Avenir Next", "Segoe UI Variable Text", "Segoe UI", "Noto Sans", "Helvetica Neue", system-ui, sans-serif;
-  /* The kit's families: IBM Plex, bundled; the system stacks cover missing glyphs. */
-  --font-sans: var(--font-ui);
-  --font-code: var(--font-mono);
-  --font-mono: "IBM Plex Mono", "Berkeley Mono", "JetBrains Mono", "SF Mono", "Cascadia Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* IBM Plex only. */
+  --font-ui: var(--sh-font);
+  --font-sans: var(--sh-font);
+  --font-code: var(--sh-mono);
+  --font-mono: var(--sh-mono);
 
-  /* Size. The root size is the one knob: 14px at 1440 wide (the mockup's body), rising to
-     18px by about 2400, so every rem below, and the rows and gaps built from them, grow
-     with the display. 1rem is 14px at 1440, so a mockup pixel value is px / 14 in rem. */
-  --root-min: 14px;
-  --root-max: 18px;
+  /* The type scale: the design's sizes, under the old names. */
+  --t-2xs: var(--sh-t-meta);
+  --t-xs: var(--sh-t-meta);
+  --t-sm: var(--sh-t-small);
+  --t-md: var(--sh-t-body);
+  --t-lg: var(--sh-t-card);
+  --t-xl: var(--sh-t-view);
 
-  /* Type scale: nothing is set below --t-xs. */
-  --t-2xs: 0.857rem;   /* 12px at 1440: the floor */
-  --t-xs: 0.893rem;    /* 12.5px */
-  --t-sm: 0.929rem;    /* 13px: small text, labels */
-  --t-md: 1rem;        /* 14px: body */
-  --t-lg: 1.0714rem;   /* 15px: a card's question, a section head */
-  --t-xl: 1.1429rem;   /* 16px: a page's h1 */
+  --s-1: var(--sh-s2);
+  --s-2: var(--sh-s4);
+  --s-3: var(--sh-s6);
+  --s-4: var(--sh-s8);
+  --s-5: calc(var(--sh-s8) * 1.5);
+  --s-6: calc(var(--sh-s8) * 2.5);
 
-  /* Spacing. */
-  --s-1: 0.2857rem;    /* 4px at 1440 */
-  --s-2: 0.5714rem;    /* 8 */
-  --s-3: 0.8571rem;    /* 12 */
-  --s-4: 1.1429rem;    /* 16 */
-  --s-5: 1.7143rem;    /* 24 */
-  --s-6: 2.8571rem;    /* 40 */
-
-  /* Density: one setting. Comfortable in prose, compact in tables and lists. */
-  --leading-prose: 1.5;
+  --leading-prose: var(--sh-lh);
   --leading-compact: 1.35;
-  --row-compact: 2rem;   /* a list or table row */
-  --control-h: 2.0714rem; /* a button or input; the small size is --control-h-sm */
-  --control-h-sm: 1.75rem;
-  --motion: 150ms;       /* a slide or collapse, always in answer to the person */
+  --row-compact: 32px;
+  --control-h: 29px;
+  --control-h-sm: 24px;
+  --motion: 150ms;
 
-  --row: 2.25rem;        /* a board row */
-  --gutter: 2rem;        /* the glyph rail */
-  --pad: 1rem;
-  --bar-h: 2.75rem;
-  --radius: 0.4286rem;    /* controls, rows, small panels */
-  --radius-lg: 0.7143rem; /* dialogs and popovers */
+  --row: 36px;
+  --gutter: 32px;
+  --pad: var(--sh-s8);
+  --bar-h: 48px;
+  --radius: var(--sh-r);
+  --radius-lg: var(--sh-r-lg);
 
-  /* The shell: the bar, the banner and every page share one centred box. The widths of
-     what sits in it are tokens too: change one here and every page follows. */
-  --shell-max: 112rem;   /* the box; the window is wider than this on a very large display */
-  --page-max: var(--shell-max); /* a page fills the shell; no page sets its own max-width */
-  --measure-prose: 100ch; /* a card or paragraph: readable on any window; tables ignore it */
-  /* Deprecated aliases: files outside the layout still read these. Migrate, then delete. */
+  /* The page box: pages centre in the main column up to --shell-max. */
+  --shell-max: 112rem;
+  --page-max: var(--shell-max);
+  --measure-prose: 100ch;
   --measure-table: var(--page-max);
   --measure-page: var(--page-max);
   --measure-read: var(--measure-prose);
   --measure-chat: var(--page-max);
-  --rail: 20rem;         /* the lane's facts column */
-  --rail-wide: 26rem;    /* a rail that carries a list: the chat's, Decisions' */
-  --page-margin-left: 0; /* 0 keeps pages on the shell's left edge; auto centres them */
-  /* Breakpoints. CSS cannot read a custom property inside @media, so these are written out
-     where used; this is the one list. Change them together.
-       760px   stack: the board row collapses, counts leave the bar
-       1100px  .page-split stacks, two-column forms collapse, the bar drops its counts
-       1600px  main plus rail on Decisions, Log and Lane
-       2000px  pages capped at --page-max and centred (--page-margin-left: auto) */
+  --rail: 20rem;
+  --rail-wide: 26rem;
+  --page-margin-left: 0;
   --shell-edge: max(0px, calc((100% - var(--shell-max)) / 2));
-}
-
-html { font-size: clamp(var(--root-min), 0.5rem + 0.41667vw, var(--root-max)); }
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --field: #151b21;
-    --sheet: #1c242b;
-    --ink: #e3e8ec;
-    --muted: #b3bec7;
-    --faint: #9aa7b1;
-    --rule: #2f3b45;
-    --control-border: #6f7d88;
-    --hover: #222c34;
-
-    --lichen: #7fbfa4;
-    --lichen-wash: #1f3029;
-    --lantern: #e0a43a;
-    --lantern-ink: #f0b85a;
-    --lantern-wash: #33281a;
-    --broken: #f2867a;
-    --broken-wash: #33201e;
-    --ok: #79c08e;
-    --surface: #1b232a;
-    --raised: #222c34;
-    --sunk: #10151a;
-    --kit-field: #151b21;
-    --brand: #78a9ff;    /* the logo blue is 3.1:1 on the night bar; this is its lighter step */
-  }
 }
 
 /* Tones: one per meaning, shared by glyphs, badges and counts. */
@@ -176,28 +129,13 @@ html { font-size: clamp(var(--root-min), 0.5rem + 0.41667vw, var(--root-max)); }
 .tone-bad { color: var(--broken); }
 .tone-broken { color: var(--broken); }
 
-*, *::before, *::after { box-sizing: border-box; }
-
-html, body { margin: 0; }
-
 body {
-  background: var(--field);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: var(--t-md);
-  line-height: 1.5;
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
 
 a { color: inherit; text-decoration-color: var(--control-border); text-underline-offset: 0.15em; }
 a:hover { text-decoration-color: currentColor; }
-
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 1px;
-  border-radius: var(--radius);
-}
 
 button, input, textarea, select { font: inherit; color: inherit; }
 
@@ -211,18 +149,6 @@ textarea::placeholder { color: var(--faint); opacity: 1; }
 
 code, kbd, .mono { font-family: var(--font-mono); font-size: 0.92em; }
 
-kbd {
-  display: inline-block;
-  min-width: 1.5em;
-  padding: 0 var(--s-1);
-  border: 1px solid var(--control-border);
-  border-bottom-width: 2px;
-  border-radius: var(--radius);
-  text-align: center;
-  line-height: 1.35;
-  color: var(--muted);
-}
-
 .visually-hidden {
   position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -230,4 +156,14 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+kbd {
+  display: inline-block;
+  font: var(--sh-t-micro) var(--sh-mono);
+  border: 1px solid var(--sh-rule);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: var(--sh-muted);
+  background: var(--sh-surface);
 }

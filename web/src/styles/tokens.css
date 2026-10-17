@@ -1,0 +1,93 @@
+/* Shepherd design tokens. Light by default, dark via OS preference or [data-theme="dark"].
+   Force a theme by setting data-theme="light" | "dark" on <html> (or any container). */
+:root, [data-theme="light"] {
+  /* Surfaces, back to front */
+  --sh-field: #eef1f4;     /* app background, centre column */
+  --sh-surface: #f9fafb;   /* sidebar, context bars, quiet panels */
+  --sh-raised: #ffffff;    /* cards, inspector, inputs */
+  --sh-sunk: #e4e9ee;      /* selected nav, your messages, meter track */
+
+  /* Ink */
+  --sh-ink: #1c2630;       /* primary text */
+  --sh-muted: #4a5763;     /* secondary text */
+  --sh-faint: #5d6a75;     /* meta, timestamps, placeholders (still 4.5:1 on field) */
+  --sh-rule: #d5dce2;      /* hairlines, quiet borders */
+  --sh-control: #7a868f;   /* input and button borders, toggle track */
+
+  /* Lichen: the "go / selected / link" accent */
+  --sh-lichen: #3e6e5c;
+  --sh-lichen-wash: #e1ece6;
+
+  /* Lantern: "waiting on you". Only for things that need the human */
+  --sh-lantern: #9a6200;
+  --sh-lantern-ink: #845300;
+  --sh-lantern-wash: #f7ead2;
+
+  /* Status */
+  --sh-broken: #b42318;
+  --sh-ok: #2f7349;
+  --sh-brand: #0f62fe;     /* workspace mark only, never UI */
+
+  --sh-on-accent: #ffffff;
+  /* Agent hues (timeline bars, legends). Identity only, never status. Bar text is white. */
+  --sh-agent-claude: #2f7fb0; --sh-agent-opencode: #3b5fd9; --sh-agent-cursor: #8a4fc0; --sh-agent-copilot: #b8406f;
+  --sh-shadow-pop: 0 12px 32px rgba(28, 38, 48, .18), 0 2px 6px rgba(28, 38, 48, .08);
+  --sh-scrim: rgba(28, 38, 48, .28);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sh-field: #151b21; --sh-surface: #1b232a; --sh-raised: #222c34; --sh-sunk: #10151a;
+    --sh-ink: #e3e8ec; --sh-muted: #b3bec7; --sh-faint: #9aa7b1; --sh-rule: #2f3b45; --sh-control: #6f7d88;
+    --sh-lichen: #7fbfa4; --sh-lichen-wash: #1f3029;
+    --sh-lantern: #e0a43a; --sh-lantern-ink: #f0b85a; --sh-lantern-wash: #33281a;
+    --sh-broken: #f2867a; --sh-ok: #79c08e;
+    --sh-on-accent: #10151a; --sh-agent-claude: #3592c7; --sh-agent-opencode: #4a6ee8; --sh-agent-cursor: #9a5fd0; --sh-agent-copilot: #cc4f84;
+    --sh-shadow-pop: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .3);
+    --sh-scrim: rgba(0, 0, 0, .45);
+    color-scheme: dark;
+  }
+}
+[data-theme="dark"] {
+  --sh-field: #151b21; --sh-surface: #1b232a; --sh-raised: #222c34; --sh-sunk: #10151a;
+  --sh-ink: #e3e8ec; --sh-muted: #b3bec7; --sh-faint: #9aa7b1; --sh-rule: #2f3b45; --sh-control: #6f7d88;
+  --sh-lichen: #7fbfa4; --sh-lichen-wash: #1f3029;
+  --sh-lantern: #e0a43a; --sh-lantern-ink: #f0b85a; --sh-lantern-wash: #33281a;
+  --sh-broken: #f2867a; --sh-ok: #79c08e;
+  --sh-on-accent: #10151a; --sh-agent-claude: #3592c7; --sh-agent-opencode: #4a6ee8; --sh-agent-cursor: #9a5fd0; --sh-agent-copilot: #cc4f84;
+  --sh-shadow-pop: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .3);
+  --sh-scrim: rgba(0, 0, 0, .45);
+  color-scheme: dark;
+}
+
+:root {
+  --sh-font: "IBM Plex Sans", sans-serif;
+  --sh-mono: "IBM Plex Mono", monospace;
+
+  /* Type scale (px). Body is 14/1.5. */
+  --sh-t-micro: 11px;   /* kbd */
+  --sh-t-tag: 11.5px;   /* tags */
+  --sh-t-meta: 12.5px;  /* meta, chips, sidebar foot, counts at 12 */
+  --sh-t-small: 13px;   /* event lines, buttons, tabs */
+  --sh-t-body: 14px;
+  --sh-t-card: 15px;    /* card titles, doc h2 */
+  --sh-t-view: 16px;    /* view header h1 */
+  --sh-t-inspect: 18px; /* inspector h2 */
+  --sh-t-doc: 20px;     /* document h1 */
+  --sh-lh: 1.5;
+
+  /* Spacing (px) */
+  --sh-s1: 2px; --sh-s2: 4px; --sh-s3: 6px; --sh-s4: 8px; --sh-s5: 10px;
+  --sh-s6: 12px; --sh-s7: 14px; --sh-s8: 16px; --sh-s9: 20px;
+
+  /* Radius */
+  --sh-r: 6px; --sh-r-lg: 10px; --sh-r-pill: 12px;
+
+  /* Layout */
+  --sh-sidebar: 13.5rem;
+  --sh-inspector-min: 20rem;
+  --sh-inspector-max: 36rem;
+  --sh-measure: 72ch;           /* prose inside a block */
+  --sh-column: clamp(37.8rem, 70cqi, 52rem); /* shared conversation column: 72ch (37.8rem) minimum, grows with the main column (its container), capped at 52rem */
+}

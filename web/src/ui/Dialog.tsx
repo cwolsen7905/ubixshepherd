@@ -1,20 +1,34 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
-import './ui.css'
+import { cx } from './cx'
+import { Kbd } from './Kbd'
+
+export type DialogSize = 'default' | 'wide' | 'palette' | 'sheet'
 
 /**
- * A native modal `<dialog>`: focus is held inside, Esc closes, and focus returns to what had
- * it before. Rendered only while `open`; `onClose` is called for Esc and the backdrop.
+ * The modal (`.sh-modal`): a native `<dialog>`, so focus is held inside, Esc closes, and focus
+ * returns to what had it before; its backdrop is the design's scrim. Rendered only while
+ * `open`; `onClose` is called for Esc and a click on the scrim. `alert` makes it a
+ * confirmation (role alertdialog). `size` picks the palette frame, the wide keys sheet or the bottom sheet.
+ * `actions` sit in the foot, after a left-hand "Esc cancel" hint unless `hint` is false.
  */
 export function Dialog({
   open,
   onClose,
   title,
+  hideTitle = false,
+  size = 'default',
+  alert = false,
+  hint = true,
   children,
   actions,
 }: {
   open: boolean
   onClose: () => void
   title: string
+  hideTitle?: boolean
+  size?: DialogSize
+  alert?: boolean
+  hint?: boolean
   children?: ReactNode
   actions?: ReactNode
 }) {
@@ -34,7 +48,9 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className="ui-dialog"
+      className={cx('sh-modal', size === 'wide' && 'sh-modal--wide', size === 'palette' && 'sh-modal--palette', size === 'sheet' && 'sh-modal--sheet', alert && 'sh-modal--confirm', 'ui-dialog')}
+      data-component="Dialog"
+      role={alert ? 'alertdialog' : undefined}
       aria-labelledby={titleId}
       onCancel={(e) => {
         e.preventDefault()
@@ -44,11 +60,24 @@ export function Dialog({
         if (e.target === ref.current) onClose()
       }}
     >
-      <h2 id={titleId} className="ui-dialog-title">
+      <h2 id={titleId} className={hideTitle ? 'visually-hidden' : undefined}>
         {title}
       </h2>
       {children}
-      {actions && <div className="ui-dialog-actions">{actions}</div>}
+      {actions && (
+        <div className="sh-modal-foot">
+          {hint && (
+            <>
+              <span className="sh-modal-hint">
+                <Kbd keys="Esc" />
+                cancel
+              </span>
+              <span className="sh-modal-gap" />
+            </>
+          )}
+          {actions}
+        </div>
+      )}
     </dialog>
   )
 }

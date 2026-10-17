@@ -1,5 +1,5 @@
 import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import './ui.css'
+import { cx } from './cx'
 
 export type TabItem = { id: string; label: ReactNode; content: ReactNode }
 
@@ -39,8 +39,8 @@ export function Tabs({
   }
 
   return (
-    <div>
-      <div role="tablist" aria-label={label} className="ui-tabs-list">
+    <div data-component="Tabs">
+      <div role="tablist" aria-label={label} className="sh-tabs ui-tabs-list">
         {items.map((t, i) => (
           <button
             key={t.id}
@@ -54,7 +54,7 @@ export function Tabs({
             aria-selected={t.id === current?.id}
             aria-controls={`${base}-panel-${t.id}`}
             tabIndex={t.id === current?.id ? 0 : -1}
-            className="ui-tab"
+            className={cx('sh-tab', t.id === current?.id && 'is-on', 'ui-tab')}
             onClick={() => onChange(t.id)}
             onKeyDown={(e) => onKey(e, i)}
           >
@@ -63,7 +63,7 @@ export function Tabs({
         ))}
       </div>
       {current && (
-        <div role="tabpanel" id={`${base}-panel-${current.id}`} aria-labelledby={`${base}-tab-${current.id}`} className="ui-tabpanel">
+        <div role="tabpanel" id={`${base}-panel-${current.id}`} aria-labelledby={`${base}-tab-${current.id}`} className="sh-tabpanel">
           {current.content}
         </div>
       )}

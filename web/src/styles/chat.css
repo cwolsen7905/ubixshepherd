@@ -10,8 +10,8 @@
 .chat { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 /* The one head row, as in the mockup: the title, the topic chips inline, the status at the right.
    The shell's page bar repeats the title, so it is hidden here unless it carries the menu button. */
-.shell:has(.page.chat) .page-bar:not(:has(.menu-button)) { display: none; }
-.shell:has(.page.chat) .page-bar-title { visibility: hidden; }
+.sh-shell:has(.page.chat) .sh-mobile-bar:not(:has(.menu-button)) { display: none; }
+.sh-shell:has(.page.chat) .sh-mobile-title { visibility: hidden; }
 .chat-head { flex: none; position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; box-sizing: border-box; min-height: 45px; padding: 0; margin-bottom: 12px; border-bottom: 1px solid var(--rule); }
 .chat-head h1 { margin: 0 8px 0 0; font-size: 16px; font-weight: 600; flex: none; }
 .chat-head .topic-bar { flex: 1 1 12rem; min-width: 0; }
@@ -174,7 +174,7 @@
 /* One column, as in the mockup: the head, the thread, the waiting strip and the composer share
    it. With no inspector open it is centred at a reading width; with one open the page is
    narrower than the cap and the column fills it. The thread's own scrollbar stays at the edge. */
-.shell .page.chat { --chat-col: 820px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; margin-inline: 0; }
+.sh-shell .page.chat { --chat-col: 820px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; margin-inline: 0; }
 .chat-layout, .chat-main { min-width: 0; max-width: 100%; }
 .page.chat > .chat-head, .page.chat > .chat-problem, .chat-main > :not(.thread), .thread-body {
   box-sizing: border-box; width: 100%; max-width: var(--chat-col); margin-inline: auto;
@@ -206,7 +206,7 @@
 .pending-chip { white-space: nowrap; }
 
 /* The narrow shell lets the head scroll sideways; the chips keep to it and overflow behind +N instead. */
-.shell[data-mode="sheet"] .page.chat .chat-head .topic-bar { flex: 1 1 0; min-width: 0; }
+.sh-shell[data-mode="sheet"] .page.chat .chat-head .topic-bar { flex: 1 1 0; min-width: 0; }
 
 /* The waiting items past the fit are reachable behind +N. */
 .pending-more { position: relative; flex: none; }

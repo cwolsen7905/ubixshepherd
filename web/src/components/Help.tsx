@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { Button, Dialog, Kbd } from '../ui'
 import { Legend } from './Legend'
 
 const KEYS: [string, string][] = [
@@ -15,20 +15,32 @@ const KEYS: [string, string][] = [
   ['?', 'Show or hide these keys'],
 ]
 
+/** The keys and glyphs sheet: a modal with the keys table and the glyph legend. `?` or Esc closes it. */
 export function Help({ onClose }: { onClose: () => void }) {
-  const ref = useRef<HTMLDialogElement>(null)
-  useEffect(() => {
-    const d = ref.current
-    if (d && !d.open) d.showModal?.()
-  }, [])
   return (
-    <dialog ref={ref} className="help" onClose={onClose} onCancel={onClose} aria-labelledby="help-title">
-      <h2 id="help-title">Keys</h2>
-      <dl>
+    <Dialog
+      open
+      onClose={onClose}
+      title="Keys"
+      size="wide"
+      hint={false}
+      actions={
+        <>
+          <Button onClick={onClose}>Close</Button>
+          <span className="sh-modal-hint">
+            <Kbd keys="?" />
+            or
+            <Kbd keys="Esc" />
+            to close
+          </span>
+        </>
+      }
+    >
+      <dl className="sh-keys">
         {KEYS.map(([k, what]) => (
-          <div key={k}>
+          <div key={k} className="sh-keys-row">
             <dt>
-              {k.split(' ').map((p) => (p === '/' && k !== '/' ? ' / ' : <kbd key={p}>{p}</kbd>))}
+              {k.split(' ').map((p) => (p === '/' && k !== '/' ? ' / ' : <Kbd key={p} keys={p} />))}
             </dt>
             <dd>{what}</dd>
           </div>
@@ -36,9 +48,6 @@ export function Help({ onClose }: { onClose: () => void }) {
       </dl>
       <h2>Glyphs</h2>
       <Legend />
-      <form method="dialog">
-        <button type="submit" className="button">Close</button>
-      </form>
-    </dialog>
+    </Dialog>
   )
 }

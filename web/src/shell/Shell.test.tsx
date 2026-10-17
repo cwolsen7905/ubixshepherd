@@ -76,19 +76,20 @@ describe('Shell', () => {
     expect(screen.getByRole('link', { name: 'Runs' })).toHaveAttribute('aria-current', 'page')
   })
 
-  it('is full above 1280, icons below it and a sheet below 760', () => {
+  it('is full from 760px up and a sheet below it', () => {
     setWidth(1440)
     const { container, unmount } = view()
-    expect(container.querySelector('.shell')).toHaveAttribute('data-mode', 'full')
+    expect(container.querySelector('.sh-shell')).toHaveAttribute('data-mode', 'full')
+    expect(container.querySelector('.sh-shell')).toHaveAttribute('data-component', 'AppShell')
     unmount()
-    setWidth(1200)
+    setWidth(1000)
     const b = view()
-    expect(b.container.querySelector('.shell')).toHaveAttribute('data-mode', 'icons')
+    expect(b.container.querySelector('.sh-shell')).toHaveAttribute('data-mode', 'full')
     expect(screen.queryByRole('button', { name: 'Menu' })).toBeNull()
     b.unmount()
     setWidth(700)
     const c = view()
-    expect(c.container.querySelector('.shell')).toHaveAttribute('data-mode', 'sheet')
+    expect(c.container.querySelector('.sh-shell')).toHaveAttribute('data-mode', 'sheet')
     expect(screen.getByRole('button', { name: 'Menu' })).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -123,10 +124,10 @@ describe('Shell', () => {
   })
 
   it('has no page bar from 760px up, so the page head is the one title', () => {
-    for (const w of [1440, 1200, 760]) {
+    for (const w of [1440, 1000, 760]) {
       setWidth(w)
       const { container, unmount } = view(waiting, '#/board')
-      expect(container.querySelector('.page-bar')).toBeNull()
+      expect(container.querySelector('.sh-mobile-bar')).toBeNull()
       expect(screen.queryByRole('banner')).toBeNull()
       unmount()
     }
@@ -137,7 +138,7 @@ describe('Shell', () => {
     view(waiting, '#/runs')
     const bar = screen.getByRole('banner')
     expect(within(bar).getByRole('button', { name: 'Menu' })).toBeInTheDocument()
-    expect(within(bar).getByText('Runs')).toHaveClass('page-bar-title')
+    expect(within(bar).getByText('Runs')).toHaveClass('sh-mobile-title')
     const count = within(bar).getByRole('link', { name: '4 waiting on you' })
     expect(count).toHaveAttribute('href', '#/inbox')
   })
