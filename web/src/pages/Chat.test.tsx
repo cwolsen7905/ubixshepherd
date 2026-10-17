@@ -284,6 +284,7 @@ describe('ChatPage', () => {
     await user.click(screen.getByRole('button', { name: 'Start new' }))
     expect(newConversation).toHaveBeenCalledWith(0)
     expect(screen.queryByRole('button', { name: 'Start new' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'More' })).toHaveFocus()
   })
 
   it('draws a new-conversation row and a run row between messages', async () => {

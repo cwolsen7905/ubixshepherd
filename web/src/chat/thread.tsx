@@ -274,6 +274,7 @@ function ChatThread({
       document.removeEventListener('mousedown', away)
     }
   }, [menu])
+  const wasConfirming = useRef(false)
   const confirmRoot = useRef<HTMLSpanElement>(null)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
 
@@ -453,6 +454,9 @@ function ChatThread({
   const follow = useFollowBottom(scroller, [d.loaded, items.length, d.partial, unplaced.length])
   useEffect(() => {
     if (confirming) confirmRoot.current?.querySelector('button')?.focus()
+    // The More button remounts when the confirmation closes; focus it once it is there.
+    else if (wasConfirming.current) moreRoot.current?.querySelector('button')?.focus()
+    wasConfirming.current = confirming
   }, [confirming])
 
   const line = d.connection === 'live' ? null : STREAM_LINE[d.connection]
@@ -485,7 +489,6 @@ function ChatThread({
                 onClick={() => {
                   setConfirming(false)
                   void thread.newConversation()
-                  moreRoot.current?.querySelector('button')?.focus()
                 }}
               >
                 Start new
@@ -494,7 +497,6 @@ function ChatThread({
                 size="small"
                 onClick={() => {
                   setConfirming(false)
-                  window.setTimeout(() => moreRoot.current?.querySelector('button')?.focus(), 0)
                 }}
               >
                 Cancel
