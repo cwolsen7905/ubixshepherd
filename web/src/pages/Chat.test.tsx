@@ -227,20 +227,14 @@ describe('ChatPage', () => {
     expect(screen.getByLabelText('Message to the front desk')).toHaveValue('hello')
   })
 
-  it('keeps a half-written decision answer, and clears it once answered', async () => {
+  it('opens the inspector from an inline decision card', async () => {
     const user = userEvent.setup()
     const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
     const api = () => fakeDeskApi({ history: async () => ({ events: history, more: false }) })
-    const label = `Or write your own answer to decision ${decision().id}`
     await show(api(), liveWith(undefined, answer))
-    await user.type(await screen.findByLabelText(label), 'let me thi')
-    cleanup()
-    await show(api(), liveWith(undefined, answer))
-    const box = await screen.findByLabelText(label)
-    expect(box).toHaveValue('let me thi')
-    await user.click(screen.getByRole('button', { name: 'Answer' }))
-    expect(await screen.findByText(/^Answered “let me thi”/)).toBeInTheDocument()
-    expect(localStorage.getItem(`shepherd.chat.answer.${decision().id}`)).toBeNull()
+    const card = (await screen.findByText(decision().question)).closest('section') as HTMLElement
+    await user.click(within(card).getByRole('link', { name: 'open' }))
+    expect(window.location.hash).toContain('open=decision%3A5')
   })
 
   it('tells a signed-out browser how to sign in', async () => {
@@ -293,16 +287,12 @@ describe('ChatPage', () => {
     expect(await screen.findByText('New conversation', { selector: 'span' })).toBeInTheDocument()
   })
 
-  it('answers a decision in place, with the same call as the Decisions page', async () => {
+  it('opens a decision in the inspector from the inline card', async () => {
     const user = userEvent.setup()
-    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
-    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }), liveWith(undefined, answer))
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }), liveWith())
     const card = (await screen.findByText(decision().question)).closest('section') as HTMLElement
-    await user.click(within(card).getByRole('button', { name: /^No/ }))
-    expect(answer).not.toHaveBeenCalled()
-    await user.click(within(card).getByRole('button', { name: 'Answer' }))
-    expect(answer).toHaveBeenCalledWith(decision().id, 'No')
-    expect(await screen.findByText(/^Answered “No”/)).toBeInTheDocument()
+    await user.click(within(card).getByRole('link', { name: 'open' }))
+    expect(window.location.hash).toContain('open=decision%3A5')
   })
 
   it('renders hostile text inert', async () => {

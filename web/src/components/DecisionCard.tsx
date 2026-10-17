@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { Decision, DecisionView } from '../api/types'
+import type { ArtifactLink, Decision, DecisionView } from '../api/types'
 import { Markdown, inline } from '../conversation/Markdown'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
@@ -8,8 +8,14 @@ import { href, withOpen } from '../router'
 import { useLive } from '../state/context'
 import '../styles/conversation.css'
 import '../styles/decisions.css'
-import { Button, useToast } from '../ui'
+import { Button, Chip, useToast } from '../ui'
 import { Glyph } from './Glyph'
+
+function artifactsOf(d: DecisionView): ArtifactLink[] {
+  // The daemon emits artifact ids starting at 1; 0 is omitted because it would not
+  // be a valid artifact id in the store and would break the artifact view.
+  return (d.artifacts ?? []).filter((a) => a.id > 0)
+}
 
 /** A question longer than this (characters or lines) starts clamped, with a "Show all". */
 export const LONG_CHARS = 700
@@ -69,6 +75,9 @@ export function DecisionCard({
   const ref = useRef<HTMLElement>(null)
   const uid = useId()
   const id = `decision-${d.id}-${uid.replace(/:/g, '')}`
+  const mac = navigator.userAgent.includes('Mac')
+  const artifacts = inlineCard ? artifactsOf(d) : []
+  const canSendHere = !inlineCard // inline sends via its own visible row, not the global listener
 
   const setOwn = (v: string) => {
     setOwnText(v)
@@ -87,7 +96,8 @@ export function DecisionCard({
     [focused, options.join('\n')],
   )
 
-  const words = own.trim() || choice
+  // The inline card shows only the chip choice, so it never sends a draft kept for the inspector.
+  const words = inlineCard ? choice : own.trim() || choice
   const send = async () => {
     if (!words || sent.state !== 'idle') return
     setSent({ state: 'sending' })
@@ -102,13 +112,15 @@ export function DecisionCard({
     }
   }
 
-  // Cmd+Enter or Ctrl+Enter sends the card in focus, even while typing in its own box.
+  // Cmd+Enter or Ctrl+Enter sends the card that shows a textarea or option buttons with
+  // its own visible send control. The inline card uses its own per-choice send row, so the
+  // window listener is not attached there.
   const sendRef = useRef(send)
   useEffect(() => {
     sendRef.current = send
   })
   useEffect(() => {
-    if (!focused) return
+    if (!focused || !canSendHere) return
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented) {
         // A box elsewhere on the page (the composer) keeps its own Cmd+Enter.
@@ -120,7 +132,7 @@ export function DecisionCard({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [focused])
+  }, [focused, canSendHere])
 
   const { head, body: fullBody } = splitQuestion(d.question)
   // The compact card is the headline and the options; the body is for the inspector.
@@ -133,15 +145,45 @@ export function DecisionCard({
 
   const content = (
     <div className="decision-body">
-      <p className="decision-meta">
-        <span>decision {d.id}</span>
-        {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : <span>{d.lane}</span>}
-        <span>{d.agent}</span>
-        <a href={href.log(d.run_id)}>run {d.run_id}</a>
-        <span className="faint">{d.repo}</span>
-        <span className="faint">waiting {since(d.created, now)}</span>
-        {inlineCard && <a href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>open</a>}
-      </p>
+      {inlineCard ? (
+        <p className="decision-meta">
+          <span className="meta-kind">Decision {d.id}</span>
+          <span aria-hidden="true" className="meta-sep">·</span>
+          {laneId !== undefined ? (
+            <a href={href.lane(laneId)} className="meta-lane">{d.lane}</a>
+          ) : (
+            <span className="meta-lane">{d.lane}</span>
+          )}
+          <span aria-hidden="true" className="meta-sep">·</span>
+          <span className="meta-agent">{d.agent}, <a href={href.log(d.run_id)}>run {d.run_id}</a></span>
+          <span aria-hidden="true" className="meta-sep">·</span>
+          <span className="meta-age">{since(d.created, now)}</span>
+          {artifacts.length > 0 && (
+            <>
+              <span aria-hidden="true" className="meta-sep">·</span>
+              {artifacts.map((a) => (
+                <a
+                  key={a.id}
+                  className="meta-artifact"
+                  href={withOpen(window.location.hash, { kind: 'artifact', id: a.id })}
+                >
+                  artifact {a.id}
+                </a>
+              ))}
+            </>
+          )}
+          <a className="meta-open" href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>open</a>
+        </p>
+      ) : (
+        <p className="decision-meta">
+          <span>decision {d.id}</span>
+          {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : <span>{d.lane}</span>}
+          <span>{d.agent}</span>
+          <a href={href.log(d.run_id)}>run {d.run_id}</a>
+          <span className="faint">{d.repo}</span>
+          <span className="faint">waiting {since(d.created, now)}</span>
+        </p>
+      )}
       {head &&
         (inlineCard || pane ? (
           <p id={`${id}-q`} className="decision-q">{inline(head)}</p>
@@ -167,7 +209,13 @@ export function DecisionCard({
           )}
         </div>
       )}
-      {d.why && !inlineCard && (
+      {d.why && pane && (
+        <div className="decision-why-line">
+          <strong>Why this is yours:</strong>
+          <Markdown text={d.why} />
+        </div>
+      )}
+      {d.why && !inlineCard && !pane && (
         <aside className="decision-aside decision-why" aria-label="Why this is your call">
           <span className="decision-aside-h">Why this is yours</span>
           <Markdown text={d.why} />
@@ -194,7 +242,37 @@ export function DecisionCard({
       ) : (
         <fieldset className="decision-answer" disabled={sent.state === 'sending'}>
           <legend className="visually-hidden">Your answer to decision {d.id}</legend>
-          {options.length > 0 && (
+          {options.length > 0 && inlineCard && (
+            <div className="decision-options" role="group" aria-label={`Options for decision ${d.id}`}>
+              {options.map((o, i) => (
+                <Chip
+                  key={o}
+                  selected={choice === o}
+                  onClick={() => setChoice(o)}
+                >
+                  <span aria-hidden="true" className="option-num">{i + 1}.</span>
+                  <span className="option-text">{inline(o)}</span>
+                </Chip>
+              ))}
+              {choice && (
+                <div className="inline-send">
+                  <Button size="small" variant="attention" disabled={sent.state !== 'idle'} onClick={() => void send()}>
+                    {sent.state === 'sending' ? 'Sending…' : `Send “${clip(choice, 24)}”`}
+                  </Button>
+                  <span className="send-hint faint">or open to edit</span>
+                </div>
+              )}
+            </div>
+          )}
+          {options.length === 0 && inlineCard && (
+            <p className="send-hint faint">Open this decision to write your answer.</p>
+          )}
+          {inlineCard && sent.state === 'error' && (
+            <span className="tone-bad" role="alert">
+              Not sent: {sent.msg}
+            </span>
+          )}
+          {options.length > 0 && !inlineCard && (
             <ol className="options">
               {options.map((o, i) => {
                 const rec = !!d.recommendation && o.trim() === d.recommendation.trim()
@@ -218,25 +296,43 @@ export function DecisionCard({
               })}
             </ol>
           )}
-          <label className="own">
-            <span className="visually-hidden">Or write your own answer to decision {d.id}</span>
-            <textarea
-              rows={own ? 3 : 1}
-              placeholder={options.length ? 'Or write your own answer' : 'Write your answer'}
-              value={own}
-              onChange={(e) => setOwn(e.target.value)}
-            />
-          </label>
-          <div className="send">
-            <Button variant="primary" {...(inlineCard ? { 'aria-disabled': !words } : { disabled: !words })} onClick={() => void send()}>
-              {sent.state === 'sending' ? 'Sending…' : inlineCard ? 'Answer' : words ? `Send “${clip(words, 48)}”` : 'Send answer'}
-            </Button>
-            {sent.state === 'error' && (
-              <span className="tone-bad" role="alert">
-                Not sent: {sent.msg}
-              </span>
-            )}
-          </div>
+          {!inlineCard && (
+            <label className="own">
+              <span className="visually-hidden">Or write your own answer to decision {d.id}</span>
+              <textarea
+                rows={own ? 3 : 1}
+                placeholder={options.length ? 'Or write your own answer' : 'Write your answer'}
+                value={own}
+                onChange={(e) => setOwn(e.target.value)}
+              />
+            </label>
+          )}
+          {!inlineCard && (
+            <div className="send">
+              {pane ? (
+                <>
+                  <Button variant="attention" disabled={!words} onClick={() => void send()}>
+                    {sent.state === 'sending' ? 'Sending…' : 'Send answer'}
+                  </Button>
+                  <Button variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('shepherd:focus-context-composer'))}>
+                    Ask the desk first
+                  </Button>
+                  <span className="send-hint faint">
+                    <kbd>{mac ? '⌘↵' : 'Ctrl+Enter'}</kbd> send, then next
+                  </span>
+                </>
+              ) : (
+                <Button variant="primary" disabled={!words} onClick={() => void send()}>
+                  {sent.state === 'sending' ? 'Sending…' : words ? `Send “${clip(words, 48)}”` : 'Send answer'}
+                </Button>
+              )}
+              {sent.state === 'error' && (
+                <span className="tone-bad" role="alert">
+                  Not sent: {sent.msg}
+                </span>
+              )}
+            </div>
+          )}
         </fieldset>
       )}
     </div>

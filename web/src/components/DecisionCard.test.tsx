@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Decision } from '../api/types'
+import type { Decision, DecisionView } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { decision, spend, status } from '../test/fixtures'
@@ -141,17 +141,74 @@ describe('DecisionCard', () => {
   })
 })
 
-describe('the inline decision card', () => {
-  it('has a primary Answer that is not natively disabled and does nothing until there are words', async () => {
+describe('the answer draft', () => {
+  it('survives a remount in the pane, is not cleared by an inline chip, and is cleared once sent', async () => {
     const user = userEvent.setup()
-    show(decision(), 'inline')
-    const btn = screen.getByRole('button', { name: 'Answer' })
-    expect(btn).toHaveClass('ui-btn-primary')
-    expect(btn).not.toBeDisabled()
-    expect(btn).toHaveAttribute('aria-disabled', 'true')
-    await user.click(btn)
-    expect(screen.queryByText(/^Answered/)).toBeNull()
+    const d = decision({ id: 11, options: ['Stream', 'Buffer'] })
+    const ui = (variant: 'pane' | 'inline') => (
+      <LiveProvider live={live()}>
+        <DecisionCard d={d} variant={variant} />
+      </LiveProvider>
+    )
+    window.localStorage.clear()
+    const first = render(ui('pane'))
+    await user.type(screen.getByRole('textbox'), 'half written')
+    first.unmount()
+    const inl = render(ui('inline'))
+    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    inl.unmount()
+    render(ui('pane'))
+    expect(screen.getByRole('textbox')).toHaveValue('half written')
+    await user.click(screen.getByRole('button', { name: 'Send answer' }))
+    await screen.findByRole('status')
+    expect(window.localStorage.getItem('shepherd.chat.answer.11')).toBeNull()
   })
+})
+
+describe('the inline decision card', () => {
+  it('has no textarea and no Answer button', () => {
+    show(decision(), 'inline')
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull()
+  })
+
+  it('shows numbered chips and clicking one reveals a send button', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <DecisionCard d={decision({ id: 9, options: ['Stream', 'Buffer'], recommendation: 'Buffer' })} variant="inline" focused />
+      </LiveProvider>,
+    )
+    const buttons = screen.getAllByRole('button', { name: /Stream|Buffer/ })
+    const [stream, buffer] = buttons
+    if (!stream || !buffer) throw new Error('expected both chips')
+    expect(stream).toHaveAttribute('aria-pressed', 'false')
+    expect(buffer).toHaveAttribute('aria-pressed', 'false')
+    await user.click(stream)
+    expect(stream).toHaveAttribute('aria-pressed', 'true')
+    expect(buffer).toHaveAttribute('aria-pressed', 'false')
+
+    const send = screen.getByRole('button', { name: /Send/ })
+    await user.click(send)
+    expect(answer).toHaveBeenCalledWith(9, 'Stream')
+  })
+
+  it('does not send a chip choice with Cmd+Enter in the inline card; the button does', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <DecisionCard d={decision({ id: 10, options: ['Stream', 'Buffer'] })} variant="inline" focused />
+      </LiveProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: /Stream/ }))
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(answer).not.toHaveBeenCalled()
+  })
+
   it('is the headline and the options, with the long body left for the inspector', () => {
     show(decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] }), 'inline')
     expect(screen.getByText('Add the decision card to the chat thread')).toBeInTheDocument()
@@ -159,6 +216,26 @@ describe('the inline decision card', () => {
     expect(screen.queryByText('Why this is yours')).toBeNull()
     expect(screen.getByRole('button', { name: /Stream/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'open' }).getAttribute('href')).toContain('open=decision')
+  })
+
+  it('links every artifact, one link each', () => {
+    const d = { ...decision(), artifacts: [{ id: 7, path: 'a.md', title: 'a' }, { id: 8, path: 'b.md', title: 'b' }] } as DecisionView
+    show(d, 'inline')
+    expect(screen.getByRole('link', { name: 'artifact 7' }).getAttribute('href')).toContain('open=artifact')
+    expect(screen.getByRole('link', { name: 'artifact 8' }).getAttribute('href')).toContain('open=artifact')
+  })
+
+  it('says answering happens in the inspector when an inline decision has no options', () => {
+    show(decision({ options: [] }), 'inline')
+    expect(screen.getByText('Open this decision to write your answer.')).toBeTruthy()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('links the artifact when the decision has artifacts', () => {
+    const d = { ...decision(), artifacts: [{ id: 7, path: 'docs/plan.md', title: 'plan' }] } as DecisionView
+    show(d, 'inline')
+    const link = screen.getByRole('link', { name: 'artifact 7' })
+    expect(link.getAttribute('href')).toContain('open=artifact')
   })
 })
 
@@ -184,9 +261,12 @@ describe('the decision in the inspector', () => {
         <DecisionCard d={decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] })} variant="pane" focused onSent={onSent} />
       </LiveProvider>,
     )
-    expect(screen.getByText('Why this is yours')).toBeInTheDocument()
+    expect(screen.getByText('Why this is yours:')).toBeInTheDocument()
     expect(screen.getByText('Steps')).toBeInTheDocument()
-    await user.keyboard('2')
+    const send = screen.getByRole('button', { name: 'Send answer' })
+    expect(send).toHaveClass('ui-btn-attention')
+    expect(screen.getByText(/⌘↵|Ctrl\+Enter/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Buffer/ }))
     await user.keyboard('{Meta>}{Enter}{/Meta}')
     expect(answer).toHaveBeenCalledWith(expect.any(Number), 'Buffer')
     expect(await screen.findByText(/Answered/)).toBeInTheDocument()

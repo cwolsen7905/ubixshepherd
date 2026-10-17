@@ -290,6 +290,13 @@ export interface DecisionView extends Decision {
   agent: string
   lane: string
   repo: string
+  artifacts?: ArtifactLink[]
+}
+
+export interface ArtifactLink {
+  id: number
+  path: string
+  title?: string
 }
 
 export interface RunEvent {
