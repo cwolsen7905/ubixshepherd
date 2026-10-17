@@ -24,4 +24,16 @@ describe('chat Markdown', () => {
     expect(unmatchedTicks(fenced)).toBe(fenced)
     expect(unmatchedTicks(fenced + '\nthen `e')).toBe(fenced + '\nthen \u02cbe')
   })
+
+  it('reads a code span that opens on one line and closes on a later one as code', () => {
+    const { container } = render(<Markdown text={'Run `make\ncheck` first, then `make build`.\n\n- item `a\n- item b`'} />)
+    expect([...container.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['make check', 'make build'])
+    // A span does not run into the next list item: those two backticks are lone, so plain text.
+    expect(container.querySelector('ul')?.textContent).toContain('item')
+  })
+
+  it('does not let a lone backtick in a paragraph spoil its other lines', () => {
+    expect(unmatchedTicks('one `two\nthree')).toBe('one \u02cbtwo\nthree')
+    expect(unmatchedTicks('`a\nb`\nc')).toBe('`a b`\nc')
+  })
 })
