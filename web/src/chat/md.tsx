@@ -21,9 +21,30 @@ export function safeHref(raw: string): string | null {
 /** A small markdown subset: paragraphs, headings, fenced code, lists, tables, blockquotes, horizontal rules and task lists. */
 export { blocks }
 
+/**
+ * A line with an odd number of backticks has one that closes nothing (a cut-off span). Paired
+ * greedily it would open a span at the wrong place and turn the text after it into code, so
+ * the whole line's backticks are shown as text: a modifier-letter grave, which looks the same.
+ * Fenced blocks are left alone.
+ */
+export function unmatchedTicks(text: string): string {
+  let fenced = false
+  return text
+    .split('\n')
+    .map((line) => {
+      if (/^\s*```/.test(line)) {
+        fenced = !fenced
+        return line
+      }
+      if (fenced) return line
+      return (line.match(/`/g)?.length ?? 0) % 2 === 1 ? line.replaceAll('`', '\u02cb') : line
+    })
+    .join('\n')
+}
+
 /** The one renderer (code blocks get a copy button), with the chat page's class names. */
 export function Markdown({ text }: { text: string }) {
-  return <ConversationMarkdown text={text} classes="md" />
+  return <ConversationMarkdown text={unmatchedTicks(text)} classes="md" />
 }
 
 /** The line above the composer while the chat stream is not live; nothing says so when it is. */
