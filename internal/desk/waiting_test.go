@@ -91,7 +91,7 @@ func TestBriefsShareTheOpeningRule(t *testing.T) {
 	if strings.Contains(digest([]string{"x"}, 0, "[Waiting on you (1)] a", false), "repeating this line") {
 		t.Error("digest still asks for the waiting line to be repeated")
 	}
-	if !strings.Contains(WaitingInstruction, "do not paste") {
+	if strings.Contains(WaitingInstruction, NothingNeedsYou) || !strings.Contains(WaitingInstruction, "do not paste") {
 		t.Errorf("WaitingInstruction = %q", WaitingInstruction)
 	}
 }

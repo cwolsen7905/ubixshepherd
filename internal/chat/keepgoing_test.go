@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -57,10 +58,12 @@ func TestChatSharesTheMessageFormat(t *testing.T) {
 		t.Error("DeskBrief lacks desk.FormatBrief")
 	}
 	m, d, a := newTestModel()
+	m.waiting = api.Waiting{Count: 1, Items: []api.WaitingItem{{Kind: api.WaitingShip, Repo: "app", Lane: "a", Detail: "ship it"}}}
 	drive(t, m, m.pollFeed())
 	a.feed = []store.FeedItem{{ID: 1, Kind: store.FeedRunEnded, Text: "run 3 ended"}}
 	drive(t, m, m.pollFeed())
-	if len(d.got) != 1 || strings.Contains(d.got[0], "repeating this line") {
+	if len(d.got) != 1 || !strings.Contains(d.got[0], "[Waiting on you (1)]") ||
+		!strings.Contains(d.got[0], desk.WaitingInstruction) || strings.Contains(d.got[0], "repeating this line") {
 		t.Fatalf("event text = %q", d.got)
 	}
 }
