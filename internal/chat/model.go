@@ -1158,7 +1158,7 @@ func (m *Model) brief() tea.Cmd {
 	msg := "[Shepherd] Since your last turn:\n- " + strings.Join(m.pending, "\n- ") +
 		"\n" + desk.EventInstruction(m.keepOn)
 	if line := m.waiting.Line(); line != "" {
-		msg += "\n" + line + "\nEnd your reply by repeating this line, so the person sees what waits on them."
+		msg += "\n" + line + "\n" + desk.WaitingInstruction
 	}
 	m.pending = nil
 	return m.send(msg)

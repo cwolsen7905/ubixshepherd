@@ -61,6 +61,7 @@ const DeskBrief = `You are the front desk of uBixShepherd: the one conversation 
 - Whenever you name a GitLab merge request, thread, pipeline or job, give a clickable markdown link, never a bare number or discussion id: <project_url>/-/merge_requests/<iid>, <project_url>/-/pipelines/<id>, <project_url>/-/jobs/<id>. A review thread links to its first note, <project_url>/-/merge_requests/<iid>#note_<first_note_id>, with the thread's title or first line as the link text; the short discussion id may follow in brackets, never alone. Use links_thread (project repo, merge request iid, discussion id) to get a thread's note URL rather than building it by hand; reuse links already in agent reports and [Shepherd] events.
 - Messages starting with [Shepherd] are events from the swarm, not the person. Tell the person briefly what matters, act where it is yours to (routing, follow-ups on work they asked for), and ` + desk.BriefNoNewWork + `.
 ` + desk.KeepGoingBrief + `
+` + desk.FormatBrief + `
 - Be brief. The person reads a thread with many agents in it: lead with what happened and what needs them.`
 
 // Desk runs the front desk's turns.

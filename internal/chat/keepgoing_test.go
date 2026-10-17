@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -47,5 +48,22 @@ func TestKeepGoingCommandAndEventText(t *testing.T) {
 	typeLine(t, m, "/keep-going maybe")
 	if !has(m.Lines(), KindError, "usage: /keep-going") || len(a.keepSets) != 2 {
 		t.Errorf("a bad argument went through: %+v", a.keepSets)
+	}
+}
+
+// shepherd chat's brief and event text share the desk's opening rule and never ask for the
+// waiting line to be pasted.
+func TestChatSharesTheMessageFormat(t *testing.T) {
+	if !strings.Contains(DeskBrief, desk.FormatBrief) {
+		t.Error("DeskBrief lacks desk.FormatBrief")
+	}
+	m, d, a := newTestModel()
+	m.waiting = api.Waiting{Count: 1, Items: []api.WaitingItem{{Kind: api.WaitingShip, Repo: "app", Lane: "a", Detail: "ship it"}}}
+	drive(t, m, m.pollFeed())
+	a.feed = []store.FeedItem{{ID: 1, Kind: store.FeedRunEnded, Text: "run 3 ended"}}
+	drive(t, m, m.pollFeed())
+	if len(d.got) != 1 || !strings.Contains(d.got[0], "[Waiting on you (1)]") ||
+		!strings.Contains(d.got[0], desk.WaitingInstruction) || strings.Contains(d.got[0], "repeating this line") {
+		t.Fatalf("event text = %q", d.got)
 	}
 }
