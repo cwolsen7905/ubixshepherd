@@ -170,3 +170,14 @@ func TestUncommittedWorkAfterACommitIsUnfinished(t *testing.T) {
 		t.Errorf("prompt = %q", got)
 	}
 }
+
+// A file whose name git quotes in its status output still counts when in scope.
+func TestNonASCIIFileInScopeIsUnfinishedWork(t *testing.T) {
+	f := newFixture(t, "quick")
+	lane, _ := f.st.Lane(context.Background(), f.lane.ID)
+	os.MkdirAll(filepath.Join(lane.Worktree, "src"), 0o755)
+	os.WriteFile(filepath.Join(lane.Worktree, "src", "caf\u00e9.go"), []byte("x"), 0o644)
+	if !f.runner.hasChanges(context.Background(), lane) {
+		t.Error("an in-scope file with a non-ASCII name does not count as work")
+	}
+}
