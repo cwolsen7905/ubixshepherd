@@ -672,3 +672,18 @@ func TestProjectBriefDraftApproveRead(t *testing.T) {
 		t.Errorf("approve under an unknown project: %d", code)
 	}
 }
+
+func TestDockSettings(t *testing.T) {
+	s, ts := newServer(t)
+	for _, key := range []string{"dock.group", "dock.collapsed"} {
+		path := api.PathSettings + "/" + key
+		if code := call(t, ts, s.Token, "PUT", path, api.Setting{Value: "project"}, nil); code != http.StatusOK {
+			t.Fatalf("put %s: %d", key, code)
+		}
+		var got api.Setting
+		call(t, ts, s.Token, "GET", path, nil, &got)
+		if got.Value != "project" {
+			t.Errorf("%s = %q", key, got.Value)
+		}
+	}
+}

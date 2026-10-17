@@ -401,6 +401,13 @@ func (c *Client) SetSetting(ctx context.Context, key, value string) error {
 	return c.do(ctx, http.MethodPut, api.PathSettings+"/"+key, api.Setting{Value: value}, &out)
 }
 
+// Projects reads the configured projects with their counts and budgets, then Unassigned
+// when some repo is in none.
+func (c *Client) Projects(ctx context.Context) (api.ProjectList, error) {
+	var out api.ProjectList
+	return out, c.do(ctx, http.MethodGet, api.PathProjects, nil, &out)
+}
+
 func (c *Client) SpendToday(ctx context.Context) (api.SpendToday, error) {
 	var out api.SpendToday
 	return out, c.do(ctx, http.MethodGet, api.PathSpend, nil, &out)
