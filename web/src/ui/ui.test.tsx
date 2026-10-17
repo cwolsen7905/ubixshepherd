@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { Badge, Button, Chip, Dialog, EmptyState, Kbd, Popover, Skeleton, Tabs, TOAST_MS, ToastProvider, useToast } from './index'
+import { Badge, Button, Chip, Dialog, EmptyState, IdChip, Kbd, Popover, Skeleton, Tabs, TOAST_MS, ToastProvider, useToast } from './index'
 import { KitPage, kitEnabled } from './KitPage'
 
 describe('Button', () => {
@@ -43,6 +43,26 @@ describe('Chip', () => {
     expect(click).toHaveBeenCalled()
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }))
     expect(remove).toHaveBeenCalled()
+  })
+})
+
+describe('IdChip', () => {
+  it('shows the kind and id, and links with href', () => {
+    const { rerender } = render(<IdChip kind="decision" id={275} />)
+    const chip = screen.getByText('decision 275')
+    expect(chip.tagName).toBe('SPAN')
+    expect(chip).toHaveClass('ui-idchip')
+    expect(chip).toHaveAttribute('data-component', 'IdChip')
+    expect(chip).toHaveAttribute('title', 'decision 275')
+    rerender(<IdChip kind="item" id={82} href="#/inbox" />)
+    const link = screen.getByRole('link', { name: 'item 82' })
+    expect(link).toHaveAttribute('href', '#/inbox')
+    expect(link).toHaveAttribute('title', 'item 82')
+  })
+  it('shows only the number bare, keeping the label for assistive tech and tooltips', () => {
+    render(<IdChip kind="run" id={311} bare />)
+    expect(screen.getByText('311')).toHaveAttribute('aria-label', 'run 311')
+    expect(screen.getByText('311')).toHaveAttribute('title', 'run 311')
   })
 })
 
