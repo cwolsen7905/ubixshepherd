@@ -382,7 +382,7 @@ never tagged, so everything it lists is part of this release too.
   worker token may only report, ask the person, ask another lane, reserve and release
   its own lane's tags, read its own run and run the pre-push check. A desk role, for a
   front desk the daemon runs, gets the operator tools but may answer a decision only in
-  a turn the person started. See `docs/design.md` §3.17.
+  a turn the person started.
 - **The front desk in the daemon.** The daemon runs a front desk of its own, one
   conversation per workspace kept in the store, that clients follow instead of starting
   their own: `POST /v1/desk/turn`, `GET /v1/desk/stream` (server-sent events, resumable
@@ -391,7 +391,7 @@ never tagged, so everything it lists is part of this release too.
   as the new `desk.wake` setting says (`attached`, the default, `always` or `never`),
   as one digest when nobody was attached. A turn it takes on its own cannot answer a
   decision. Each turn's own cost is recorded as `desk` spend. `shepherd chat` keeps its
-  own desk for now. See `docs/design.md` §3.18.
+  own desk for now.
 - **A feed stream.** `GET /v1/feed/stream` sends the feed as server-sent events, each
   item with its event kind, resumable by id or `Last-Event-ID`, with a heartbeat every
   15 seconds and a limit on subscribers. `GET /v1/feed` is unchanged.
@@ -509,8 +509,7 @@ never tagged, so everything it lists is part of this release too.
   and its archives are published, but it has no service-manager integration and does
   not support SIGHUP reload.
 - **Not built yet:** workspace-wide leases (scopes are per repository), typed and
-  cross-repo work orders, triage and `verified-on:<env>` proofs. See
-  https://github.com/ubixsys/ubixshepherd/blob/main/docs/roadmap.md.
+  cross-repo work orders, triage and `verified-on:<env>` proofs.
 - **A beta.** Public interfaces may change between releases, and there has been no
   independent security review. See
   https://github.com/ubixsys/ubixshepherd/blob/main/docs/VERSIONING.md.
@@ -644,8 +643,7 @@ https://github.com/ubixsys/ubixshepherd/blob/main/docs/VERSIONING.md.
   no service-manager integration, and does not support SIGHUP reload.
 - **Not built yet:** workspace-wide leases (scopes are per repository), typed and
   cross-repo work orders, triage, the OpenCode adapter, `verified-on:<env>` proofs,
-  and the proposed merge-discipline checks. See
-  https://github.com/ubixsys/ubixshepherd/blob/main/docs/roadmap.md.
+  and the proposed merge-discipline checks.
 - **The web UI is a preview.** Its sources are in `web/`; it runs from a development
   server against a running daemon, which does not serve it.
 - **`autonomy.push: agent` uses a cooperative pre-push guard, not a security boundary.**

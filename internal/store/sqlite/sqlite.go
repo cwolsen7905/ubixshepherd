@@ -420,7 +420,7 @@ var migrations = []string{
 	// restart does not hand them back again.
 	`ALTER TABLE lane_forge ADD COLUMN threads_seen TEXT NOT NULL DEFAULT '';`,
 	// Artifacts: files of a lane the person may want to read, their versions and what
-	// they are tied to (docs/design/artifacts.md). intent_by is who chose the intent.
+	// they are tied to. intent_by is who chose the intent.
 	`CREATE TABLE artifacts (
 		id           INTEGER PRIMARY KEY AUTOINCREMENT,
 		workspace_id INTEGER NOT NULL DEFAULT 0,
@@ -461,7 +461,7 @@ var migrations = []string{
 		UNIQUE (artifact_id, kind, ref)
 	);
 	CREATE INDEX artifact_links_ref ON artifact_links (kind, ref);`,
-	// Next-up guards (docs/design/next-up-guards.md): the acceptance line, the items an
+	// Next-up guards: the acceptance line, the items an
 	// item waits on (ids, comma separated), the one-line "done?" suggestion with when it
 	// was made, and when the weekly re-check last ran.
 	`ALTER TABLE next_items ADD COLUMN done_when  TEXT NOT NULL DEFAULT '';

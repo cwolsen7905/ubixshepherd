@@ -20,8 +20,7 @@ logged somewhere so a human can audit them later in a batch.
 This keeps "agents never approve their own work" true: the reviewer is **never the author**
 (section 1). What changes is that "never approve" becomes "never approve *for the person*":
 a soft approval is a recorded agent opinion that lets a merge proceed, and the person
-keeps an after-the-fact audit with a way to undo it. It is a change to
-[design.md](design.md) §3.7 and [vision.md](vision.md); section 13 lists the lines.
+keeps an after-the-fact audit with a way to undo it. Section 13 lists the docs that change with it.
 
 ## Decisions
 
@@ -113,7 +112,7 @@ identical, so it can be added later.
 |---|---|---|
 | The diff | `git diff <base>...HEAD` on the merge request | Correctness, regressions, tests for changed behaviour, secrets, unrelated churn |
 | The gate | the pipeline's own jobs for this SHA | A failed or missing gate is not reviewed: it fails the job at once (section 9) |
-| Standards | the repo's pack and docs; each rule's `applies_to` and `level` | Each applicable `must` and `should` rule, one finding per breach, with its id. Closes the roadmap gap "a post-lane review run that judges them is not built" ([roadmap.md](roadmap.md)) |
+| Standards | the repo's pack and docs; each rule's `applies_to` and `level` | Each applicable `must` and `should` rule, one finding per breach, with its id. |
 | Plan vs built | the merge request description (brief, plan, scope) | Work the plan did not name, and plan items the diff does not do |
 | Scope | the diff's paths against the described scope | A path outside it is a stop, not a finding |
 
@@ -181,8 +180,7 @@ or the memory.
 5. The reviewer re-reads its own threads (matched by fingerprint), resolves the ones the
    change fixed and leaves the rest. A pass ends the loop; the merge proceeds.
 
-Two rules keep this honest. **The author never resolves a review thread**: that stays the
-rule in [design.md](design.md) §3.7. Only the reviewer resolves its own threads, on a new
+Two rules keep this honest. **The author never resolves a review thread**: that rule stays. Only the reviewer resolves its own threads, on a new
 SHA, and each resolution is in the log. And **a new commit disarms trust**: before the
 daemon arms or re-arms a merge it checks the review's SHA is the merge request's head,
 and passes that SHA to `glab mr merge --sha`, so the forge refuses a merge of anything
@@ -292,8 +290,7 @@ a CI edit cannot quietly widen them.
 
 A stop is computed by Go, twice: by the job, so the merge is physically held, and by the
 daemon on ingest, so it is recorded and raised as a decision. A stop is evaluated before
-the model is asked, and the model may add a stop but never remove one
-([design.md](design.md) §3.7).
+the model is asked, and the model may add a stop but never remove one.
 
 | Stop | Why |
 |---|---|
@@ -303,7 +300,7 @@ the model is asked, and the model may add a stop but never remove one
 | A failed, missing or stale gate | There is nothing to soft-approve |
 | A file outside the lane's declared scope | The push hook refuses it; a stop here covers a merge request not from a lane |
 | A diff over `max_diff_lines` | A cheap model's judgment on a large change is not worth the name |
-| Reserved decisions: money, published promises, destructive migrations | [design.md](design.md) §3.7: detected by code |
+| Reserved decisions: money, published promises, destructive migrations | Detected by code |
 | A reviewer that is not independent as the repo requires | Section 1 |
 | A review of a SHA that is no longer the head | Section 5 |
 | Anything an unanswered decision on the lane still holds | The decision is the person's |
@@ -374,12 +371,7 @@ list in [backlog-next.md](backlog-next.md)), not before:
 
 | File | Line | Change |
 |---|---|---|
-| `docs/design.md` | §3.7 table, "merge sign-off: always; agents never approve" | Add: a soft approval is not sign-off; the person's audit is |
-| `docs/design.md` | "No setting lets an agent approve" under the autonomy table | Add the `autonomy.approve` row and keep "never the person's approval" |
-| `docs/vision.md` | "Not a replacement for review", last sentence | "never gives that sign-off itself" stays true; add soft approval and its audit |
-| `docs/roadmap.md` | standards-packs row, "a post-lane review run ... is not built" | Point to this document |
 | `CLAUDE.md` | "Agents never approve their own work" | Unchanged in meaning; add "a soft approval is by a different reviewer and is audited" |
-| `docs/open-questions.md` | a new numbered question | The decision log for the table above |
 
 ## Out of scope
 

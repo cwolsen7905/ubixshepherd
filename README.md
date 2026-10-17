@@ -17,8 +17,7 @@ other, holds the decisions that are yours for you, and reports back in one threa
 > requests, GitLab polling and `shepherd chat` work today. GitLab is the only forge for
 > lanes, macOS and Linux are tested while Windows builds untested, and workspace-wide
 > leases, typed cross-repo work orders and triage are not built yet. The web UI in `web/`
-> is served by the daemon and opened with `shepherd web`. The changelog's "Known limits" has the full list,
-> and [docs/v1.md](docs/v1.md) and [docs/roadmap.md](docs/roadmap.md) the plan.
+> is served by the daemon and opened with `shepherd web`. The changelog's "Known limits" has the full list.
 
 Part of the **uBix** family of open-source systems tooling (uBixCore, uBixVault, uBixOps,
 Replikate, UbixOS), published under [uBixSys](https://ubixsys.com).
@@ -506,7 +505,7 @@ Each agent Shepherd starts gets a token of its own instead, good only for its ru
 tools and revoked when the run ends, so an agent's tools cannot answer its decisions or
 start other agents. That stops accidents, not a determined agent: an agent runs as your OS
 user and can read `daemon.json`. Isolating agents under another account or a sandbox is
-planned (see [docs/design.md](docs/design.md#317-the-humanagent-boundary-scoped-tokens)). On its first start it writes `~/.shepherd/config.yaml` with every setting
+planned. On its first start it writes `~/.shepherd/config.yaml` with every setting
 commented out, so the defaults apply until you change one; it never touches the file
 again. A repo's profile comes from that file, over cautious defaults (a human merges, tags
 and deploys; agents plan first):
@@ -553,22 +552,14 @@ tags to GitHub, so GitHub is the public home but not where work lands.
 > out the work, keeps the agents from stepping on each other, and reports back in one
 > thread. It's mission control for an AI swarm: I give the direction, it keeps the flock together.
 
-More versions (one-liner, technical) are in [docs/pitch.md](docs/pitch.md).
-
 ## Read next
 
 | Doc | What it holds |
 |---|---|
 | [docs/INSTALL.md](docs/INSTALL.md) | Install, first run, upgrade and uninstall on macOS, Linux and Windows, and how to report a problem |
 | [docs/update-check.md](docs/update-check.md) | The daily release check: what it asks, the notice, dismissing it, turning it off |
-| [docs/vision.md](docs/vision.md) | What Shepherd is for, what it does, what it deliberately is not |
-| [docs/design.md](docs/design.md) | **The core design**: how Shepherd applies uBixCore's typed-boundary philosophy to make multi-provider agent work deterministic |
-| [docs/v1.md](docs/v1.md) | **What v1 builds**: decided scope and stack, the Fold and dispatch around uBixCore, milestones |
-| [docs/roadmap.md](docs/roadmap.md) | The MVP feature list by milestone, what follows, nice-to-haves, and the research behind them |
+| [docs/](docs/) | One page per feature: the CLI, config, the desk, keep going, next up, topics, the web UI and more |
 | [docs/naming.md](docs/naming.md) | Why "Shepherd", the names we rejected, and the family vocabulary (Flock, Fold, Crook, Pasture) |
-| [docs/origins.md](docs/origins.md) | The practices Shepherd grows out of, already running around uBixCore |
-| [docs/pitch.md](docs/pitch.md) | Elevator pitches, ready to paste |
-| [docs/open-questions.md](docs/open-questions.md) | Decisions not yet made |
 | [CHANGELOG.md](CHANGELOG.md) | What each release changed, and its known limits |
 | [docs/VERSIONING.md](docs/VERSIONING.md) | What the version number promises, and what it does not |
 | [docs/RELEASING.md](docs/RELEASING.md) | How a release is cut and published, and how to verify a download |

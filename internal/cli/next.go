@@ -366,8 +366,8 @@ var nextSeeds = []nextSeedItem{
 	{"Backlog actions: ship from a card, first run of a never-run lane, per-lane fix-try count, multi-select", store.NextDeferred, "docs/backlog-actions.md"},
 	{"Rail: run progress bar, per-project grouping, per-lane spend, board feed strip", store.NextDeferred, "docs/web-chat.md"},
 	{"Terminal dock grouped by project", store.NextDeferred, "docs/web-projects.md"},
-	{"Workspace-wide leases", store.NextPlanned, "docs/roadmap.md"},
-	{"GitHub mirror proofs; typed cross-repo work orders and triage", store.NextPlanned, "docs/roadmap.md"},
+	{"Workspace-wide leases", store.NextPlanned, "docs/backlog-next.md"},
+	{"GitHub mirror proofs; typed cross-repo work orders and triage", store.NextPlanned, "docs/backlog-next.md"},
 }
 
 // nextSeed adds the items the plan lists, skipping any whose title is already on the

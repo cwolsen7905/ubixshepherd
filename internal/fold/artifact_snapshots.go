@@ -22,7 +22,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// Retention defaults (docs/design/artifacts.md §4): snapshots of a closed lane are kept
+// Retention defaults: snapshots of a closed lane are kept
 // DefaultKeepDays after close, pinned ones for ever, under DefaultSnapshotCap in total.
 const (
 	DefaultKeepDays    = 30

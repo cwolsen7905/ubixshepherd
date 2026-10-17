@@ -17,25 +17,14 @@ v1's scope and stack were decided on 2026-10-01: a **Go** core (daemon, CLI, MCP
 API in one binary for Windows, macOS and Linux), the Fold and dispatch together, GitLab and
 GitHub, running over a workspace of repos, terminal first with a TypeScript web UI later.
 It must work on anyone's repos and is **aimed at uBixCore**: uBixCore support lives in a
-pack, never in the core (see `design.md` §3.12). The docs:
+pack, never in the core (a core rule). The docs:
 
 - [README.md](README.md): what it is, in one screen.
-- [docs/vision.md](docs/vision.md): purpose, capabilities, and what it is not.
-- [docs/design.md](docs/design.md): **the core design** (proposed). The two rules that
-  shape everything: "the shepherd is not a sheep" (a deterministic control plane, LLMs only
-  at the edges) and "enforce at the boundaries every provider must cross".
-- [docs/v1.md](docs/v1.md): **what v1 builds**: the decided calls, then the proposed
-  shape, Fold, dispatch, cutover from `AGENTS-COORD.md`, and milestones M1 to M6.
-- [docs/roadmap.md](docs/roadmap.md): the MVP feature list per milestone, then next steps,
-  nice-to-haves, the landscape and risks, from the 2026-10-01 research (proposal).
 - [docs/naming.md](docs/naming.md): the name, the family vocabulary (uBixFlock, Fold,
   Crook, Pasture), and rejected names. Use this vocabulary consistently.
-- [docs/origins.md](docs/origins.md): the practices around uBixCore that Shepherd
-  formalises. **Read before designing anything**, and read the source docs it points to.
-- [docs/open-questions.md](docs/open-questions.md): the calls, decided and open (numbers
-  are stable; a decided question keeps its number).
-- [docs/pitch.md](docs/pitch.md): elevator pitch, one-liner, tagline (the README quotes
-  the elevator pitch; keep the two identical).
+- `docs/`: user and contributor docs for what has shipped (install, CLI, config, feature
+  pages). The vision, requirements, design, decisions and roadmap are kept by the
+  maintainer outside this repo; a lane's brief carries what a run needs from them.
 
 ## Code
 
@@ -160,20 +149,14 @@ stranger:
 
 ## Keeping the docs coherent
 
-- The docs cross-reference each other: the README's "Read next" table indexes `docs/`,
-  `design.md` §7 feeds the numbered list in `open-questions.md`, and that list links
-  back into design sections by anchor (e.g. `design.md#6-a-phased-path-proposal`). When
-  you add, renumber or retitle something, update the links that point at it.
-- `design.md` is marked **Proposed**. Don't present anything in it as decided; a decision
-  moves out of `open-questions.md` only when the maintainer makes it.
+- The docs cross-reference each other: the README's "Read next" table indexes `docs/`.
+  When you add, renumber or retitle something, update the links that point at it.
+- `docs/` describes what has shipped. Plans, proposals, roadmaps, audits and open
+  questions do not go in this repo; put them in the lane's report instead.
 - House prose style: plain sentences, colons and commas instead of em dashes (the docs
   contain none), tables for comparisons.
 
 ## Good first step for a new session
 
-Read all of `docs/` (design.md, then v1.md last), then the uBixCore standards that
-`origins.md` cites. Check the current status in `v1.md` and `docs/roadmap.md` before
-choosing implementation work: workspace-wide leases, GitHub mirror proofs, typed cross-repo
-work orders and other milestone gaps remain. M6 has not started. The milestones and
-everything below v1.md's "Decided" table are proposals: confirm them with the maintainer
-before writing code.
+Read the README and the lane brief, then the `docs/` pages for the area you touch. The
+brief says what to build and how it is checked; ask the maintainer before going beyond it.

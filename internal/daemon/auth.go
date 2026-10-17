@@ -22,7 +22,7 @@ import (
 //
 // Scoped tokens stop accidents and tool misuse: an agent's tools cannot answer its own
 // decision or start another agent. They are not isolation: an agent running as the
-// same OS user can read daemon.json and use the operator token. See design.md §3.17.
+// same OS user can read daemon.json and use the operator token.
 const (
 	RoleOperator = "operator"
 	// RoleWorker is an agent Shepherd started: one run, and only what the worker tools
