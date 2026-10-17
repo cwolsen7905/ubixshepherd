@@ -87,6 +87,20 @@ describe('the History page', () => {
     expect(screen.getByText('Clear a filter to see more.')).toBeInTheDocument()
   })
 
+  it('links the lane from the entry\'s ids, never from its text', async () => {
+    await show({}, [
+      feedItem({ id: 4, kind: 'lane_opened', text: 'lane opened: feat/login in acme-api', ref: 1, created: '2026-10-09T14:00:00Z' }),
+      feedItem({ id: 5, kind: 'lane_opened', text: 'lane opened: feat/login in acme-api', ref: 99, created: '2026-10-09T14:05:00Z' }),
+      feedItem({ id: 6, kind: 'lane_closed', text: 'lane closed: something', created: '2026-10-09T14:10:00Z' }),
+    ])
+    const day = await screen.findByRole('region', { name: 'Yesterday' })
+    const rows = within(day).getAllByRole('listitem')
+    // Newest first: no ref, then an unknown lane id (its text names a real lane), then a known id.
+    expect(within(rows[0] as HTMLElement).queryByRole('link', { name: 'feat/login' })).toBeNull()
+    expect(within(rows[1] as HTMLElement).queryByRole('link', { name: 'feat/login' })).toBeNull()
+    expect(within(rows[2] as HTMLElement).getByRole('link', { name: 'feat/login' })).toHaveAttribute('href', '#/lanes/1')
+  })
+
   it('filters by kind, project and search text', async () => {
     await show({ kind: 'answer' })
     expect(await screen.findAllByRole('listitem')).toHaveLength(1)

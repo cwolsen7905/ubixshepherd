@@ -33,6 +33,9 @@ function startOfDay(ms: number): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 }
 
+/** The events whose ref is a lane id. */
+const LANE_EVENTS: readonly EventKind[] = ['lane_opened', 'lane_closed', 'gate', 'mr', 'mr_approve', 'pipeline']
+
 /** The page an entry is about, when its ref names one. */
 export function entryHref(e: FeedEntry): string | undefined {
   if (!e.ref) return undefined
@@ -124,9 +127,9 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
   }, [shown])
 
   /**
-   * The lane an entry is about, for the link at the right of its row. A run's lane comes from the
-   * snapshot's runs: a run that has left the snapshot has no lane link, and the row simply shows none.
-   * A lane event's ref can be a repo id (fold import, worktree retire), so the lane must also be named in the text.
+   * The lane an entry is about, for the link at the right of its row, built from ids only, never from the text.
+   * A lane event's ref is the lane id; a run event's ref is a run, whose lane id comes from the snapshot's runs.
+   * An entry with no such id, or whose lane or run is not in the snapshot, shows no link.
    */
   const laneOf = (e: FeedEntry): LaneView | undefined => {
     if (!e.ref) return undefined
@@ -134,7 +137,7 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
       const run = snap.runs.find((r) => r.id === e.ref)
       return run && snap.lanes.find((l) => l.id === run.lane_id)
     }
-    if (['lane_opened', 'lane_closed', 'gate', 'mr', 'mr_approve', 'pipeline'].includes(e.event)) return snap.lanes.find((l) => l.id === e.ref && e.text.includes(l.name))
+    if (LANE_EVENTS.includes(e.event)) return snap.lanes.find((l) => l.id === e.ref)
     return undefined
   }
 
