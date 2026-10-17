@@ -99,6 +99,8 @@ describe('InspectorFrame', () => {
     expect(within(head).getByRole('button', { name: /^Close$/ })).toBeInTheDocument()
     expect(within(head).getByRole('button', { name: /^Open beside the inbox\s*Esc$/ })).toBeInTheDocument()
     expect(document.querySelector('.inspector-head')).toBeNull()
+    // The pane is still labelled by, and focus can still be sent to, the title.
+    expect(document.getElementById('inspector-title')).toBe(within(head).getByRole('heading', { level: 1 }))
   })
 
   it('gives a full-width decision the page header too, with the way back and where it lives', () => {

@@ -14,6 +14,8 @@ export interface PageChrome {
   onClose: () => void
   /** Which of the two Esc does, so the key chip sits on the button that answers it. Default `close`. */
   escape?: 'close' | 'beside'
+  /** The id of the title's heading, for a frame that labels itself by it and moves focus to it. */
+  titleId?: string
 }
 
 export interface PageHeaderProps extends PageChrome {
@@ -45,7 +47,7 @@ export interface PageHeaderProps extends PageChrome {
  * scrolls under it, in whichever element scrolls (the window or a column of its own).
  * Esc closes the page unless a dialog is up or the person is typing in a field.
  */
-export function PageHeader({ back, beside, onClose, escape = 'close', glyph, title, meta, actions, danger, tabs, barExtra, titleRef, handleEscape = false, label }: PageHeaderProps) {
+export function PageHeader({ back, beside, onClose, escape = 'close', glyph, title, meta, actions, danger, tabs, barExtra, titleRef, titleId, handleEscape = false, label }: PageHeaderProps) {
   const toBeside = beside?.onClick
   const head = useRef<HTMLElement>(null)
   // Whatever else sticks in the body (a log's search row) sticks under the header, at its measured height.
@@ -100,7 +102,7 @@ export function PageHeader({ back, beside, onClose, escape = 'close', glyph, tit
       </div>
       <div className="sh-page-head-title">
         {glyph}
-        <h1 ref={titleRef} tabIndex={titleRef ? -1 : undefined}>{title}</h1>
+        <h1 id={titleId} ref={titleRef} tabIndex={titleRef || titleId ? -1 : undefined}>{title}</h1>
       </div>
       {meta && <div className="sh-page-head-meta">{meta}</div>}
       {(actions || danger) && (

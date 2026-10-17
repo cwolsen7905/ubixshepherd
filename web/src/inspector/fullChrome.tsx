@@ -24,5 +24,6 @@ export function useFullChrome(open: Open): PageChrome {
     beside: { label: `Open beside the ${name.toLowerCase()}`, onClick: () => leaveFull(open) },
     onClose: closeInspector,
     escape: 'beside',
+    titleId: 'inspector-title',
   }
 }
