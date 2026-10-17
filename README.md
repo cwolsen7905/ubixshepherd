@@ -147,7 +147,7 @@ otherwise it says what to do. `shepherd hook install | uninstall | status` manag
 hand; it never replaces another hook, and prints the line to add to one instead. Pushes
 from outside a lane are left alone, and `git push --no-verify` skips the check once.
 
- `lane close` refuses a
+`lane close` refuses a
 worktree with uncommitted changes, and a branch git cannot see merged into the base. A
 squash merge looks unmerged to git, so after one, `lane close --force` closes the lane and
 keeps the branch. `fold gc` only lists; it removes nothing.
