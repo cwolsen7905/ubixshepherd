@@ -5,6 +5,9 @@ import { go, href, useRoute } from './router'
 import { useSnapshot } from './state/context'
 import { BoardPage } from './pages/Board'
 import { ChatPage } from './pages/Chat'
+import { FilesPage } from './pages/Files'
+import { HistoryPage } from './pages/History'
+import { RulesPage } from './pages/Rules'
 import { InboxPage } from './pages/Inbox'
 import { NextPage } from './pages/Next'
 import { LanePage } from './pages/Lane'
@@ -147,6 +150,9 @@ export function App() {
         {route.page === 'timeline' && <TimelinePage range={route.range} agent={route.agent} />}
         {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'inbox' && <InboxPage kind={route.kind} />}
+        {route.page === 'history' && <HistoryPage kind={route.kind} project={route.project} q={route.q} />}
+        {route.page === 'files' && <FilesPage repo={route.repo} lane={route.lane} gitRef={route.ref} />}
+        {route.page === 'rules' && <RulesPage />}
         {route.page === 'next' && <NextPage />}
         {route.page === 'artifacts' && <ArtifactsPage repo={route.repo} lane={route.lane} run={route.run} topic={route.topic} />}
         {route.page === 'chat' && <ChatPage />}

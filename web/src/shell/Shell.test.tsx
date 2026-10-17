@@ -2,6 +2,7 @@ import { act, render, renderHook, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { Waiting } from '../api/types'
 import { faviconHref } from '../favicon'
+import { NAV } from './nav'
 import { parse } from '../router'
 import { Shell } from './Shell'
 import { useAttentionChrome } from './useAttentionChrome'
@@ -113,14 +114,22 @@ describe('Shell', () => {
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(screen.getByRole('complementary')).toBeInTheDocument()
     // The skip link first, then the views, then the footer, then the page head.
+    const labels = NAV.flatMap((g) => g.items.map((i) => i.label))
+    const stops = labels.length
     const seen: string[] = []
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < stops + 4; i++) {
       await userEvent.tab()
       seen.push(document.activeElement?.textContent?.trim() ?? '')
     }
     const at = (re: RegExp) => seen.findIndex((t) => re.test(t))
     expect(at(/Skip to the page/)).toBe(0)
     expect(at(/Inbox/)).toBeLessThan(at(/^help$/))
+    // Every view is a stop, in the nav's order, before the footer.
+    const order = labels.map((l) => at(new RegExp(`^${l}\\d*$`)))
+    expect(order.every((n) => n > 0)).toBe(true)
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+    for (const l of ['Files', 'History', 'Rules', 'Status']) expect(seen.includes(l)).toBe(true)
+    expect(Math.max(...order)).toBeLessThan(at(/^help$/))
   })
 
   it('has no page bar from 760px up, so the page head is the one title', () => {
