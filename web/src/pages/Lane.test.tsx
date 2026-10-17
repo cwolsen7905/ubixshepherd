@@ -84,7 +84,20 @@ describe('the Conversation tab', () => {
     expect(await within(thread).findByText('Fix the login redirect.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
     expect(screen.queryByText('Fix the login redirect.')).not.toBeInTheDocument()
-    expect(screen.getByText('Branch')).toBeVisible()
+    expect(screen.getByText('Merge request')).toBeVisible()
+  })
+
+  it('has a header with the lane, its meta line and the tabs, and the Overview rail', async () => {
+    await showLane(source())
+    expect(screen.getByRole('link', { name: /Board/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Close\s*Esc/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close lane' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    expect(screen.getByRole('complementary', { name: 'Lane facts' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Timeline' })).toBeInTheDocument()
   })
 
   it('draws one thread with a divider per run, and markdown for agent text', async () => {
@@ -381,11 +394,11 @@ describe('closing from the lane page', () => {
 
   it('marks a finished lane and offers to close it', async () => {
     await showWith([run({ state: 'succeeded' })], finishedReview)
-    // The Overview's action row shows the finished mark beside Close lane at the right.
+    // The header's action row shows the finished mark beside Close lane at the right.
     expect(await screen.findByText(/finished: ready to close/)).toBeInTheDocument()
     expect(screen.getByText(/every change on it is in origin\/dev; last run succeeded/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close lane' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Open as page' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
   })
 
   it('shows no marker for a lane the review does not call finished', async () => {
