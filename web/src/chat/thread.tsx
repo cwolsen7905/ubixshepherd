@@ -377,7 +377,12 @@ function ChatThread({
   // MR or ship item; a lane with no loaded row has none.
   const laneAnchors = useMemo(() => {
     const shownFeed = new Set(items.flatMap((it) => (it.type === 'feed' ? [it.f.id] : [])))
-    return new Map(backlogItems({ ...live, shown: shownFeed }).flatMap((b) => (b.laneId !== undefined && b.anchor ? [[b.laneId, b.anchor] as [number, string]] : [])))
+    const out = new Map<number, string>()
+    // The first item for a lane wins, as the lookup it replaces did.
+    for (const b of backlogItems({ ...live, shown: shownFeed })) {
+      if (b.laneId !== undefined && b.anchor && !out.has(b.laneId)) out.set(b.laneId, b.anchor)
+    }
+    return out
   }, [items, live])
   const [flash, setFlash] = useState('')
   // A jump to a row folded into an "N updates" row asks that fold to open, then scrolls.
