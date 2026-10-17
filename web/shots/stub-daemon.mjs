@@ -409,6 +409,56 @@ const laneThread = () => ({
 })
 
 const json = (res, o, s = 200) => { res.writeHead(s, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)) }
+
+// Settings: a sample config document (acme repos, made-up values) and a preview that renders
+// the staged ops as a diff. Nothing is written; a save only answers.
+const FIELD = (key, kind, label, extra = {}) => ({ key, kind, label, ...extra })
+const MERGE = { 'acme-api': 'human', 'acme-web': 'human', 'acme-docs': 'agent', 'acme-infra': 'human' }
+const SAMPLE_REPOS = Object.keys(MERGE)
+function configDoc() {
+  const profile = (merge) => ({ gate: 'make check', base_branch: 'dev', autonomy: { push: 'human', merge } })
+  const repos = Object.fromEntries(SAMPLE_REPOS.map((r) => [r, { raw: { autonomy: { merge: MERGE[r] } }, effective: profile(MERGE[r]), overridden: ['autonomy.merge'] }]))
+  const profileFields = [
+    FIELD(['gate'], 'string', 'Gate', { group: 'Checks', risk: true }),
+    FIELD(['autonomy', 'push'], 'enum', 'Push', { group: 'Autonomy', choices: ['human', 'shepherd', 'agent'], risk: true }),
+    FIELD(['autonomy', 'merge'], 'enum', 'Merge', { group: 'Autonomy', choices: ['human', 'agent'], risk: true }),
+  ]
+  return {
+    path: '~/.shepherd/config.yaml', etag: 'shot-etag', can_write: true,
+    raw: { daemon: { budget: 25, max_runs: 4 }, repos: Object.fromEntries(SAMPLE_REPOS.map((r) => [r, { autonomy: { merge: MERGE[r] } }])) },
+    effective: { daemon: { budget: 25, max_runs: 4, poll: '60s' }, keep_going: { cap: 5 }, web: { editor_url: 'vscode://file/{path}' } },
+    defaults: { raw: {}, effective: { gate: 'make check', autonomy: { push: 'human', merge: 'human' }, agent: { model: { claude: 'anthropic/claude-sonnet-5-5', opencode: 'acme/acme-large' } } }, overridden: [] },
+    repos,
+    projects: { acme: { raw: { repos: SAMPLE_REPOS }, effective: { repos: SAMPLE_REPOS } } },
+    sections: [
+      { id: 'daemon', label: 'Daemon', root: ['daemon'], fields: [FIELD(['budget'], 'number', 'Daily budget (USD)'), FIELD(['max_runs'], 'number', 'Max runs'), FIELD(['poll'], 'string', 'Poll', { restart: true })] },
+      { id: 'keep_going', label: 'Keep going', root: ['keep_going'], fields: [FIELD(['cap'], 'number', 'Spend cap (USD)', { risk: true })] },
+      { id: 'defaults', label: 'Defaults', root: ['defaults'], fields: profileFields },
+      { id: 'repo', label: 'Repo profile', root: ['repos'], many: true, inherits: 'defaults', fields: profileFields },
+      { id: 'project', label: 'Project', root: ['projects'], many: true, fields: [FIELD(['repos'], 'list', 'Repos')] },
+    ],
+  }
+}
+function configPreview(req, res) {
+  let body = ''
+  req.on('data', (d) => (body += d))
+  req.on('end', () => {
+    const ops = JSON.parse(body || '{}').ops ?? []
+    const diff = []
+    const risky = []
+    for (const op of ops) {
+      op.path.forEach((k, i) => {
+        if (i < op.path.length - 1) diff.push(`+${'  '.repeat(i + 1)}${k}:`)
+      })
+      const last = op.path.length - 1
+      diff.push(`+${'  '.repeat(last + 1)}${op.path[last]}: ${op.unset ? '(unset)' : op.value}`)
+      if (op.path.slice(-2).join('.') === 'autonomy.merge' && op.value === 'agent') {
+        risky.push({ path: op.path.join('.'), from: 'human', to: 'agent', why: 'lets an agent arm merge on its own lane, so no person reads the change first' })
+      }
+    }
+    json(res, { etag: 'shot-etag', diff: diff.join('\n') + '\n', risky })
+  })
+}
 const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' }
 
 function sse(res) {
@@ -540,7 +590,8 @@ http.createServer((req, res) => {
   if (p === '/v1/status') return json(res, status(u.searchParams.get('detail') === '1'))
   if (p === '/v1/web/session') return json(res, { role: 'operator', csrf: 'shots', allow_settings: false })
   if (p === '/v1/lanes') return json(res, lanes())
-  if (p === '/v1/config') return json(res, { effective: { web: { editor_url: 'vscode://file/{path}' } } })
+  if (p === '/v1/config' && req.method === 'GET') return json(res, configDoc())
+  if (p === '/v1/config/preview') return configPreview(req, res)
   const diff = /^\/v1\/lanes\/(\d+)\/diff$/.exec(p)
   if (diff) return json(res, laneDiff(Number(diff[1]), u.searchParams.get('file')))
   if (p === '/v1/runs') {
@@ -813,7 +864,7 @@ http.createServer((req, res) => {
   }
 
   // PUT /v1/config: save config.
-  if (p === '/v1/config') {
+  if (p === '/v1/config' && req.method === 'PUT') {
     track('/v1/config (PUT)')
     return json(res, { etag: 'shot-etag', diff: '--- a/config.yaml\n+++ b/config.yaml\n@@ -1 +1 @@\n-reload: false\n+reload: true', reloaded: true })
   }
