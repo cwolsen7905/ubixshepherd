@@ -119,13 +119,13 @@ export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: numbe
 }
 
 /** The most expensive runs of the window, most expensive first. */
-export function DearestList({ runs, now }: {
+export function CostliestList({ runs, now }: {
   runs: { id: number; lane_id: number; repo: string; lane: string; agent: string; model?: string; state: string; commits: number; cost_usd?: number; credits?: number; cost_estimated?: boolean; started: string; ended?: string; task: string }[]
   now: number
 }) {
   void now
   return (
-    <section className="sh-spend-runs" aria-label="Most expensive runs" data-component="DearestList">
+    <section className="sh-spend-runs" aria-label="Most expensive runs" data-component="CostliestList">
       <GroupHeader label="Most expensive runs" />
       {runs.length === 0 ? (
         <EmptyState title="No run in the last 14 days." />

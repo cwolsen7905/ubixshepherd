@@ -5,14 +5,14 @@ import { useHistory } from '../state/history'
 import { useSnapshot } from '../state/context'
 
 /** How many expensive runs the view names. */
-export const DEAREST_LIMIT = 5
+export const COSTLIEST_LIMIT = 5
 
 /**
  * The most expensive runs of the chart's window: the snapshot's recent runs and the
  * history's, as one list. The snapshot holds the 200 newest; the history read covers the
  * window up to the daemon's limit. Either may be missing; what is here is what is shown.
  */
-export function useDearest(since: string): { runs: RunHistory['runs']; error: string | null; loading: boolean } {
+export function useCostliest(since: string): { runs: RunHistory['runs']; error: string | null; loading: boolean } {
   const snap = useSnapshot()
   const hist = useHistory(`usage:${since}`, async (ids) => {
     const parts = await Promise.all(ids.map((id) => history.runs(id, since, '', 0)))

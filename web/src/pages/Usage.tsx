@@ -1,13 +1,13 @@
 import { useMemo } from 'react'
 import { useNow } from '../hooks'
 import {
-  agentRows, chartModel, dearestRuns, heroSub, modelRows, projectOfRepo, projectRows, usageWindow,
+  agentRows, chartModel, costliestRuns, heroSub, modelRows, projectOfRepo, projectRows, usageWindow,
 } from '../model/spend'
 import { useSnapshot } from '../state/context'
-import { DEAREST_LIMIT, useDearest } from '../state/dearest'
+import { COSTLIEST_LIMIT, useCostliest } from '../state/costliest'
 import { useProjectList } from '../state/projects'
 import { useUsagePage } from '../state/usagePage'
-import { DearestList, HoldsCard, ResetNote, SpendCard, SpendChart, SpendHero, UsageError, UsageLoading } from '../components/UsageView'
+import { CostliestList, HoldsCard, ResetNote, SpendCard, SpendChart, SpendHero, UsageError, UsageLoading } from '../components/UsageView'
 import './Usage.css'
 
 /**
@@ -22,7 +22,7 @@ export function UsagePage({ now: nowProp }: { now?: number; range?: unknown; fro
   const { days, stats, totals, daysError, holds } = useUsagePage(now)
   const projects = useProjectList()
   const win = useMemo(() => usageWindow(now), [now])
-  const dearest = useDearest(new Date(`${win.from}T00:00:00`).toISOString())
+  const costliest = useCostliest(new Date(`${win.from}T00:00:00`).toISOString())
 
   const spend = snap.spend
   const sub = useMemo(() => (spend ? heroSub(spend) : { of: '', note: '' }), [spend])
@@ -31,11 +31,11 @@ export function UsagePage({ now: nowProp }: { now?: number; range?: unknown; fro
   const models = useMemo(() => modelRows(stats.data), [stats.data])
   const projs = useMemo(() => projectRows(stats.data, ofRepo), [stats.data, ofRepo])
   const chart = useMemo(() => chartModel(days, totals, spend?.budget ?? 0), [days, totals, spend])
-  const runs = useMemo(() => dearestRuns(dearest.runs, DEAREST_LIMIT), [dearest.runs])
+  const runs = useMemo(() => costliestRuns(costliest.runs, COSTLIEST_LIMIT), [costliest.runs])
   const stale = snap.error !== null
 
-  const error = stats.error ?? daysError ?? dearest.error ?? projects.error ?? holds.error
-  const loading = !spend && !stats.data && (stats.loading || dearest.loading)
+  const error = stats.error ?? daysError ?? costliest.error ?? projects.error ?? holds.error
+  const loading = !spend && !stats.data && (stats.loading || costliest.loading)
 
   return (
     <div className="page page-wide usage-page">
@@ -57,7 +57,7 @@ export function UsagePage({ now: nowProp }: { now?: number; range?: unknown; fro
             <SpendCard title="By model" rows={models} empty="No model spend in the last 14 days." />
           </div>
           <HoldsCard holds={holds.data ?? undefined} now={now} />
-          <DearestList runs={runs} now={now} />
+          <CostliestList runs={runs} now={now} />
         </>
       )}
     </div>

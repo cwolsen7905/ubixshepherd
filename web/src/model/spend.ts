@@ -149,6 +149,6 @@ export function runSpend(r: RunRecord): number {
 }
 
 /** The most expensive runs, most expensive first, cut to `limit`. */
-export function dearestRuns(runs: RunRecord[], limit = 5): RunRecord[] {
+export function costliestRuns(runs: RunRecord[], limit = 5): RunRecord[] {
   return [...runs].sort((a, b) => runSpend(b) - runSpend(a) || b.id - a.id).slice(0, limit)
 }

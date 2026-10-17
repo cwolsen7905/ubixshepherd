@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react'
 import type { RunHistory, SpendToday, Status, UsageStats } from '../api/types'
-import { agentRows, budgetUse, chartDays, chartModel, dearestRuns, heroSub, modelRows, projectOfRepo, projectRows, shortModel, usageWindow } from '../model/spend'
+import { agentRows, budgetUse, chartDays, chartModel, costliestRuns, heroSub, modelRows, projectOfRepo, projectRows, shortModel, usageWindow } from '../model/spend'
 import { dayShort } from '../components/UsageView'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -99,7 +99,7 @@ describe('the usage spend model', () => {
     const runs = [
       { id: 1, cost_usd: 0.5 }, { id: 2, cost_usd: undefined }, { id: 3, cost_usd: 4.2 },
     ] as RunHistory['runs']
-    expect(dearestRuns(runs, 2).map((r) => r.id)).toEqual([3, 1])
+    expect(costliestRuns(runs, 2).map((r) => r.id)).toEqual([3, 1])
   })
 
   it('shortens a chart day to "Oct 3"', () => {
