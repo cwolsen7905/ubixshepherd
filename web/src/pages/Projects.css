@@ -1,0 +1,17 @@
+/* The Projects page and a project's page: project headers with their repos, merge rule,
+   lanes, spend and needs-you count; the project page's brief, budget, repos and lanes. */
+.sh-projects-page, .sh-project-page { max-width: 72rem; }
+.sh-projects-page .sh-project-h a, .sh-project-h .sh-project-name { color: var(--sh-ink); font-weight: 600; }
+.sh-projects-page .sh-project-h a { text-decoration: none; }
+.sh-projects-page .sh-project-h a:hover { text-decoration: underline; }
+.sh-project-repos { list-style: none; margin: var(--sh-s2) 0 0; padding: 0; display: grid; gap: var(--sh-s1); font-size: var(--sh-t-small); color: var(--sh-muted); }
+.sh-project-repos .sh-project-rule { color: var(--sh-faint); }
+.sh-project-note { margin: var(--sh-s6) 0 0; max-width: var(--sh-measure); font-size: var(--sh-t-small); color: var(--sh-muted); }
+.sh-project-page .sh-brief { margin: 0; max-width: var(--sh-measure); }
+.sh-project-page .sh-brief-text {
+  margin: var(--sh-s2) 0 0; padding: var(--sh-s6) var(--sh-s7); white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--sh-raised); border: 1px solid var(--sh-rule); border-radius: var(--sh-r);
+}
+.sh-project-page .sh-brief.is-draft .sh-brief-text { border-style: dashed; }
+.sh-project-page .sh-brief h3 { margin: var(--sh-s4) 0 0; font-size: var(--sh-t-small); font-weight: 600; }
+.sh-project-page .sh-brief h3:first-child { margin-top: 0; }

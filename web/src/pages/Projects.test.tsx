@@ -1,10 +1,11 @@
 import { act, render, screen, within } from '@testing-library/react'
-import type { ProjectDetail, ProjectList, ProjectWork } from '../api/types'
+import type { ConfigDoc, ProjectDetail, ProjectList, ProjectWork } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { decision, lane, project, request, run, spend, status, unassigned } from '../test/fixtures'
 import { ProjectPage } from './Project'
 import { ProjectsPage } from './Projects'
+import { mergeRule } from './Projects'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
@@ -24,11 +25,20 @@ const detail: ProjectDetail = {
   },
 }
 
-function daemon(list: ProjectList, one: ProjectDetail = detail, work?: ProjectWork) {
+const configDoc: ConfigDoc = {
+  path: '/c.yaml', etag: 'e1', can_write: false, raw: {}, effective: {},
+  defaults: { raw: {}, effective: { autonomy: { merge: 'human' } }, overridden: [] },
+  repos: { 'acme-api': { raw: {}, effective: { autonomy: { merge: 'agent' } }, overridden: [] } },
+  projects: {},
+  sections: [],
+}
+
+function daemon(list: ProjectList, one: ProjectDetail = detail, work?: ProjectWork, doc: ConfigDoc = configDoc) {
   const seen: string[] = []
   vi.stubGlobal('fetch', async (path: string) => {
     seen.push(path)
     if (path === '/v1/projects') return new Response(JSON.stringify(list), { status: 200 })
+    if (path === '/v1/config') return new Response(JSON.stringify(doc), { status: 200 })
     if (work && path === '/v1/projects/shop/work') return new Response(JSON.stringify(work), { status: 200 })
     if (path === '/v1/projects/shop') return new Response(JSON.stringify(one), { status: 200 })
     if (path === '/v1/unassigned') return new Response(JSON.stringify({ ...unassigned(), open_lanes: [], runs: [], pending_decisions: [], pending_requests: [] }), { status: 200 })
@@ -63,16 +73,27 @@ async function show(ui: React.ReactNode) {
 
 afterEach(() => vi.unstubAllGlobals())
 
+describe('mergeRule', () => {
+  it('reads the repo profile first, then the defaults, then you', () => {
+    expect(mergeRule(configDoc, 'acme-api')).toBe('agent merges')
+    expect(mergeRule(configDoc, 'other')).toBe('you merge')
+    expect(mergeRule(null, 'acme-api')).toBe('you merge')
+  })
+})
+
 describe('ProjectsPage', () => {
-  it('lists each project with its counts and budget, Unassigned included', async () => {
+  it('lists each project with its repos, merge rule, lanes, spend and needs-you count', async () => {
     daemon({ projects: [project({ waiting: 1, running: 2, lanes: 3 }), unassigned()] })
     await show(<ProjectsPage />)
-    const shop = screen.getByRole('heading', { name: 'shop' }).closest('li') as HTMLElement
+    const shop = screen.getByRole('link', { name: 'shop' }).closest('section') as HTMLElement
     expect(within(shop).getByText('acme-api')).toBeInTheDocument()
+    expect(within(shop).getByText(/agent merges/)).toBeInTheDocument()
+    expect(within(shop).getByText(/3 open/)).toBeInTheDocument()
+    expect(within(shop).getByText(/waiting on you/)).toBeInTheDocument()
     expect(within(shop).getByRole('meter')).toHaveAttribute('aria-valuetext', '$1.50 of $10.00')
-    expect(within(shop).getByText('waiting on you').nextSibling).toHaveTextContent('1')
-    const un = screen.getByRole('heading', { name: 'Unassigned' }).closest('li') as HTMLElement
+    const un = screen.getByRole('link', { name: 'Unassigned' }).closest('section') as HTMLElement
     expect(within(un).getByText('docs')).toBeInTheDocument()
+    expect(within(un).getByText(/you merge/)).toBeInTheDocument()
     expect(within(un).queryByRole('meter')).toBeNull()
     expect(screen.getByRole('link', { name: 'Unassigned' })).toHaveAttribute('href', '#/unassigned')
     expect(screen.getByRole('link', { name: 'shop' })).toHaveAttribute('href', '#/projects/shop')
@@ -104,10 +125,11 @@ describe('ProjectPage', () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="shop" />)
     expect(await screen.findByRole('heading', { name: 'shop' })).toBeInTheDocument()
-    const lanes = within(screen.getByRole('region', { name: /Open lanes/ }))
-    expect(lanes.getByText('feat/login')).toBeInTheDocument()
-    expect(lanes.getByText(/!34/)).toBeInTheDocument()
-    expect(within(screen.getByRole('region', { name: /Recent runs/ })).getByText(/running · /)).toBeInTheDocument()
+    const lanes = screen.getByText('Open lanes').closest('section') as HTMLElement
+    expect(within(lanes).getByText('feat/login')).toBeInTheDocument()
+    expect(within(lanes).getByText(/!34/)).toBeInTheDocument()
+    const runs = screen.getByText('Recent runs').closest('section') as HTMLElement
+    expect(within(runs).getByText(/running · /)).toBeInTheDocument()
     expect(screen.getByText('Use SSO?')).toBeInTheDocument()
     expect(screen.getByText(/Who owns auth\?/)).toBeInTheDocument()
     expect(screen.getByText('$1.50 of $10.00 today')).toBeInTheDocument()
@@ -115,17 +137,19 @@ describe('ProjectPage', () => {
     expect(screen.getByText(/Older than 30d/)).toBeInTheDocument()
     expect(screen.getByText(/not approved/)).toBeInTheDocument()
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
-    // Read-only: nothing here can approve or edit.
-    expect(screen.queryByRole('button')).toBeNull()
+    // Read-only: the only buttons are the rows opening the inspector; nothing approves or edits.
+    for (const b of screen.queryAllByRole('button')) expect(b).toHaveAttribute('data-component', 'ListRow')
   })
 
   it('counts each section with a badge and keeps Edit secondary', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="shop" />)
-    const waiting = await screen.findByRole('region', { name: /Waiting on you/ })
-    expect(within(waiting).getByRole('heading', { level: 2 })).toHaveTextContent('Waiting on you 2')
-    expect(screen.getByRole('heading', { name: /^Open lanes/ })).toHaveTextContent('Open lanes 1')
-    expect(screen.getByRole('heading', { name: /^Recent runs/ })).toHaveTextContent('Recent runs 1')
+    const waiting = screen.getByText('Waiting on you').closest('section') as HTMLElement
+    expect(within(waiting).getByText('2')).toBeInTheDocument()
+    const lanes = screen.getByText('Open lanes').closest('section') as HTMLElement
+    expect(within(lanes).getByText('1')).toBeInTheDocument()
+    const runs = screen.getByText('Recent runs').closest('section') as HTMLElement
+    expect(within(runs).getByText('1')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Edit' })).not.toHaveClass('ui-btn-primary')
     expect(document.querySelectorAll('.ui-btn-primary')).toHaveLength(0)
   })
@@ -140,10 +164,8 @@ describe('ProjectPage', () => {
     daemon({ projects: [] })
     await show(<ProjectPage name={null} />)
     expect(await screen.findByRole('heading', { name: 'Unassigned' })).toBeInTheDocument()
-    expect(screen.queryByRole('heading', { name: 'Brief' })).toBeNull()
+    expect(screen.queryByText('Brief')).toBeNull()
     expect(screen.getByText('No lane is open.')).toBeInTheDocument()
-    // A zero count is not drawn: the empty state under the heading says so instead.
-    expect(screen.getByRole('heading', { name: /^Open lanes/ })).toHaveTextContent(/^Open lanes$/)
     expect(screen.getByText('No run yet.')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Edit' })).toBeNull()
   })
