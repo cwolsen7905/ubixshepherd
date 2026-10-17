@@ -227,7 +227,7 @@ describe('ChatPage', () => {
     expect(screen.getByLabelText('Message to the front desk')).toHaveValue('hello')
   })
 
-  it('keeps a half-written decision answer in the inspector, and clears it once answered', async () => {
+  it('opens the inspector from an inline decision card', async () => {
     const user = userEvent.setup()
     const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
     const api = () => fakeDeskApi({ history: async () => ({ events: history, more: false }) })

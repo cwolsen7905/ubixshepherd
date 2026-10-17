@@ -141,6 +141,30 @@ describe('DecisionCard', () => {
   })
 })
 
+describe('the answer draft', () => {
+  it('survives a remount in the pane, is not cleared by an inline chip, and is cleared once sent', async () => {
+    const user = userEvent.setup()
+    const d = decision({ id: 11, options: ['Stream', 'Buffer'] })
+    const ui = (variant: 'pane' | 'inline') => (
+      <LiveProvider live={live()}>
+        <DecisionCard d={d} variant={variant} />
+      </LiveProvider>
+    )
+    window.localStorage.clear()
+    const first = render(ui('pane'))
+    await user.type(screen.getByRole('textbox'), 'half written')
+    first.unmount()
+    const inl = render(ui('inline'))
+    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    inl.unmount()
+    render(ui('pane'))
+    expect(screen.getByRole('textbox')).toHaveValue('half written')
+    await user.click(screen.getByRole('button', { name: 'Send answer' }))
+    await screen.findByRole('status')
+    expect(window.localStorage.getItem('shepherd.chat.answer.11')).toBeNull()
+  })
+})
+
 describe('the inline decision card', () => {
   it('has no textarea and no Answer button', () => {
     show(decision(), 'inline')

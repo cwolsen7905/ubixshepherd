@@ -96,7 +96,8 @@ export function DecisionCard({
     [focused, options.join('\n')],
   )
 
-  const words = own.trim() || choice
+  // The inline card shows only the chip choice, so it never sends a draft kept for the inspector.
+  const words = inlineCard ? choice : own.trim() || choice
   const send = async () => {
     if (!words || sent.state !== 'idle') return
     setSent({ state: 'sending' })
@@ -209,9 +210,10 @@ export function DecisionCard({
         </div>
       )}
       {d.why && pane && (
-        <p className="decision-why-line">
-          <strong>Why this is yours:</strong> {d.why}
-        </p>
+        <div className="decision-why-line">
+          <strong>Why this is yours:</strong>
+          <Markdown text={d.why} />
+        </div>
       )}
       {d.why && !inlineCard && !pane && (
         <aside className="decision-aside decision-why" aria-label="Why this is your call">
@@ -246,10 +248,7 @@ export function DecisionCard({
                 <Chip
                   key={o}
                   selected={choice === o}
-                  onClick={() => {
-                    setChoice(o)
-                    setOwn('')
-                  }}
+                  onClick={() => setChoice(o)}
                 >
                   <span aria-hidden="true" className="option-num">{i + 1}.</span>
                   <span className="option-text">{inline(o)}</span>
