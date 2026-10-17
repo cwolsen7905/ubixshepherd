@@ -31,5 +31,6 @@
 .sh-project-page .sh-brief h3:first-child { margin-top: 0; }
 
 @media (max-width: 700px) {
-  .sh-projects-table { display: block; overflow-x: auto; }
+  .sh-projects-scroll { overflow-x: auto; }
+  .sh-projects-table { min-width: 36rem; }
 }

@@ -81,6 +81,7 @@ export function ProjectsPage() {
         </EmptyState>
       )}
       {list.length > 0 && (
+        <div className="sh-projects-scroll">
         <table className="sh-projects-table" data-component="ProjectsTable">
           <thead>
             <tr>
@@ -133,6 +134,7 @@ export function ProjectsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="sh-project-note">Repos grouped as the configuration groups them. Repos in no project are listed as {UNASSIGNED}.</p>
     </div>
