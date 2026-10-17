@@ -49,6 +49,10 @@
 .decision-inline .ui-chip[aria-pressed="true"] { background: var(--lichen-wash); border: 2px solid var(--lichen); }
 .decision-inline .option-num { color: var(--muted); font-weight: 500; margin-right: 0.25em; }
 .decision-inline .option-text { white-space: normal; overflow-wrap: anywhere; }
+.decision-inline .inline-send {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-1);
+  width: 100%; margin-top: var(--s-1);
+}
 
 .decision-aside {
   margin: 0 0 var(--s-3); padding: var(--s-2) var(--s-3);

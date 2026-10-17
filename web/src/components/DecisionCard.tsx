@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { Decision, DecisionView } from '../api/types'
+import type { ArtifactLink, Decision, DecisionView } from '../api/types'
 import { Markdown, inline } from '../conversation/Markdown'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
@@ -11,16 +11,10 @@ import '../styles/decisions.css'
 import { Button, Chip, useToast } from '../ui'
 import { Glyph } from './Glyph'
 
-interface ArtifactLink {
-  id: number
-  path: string
-  title?: string
-}
-
-type DecisionWithArtifacts = DecisionView & { artifacts?: ArtifactLink[] }
-
 function artifactsOf(d: DecisionView): ArtifactLink[] {
-  return (((d as DecisionWithArtifacts).artifacts) ?? []).filter((a): a is ArtifactLink => a.id > 0)
+  // The daemon emits artifact ids starting at 1; 0 is omitted because it would not
+  // be a valid artifact id in the store and would break the artifact view.
+  return (d.artifacts ?? []).filter((a) => a.id > 0)
 }
 
 /** A question longer than this (characters or lines) starts clamped, with a "Show all". */
@@ -83,6 +77,7 @@ export function DecisionCard({
   const id = `decision-${d.id}-${uid.replace(/:/g, '')}`
   const mac = navigator.userAgent.includes('Mac')
   const artifacts = inlineCard ? artifactsOf(d) : []
+  const canSendHere = !inlineCard // inline sends via its own visible row, not the global listener
 
   const setOwn = (v: string) => {
     setOwnText(v)
@@ -116,13 +111,15 @@ export function DecisionCard({
     }
   }
 
-  // Cmd+Enter or Ctrl+Enter sends the card in focus, even while typing in its own box.
+  // Cmd+Enter or Ctrl+Enter sends the card that shows a textarea or option buttons with
+  // its own visible send control. The inline card uses its own per-choice send row, so the
+  // window listener is not attached there.
   const sendRef = useRef(send)
   useEffect(() => {
     sendRef.current = send
   })
   useEffect(() => {
-    if (!focused) return
+    if (!focused || !canSendHere) return
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && !e.defaultPrevented) {
         // A box elsewhere on the page (the composer) keeps its own Cmd+Enter.
@@ -134,7 +131,7 @@ export function DecisionCard({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [focused])
+  }, [focused, canSendHere])
 
   const { head, body: fullBody } = splitQuestion(d.question)
   // The compact card is the headline and the options; the body is for the inspector.
@@ -255,6 +252,14 @@ export function DecisionCard({
                   <span className="option-text">{inline(o)}</span>
                 </Chip>
               ))}
+              {choice && (
+                <div className="inline-send">
+                  <Button size="small" variant="attention" disabled={sent.state !== 'idle'} onClick={() => void send()}>
+                    {sent.state === 'sending' ? 'Sending…' : `Send “${clip(choice, 24)}”`}
+                  </Button>
+                  <span className="send-hint faint">or open to edit</span>
+                </div>
+              )}
             </div>
           )}
           {options.length > 0 && !inlineCard && (

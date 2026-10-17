@@ -148,9 +148,15 @@ describe('the inline decision card', () => {
     expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull()
   })
 
-  it('shows numbered chips and clicking one picks it', async () => {
+  it('shows numbered chips and clicking one reveals a send button', async () => {
     const user = userEvent.setup()
-    show(decision({ options: ['Stream', 'Buffer'], recommendation: 'Buffer' }), 'inline')
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <DecisionCard d={decision({ id: 9, options: ['Stream', 'Buffer'], recommendation: 'Buffer' })} variant="inline" focused />
+      </LiveProvider>,
+    )
     const buttons = screen.getAllByRole('button', { name: /Stream|Buffer/ })
     const [stream, buffer] = buttons
     if (!stream || !buffer) throw new Error('expected both chips')
@@ -159,6 +165,24 @@ describe('the inline decision card', () => {
     await user.click(stream)
     expect(stream).toHaveAttribute('aria-pressed', 'true')
     expect(buffer).toHaveAttribute('aria-pressed', 'false')
+
+    const send = screen.getByRole('button', { name: /Send/ })
+    await user.click(send)
+    expect(answer).toHaveBeenCalledWith(9, 'Stream')
+  })
+
+  it('does not send a chip choice with Cmd+Enter in the inline card; the button does', async () => {
+    const user = userEvent.setup()
+    const answer = vi.fn(async (id: number, words: string): Promise<Decision> => ({ ...decision({ id }), state: 'answered', answer: words }))
+    window.localStorage.clear()
+    render(
+      <LiveProvider live={live(answer)}>
+        <DecisionCard d={decision({ id: 10, options: ['Stream', 'Buffer'] })} variant="inline" focused />
+      </LiveProvider>,
+    )
+    await user.click(screen.getByRole('button', { name: /Stream/ }))
+    await user.keyboard('{Meta>}{Enter}{/Meta}')
+    expect(answer).not.toHaveBeenCalled()
   })
 
   it('is the headline and the options, with the long body left for the inspector', () => {
@@ -171,7 +195,7 @@ describe('the inline decision card', () => {
   })
 
   it('links the first artifact when the decision has artifacts', () => {
-    const d = { ...decision(), artifacts: [{ id: 7, path: 'docs/plan.md', title: 'plan' }] } as unknown as DecisionView
+    const d = { ...decision(), artifacts: [{ id: 7, path: 'docs/plan.md', title: 'plan' }] } as DecisionView
     show(d, 'inline')
     const link = screen.getByRole('link', { name: '1 artifact' })
     expect(link.getAttribute('href')).toContain('open=artifact')
