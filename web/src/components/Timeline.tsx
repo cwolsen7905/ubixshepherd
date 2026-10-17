@@ -75,8 +75,6 @@ function tipHandlers(tip: Tip, onTip: OnTip) {
   }
 }
 
-const diamond = (cx: number, cy: number, r: number) => `M${cx} ${cy - r}L${cx + r} ${cy}L${cx} ${cy + r}L${cx - r} ${cy}Z`
-
 interface Geometry {
   rowH: number
   barH: number
@@ -88,6 +86,15 @@ function geometry(rem: number): Geometry {
   const rowH = Math.round(ROW_REM * rem)
   const barH = Math.round(BAR_REM * rem)
   return { rowH, barH, barY: Math.round((rowH - barH) / 2), rem }
+}
+
+/** The event mark at a finished bar's end: ⌀ out of quota, ✗ failed, ✓ passed (not on a bar too thin to carry it). */
+function endGlyph(mark: BarMark): { ch: string; cls: string } | null {
+  const r = mark.run
+  if (mark.running) return null
+  if (mark.failed) return /quota/i.test(r.diagnosis ?? '') ? { ch: '⌀', cls: 'tl-fail-glyph' } : { ch: '✗', cls: 'tl-fail-glyph' }
+  if (r.state === 'succeeded' && mark.labelled) return { ch: '✓', cls: 'tl-ok-glyph' }
+  return null
 }
 
 // --- Marks ------------------------------------------------------------------------
@@ -104,6 +111,7 @@ const Bar = memo(function Bar({
   const fade = 1.6 * g.rem
   const end = mark.x + mark.w
   const notch = Math.round(g.barH * 0.5)
+  const tail = endGlyph(mark)
   const classes = [
     'tl-run', `tl-agent-${cls}`, mark.running && 'is-running', mark.failed && 'is-failed', mark.continuing && 'is-continuing', dim && 'is-dim',
   ].filter(Boolean).join(' ')
@@ -135,6 +143,9 @@ const Bar = memo(function Bar({
           className="tl-notch"
           d={`M${end} ${g.barY}L${end - notch} ${g.barY + g.barH / 2}L${end} ${g.barY + g.barH}Z`}
         />
+      )}
+      {tail && (
+        <text className={`tl-glyph ${tail.cls}`} x={end + 3} y={g.rowH / 2} dominantBaseline="central" aria-hidden="true">{tail.ch}</text>
       )}
       {/* A bigger target than the bar, so a thin one is still easy to reach. */}
       <rect className="tl-hit" x={mark.x} y={0} width={Math.max(mark.w, 6)} height={g.rowH} />
@@ -185,7 +196,7 @@ const Ask = memo(function Ask({ mark, lane, g, now, onTip }: { mark: DecisionMar
     >
       {mark.joinTo !== undefined && <line className="tl-join" x1={mark.x} x2={mark.joinTo} y1={cy} y2={cy} />}
       <circle className="tl-halo" cx={mark.x} cy={cy} r={r * 2.6} />
-      <path className="tl-diamond" d={diamond(mark.x, cy, r)} />
+      <text className="tl-glyph" x={mark.x} y={cy} textAnchor="middle" dominantBaseline="central">{mark.source === 'request' ? '!' : '?'}</text>
       <rect className="tl-hit" x={mark.x - 9} y={0} width={18} height={g.rowH} />
     </a>
   )
@@ -194,7 +205,7 @@ const Ask = memo(function Ask({ mark, lane, g, now, onTip }: { mark: DecisionMar
 const Merge = memo(function Merge({ mark, lane, laneId, g, onTip }: { mark: MergeMark; lane: string; laneId: number; g: Geometry; onTip: OnTip }) {
   useHashOpen()
   const tip: Tip = { kind: 'merge', mark, lane }
-  const r = 0.26 * g.rem
+  const r = 0.4 * g.rem
   return (
     <a
       {...openLink({ kind: 'lane', id: laneId })}
@@ -204,7 +215,7 @@ const Merge = memo(function Merge({ mark, lane, laneId, g, onTip }: { mark: Merg
       {...tipHandlers(tip, onTip)}
     >
       <line className="tl-merge-tick" x1={mark.x} x2={mark.x} y1={2} y2={g.rowH - 2} />
-      <path className="tl-merge-mark" d={diamond(mark.x, 2 + r, r)} />
+      <text className="tl-glyph tl-ok-glyph" x={mark.x} y={2 + r} textAnchor="middle" dominantBaseline="central" aria-hidden="true">◆</text>
       <rect className="tl-hit" x={mark.x - 7} y={0} width={14} height={g.rowH} />
     </a>
   )
@@ -425,6 +436,7 @@ export function TimelineChart({ data, range, now, agent, showIdle, width: fixed,
   return (
     <section
       ref={setRoot}
+      data-component="Timeline"
       className={`tl${still ? ' tl-still' : ''}${scrolls ? ' is-scrolling' : ''}${tip ? ' has-tip' : ''}`}
       aria-label="Swarm timeline"
     >
