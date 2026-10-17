@@ -267,7 +267,13 @@ function LaneHeader({ lane, runs, latest, action, tab, now, back }: {
   back?: ReactNode
 }) {
   const snap = useSnapshot()
-  const group = useMemo(() => boardItems({ ...snap, lanes: [lane], decisions: [], requests: [] })[0]?.group, [snap, lane])
+  // The lane's open decisions and requests count: the board files them as 'needs you', and the word must agree.
+  const group = useMemo(() => {
+    const decisions = snap.decisions.filter((d) => d.state === 'open' && d.lane === lane.name && d.repo === lane.repo)
+    const requests = snap.requests.filter((r) => r.state === 'needs_routing' && r.from_lane === lane.name && r.repo === lane.repo)
+    const items = boardItems({ ...snap, lanes: [lane], decisions, requests })
+    return (items.find((it) => it.decision || it.request) ?? items[0])?.group
+  }, [snap, lane])
   const state = group ? GROUP_NAMES[group].toLowerCase() : lane.state
   const secondary = latest && action?.kind !== 'open' && action?.kind !== 'failure' && action?.kind !== 'follow'
   return (
