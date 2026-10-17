@@ -3,7 +3,9 @@ import type { WaitingItem } from '../api/types'
 import { useKeys } from '../hooks'
 import { neighbour, openKey, openTarget, requestStep, waitingKey } from '../model/waitingStep'
 import { go, parse, withOpen } from '../router'
+import { UnseenDot } from '../components/UnseenDot'
 import { useSnapshot } from '../state/context'
+import { isUnseen, useSeen } from '../state/seen'
 
 const LABEL: Partial<Record<WaitingItem['kind'], string>> = {
   decision: 'Decision',
@@ -35,6 +37,7 @@ export function advanceFrom(items: readonly WaitingItem[], answered: string) {
  */
 export function PendingStrip() {
   const list = useSnapshot().waiting?.items
+  const seen = useSeen()
   const items = useMemo(() => list ?? [], [list])
   const at = openKey(items, parse(window.location.hash).open)
   const step = useCallback(
@@ -55,6 +58,7 @@ export function PendingStrip() {
           return (
             <li key={key}>
               <button type="button" className="pending-chip" aria-current={key === at ? 'true' : undefined} onClick={() => showWaiting(it)}>
+                {isUnseen(seen, it) ? <UnseenDot /> : null}
                 <span className="faint">{LABEL[it.kind] ?? it.kind}</span> {it.title}
               </button>
             </li>

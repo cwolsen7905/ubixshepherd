@@ -27,20 +27,27 @@ import { prefillDraft } from '../model/chatDraft'
 import { backlogItems, threadId } from '../model/backlog'
 import { takeStep, STEP_EVENT, stepAnchor } from '../model/waitingStep'
 import { draftKey } from '../model/chatDraft'
+import { isUnseen, useSeen } from '../state/seen'
+import { UnseenDot } from '../components/UnseenDot'
+import { Announcer, AwayBlock, useSeenWatch } from './seen'
+import { NotifyToggle } from './notify'
 
 const RUN_KINDS = new Set(['run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota'])
 
 function FeedRow({
-  item, now, decision, flash = false,
+  item, now, decision, flash = false, unseen = false,
 }: {
   item: { id?: number; event: string; text: string; ref?: number; created: string }
   now: number
   decision?: DecisionView
   flash?: boolean
+  /** The decision here waits on the person and has not been opened. */
+  unseen?: boolean
 }) {
   const age = since(item.created, now)
   return (
     <div id={item.id ? threadId(`f${item.id}`) : undefined} className={`trow${decision ? ' trow-decision' : ''}${flash ? ' is-flash' : ''}`}>
+      {unseen ? <UnseenDot /> : null}
       <EventGlyph event={item.event} />
       <div className="trow-body">
         <p className="trow-line">
@@ -127,7 +134,7 @@ function UpdatesFold({
 }
 
 function DeskRow({
-  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared, work = [], onReplyRef,
+  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared, work = [], onReplyRef, unseen = false,
 }: {
   e: DeskEvent
   /** Tool calls and wake notes of this reply's turn, folded above it. */
@@ -137,6 +144,8 @@ function DeskRow({
   questions?: DeskQuestion[]
   /** Scrolls to the row of the question a reply names; false when the thread holds none. */
   onReplyRef?: (questionId: number) => void
+  /** A question asked here waits on the person and has not been opened. */
+  unseen?: boolean
   flash?: string
   thread?: DeskThread
   topicFilter?: number | null
@@ -174,7 +183,7 @@ function DeskRow({
           className={`msg msg-assistant${waiting ? ' msg-asked' : ''}${questions.some((q) => flash === `q${q.id}`) ? ' is-flash' : ''}`}
         >
           {work.length > 0 && <WorkFold work={work} now={now} />}
-          <span className="msg-who">Front desk {when}{pill}</span>
+          <span className="msg-who">{unseen ? <UnseenDot /> : null}Front desk {when}{pill}</span>
           <Markdown text={text} />
           {questions.slice(1).map((q) => (
             <span key={`a${q.id}`} id={threadId(`q${q.id}`)} />
@@ -250,6 +259,18 @@ function ChatThread({
   const newButton = useRef<HTMLButtonElement>(null)
   const confirmButton = useRef<HTMLButtonElement>(null)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+
+  const seen = useSeen()
+  const waitingItems = live.waiting?.items ?? null
+  const [hash, setHash] = useState(window.location.hash)
+  useEffect(() => {
+    const on = () => setHash(window.location.hash)
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  const { away, dismiss: dismissAway } = useSeenWatch(waitingItems, hash)
+  const unseenDecisions = useMemo(() => new Set((waitingItems ?? []).flatMap((w) => (w.decision_id && isUnseen(seen, w) ? [w.decision_id] : []))), [waitingItems, seen])
+  const unseenQuestions = useMemo(() => new Set((waitingItems ?? []).flatMap((w) => (w.question_id && isUnseen(seen, w) ? [w.question_id] : []))), [waitingItems, seen])
 
   const all = useMemo(() => timeline(d.events, live.feed), [d.events, live.feed])
   // The topic filter is a view over the one thread, kept in the hash so it can be linked
@@ -430,6 +451,7 @@ function ChatThread({
         </ErrorBoundary>
         {children}
         <span className="chat-tools">
+          <NotifyToggle />
           {d.busy && (
             <span className="faint">
               {d.queued > 1 ? `Working, ${d.queued - 1} waiting` : 'Working'}…
@@ -537,6 +559,8 @@ function ChatThread({
             </button>
           </p>
         )}
+        <AwayBlock since={away} items={away === null ? [] : (waitingItems ?? [])} feed={live.feed} onDismiss={dismissAway} />
+        <Announcer items={waitingItems} />
         <div ref={setScroller} className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded} tabIndex={0}>
           <div className="thread-body">
           {d.loaded && items.length === 0 && d.partial === '' && unplaced.length === 0 && (
@@ -562,13 +586,15 @@ function ChatThread({
                 topicFilter={topicId}
                 onCleared={readQuestions}
                 onReplyRef={jumpToQuestion}
+                unseen={(questionsAt.get(it.e.seq) ?? []).some((q) => unseenQuestions.has(q.id))}
               />
             ) : (
-              <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
+              <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} unseen={it.f.event === 'decision_asked' && unseenDecisions.has(it.f.ref ?? 0)} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
             )
           })}
           {unplaced.map((x) => (
             <div key={`d${x.id}`} id={threadId(`d${x.id}`)} className={`trow trow-decision${flash === `d${x.id}` ? ' is-flash' : ''}`}>
+              {unseenDecisions.has(x.id) ? <UnseenDot /> : null}
               <Glyph glyph={MARKS.decision_asked.glyph} tone="warn" label="decision waiting" />
               <DecisionCard d={x} variant="inline" />
             </div>
