@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNow } from '../hooks'
 import {
-  agentRows, chartModel, costliestRuns, heroSub, modelRows, projectOfRepo, projectRows,
+  agentRows, chartModel, costliestRuns, heroSub, modelRows, projectOfRepo, projectRows, runsInRange,
 } from '../model/spend'
 import { DEFAULT_USAGE_RANGE, usageDays } from '../model/usage'
 import type { UsageRange } from '../router'
@@ -35,7 +35,7 @@ export function UsagePage({ now: nowProp, range = DEFAULT_USAGE_RANGE, from, to 
   const models = useMemo(() => modelRows(stats.data), [stats.data])
   const projs = useMemo(() => projectRows(stats.data, ofRepo), [stats.data, ofRepo])
   const chart = useMemo(() => chartModel(days, totals, spend?.budget ?? 0), [days, totals, spend])
-  const runs = useMemo(() => costliestRuns(costliest.runs, COSTLIEST_LIMIT), [costliest.runs])
+  const runs = useMemo(() => costliestRuns(runsInRange(costliest.runs, win.from, win.to), COSTLIEST_LIMIT), [costliest.runs, win])
   const stale = snap.error !== null
 
   const error = stats.error ?? daysError ?? costliest.error ?? projects.error ?? holds.error

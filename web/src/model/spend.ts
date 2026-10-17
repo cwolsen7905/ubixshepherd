@@ -177,6 +177,17 @@ export function runSpend(r: RunRecord): number {
   return r.cost_usd ?? 0
 }
 
+/** The runs that started within a range's local days, first and last inclusive. */
+export function runsInRange(runs: RunRecord[], from: string, to: string): RunRecord[] {
+  const start = new Date(`${from}T00:00:00`).getTime()
+  const end = new Date(`${to}T00:00:00`)
+  end.setDate(end.getDate() + 1)
+  return runs.filter((r) => {
+    const t = Date.parse(r.started)
+    return t >= start && t < end.getTime()
+  })
+}
+
 /** The most expensive runs, most expensive first, cut to `limit`. */
 export function costliestRuns(runs: RunRecord[], limit = 5): RunRecord[] {
   return [...runs].sort((a, b) => runSpend(b) - runSpend(a) || b.id - a.id).slice(0, limit)

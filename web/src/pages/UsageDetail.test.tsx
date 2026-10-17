@@ -1,6 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { UsageGroup, UsageStats, UsageTotals } from '../api/types'
+import { runsInRange } from '../model/spend'
 import { summaryCards } from '../model/usageSummary'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -162,6 +163,13 @@ describe('the Usage page: tokens and context', () => {
     await show()
     await screen.findByLabelText('Summary')
     expect(document.body.textContent).not.toMatch(/NaN|undefined/)
+  })
+
+  it('keeps only the runs that started inside the range, both ends inclusive', () => {
+    const at = (id: number, started: string) => ({ id, started }) as never
+    const runs = [at(1, new Date(2026, 9, 3, 23, 59).toISOString()), at(2, new Date(2026, 9, 4, 0, 0).toISOString()),
+      at(3, new Date(2026, 9, 7, 23, 59).toISOString()), at(4, new Date(2026, 9, 8, 0, 0).toISOString())]
+    expect(runsInRange(runs, '2026-10-04', '2026-10-07').map((r) => r.id)).toEqual([2, 3])
   })
 
   it('has summary cards that survive empty totals', () => {
