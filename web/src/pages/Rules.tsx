@@ -109,6 +109,7 @@ export function RulesPage() {
       live = false
     }
   }, [])
+  const [view, setView] = useState<'rules' | 'shadow'>('rules')
   const rules = useMemo(() => (state?.doc ? rulesFrom(state.doc) : []), [state])
 
   return (
@@ -116,10 +117,10 @@ export function RulesPage() {
       <header className="page-head">
         <h1>Rules</h1>
         <div className="page-chips">
-          <Chip kind="filter" selected>
+          <Chip kind="filter" selected={view === 'rules'} onClick={() => setView('rules')}>
             Rules <span className="rules-n">{rules.length}</span>
           </Chip>
-          <Chip kind="filter">Shadow log</Chip>
+          <Chip kind="filter" selected={view === 'shadow'} onClick={() => setView('shadow')}>Shadow log</Chip>
         </div>
         <div className="page-actions rules-mode">
           <span className="faint">Mode</span>
@@ -130,44 +131,49 @@ export function RulesPage() {
         </div>
       </header>
       <p className="rules-note faint">Mode is fixed until Crook's rule engine lands: the rules below are enforced as the config sets them.</p>
-      <p className="rules-order">Later layers win: a repo rule overrides its project, which overrides the workspace, which overrides built-in.</p>
-      {state?.error && <p className="tone-bad rules-pad">Could not load the rules: {state.error}</p>}
-      {!state && <p className="faint rules-pad">Loading…</p>}
-      <section aria-label="Proposed by Shepherd">
-        <GroupHeader label="Proposed by Shepherd" hint="learned from your answers · runs in shadow until you approve" />
-        <EmptyState title="No proposed rules.">Shepherd proposes a rule once it learns a pattern in your decisions. That needs Crook's rule files, which are not built yet.</EmptyState>
-      </section>
-      {state?.doc &&
-        LAYERS.map((l) => {
-          const mine = rules.filter((r) => r.layer === l.id)
-          return (
-            <section key={l.id} aria-label={l.label}>
-              <GroupHeader label={l.label} hint={l.hint} />
-              {mine.length === 0 ? (
-                <p className="faint rules-none">Nothing is set at this layer.</p>
-              ) : (
-                <table className="rules-table">
-                  <tbody>
-                    {mine.map((r) => (
-                      <tr key={r.id}>
-                        <td className="rules-id"><code>{r.id}</code></td>
-                        <td className="rules-what">
-                          {r.name}: {r.holder}. <span className="rules-allows">{r.allows}</span>
-                        </td>
-                        <td className="rules-verdict-col"><span className={`sh-tag rules-verdict--${verdictOf(r)}`}>{verdictOf(r)}</span></td>
-                        <td className="rules-source"><code>{r.source}</code></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-          )
-        })}
-      <section aria-label="Shadow log">
-        <GroupHeader label="Shadow log" hint="What a rule would have decided" />
-        <EmptyState title="The shadow log is empty.">Crook's verdict log is not built yet, so nothing is recorded here.</EmptyState>
-      </section>
+      {view === 'shadow' ? (
+        <section aria-label="Shadow log">
+          <GroupHeader label="Shadow log" hint="What a rule would have decided" />
+          <EmptyState title="No shadow verdicts yet.">They appear once Crook logs them.</EmptyState>
+        </section>
+      ) : (
+        <>
+        <p className="rules-order">Later layers win: a repo rule overrides its project, which overrides the workspace, which overrides built-in.</p>
+        {state?.error && <p className="tone-bad rules-pad">Could not load the rules: {state.error}</p>}
+        {!state && <p className="faint rules-pad">Loading…</p>}
+        <section aria-label="Proposed by Shepherd">
+          <GroupHeader label="Proposed by Shepherd" hint="learned from your answers · runs in shadow until you approve" />
+          <EmptyState title="No proposed rules.">Shepherd proposes a rule once it learns a pattern in your decisions. That needs Crook's rule files, which are not built yet.</EmptyState>
+        </section>
+        {state?.doc &&
+          LAYERS.map((l) => {
+            const mine = rules.filter((r) => r.layer === l.id)
+            return (
+              <section key={l.id} aria-label={l.label}>
+                <GroupHeader label={l.label} hint={l.hint} />
+                {mine.length === 0 ? (
+                  <p className="faint rules-none">Nothing is set at this layer.</p>
+                ) : (
+                  <table className="rules-table">
+                    <tbody>
+                      {mine.map((r) => (
+                        <tr key={r.id}>
+                          <td className="rules-id"><code>{r.id}</code></td>
+                          <td className="rules-what">
+                            {r.name}: {r.holder}. <span className="rules-allows">{r.allows}</span>
+                          </td>
+                          <td className="rules-verdict-col"><span className={`sh-tag rules-verdict--${verdictOf(r)}`}>{verdictOf(r)}</span></td>
+                          <td className="rules-source"><code>{r.source}</code></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </section>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }
