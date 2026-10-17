@@ -21,7 +21,7 @@
 .sh-chart-bar { flex: 1 1 0; min-width: 0; max-width: 4rem; border-radius: var(--sh-r) var(--sh-r) 0 0; background: var(--sh-lichen); }
 .sh-chart-bar.is-near { background: var(--sh-lantern); }
 .sh-chart-bar.is-over { background: var(--sh-broken); }
-.sh-chart-cap { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--sh-muted); }
+.sh-chart-cap { position: absolute; bottom: var(--cap-at, 0); left: 0; right: 0; border-top: 2px dashed var(--sh-muted); }
 .sh-chart-days { display: flex; gap: var(--sh-s4); padding: var(--sh-s2) var(--sh-s2) 0; color: var(--sh-faint); font-size: var(--sh-t-meta); }
 .sh-chart-days > span { flex: 1 1 0; min-width: 0; max-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-chart-day-num { display: none; }

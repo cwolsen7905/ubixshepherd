@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { usd } from '../format'
 import { budgetUse, heroSub, type CardRow } from '../model/spend'
 import { href } from '../router'
@@ -15,7 +15,7 @@ export function SpendHero({ usdToday, budget, sub, offline }: { usdToday: number
         {sub.note && (
           <span className="sh-spend-note">
             {' · '}
-            <StatusGlyph glyph="!" tone={use?.over ? 'bad' : 'warn'} label={sub.note} /> {sub.note}
+            <span className={use?.over ? 'is-over' : 'is-near'}>{sub.note}</span>
           </span>
         )}
       </p>
@@ -64,7 +64,7 @@ export function HoldsCard({ holds, now }: { holds: { agent: string; until: strin
           {holds.map((h) => (
             <li key={h.agent} className="sh-spend-row">
               <span className="sh-spend-name">
-                <StatusGlyph glyph="○" tone="held" label="held" /> {h.agent}
+                <StatusGlyph glyph="⌀" tone="held" label="out of quota" /> {h.agent}
               </span>
               <span className="sh-spend-amount">until {clockShort(h.until, now)}</span>
             </li>
@@ -108,7 +108,7 @@ export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: numbe
       <GroupHeader label="Last 14 days" hint={cap > 0 ? `daily cap ${usd(cap)}` : undefined} />
       <div role="img" aria-label={`Spend per day for the last 14 days${cap > 0 ? `, daily cap ${usd(cap)}` : ''}`}>
         <div className="sh-chart-plot">
-          {capPct !== null && <span className="sh-chart-cap" style={{ bottom: capPct }} title={`Daily cap ${usd(cap)}`} />}
+          {capPct !== null && <span className="sh-chart-cap" style={{ '--cap-at': capPct } as CSSProperties} title={`Daily cap ${usd(cap)}`} />}
           {bars.map((b) => (
             <span key={b.day} className={`sh-chart-bar is-${b.state}`} style={{ height: pct(b.usd) }} title={`${b.day}: ${usd(b.usd) || '$0.00'}`}>
               <span className="visually-hidden">{`${b.day}: ${usd(b.usd) || '$0.00'}`}</span>
@@ -126,11 +126,9 @@ export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: numbe
 }
 
 /** The most expensive runs of the window, most expensive first. */
-export function CostliestList({ runs, now }: {
+export function CostliestList({ runs }: {
   runs: { id: number; lane_id: number; repo: string; lane: string; agent: string; model?: string; state: string; commits: number; cost_usd?: number; credits?: number; cost_estimated?: boolean; started: string; ended?: string; task: string }[]
-  now: number
 }) {
-  void now
   return (
     <section className="sh-spend-runs" aria-label="Most expensive runs" data-component="CostliestList">
       <GroupHeader label="Most expensive runs" />

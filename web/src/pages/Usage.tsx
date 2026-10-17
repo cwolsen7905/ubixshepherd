@@ -57,7 +57,7 @@ export function UsagePage({ now: nowProp }: { now?: number; range?: unknown; fro
             <SpendCard title="By model" rows={models} empty="No model spend in the last 14 days." />
           </div>
           <HoldsCard holds={holds.data ?? undefined} now={now} />
-          <CostliestList runs={runs} now={now} />
+          <CostliestList runs={runs} />
         </>
       )}
     </div>
