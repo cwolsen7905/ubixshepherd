@@ -357,7 +357,7 @@ function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record
       {lane.state === 'open' && (
         <>
           <LanePrimaryAction lane={lane} runs={runs} latest={latest} action={action} />
-          {action?.kind === 'failure' && (
+          {(action?.kind === 'open' || action?.kind === 'failure') && (
             <div className="lane-detail-action">
               <RunFailure run={action.run} onFixed={() => void live.refresh()} />
             </div>

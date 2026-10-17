@@ -1,7 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import type { NextItem } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { decision, lane, nextItem, request, run, spend, status } from '../test/fixtures'
