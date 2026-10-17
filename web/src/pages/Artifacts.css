@@ -88,3 +88,7 @@
 .artifacts-page .sh-artifact {
   max-width: var(--sh-measure);
 }
+
+/* The page scrolls the window (the shell column does not clip), so a scroller of its own here would
+   take the header's sticky away: the artifact page's column lets the window scroll. */
+.artifacts-page > .sh-scroll:has(> .sh-artifact) { overflow: visible; }

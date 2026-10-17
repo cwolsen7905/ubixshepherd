@@ -293,7 +293,7 @@ function LaneHeader({ lane, runs, latest, action, approval, tab, onTab, now, chr
   return (
     <PageHeader
       {...chrome}
-      handleEscape
+      handleEscape={chrome.escape !== 'beside'}
       glyph={group && <StatusGlyph glyph={GROUP_MARKS[group].glyph} tone={glyphTone(GROUP_MARKS[group].tone)} label={GROUP_NAMES[group]} />}
       title={lane.name}
       meta={

@@ -466,6 +466,9 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-page-head-danger { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; }
 .sh-page-head-tabs { margin-top: var(--sh-s5); padding: 0 0 0 var(--sh-s9); gap: var(--sh-s9); border-bottom: 0; overflow-x: auto; scrollbar-width: none; font-size: var(--sh-t-body); }
 .sh-page-head-tabs .sh-tab { padding: var(--sh-s4) var(--sh-s2); white-space: nowrap; }
+.sh-page-head:not(:has(.sh-page-head-tabs)) { padding-bottom: var(--sh-s5); }
+.sh-page-head-title h1:focus, .sh-page-head-title h1:focus-visible { outline: none; }
+.inspector > .sh-page-head { padding-inline: var(--sh-s8); }
 .sh-page-head .tab-count { padding: 0; background: none; font-weight: inherit; color: var(--sh-muted); }
 .sh-page-head .sh-tab.is-on .tab-count { color: var(--sh-ink); }
 /* A page head inside a column that scrolls itself (the full-width inspector) sticks to that column's top. */
@@ -496,3 +499,6 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 @media (max-width: 40rem) {
   .sh-row-main > .sh-row-sub { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; overflow: hidden; overflow-wrap: break-word; }
 }
+
+/* The decision page: the header sits over the main column's own scroller, with the column's side padding. */
+.sh-swap-main > .sh-page-head { flex: none; padding-inline: var(--sh-s9); }

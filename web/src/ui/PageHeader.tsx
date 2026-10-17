@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type Ref } from 'react'
 import { Button } from './Button'
 import { cx } from './cx'
 import { dialogShown, isEditable } from './LaneDetailEscape'
@@ -28,6 +28,10 @@ export interface PageHeaderProps extends PageChrome {
   danger?: ReactNode
   /** The tab strip, a `PageTabs`. */
   tabs?: ReactNode
+  /** Something for the top bar, before "Open beside …": where the item sits among the waiting ones, a next key. */
+  barExtra?: ReactNode
+  /** The title's heading element, for a frame that moves focus to it. */
+  titleRef?: Ref<HTMLHeadingElement>
   /** Esc leaves the page here. Left off where the page handles Esc itself. */
   handleEscape?: boolean
   /** Names the page for a screen reader, and tells the header it sits in a column that scrolls itself. */
@@ -41,8 +45,24 @@ export interface PageHeaderProps extends PageChrome {
  * scrolls under it, in whichever element scrolls (the window or a column of its own).
  * Esc closes the page unless a dialog is up or the person is typing in a field.
  */
-export function PageHeader({ back, beside, onClose, escape = 'close', glyph, title, meta, actions, danger, tabs, handleEscape = false, label }: PageHeaderProps) {
+export function PageHeader({ back, beside, onClose, escape = 'close', glyph, title, meta, actions, danger, tabs, barExtra, titleRef, handleEscape = false, label }: PageHeaderProps) {
   const toBeside = beside?.onClick
+  const head = useRef<HTMLElement>(null)
+  // Whatever else sticks in the body (a log's search row) sticks under the header, at its measured height.
+  useLayoutEffect(() => {
+    const el = head.current
+    const host = el?.parentElement
+    if (!el || !host) return
+    const set = () => host.style.setProperty('--sh-page-head-h', `${el.offsetHeight}px`)
+    set()
+    if (typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(set)
+    watch.observe(el)
+    return () => {
+      watch.disconnect()
+      host.style.removeProperty('--sh-page-head-h')
+    }
+  }, [])
   useEffect(() => {
     if (!handleEscape) return
     const onKey = (e: globalThis.KeyboardEvent) => {
@@ -61,10 +81,11 @@ export function PageHeader({ back, beside, onClose, escape = 'close', glyph, tit
     </>
   )
   return (
-    <header className="sh-page-head" data-component="PageHeader" aria-label={label}>
+    <header ref={head} className="sh-page-head" data-component="PageHeader" aria-label={label}>
       <div className="sh-page-head-bar">
         {back}
         <span className="sh-page-head-bar-actions">
+          {barExtra}
           {beside && (
             <Button variant="ghost" className="sh-page-head-beside" onClick={beside.onClick}>
               {beside.label}
@@ -79,7 +100,7 @@ export function PageHeader({ back, beside, onClose, escape = 'close', glyph, tit
       </div>
       <div className="sh-page-head-title">
         {glyph}
-        <h1>{title}</h1>
+        <h1 ref={titleRef} tabIndex={titleRef ? -1 : undefined}>{title}</h1>
       </div>
       {meta && <div className="sh-page-head-meta">{meta}</div>}
       {(actions || danger) && (

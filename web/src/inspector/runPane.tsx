@@ -12,6 +12,8 @@ import { useLive } from '../state/context'
 import { RunLog } from '../ui/RunLog'
 import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
 import { RunChanges } from '../components/RunChanges'
+import { Button } from '../ui/Button'
+import { PageHeader, PageTabs, pageTabIds, usePageTabBase, type PageChrome } from '../ui/PageHeader'
 
 export const RUN_TABS = ['conversation', 'log', 'changes', 'asked', 'artifacts'] as const
 export type RunTab = (typeof RUN_TABS)[number]
@@ -114,43 +116,62 @@ function RunArtifacts({ runId }: { runId: number }) {
 }
 
 /** The run's three views: Log, Changes, Artifacts. */
-export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab; onTab: (t: RunTab) => void; onDone?: () => void }) {
+export function RunPane({ run, tab, onTab, onDone, page }: { run: RunView; tab: RunTab; onTab: (t: RunTab) => void; onDone?: () => void; page?: PageChrome }) {
   const now = useNow(5000)
+  const tabBase = usePageTabBase()
   const live = useLive()
   const [dismissError, setDismissError] = useState<string | null>(null)
   const source = useMemo(() => laneSource(run.lane_id), [run.lane_id])
+  const glyph = <span className={`sh-glyph sh-glyph--${glyphTone(run.state)}`} aria-hidden="true">{glyphFor(run.state)}</span>
+  const meta = (
+    <>
+      <a href={href.lane(run.lane_id)}>{run.repo} / {run.lane}</a>
+      <span title={run.model || undefined}>{[run.agent, shortModel(run.model)].filter(Boolean).join(' · ')}</span>
+      <span>{run.state}</span>
+      <span>{duration(run.started, run.ended, now)}</span>
+      {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
+      {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
+      {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
+    </>
+  )
+  const onDismiss = () => {
+    setDismissError(null)
+    live.dismiss(run.id, !run.dismissed).then(onDone, (e: unknown) => setDismissError(e instanceof Error ? e.message : String(e)))
+  }
+  const dismissTitle = run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'
+  const dismissLabel = run.dismissed ? 'Undismiss' : 'Dismiss'
+  const dismissNote = dismissError && <span className="tone-bad" role="alert"> Could not {run.dismissed ? 'undismiss' : 'dismiss'} this run: {dismissError}</span>
+  const panelId = page ? pageTabIds(tabBase, tab).panel : 'run-panel'
+  const labelledBy = page ? pageTabIds(tabBase, tab).tab : `run-tab-${tab}`
   return (
-    <div className="run-pane" data-component="RunPane">
-      <p className="run-title">
-        <span className={`sh-glyph sh-glyph--${glyphTone(run.state)}`} aria-hidden="true">{glyphFor(run.state)}</span>
-        <span>{titleFor(run.state, run.id)}</span>
-      </p>
-      <p className="run-meta faint">
-        <a href={href.lane(run.lane_id)}>{run.repo} / {run.lane}</a>
-        <span title={run.model || undefined}>{[run.agent, shortModel(run.model)].filter(Boolean).join(' · ')}</span>
-        <span>{run.state}</span>
-        <span>{duration(run.started, run.ended, now)}</span>
-        {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
-        {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
-        {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
-      </p>
-      {endedBadly(run) && (
-        <p className="row-actions">
-          <button
-            type="button"
-            className="link-button"
-            title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
-            onClick={() => {
-              setDismissError(null)
-              live.dismiss(run.id, !run.dismissed).then(onDone, (e: unknown) => setDismissError(e instanceof Error ? e.message : String(e)))
-            }}
-          >
-            {run.dismissed ? 'Undismiss' : 'Dismiss'}
-          </button>
-          {dismissError && <span className="tone-bad" role="alert"> Could not {run.dismissed ? 'undismiss' : 'dismiss'} this run: {dismissError}</span>}
-        </p>
+    <div className="run-pane" data-component="RunPane" data-layout={page ? 'page' : 'panel'}>
+      {page ? (
+        <PageHeader
+          {...page}
+          handleEscape={page.escape !== 'beside'}
+          glyph={glyph}
+          title={titleFor(run.state, run.id)}
+          meta={meta}
+          actions={endedBadly(run) && <><Button variant="ghost" title={dismissTitle} onClick={onDismiss}>{dismissLabel}</Button>{dismissNote}</>}
+          tabs={<PageTabs tabs={RUN_TABS.map((t) => ({ id: t, label: TAB_NAMES[t] }))} value={tab} onChange={(t) => onTab(t as RunTab)} label="Run views" base={tabBase} />}
+        />
+      ) : (
+        <>
+          <p className="run-title">
+            {glyph}
+            <span>{titleFor(run.state, run.id)}</span>
+          </p>
+          <p className="run-meta faint">{meta}</p>
+          {endedBadly(run) && (
+            <p className="row-actions">
+              <button type="button" className="link-button" title={dismissTitle} onClick={onDismiss}>{dismissLabel}</button>
+              {dismissNote}
+            </p>
+          )}
+        </>
       )}
       {run.diagnosis && <RunFailure run={run} onFixed={onDone} />}
+      {!page && (
       <div role="tablist" aria-label="Run views" className="lane-tabs">
         {RUN_TABS.map((t) => (
           <button
@@ -167,7 +188,8 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
           </button>
         ))}
       </div>
-      <div id="run-panel" role="tabpanel" aria-labelledby={`run-tab-${tab}`}>
+      )}
+      <div id={panelId} role="tabpanel" aria-labelledby={labelledBy} className={page ? 'sh-tabpanel' : undefined}>
         {/* The thread and the log stay mounted while hidden, so switching tabs does not read
             them again or lose search, follow and expanded calls. */}
         <div hidden={tab !== 'conversation'}>
@@ -185,7 +207,7 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
 }
 
 /** The inspector's body for `open=run:N[/tab]` and the run page. */
-export function RunInspector({ id, tab, full }: { id: number; tab?: string; full?: boolean }) {
+export function RunInspector({ id, tab, full, chrome }: { id: number; tab?: string; full?: boolean; chrome?: PageChrome }) {
   const live = useLive()
   const { run, error, reload } = useRun(id)
   useEffect(() => {
@@ -201,6 +223,7 @@ export function RunInspector({ id, tab, full }: { id: number; tab?: string; full
   if (!run && error) {
     return (
       <div className="inspector-body">
+        {chrome && <PageHeader {...chrome} title={`Run ${id}`} />}
         <p className="tone-bad">Could not read run {id}: {error}</p>
         <button type="button" className="link-button" onClick={reload}>
           Retry
@@ -208,7 +231,14 @@ export function RunInspector({ id, tab, full }: { id: number; tab?: string; full
       </div>
     )
   }
-  if (!run) return <p className="inspector-body faint">Reading run {id}…</p>
+  if (!run) {
+    return (
+      <div className="inspector-body">
+        {chrome && <PageHeader {...chrome} title={`Run ${id}`} />}
+        <p className="faint">Reading run {id}…</p>
+      </div>
+    )
+  }
   const current = picked
   return (
     <div className="inspector-body run-inspector">
@@ -220,6 +250,7 @@ export function RunInspector({ id, tab, full }: { id: number; tab?: string; full
           window.location.hash = withOpen(window.location.hash, { kind: 'run', id, tab: t, ...(full ? { full: true } : {}) })
         }}
         onDone={reload}
+        page={chrome}
       />
     </div>
   )

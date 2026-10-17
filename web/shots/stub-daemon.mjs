@@ -640,7 +640,7 @@ const ARTIFACTS = () => [
   { id: 4, workspace_id: 1, repo_id: 1, lane_id: 1, run_id: 15, path: 'scratch/session-notes.txt', kind: 'text', source: 'run', intent: 'undecided', intent_by: '', state: 'live', size: 412, created: ago(95), updated: ago(70),
     versions: [{ artifact_id: 4, sha256: 'e'.repeat(64), size: 412, run_id: 15, seen: ago(70) }] },
 ]
-const ARTIFACT_TEXT = { 1: PLAN_MD, 3: EXPORT_TS, 4: 'Session expiry: 12 hours, sliding.\nRevoke on logout and on password change.\nOpen: should the cookie carry only the id?\n' }
+const ARTIFACT_TEXT = { 1: LONG ? PLAN_MD + Array.from({ length: 12 }, (_, i) => `\n## Follow-up ${i + 1}\n\nRows stream in chunks of 64 KB, and the writer pauses when the buffer fills, so the export stays flat however long the table is.\n`).join('') : PLAN_MD, 3: EXPORT_TS, 4: 'Session expiry: 12 hours, sliding.\nRevoke on logout and on password change.\nOpen: should the cookie carry only the id?\n' }
 const laneArtifactList = (id) => ({
   lane_id: id, lane: lanes().find((l) => l.id === id)?.name ?? '', globs: ['docs/**', 'scratch/**'],
   artifacts: ARTIFACTS().filter((a) => a.lane_id === id).map((a) => ({ path: a.path, kind: a.kind, source: a.source, status: a.state, size: a.size, readable: true, ...(a.kind === 'image' ? { mime: 'image/png' } : {}) })),

@@ -83,8 +83,31 @@ describe('InspectorFrame', () => {
     rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes', full: true }} mode="split">page</InspectorFrame>)
     expect(screen.queryByRole('button', { name: 'Open full width' })).toBeNull()
     expect(screen.getByText('page').closest('.inspector-page')).toHaveAttribute('hidden')
-    await user.click(screen.getByRole('button', { name: 'Back to the inspector' }))
+    // The page header's way back to the side panel, and the one way out of the page.
+    await screen.findByRole('tablist', { name: 'Lane views' })
+    await user.click(screen.getByRole('button', { name: /^Open beside the chat/ }))
     expect(window.location.hash).toBe('#/?open=lane%3A4%2Fchanges')
+  })
+
+  it('draws a full-width merge request, run or lane under the page header, with its tabs in it', async () => {
+    window.location.hash = '#/inbox?open=mr:4/full'
+    render(<InspectorFrame open={{ kind: 'mr', id: 4, full: true }} mode="split">page</InspectorFrame>)
+    const tabs = await screen.findByRole('tablist', { name: 'Merge request views' })
+    const head = tabs.closest('[data-component="PageHeader"]') as HTMLElement
+    expect(head).not.toBeNull()
+    expect(within(head).getByRole('heading', { level: 1 })).toHaveTextContent('Merge request')
+    expect(within(head).getByRole('button', { name: /^Close$/ })).toBeInTheDocument()
+    expect(within(head).getByRole('button', { name: /^Open beside the inbox\s*Esc$/ })).toBeInTheDocument()
+    expect(document.querySelector('.inspector-head')).toBeNull()
+  })
+
+  it('gives a full-width decision the page header too, with the way back and where it lives', () => {
+    window.location.hash = '#/inbox?open=decision:5/full'
+    render(<InspectorFrame open={{ kind: 'decision', id: 5, full: true }} mode="split">page</InspectorFrame>)
+    const head = document.querySelector('[data-component="PageHeader"]') as HTMLElement
+    expect(within(head).getByRole('heading', { level: 1, name: 'decision 5' })).toHaveFocus()
+    expect(within(head).getByRole('button', { name: '← Inbox' })).toBeInTheDocument()
+    expect(within(head).getByRole('link', { name: 'Open as page' })).toBeInTheDocument()
   })
 
   it('moves focus to the swapped-in button when entering and leaving full width', async () => {
@@ -93,8 +116,8 @@ describe('InspectorFrame', () => {
     const { rerender } = render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
     await user.click(screen.getByRole('button', { name: 'Open full width' }))
     rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes', full: true }} mode="split">page</InspectorFrame>)
-    expect(screen.getByRole('button', { name: 'Back to the inspector' })).toHaveFocus()
-    await user.click(screen.getByRole('button', { name: 'Back to the inspector' }))
+    expect(screen.getByRole('button', { name: '← Chat' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: /^Open beside the chat/ }))
     rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
     expect(screen.getByRole('button', { name: 'Open full width' })).toHaveFocus()
   })

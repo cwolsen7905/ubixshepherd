@@ -3,6 +3,8 @@ import { go, useRoute, withOpen, type Open } from '../router'
 import { DecisionPane } from './decisionPane'
 import { QuestionPane } from './questionPane'
 import { useMode, type Mode } from './useMode'
+import { closeInspector, leaveFull, useFullChrome } from './fullChrome'
+import { PageBack, PageHeader } from '../ui/PageHeader'
 import { LaneInspector } from './lane'
 import { MrInspector } from './mr'
 import { RunInspector } from './runPane'
@@ -11,7 +13,7 @@ import { ArtifactInspector } from './artifactPane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
 import { useSnapshot } from '../state/context'
-import { Kbd } from '../ui'
+import { Button, Kbd, StatusGlyph } from '../ui'
 import { SwapThread } from '../chat/SwapSide'
 import { neighbour, openKey, waitingKey } from '../model/waitingStep'
 import { showWaiting } from '../chat/strip'
@@ -22,11 +24,6 @@ import '../styles/inspector.css'
 import '../shell/swap.css'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-/** Closes the inspector by dropping `open=` from the address, so Back opens it again. */
-export function closeInspector() {
-  go(withOpen(window.location.hash, undefined))
-}
 
 /** The placeholder body: later steps give each kind its own pane. */
 function Placeholder({ open }: { open: Open }) {
@@ -40,9 +37,10 @@ function Placeholder({ open }: { open: Open }) {
 
 /** What a kind shows: each step adds its `case`; the rest fall back to the placeholder. */
 function InspectorBody({ open }: { open: Open }) {
+  const chrome = useFullChrome(open)
   switch (open.kind) {
     case 'lane':
-      return <LaneInspector open={open} />
+      return <LaneInspector open={open} chrome={open.full ? chrome : undefined} />
     case 'decision':
       return <DecisionPane key={open.id} id={open.id} />
     case 'question':
@@ -50,9 +48,9 @@ function InspectorBody({ open }: { open: Open }) {
     case 'artifact':
       return <ArtifactInspector key={open.id} id={open.id} />
     case 'run':
-      return <RunInspector key={open.id} id={open.id} tab={open.tab} full={open.full} />
+      return <RunInspector key={open.id} id={open.id} tab={open.tab} full={open.full} chrome={open.full ? chrome : undefined} />
     case 'mr':
-      return <MrInspector open={open} />
+      return <MrInspector open={open} chrome={open.full ? chrome : undefined} />
     default:
       return <Placeholder open={open} />
   }
@@ -96,33 +94,55 @@ function titleOf(open: Open, snap: ReturnType<typeof useSnapshot>): string {
   return mr ? `MR !${mr}` : `MR of lane ${open.id}`
 }
 
-/** The same item without `full`: the way back from a full-width view. */
-export function leaveFull(open: Open) {
-  go(withOpen(window.location.hash, { kind: open.kind, id: open.id, ...(open.tab ? { tab: open.tab } : {}) }))
-}
-
 /** The artifact's own title, or its path, once it is read; "artifact N" until then. */
 function ArtifactName({ id, fallback }: { id: number; fallback: string }) {
   const { artifact } = useStoredArtifact(id, 0)
   return <>{artifact?.title || artifact?.path || fallback}</>
 }
 
+/** Lane, merge request and run views draw their own page header, with their tabs in it, when they fill the window. */
+function ownsHeader(open: Open): boolean {
+  return Boolean(open.full) && (open.kind === 'lane' || open.kind === 'mr' || open.kind === 'run')
+}
+
 /**
  * The one header: where the item lives (lane, then the tab), what it is as a chip, then
- * Open full width, Open as page and Close. A full-width view swaps Close for a back arrow.
+ * Open full width, Open as page and Close. A full-width view of a decision, a file or a question
+ * has the shared page header instead: the back link, Open beside and Close, the title and where it lives.
  */
 function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject<HTMLHeadingElement | null> }) {
   const snap = useSnapshot()
+  const chrome = useFullChrome(open)
   const parent = parentLane(open, snap)
   const page = pageFor(open)
   const tab = section(open.tab)
+  const title = open.kind === 'artifact' ? <ArtifactName id={open.id} fallback={titleOf(open, snap)} /> : titleOf(open, snap)
+  if (open.full) {
+    return (
+      <PageHeader
+        {...chrome}
+        titleRef={heading}
+        title={title}
+        meta={
+          (parent || tab) && (
+            <>
+              {parent && <span>{parent}</span>}
+              {tab && <span>{tab}</span>}
+            </>
+          )
+        }
+        actions={
+          page && (
+            <a className="sh-btn sh-btn--ghost" href={page}>
+              Open as page
+            </a>
+          )
+        }
+      />
+    )
+  }
   return (
     <header className="inspector-head">
-      {open.full && (
-        <button type="button" className="ui-btn ui-btn-ghost inspector-back" onClick={() => leaveFull(open)} aria-label="Back to the inspector">
-          <span aria-hidden="true">←</span> Back
-        </button>
-      )}
       {parent && (
         <>
           <span className="inspector-crumb">{parent}</span>
@@ -136,10 +156,10 @@ function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject
         </>
       )}
       <h2 id="inspector-title" ref={heading} tabIndex={-1} className="inspector-chip">
-        {open.kind === 'artifact' ? <ArtifactName id={open.id} fallback={titleOf(open, snap)} /> : titleOf(open, snap)}
+        {title}
       </h2>
       <span className="inspector-head-actions">
-        {!open.full && isWide(open) && (
+        {isWide(open) && (
           <button type="button" className="ui-btn ui-btn-ghost inspector-full-btn" onClick={() => go(withOpen(window.location.hash, { ...open, full: true }))}>
             Open full width
           </button>
@@ -149,11 +169,9 @@ function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject
             Open as page
           </a>
         )}
-        {!open.full && (
-          <button type="button" className="ui-btn ui-btn-ghost" onClick={closeInspector} aria-label="Close inspector">
-            Close <Kbd keys="Esc" />
-          </button>
-        )}
+        <button type="button" className="ui-btn ui-btn-ghost" onClick={closeInspector} aria-label="Close inspector">
+          Close <Kbd keys="Esc" />
+        </button>
       </span>
     </header>
   )
@@ -174,31 +192,31 @@ function SwapBar({ open, keys }: { open: Open; keys: boolean }) {
     if (it) showWaiting(it)
   }
   useKeys(keys ? { ']': next } : {}, [keys, items, at])
-  const lane = snap.decisions.find((d) => d.id === open.id)?.lane
+  const d = snap.decisions.find((x) => x.id === open.id)
   return (
-    <div className="sh-swap-bar" data-component="SwapBar">
-      <button type="button" className="sh-swap-back" onClick={closeInspector}>
-        ← Conversation
-      </button>
-      {lane && <span className="sh-swap-crumb">{lane}</span>}
-      <span className="sh-swap-right">
-        {pos >= 0 && (
-          <span>
-            {pos + 1} of {items.length} waiting
-          </span>
-        )}
-        {items.length > 1 && (
-          <button type="button" className="sh-swap-next" onClick={next}>
+    <PageHeader
+      back={<PageBack onClick={closeInspector}>← Conversation</PageBack>}
+      onClose={closeInspector}
+      glyph={<StatusGlyph glyph="?" tone="warn" label="decision" />}
+      title={`Decision ${open.id}`}
+      meta={
+        d && (
+          <>
+            <span>{d.lane}</span>
+            {d.agent && <span>{d.agent}</span>}
+            {pos >= 0 && <span>{pos + 1} of {items.length} waiting</span>}
+          </>
+        )
+      }
+      barExtra={
+        items.length > 1 && (
+          <Button variant="ghost" className="sh-swap-next" onClick={next}>
             <Kbd keys="]" />
             next
-          </button>
-        )}
-        <span className="sh-swap-hint">
-          <Kbd keys="Esc" />
-          back to the thread
-        </span>
-      </span>
-    </div>
+          </Button>
+        )
+      }
+    />
   )
 }
 
@@ -258,7 +276,7 @@ export function InspectorFrame({ open, children, mode: forced, thread }: { open?
   useEffect(() => {
     if (wasFull.current === full) return
     wasFull.current = full
-    aside.current?.querySelector<HTMLElement>(full ? '.inspector-back' : '.inspector-full-btn')?.focus()
+    aside.current?.querySelector<HTMLElement>(full ? '.sh-page-back' : '.inspector-full-btn')?.focus()
   }, [full])
 
   useEffect(() => {
@@ -335,7 +353,7 @@ export function InspectorFrame({ open, children, mode: forced, thread }: { open?
             aria-modal={modal ? true : undefined}
             aria-labelledby="inspector-title"
           >
-            <InspectorHead open={open} heading={heading} />
+            {!ownsHeader(open) && <InspectorHead open={open} heading={heading} />}
             <InspectorBody open={open} />
             <InspectorFoot open={open} />
           </aside>

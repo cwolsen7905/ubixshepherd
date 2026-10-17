@@ -1,4 +1,5 @@
-import { cameFrom, go, href, parse, type Route } from '../router'
+import { cameFrom, go, href, parse, withOpen, type Open, type Route } from '../router'
+import type { PageChrome } from '../ui/PageHeader'
 
 /** What a route is called in a "back to" link. */
 export function routeName(r: Route): string {
@@ -63,4 +64,22 @@ export function BackLink({ fallback = href.board() }: { fallback?: string } = {}
       </a>
     </p>
   )
+}
+
+/**
+ * What a page's header does to leave: Close goes where the back link goes (the page the person
+ * came from, at its scroll, else `fallback`), and "Open beside …" shows `open` in that page's
+ * side panel. The back link is the shared `BackLink`.
+ */
+export function pageExit(open: Open | undefined, fallback = href.board()): Omit<PageChrome, 'back'> {
+  const came = cameFrom()
+  const target = came ? came.hash : fallback
+  const name = routeName(parse(target)).toLowerCase()
+  return {
+    onClose: () => {
+      go(target)
+      if (came) restoreScroll(came.scroll)
+    },
+    beside: open ? { label: `Open beside the ${name}`, onClick: () => go(withOpen(target, open)) } : undefined,
+  }
 }
