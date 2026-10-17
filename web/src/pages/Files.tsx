@@ -57,7 +57,7 @@ export function FilesPage({ repo = 0, lane = 0, gitRef = '' }: { repo?: number; 
             </label>
             <label>
               <span className="faint">Lane</span>
-              <select value={target?.id ?? 0} disabled={lanes.length === 0} onChange={(e) => pick({ repo: repoId, lane: Number(e.target.value), ref: gitRef })}>
+              <select value={target?.id ?? 0} disabled={lanes.length === 0} onChange={(e) => pick({ repo: repoId, lane: Number(e.target.value) })}>
                 {lanes.map((l) => (
                   <option key={l.id} value={l.id}>{l.name}{l.state === 'open' ? '' : ' (closed)'}</option>
                 ))}
@@ -72,11 +72,18 @@ export function FilesPage({ repo = 0, lane = 0, gitRef = '' }: { repo?: number; 
           {!target ? (
             <EmptyState title="Choose a repo.">Pick one above to read its files.</EmptyState>
           ) : (
+            <>
+            {!gitRef && target.state !== 'open' && (
+              <p className="faint files-note">
+                This lane is closed, so its files are read at the branch {target.branch}. If the branch was deleted after the merge, enter a ref above, such as the base branch or a tag.
+              </p>
+            )}
             <FileBrowser
               laneId={target.id}
               gitRef={gitRef || (target.state === 'open' ? undefined : target.branch)}
               layout="tree-viewer"
             />
+            </>
           )}
         </>
       )}

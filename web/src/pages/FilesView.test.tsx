@@ -44,6 +44,7 @@ describe('the Files page', () => {
     const seen = await show({ lane: 2 })
     await screen.findByText('README.md')
     expect(seen[0]?.searchParams.get('ref')).toBe('old')
+    expect(screen.getByText(/branch was deleted after the merge|If the branch was deleted/)).toBeInTheDocument()
     vi.unstubAllGlobals()
     const again = await show({ lane: 1, gitRef: 'v1.0' })
     await screen.findAllByText('README.md')
