@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -50,10 +50,10 @@ describe('ArtifactsPage', () => {
     await show({}, [])
     expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
     expect(screen.getByText('docs/b.md')).toBeInTheDocument()
-    expect(screen.getByText('undecided')).toBeInTheDocument()
-    await userEvent.click(screen.getByText('docs/a.md'))
+    expect(screen.getByRole('cell', { name: 'undecided' })).toBeInTheDocument()
+    await act(async () => { await userEvent.click(screen.getByRole('link', { name: 'docs/a.md' })) })
     expect(window.location.hash).toBe('#/artifacts?view=1')
-    expect(screen.getByRole('link', { name: /Back to the artifact list/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /← Artifacts/ })).toBeInTheDocument()
   })
 
   it('asks the daemon for a lane, run and topic, and filters a repo itself', async () => {
@@ -68,20 +68,74 @@ describe('ArtifactsPage', () => {
     expect(q).toContain('topic_id=3')
   })
 
+  it('filters by intent', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
+    expect(screen.getByText('docs/b.md')).toBeInTheDocument()
+    const intent = screen.getByLabelText('Intent')
+    await userEvent.selectOptions(intent, 'undecided')
+    expect(screen.queryByText('docs/a.md')).toBeNull()
+    expect(screen.getByText('docs/b.md')).toBeInTheDocument()
+  })
+
+  it('clears the intent filter with Clear filters', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Intent'), 'undecided')
+    expect(screen.queryByText('docs/a.md')).toBeNull()
+    await userEvent.click(screen.getByRole('link', { name: 'Clear filters' }))
+    expect(screen.getByLabelText('Intent')).toHaveValue('all')
+    expect(screen.getByText('docs/a.md')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Clear filters' })).toBeNull()
+  })
+
+  it('keeps the intent filter in the address and reads it back', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Intent'), 'undecided')
+    expect(window.location.hash).toBe('#/artifacts?intent=undecided')
+  })
+
+  it('applies an intent from the address on load', async () => {
+    window.location.hash = '#/artifacts?intent=undecided'
+    await show({}, [])
+    expect(await screen.findByText('docs/b.md')).toBeInTheDocument()
+    expect(screen.queryByText('docs/a.md')).toBeNull()
+    expect(screen.getByLabelText('Intent')).toHaveValue('undecided')
+  })
+
+  it('leaves Enter on a lane link to the link and ignores a modified click on a row', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    await screen.findByText('docs/a.md')
+    const lane = screen.getAllByRole('link').find((l) => l.getAttribute('href')?.startsWith('#/lanes'))
+    expect(lane).toBeDefined()
+    lane!.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(window.location.hash).not.toContain('view=')
+    window.location.hash = '#/artifacts'
+    const cell = screen.getAllByRole('cell', { name: /none|\d+/ })[0]!
+    await act(async () => { fireEvent.click(cell, { metaKey: true }) })
+    expect(window.location.hash).not.toContain('view=')
+  })
+
   it('opens a deep link to a file full width, in place of the list, with its image from the lane', async () => {
     window.location.hash = '#/artifacts?view=1&lane=1'
     await show({ lane: 1 }, [])
     expect(await screen.findByText('The body')).toBeInTheDocument()
     const img = await screen.findByRole('img', { name: 'shot' })
     expect(img.getAttribute('src')).toBe('/v1/lanes/1/artifacts/content?path=docs%2Fimg%2Fa.png')
-    expect(screen.getByRole('table', { hidden: true }).closest('[hidden]')).not.toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
   })
 
   it('returns to the list with its filters on the back arrow and on Escape', async () => {
     window.location.hash = '#/artifacts?lane=1&view=1'
     await show({ lane: 1 }, [])
     await screen.findByText('The body')
-    await userEvent.click(screen.getByRole('link', { name: /Back to the artifact list/ }))
+    await userEvent.click(screen.getByRole('link', { name: /← Artifacts/ }))
     expect(window.location.hash).toBe('#/artifacts?lane=1')
     expect(screen.queryByText('The body')).toBeNull()
     expect(await screen.findByText('docs/a.md')).toBeVisible()

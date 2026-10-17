@@ -1,16 +1,24 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { topics as topicsApi } from '../api/client'
-import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
-import { bytes } from '../artifacts/ArtifactViewer'
 import { StoredArtifactView } from '../artifacts/StoredArtifact'
+import { intentTag, intentTone, storedArtifacts, type Intent, type StoredArtifact } from '../artifacts/api'
+import { bytes } from '../artifacts/ArtifactViewer'
 import { since } from '../format'
 import { useNow } from '../hooks'
 import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
-import { Chip, EmptyState, Skeleton } from '../ui'
-import '../styles/pages/artifacts.css'
+import { EmptyState, Skeleton } from '../ui'
+import './Artifacts.css'
 
-type Filters = { repo?: number; lane?: number; run?: number; topic?: number }
+type Filters = { repo?: number; lane?: number; run?: number; topic?: number; intent?: Intent | 'all' }
+
+const INTENTS: { value: Intent | 'all'; label: string }[] = [
+  { value: 'all', label: 'All intents' },
+  { value: 'commit', label: 'commit' },
+  { value: 'keep', label: 'kept local' },
+  { value: 'scratch', label: 'scratch' },
+  { value: 'undecided', label: 'undecided' },
+]
 
 // The open file rides in the address as `view=ID`, a parameter of this page alone, so a
 // link to it works and Back returns to the list.
@@ -34,11 +42,31 @@ export function withView(hash: string, id: number): string {
   return q.size ? `#${path}?${q}` : `#${path}`
 }
 
+/** The intent in the address's `intent=`, or `all`. Like `view=`, a parameter of this page alone. */
+export function intentOf(hash: string): Intent | 'all' {
+  const v = new URLSearchParams(hash.split('?')[1] ?? '').get('intent')
+  return INTENTS.some((i) => i.value === v) ? (v as Intent) : 'all'
+}
+
+/** `hash` with `intent=` set, or removed for `all`. Other parameters are kept. */
+export function withIntent(hash: string, intent: Intent | 'all'): string {
+  const [path = '/artifacts', query = ''] = hash.replace(/^#/, '').split('?')
+  const q = new URLSearchParams(query)
+  if (intent !== 'all') q.set('intent', intent)
+  else q.delete('intent')
+  return q.size ? `#${path}?${q}` : `#${path}`
+}
+
 // Set when the person opened a file from this list, so the back arrow can step Back (the
 // list then comes up as it was) instead of pushing another entry.
 let fromList = false
 
-/** Every artifact across lanes and runs, newest first, filtered by repo, lane, run and topic. */
+/** Whether a file's kind makes its path read as code. */
+function isCode(a: StoredArtifact): boolean {
+  return a.kind === 'code'
+}
+
+/** Every artifact across lanes and runs, newest first, filtered by repo, lane, run, topic and intent. */
 export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filters) {
   const snap = useSnapshot()
   const now = useNow(30_000)
@@ -48,30 +76,42 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
   const key = `${lane}:${run}:${topic}:${feedLast}`
   const hash = useSyncExternalStore(subscribe, () => window.location.hash)
   const viewing = viewedId(hash)
+  const intent = intentOf(hash)
   const scrolled = useRef(0)
-  const wasViewing = useRef(0)
 
   useLayoutEffect(() => {
-    if (viewing && !wasViewing.current) window.scrollTo(0, 0)
-    if (!viewing && wasViewing.current) window.scrollTo(0, scrolled.current)
+    if (viewing && !fromList) window.scrollTo(0, 0)
+    if (!viewing && scrolled.current) window.scrollTo(0, scrolled.current)
+    if (!viewing) scrolled.current = 0
     if (!viewing) fromList = false
-    wasViewing.current = viewing
   }, [viewing])
   useEffect(() => () => void (fromList = false), [])
-  const back = () => {
-    if (fromList) {
-      fromList = false
-      window.history.back()
-    } else go(withView(window.location.hash, 0))
+
+  const open = (id: number) => {
+    scrolled.current = window.scrollY
+    fromList = true
+    go(withView(hash, id))
   }
+
+  const stepBack = () => {
+    fromList = false
+    window.history.back()
+  }
+
   useEffect(() => {
     if (!viewing) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open], [role="dialog"]')) back()
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open], [role="dialog"]')) {
+        if (fromList) {
+          stepBack()
+        } else {
+          go(withView(hash, 0))
+        }
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [viewing])
+  }, [viewing, hash])
 
   useEffect(() => {
     let current = true
@@ -101,139 +141,178 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
     return [...m].sort((a, b) => a[1].localeCompare(b[1]))
   }, [snap.lanes])
 
-  const nav = (o: Filters) => href.artifacts({ repo, lane, run, topic, ...o })
+  const lanesForRepo = useMemo(() => snap.lanes.filter((l) => !repo || l.repo_id === repo).sort((a, b) => a.name.localeCompare(b.name)), [snap.lanes, repo])
+
+  const nav = (o: Filters) => withIntent(href.artifacts({ repo, lane, run, topic, ...o }), intent)
   const here = list?.key === key ? list : null
   // The repo filter has no query of its own: the lane's repo decides.
-  const rows = (here?.rows ?? []).filter((a) => !repo || a.repo_id === repo)
-  const filtered = repo > 0 || lane > 0 || run > 0 || topic > 0
+  const allRows = (here?.rows ?? []).filter((a) => !repo || a.repo_id === repo)
+  const rows = allRows.filter((a) => intent === 'all' || a.intent === intent)
+  const filtered = repo > 0 || lane > 0 || run > 0 || topic > 0 || intent !== 'all'
 
-  const shown = viewing ? (here?.rows ?? []).find((a) => a.id === viewing) : undefined
   const listHash = withView(hash, 0)
 
-  return (
-    <div className="page page-wide artifacts-page">
-      {viewing > 0 && (
-        <section className="artifact-full" aria-label="Artifact">
-          <header className="page-head artifact-full-head">
-            <a className="artifact-back" href={listHash} aria-label="Back to the artifact list" onClick={(e) => {
-              if (fromList && !e.metaKey && !e.ctrlKey && !e.shiftKey) {
-                e.preventDefault()
-                back()
-              }
-            }}>
-              <span aria-hidden="true">←</span> Artifacts
-            </a>
-            <h1>{shown?.title || shown?.path || `Artifact ${viewing}`}</h1>
-          </header>
-          <StoredArtifactView key={viewing} id={viewing} refreshKey={feedLast} />
-        </section>
-      )}
-      <div hidden={viewing > 0}>
-      <header className="page-head">
-        <h1>Artifacts</h1>
-      </header>
+  if (viewing > 0) {
+    return (
+      <div className="sh-centre artifacts-page">
+        <div className="sh-scroll">
+          <StoredArtifactView
+            key={viewing}
+            id={viewing}
+            refreshKey={feedLast}
+            layout="page"
+            backHref={listHash}
+            onBack={fromList ? stepBack : undefined}
+          />
+        </div>
+      </div>
+    )
+  }
 
-      <div className="filters">
-        <span className="filter-group">
-          <span className="faint">Repo</span>
-          <span className="chip-options" role="group" aria-label="Repo">
-            <Chip kind="filter" selected={repo === 0} onClick={() => go(nav({ repo: undefined, lane: undefined }))}>All</Chip>
-            {repos.map(([id, name]) => (
-              <Chip key={id} kind="filter" selected={repo === id} onClick={() => go(nav({ repo: id, lane: undefined }))}>{name}</Chip>
-            ))}
-          </span>
-        </span>
-        <span className="filter-group">
-          <span className="faint">Lane</span>
-          <span className="chip-options" role="group" aria-label="Lane">
-            <Chip kind="filter" selected={lane === 0} onClick={() => go(nav({ lane: undefined }))}>All</Chip>
-            {lane > 0 && !laneById.has(lane) && (
-              <Chip kind="filter" selected onClick={() => go(nav({ lane }))}>lane {lane}</Chip>
-            )}
-            {snap.lanes
-              .filter((l) => !repo || l.repo_id === repo)
-              .map((l) => (
-                <Chip key={l.id} kind="filter" selected={lane === l.id} onClick={() => go(nav({ lane: l.id }))}>{l.repo} / {l.name}</Chip>
-              ))}
-          </span>
-        </span>
-        <span className="filter-group">
-          <span className="faint">Topic</span>
-          <span className="chip-options" role="group" aria-label="Topic">
-            <Chip kind="filter" selected={topic === 0} onClick={() => go(nav({ topic: undefined }))}>All</Chip>
-            {topic > 0 && !topicList.some((t) => t.id === topic) && (
-              <Chip kind="filter" selected onClick={() => go(nav({ topic }))}>topic {topic}</Chip>
-            )}
-            {topicList.map((t) => (
-              <Chip key={t.id} kind="filter" selected={topic === t.id} onClick={() => go(nav({ topic: t.id }))}>{t.title}</Chip>
-            ))}
-          </span>
-        </span>
-        {run > 0 && (
-          <span className="faint">
-            Run {run}{' '}
-            <a className="link-button" href={nav({ run: undefined })}>
-              Any run
-            </a>
-          </span>
-        )}
+  return (
+    <div className="sh-centre artifacts-page">
+      <header className="sh-head">
+        <h1>Artifacts</h1>
         {filtered && (
-          <a className="link-button" href={href.artifacts()}>
+          <a className="sh-head-right sh-link" href={href.artifacts()} onClick={(e) => { e.preventDefault(); go(href.artifacts()) }}>
             Clear filters
           </a>
         )}
-      </div>
+      </header>
+      <div className="sh-scroll">
+        <div className="artifact-filters">
+          <label className="artifact-filter">
+            <span>Repo</span>
+            <select
+              className="sh-input"
+              value={repo || ''}
+              onChange={(e) => go(nav({ repo: Number(e.target.value) || undefined, lane: undefined }))}
+            >
+              <option value="">All repos</option>
+              {repos.map(([id, name]) => (
+                <option key={id} value={id}>{name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="artifact-filter">
+            <span>Lane</span>
+            <select
+              className="sh-input"
+              value={lane || ''}
+              onChange={(e) => go(nav({ lane: Number(e.target.value) || undefined }))}
+            >
+              <option value="">All lanes</option>
+              {lane > 0 && !laneById.has(lane) && <option value={lane}>lane {lane}</option>}
+              {lanesForRepo.map((l) => (
+                <option key={l.id} value={l.id}>{l.repo} / {l.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="artifact-filter">
+            <span>Topic</span>
+            <select
+              className="sh-input"
+              value={topic || ''}
+              onChange={(e) => go(nav({ topic: Number(e.target.value) || undefined }))}
+            >
+              <option value="">All topics</option>
+              {topic > 0 && !topicList.some((t) => t.id === topic) && <option value={topic}>topic {topic}</option>}
+              {topicList.map((t) => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+          </label>
+          <label className="artifact-filter">
+            <span>Intent</span>
+            <select
+              className="sh-input"
+              value={intent}
+              onChange={(e) => go(withIntent(hash, e.target.value as Intent | 'all'))}
+            >
+              {INTENTS.map((i) => (
+                <option key={i.value} value={i.value}>{i.label}</option>
+              ))}
+            </select>
+          </label>
+          {run > 0 && (
+            <span className="artifact-run-chip">
+              Run {run}{' '}
+              <a className="sh-link" href={nav({ run: undefined })} onClick={(e) => { e.preventDefault(); go(nav({ run: undefined })) }}>
+                Any run
+              </a>
+            </span>
+          )}
+        </div>
 
-      {here?.error && <p className="tone-bad">Could not load artifacts: {here.error}</p>}
-      {!here && <Skeleton lines={4} />}
-      {here?.rows && rows.length === 0 && (
-        <EmptyState title={filtered ? 'No artifact matches these filters' : 'No artifacts yet'}>
-          {filtered ? 'Try clearing a filter.' : 'A file an agent declares, or one that matches the repo’s artifact globs, appears here.'}
-        </EmptyState>
-      )}
-      {rows.length > 0 && (
-        <table className="artifact-table">
-          <thead>
-            <tr>
-              <th scope="col">File</th>
-              <th scope="col">Lane</th>
-              <th scope="col">Run</th>
-              <th scope="col">Intent</th>
-              <th scope="col" className="num">Size</th>
-              <th scope="col">Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((a) => {
-              const l = laneById.get(a.lane_id)
-              return (
-                <tr key={a.id}>
-                  <td>
-                    <a
-                      className="artifact-path"
-                      href={withView(hash, a.id)}
-                      onClick={() => {
-                        scrolled.current = window.scrollY
-                        fromList = true
-                      }}
-                    >
-                      {a.title || a.path}
-                    </a>
-                    {a.title && <span className="faint"> {a.path}</span>}
-                  </td>
-                  <td>
-                    <a href={href.lane(a.lane_id)}>{l ? <><span className="faint">{l.repo} /</span> {l.name}</> : `lane ${a.lane_id}`}</a>
-                  </td>
-                  <td>{a.run_id > 0 ? <a href={nav({ run: a.run_id })}>{a.run_id}</a> : <span className="faint">none</span>}</td>
-                  <td><span className={`artifact-tag artifact-tag-${a.intent}`}>{intentTag(a)}</span></td>
-                  <td className="num faint">{bytes(a.size)}</td>
-                  <td className="faint" title={a.updated}>{since(a.updated, now) || 'now'}</td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      )}
+        {here?.error && <p className="tone-bad">Could not load artifacts: {here.error}</p>}
+        {!here && <Skeleton lines={4} />}
+        {here?.rows && rows.length === 0 && (
+          <EmptyState title={filtered ? 'No artifact matches these filters' : 'No artifacts yet'}>
+            {filtered ? 'Try clearing a filter.' : 'A file an agent declares, or one that matches the repo’s artifact globs, appears here.'}
+          </EmptyState>
+        )}
+        {rows.length > 0 && (
+          <table className="artifact-table">
+            <thead>
+              <tr>
+                <th scope="col">File</th>
+                <th scope="col">Lane</th>
+                <th scope="col">Run</th>
+                <th scope="col">Intent</th>
+                <th scope="col" className="num">Size</th>
+                <th scope="col">Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((a) => {
+                const l = laneById.get(a.lane_id)
+                return (
+                  <tr
+                    key={a.id}
+                    className="artifact-row"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey) return
+                      open(a.id)
+                    }}
+                    onKeyDown={(e) => {
+                      // A link inside the row handles its own keys.
+                      if (e.target !== e.currentTarget) return
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        open(a.id)
+                      }
+                    }}
+                  >
+                    <td>
+                      <a
+                        className="artifact-title"
+                        href={withView(hash, a.id)}
+                        onClick={(e) => {
+                          // A modified click opens a new tab; a plain one is the row's.
+                          if (e.metaKey || e.ctrlKey || e.shiftKey) e.stopPropagation()
+                          else e.preventDefault()
+                        }}
+                      >
+                        {a.title || a.path}
+                      </a>
+                      {a.title && <span className={isCode(a) ? 'artifact-subpath-mono' : 'artifact-subpath'}> {a.path}</span>}
+                    </td>
+                    <td>
+                      <a className="sh-link" href={href.lane(a.lane_id)} onClick={(e) => e.stopPropagation()}>
+                        {l ? <><span className="artifact-repo">{l.repo}</span> / {l.name}</> : `lane ${a.lane_id}`}
+                      </a>
+                    </td>
+                    <td>{a.run_id > 0 ? <a className="sh-link" href={nav({ run: a.run_id })} onClick={(e) => e.stopPropagation()}>{a.run_id}</a> : <span className="faint">none</span>}</td>
+                    <td><span className={`sh-tag${intentTone(a) === 'plain' ? '' : ` sh-tag--${intentTone(a)}`}`}>{intentTag(a)}</span></td>
+                    <td className="num faint">{bytes(a.size)}</td>
+                    <td className="faint" title={a.updated}>{since(a.updated, now) || 'now'}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   )
