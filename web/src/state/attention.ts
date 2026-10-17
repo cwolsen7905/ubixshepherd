@@ -4,9 +4,9 @@
 import type { Waiting, WaitingItem } from '../api/types'
 import { boardItems, counts, type BoardInput } from '../model/board'
 
-/** How many things wait on the person; 0 until the list has loaded. */
+/** How many things wait on the person alone; 0 until the list has loaded. */
 export function attentionCount(w: Waiting | null): number {
-  return w?.count ?? 0
+  return waitingOnYou(w).length
 }
 
 /** Kinds counted elsewhere: requests under "needs routing", blocked lanes under "broken". */
