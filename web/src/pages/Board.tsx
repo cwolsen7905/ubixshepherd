@@ -207,17 +207,22 @@ export function BoardPage({
                   <div className="board-row" data-selected={i === clamped ? 'true' : undefined} onClick={() => setSel(i)}>
                     {row}
                   </div>
-                  {it.lane && it.lane.state === 'open' && !it.decision && !it.request && (
-                    <p className="row-actions lane-close-row">
-                      {(() => {
-                        const review = finishedLanes.get(it.lane.id)
-                        return review && <FinishedMark review={review} lastRun={it.run?.state} />
-                      })()}
-                      <Popover label="…">
-                        <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
-                      </Popover>
-                    </p>
-                  )}
+                  {(() => {
+                    // The overflow menu stays shut until the lane is finished: an '…' under
+                    // every row is not a control, only the finished mark and its close are.
+                    const review = it.lane && it.lane.state === 'open' && !it.decision && !it.request
+                      ? finishedLanes.get(it.lane.id)
+                      : undefined
+                    if (!review || !it.lane) return null
+                    return (
+                      <p className="row-actions lane-close-row">
+                        <FinishedMark review={review} lastRun={it.run?.state} />
+                        <Popover label="…">
+                          <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
+                        </Popover>
+                      </p>
+                    )
+                  })()}
                   {it.run && runId !== undefined && (canDismiss(it) || (dismissed?.show && it.run.dismissed)) && (
                     <p className="row-actions">
                       {it.run.dismissed ? (
