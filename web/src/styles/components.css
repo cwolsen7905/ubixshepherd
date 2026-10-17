@@ -449,17 +449,32 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .board-row-wrap .row-actions { margin: 0; padding: 0 var(--sh-s5) var(--sh-s2); font-size: var(--sh-t-meta); }
 .lane-detail .sh-tabs { overflow-x: auto; }
 
-/* Lane page: sticky header (top bar, title, meta, actions), then the tabs stuck beneath it. */
+/* PageHeader: the one sticky header of every "Open as page" view: top bar, title, meta, actions, tabs.
+   It sticks under the mobile bar (--bar-h, 0 where there is none) so the body scrolls beneath it. */
+.sh-page-head { position: sticky; top: var(--bar-h, 0px); z-index: 3; display: block; padding: var(--sh-s5) 0 0; background: var(--sh-field); border-bottom: 1px solid var(--sh-rule); }
+.sh-page-head-bar { display: flex; flex-wrap: wrap; gap: var(--sh-s5); align-items: center; min-height: 30px; }
+.sh-page-back, .sh-page-head-bar .back a { display: inline-block; padding: 0; border: 0; background: none; font: inherit; font-size: var(--sh-t-small); color: var(--sh-muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.sh-page-back:hover, .sh-page-head-bar .back a:hover { color: var(--sh-ink); }
+.sh-page-head-bar .back { margin: 0; }
+.sh-page-head-bar-actions { margin-left: auto; display: flex; gap: var(--sh-s1); }
+.sh-page-head-bar-actions .sh-btn { padding: var(--sh-s3) var(--sh-s5); }
+.sh-page-head-title { display: flex; gap: var(--sh-s4); align-items: baseline; min-width: 0; margin-top: var(--sh-s5); }
+.sh-page-head-title h1 { margin: 0; font-size: var(--sh-t-card); font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; text-wrap: pretty; }
+.sh-page-head-meta { display: flex; flex-wrap: wrap; gap: var(--sh-s2) var(--sh-s7); margin-top: var(--sh-s1); padding-left: var(--sh-s9); font-size: var(--sh-t-small); color: var(--sh-faint); }
+.sh-page-head-meta code { font: var(--sh-t-meta) var(--sh-mono); }
+.sh-page-head-actions { display: flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; margin-top: var(--sh-s5); }
+.sh-page-head-danger { margin-left: auto; display: inline-flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; }
+.sh-page-head-tabs { margin-top: var(--sh-s5); padding: 0 0 0 var(--sh-s9); gap: var(--sh-s9); border-bottom: 0; overflow-x: auto; scrollbar-width: none; font-size: var(--sh-t-body); }
+.sh-page-head-tabs .sh-tab { padding: var(--sh-s4) var(--sh-s2); white-space: nowrap; }
+.sh-page-head .tab-count { padding: 0; background: none; font-weight: inherit; color: var(--sh-muted); }
+.sh-page-head .sh-tab.is-on .tab-count { color: var(--sh-ink); }
+/* A page head inside a column that scrolls itself (the full-width inspector) sticks to that column's top. */
+.inspector-full .sh-page-head { top: 0; }
+@media (max-width: 40rem) {
+  .sh-page-head-beside { display: none; }
+  .sh-page-head-meta, .sh-page-head-tabs { padding-left: 0; }
+}
 .lane-detail[data-layout="page"] { gap: 0; }
-.sh-lane-head { position: sticky; top: 0; z-index: 2; display: grid; gap: var(--sh-s3); padding: var(--sh-s4) 0 var(--sh-s5); background: var(--sh-field); }
-.sh-lane-head-bar { display: flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; min-height: 30px; }
-.sh-lane-head-bar .back { margin: 0; }
-.sh-lane-head-bar-actions { margin-left: auto; display: flex; gap: var(--sh-s1); }
-.sh-lane-head-title { display: flex; gap: var(--sh-s4); align-items: baseline; min-width: 0; }
-.sh-lane-head-title h1 { margin: 0; font-size: var(--sh-t-view); font-weight: 600; overflow-wrap: anywhere; }
-.sh-lane-head-meta { display: flex; flex-wrap: wrap; gap: var(--sh-s2) var(--sh-s7); margin: 0; padding-left: var(--sh-s9); font-size: var(--sh-t-small); color: var(--sh-muted); }
-.sh-lane-head-actions { display: flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; }
-.lane-detail[data-layout="page"] .sh-tabs { position: sticky; top: var(--sh-lane-head-h, 0); z-index: 1; background: var(--sh-field); }
 .lane-overview-page { display: flex; flex-wrap: wrap; gap: var(--sh-s4) var(--sh-s9); align-items: flex-start; }
 .lane-overview-main { flex: 1 1 34rem; min-width: 0; }
 .lane-facts-rail { flex: 0 1 21rem; min-width: 14rem; border-left: 1px solid var(--sh-rule); padding-left: var(--sh-s8); }

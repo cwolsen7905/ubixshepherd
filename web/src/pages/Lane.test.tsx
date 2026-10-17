@@ -93,7 +93,7 @@ describe('the Conversation tab', () => {
     expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Close\s*Esc/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Close lane' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close lane…' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
     expect(screen.getByRole('complementary', { name: 'Lane facts' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument()
@@ -400,10 +400,14 @@ describe('approving from the Changes tab', () => {
       </LiveProvider>,
     )
     await userEvent.click(await screen.findByRole('tab', { name: 'Changes' }))
-    const box = await screen.findByLabelText('Merge request approval')
-    expect(box).toHaveTextContent('not approved')
-    expect(box).toHaveTextContent('require-approval failed')
-    expect(within(box).getByRole('button', { name: 'Approve !7…' })).toBeInTheDocument()
+    // The header's Approve is the lane's approval; the body has no second one, and the rail says the state.
+    const head = document.querySelector('[data-component="PageHeader"]') as HTMLElement
+    expect(await within(head).findByRole('button', { name: 'Approve !7…' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Merge request approval')).toBeNull()
+    expect(screen.getAllByRole('button', { name: /^Approve/ })).toHaveLength(1)
+    const rail = screen.getByRole('complementary', { name: 'Lane facts' })
+    expect(rail).toHaveTextContent('waits for your approval')
+    expect(rail).toHaveTextContent('require-approval failed')
   })
 })
 
@@ -450,18 +454,18 @@ describe('closing from the lane page', () => {
     // The header's action row shows the finished mark beside Close lane at the right.
     expect(await screen.findByText(/finished: ready to close/)).toBeInTheDocument()
     expect(screen.getByText(/every change on it is in origin\/dev; last run succeeded/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Close lane' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Close lane…' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
   })
 
   it('shows no marker for a lane the review does not call finished', async () => {
     await showWith([run({ state: 'succeeded' })], [{ ...finishedReview[0], verdict: 'live', why: 'it has uncommitted changes' }])
-    await screen.findByRole('button', { name: 'Close lane' })
+    await screen.findByRole('button', { name: 'Close lane…' })
     expect(screen.queryByText(/finished: ready to close/)).not.toBeInTheDocument()
   })
 
   it('disables closing while a run is going in the lane', async () => {
     await showWith([run({ state: 'running' })], [])
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Close lane' })).toBeDisabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close lane…' })).toBeDisabled())
   })
 })

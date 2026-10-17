@@ -69,7 +69,7 @@
 .inspector-head-actions .ui-btn { font-size: inherit; text-decoration: none; }
 .inspector-body { padding: var(--s-4); margin: 0; flex: 1 1 auto; }
 .inspector-body .lane-tabs { padding-left: 0; }
-.tab-count { margin-left: 2px; padding: 0 6px; border-radius: 999px; background: var(--sheet); color: var(--muted); font-size: var(--t-xs); font-weight: 600; }
+.tab-count { margin-left: 2px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .lane-runs { margin: 0; padding-left: 1.2em; }
 
 /* A full-width view: the page steps aside and the item takes its column, or the whole window
