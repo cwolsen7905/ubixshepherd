@@ -1,11 +1,18 @@
 /* The Projects page and a project's page: project headers with their repos, merge rule,
    lanes, spend and needs-you count; the project page's brief, budget, repos and lanes. */
 .sh-projects-page, .sh-project-page { max-width: 72rem; }
-.sh-projects-page .sh-project-h a, .sh-project-h .sh-project-name { color: var(--sh-ink); font-weight: 600; }
-.sh-projects-page .sh-project-h a { text-decoration: none; }
-.sh-projects-page .sh-project-h a:hover { text-decoration: underline; }
-.sh-project-repos { list-style: none; margin: var(--sh-s2) 0 0; padding: 0; display: grid; gap: var(--sh-s1); font-size: var(--sh-t-small); color: var(--sh-muted); }
-.sh-project-repos .sh-project-rule { color: var(--sh-faint); }
+.sh-projects-page .sh-project-name { color: var(--sh-ink); font-weight: 600; }
+.sh-project-summary { color: var(--sh-muted); font-size: var(--sh-t-small); }
+.sh-projects-table { width: 100%; border-collapse: collapse; font-size: var(--sh-t-small); }
+.sh-projects-table th { text-align: left; font-weight: 600; color: var(--sh-muted); padding: var(--sh-s3) var(--sh-s4); border-bottom: 1px solid var(--sh-rule); white-space: nowrap; }
+.sh-projects-table td { padding: var(--sh-s4); border-bottom: 1px solid var(--sh-rule); vertical-align: top; }
+.sh-projects-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sh-projects-table .sh-project-name { font-size: var(--sh-t-body); }
+.sh-projects-table .sh-project-name:hover { text-decoration: underline; }
+.sh-projects-table .sh-project-spend { white-space: nowrap; }
+.sh-project-needs { color: var(--sh-lantern-ink); font-weight: 600; }
+.sh-project-repos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sh-s1); font-size: var(--sh-t-small); color: var(--sh-muted); }
+.sh-project-repos .sh-project-rule { color: var(--sh-faint); margin-left: var(--sh-s3); }
 .sh-project-note { margin: var(--sh-s6) 0 0; max-width: var(--sh-measure); font-size: var(--sh-t-small); color: var(--sh-muted); }
 /* Rules the dropped page stylesheets used to carry for markup still in use here:
    the header's repo list and spend, and the Work matrix's section (components/Work). */
@@ -22,3 +29,8 @@
 .sh-project-page .sh-brief.is-draft .sh-brief-text { border-style: dashed; }
 .sh-project-page .sh-brief h3 { margin: var(--sh-s4) 0 0; font-size: var(--sh-t-small); font-weight: 600; }
 .sh-project-page .sh-brief h3:first-child { margin-top: 0; }
+
+@media (max-width: 700px) {
+  .sh-projects-scroll { overflow-x: auto; }
+  .sh-projects-table { min-width: 36rem; }
+}
