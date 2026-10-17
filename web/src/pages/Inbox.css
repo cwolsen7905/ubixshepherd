@@ -1,0 +1,21 @@
+/* The Inbox and the merge request panel: .sh-* classes and --sh-* tokens only. */
+.inbox { padding: var(--sh-s8) var(--sh-s9); }
+.inbox-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sh-s4); margin-bottom: var(--sh-s5); }
+.inbox-head h1 { font-size: var(--sh-t-view); margin: 0 var(--sh-s5) 0 0; }
+.inbox-keys { margin-left: auto; font-size: var(--sh-t-meta); }
+.inbox-h { margin: 0; font: inherit; }
+.inbox-list { list-style: none; margin: 0; padding: 0; }
+.inbox-item.is-focus-target .sh-row { background: var(--sh-lichen-wash); }
+.inbox-actions { display: flex; gap: var(--sh-s4); padding: 0 var(--sh-s5) var(--sh-s4) 38px; }
+.inbox-note { margin: 0; padding: 0 var(--sh-s5) var(--sh-s4) 38px; font-size: var(--sh-t-meta); }
+.inbox-more { padding: var(--sh-s4) var(--sh-s5); font-size: var(--sh-t-meta); }
+
+.mr-approval-h { font-size: var(--sh-t-inspect); margin: 0 0 var(--sh-s4); }
+.mr-approval-sub { margin: var(--sh-s7) 0 var(--sh-s3); font-size: var(--sh-t-small); }
+.mr-commits { margin: 0 0 var(--sh-s5); padding-left: var(--sh-s9); font-size: var(--sh-t-small); }
+.mr-review { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sh-s4); margin: var(--sh-s5) 0; font-size: var(--sh-t-small); }
+.mr-review-k { color: var(--sh-muted); }
+.mr-review-ask { background: none; border-top: 0; border-left: 0; border-right: 0; padding: 0; font: inherit; }
+.mr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s7); margin-top: var(--sh-s7); }
+.mr-next { margin-left: auto; font-size: var(--sh-t-meta); }
+.mr-confirm { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sh-s4); font-size: var(--sh-t-small); }
