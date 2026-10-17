@@ -111,7 +111,10 @@ func (r *Runner) stopForRestart() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id, p := range r.procs {
-		p.restarting = true
+		if !p.stopped {
+			// One the person stopped already stays theirs.
+			p.restarting = true
+		}
 		r.Log.Info("stopping run for a restart", "run", id)
 		r.terminateThenKill(id, p)
 	}

@@ -274,7 +274,11 @@ type proc struct {
 
 // Recover marks runs a previous daemon left running as interrupted. Call it once at
 // start, before any new run.
-func (r *Runner) Recover(ctx context.Context) error {
+func (r *Runner) Recover(ctx context.Context) error { return r.recover(ctx, nil) }
+
+// recover is Recover, recording the reason given for each run it marks (a restart's, for
+// the runs a drain's shutdown cut off).
+func (r *Runner) recover(ctx context.Context, reason func(runID int64) string) error {
 	runs, err := r.Store.Runs(ctx, 0, store.RunRunning, 1000)
 	if err != nil {
 		return err
@@ -282,6 +286,9 @@ func (r *Runner) Recover(ctx context.Context) error {
 	for _, run := range runs {
 		now := time.Now().UTC()
 		run.State, run.Ended, run.Error = store.RunInterrupted, &now, "the daemon stopped while this run was going"
+		if reason != nil {
+			run.Reason = reason(run.ID)
+		}
 		if err := r.Store.UpdateRun(ctx, run); err != nil {
 			return err
 		}
@@ -1123,7 +1130,15 @@ func (r *Runner) Active() int {
 func (r *Runner) Shutdown(ctx context.Context) {
 	r.mu.Lock()
 	r.closing = true
-	for _, p := range r.procs {
+	// A shutdown that comes while a restart drains the daemon, before it says drained, is
+	// the restart's: the runs it cuts off are continued after it.
+	restart := r.drain != nil
+	theirs := map[int64]bool{} // runs the restart cut off, by id
+	for id, p := range r.procs {
+		if restart && !p.stopped {
+			p.restarting = true
+			theirs[id] = true
+		}
 		terminate(p.cmd)
 	}
 	r.mu.Unlock()
@@ -1137,6 +1152,17 @@ func (r *Runner) Shutdown(ctx context.Context) {
 			kill(p.cmd)
 		}
 		r.mu.Unlock()
+	}
+	if restart {
+		// Only the drain's own cut-offs are the restart's: a run the person stopped stays
+		// theirs even when it outlives the deadline.
+		r.recover(context.Background(), func(id int64) string {
+			if theirs[id] {
+				return store.ReasonRestart
+			}
+			return ""
+		})
+		return
 	}
 	r.Recover(context.Background())
 }

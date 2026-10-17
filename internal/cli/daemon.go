@@ -379,6 +379,7 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 var (
 	restartDrain = daemonDrain
 	restartStop  = daemonStop
+	restartGone  = daemonGone
 	restartStart = func(ctx context.Context, env Env) error { _, err := startDaemon(ctx, env, false); return err }
 )
 
@@ -387,13 +388,56 @@ var (
 func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Duration) error {
 	if drain {
 		if err := restartDrain(ctx, env, timeout); err != nil {
-			return err
+			// A daemon stopped by someone else while this restart waited (a shutdown that
+			// came before "drained") is the restart's business too: no daemon is left
+			// running, so go on and start one. Any other error leaves the daemon as it is.
+			if !restartGone(ctx, env) {
+				return err
+			}
+			fmt.Fprintf(env.Stdout, "the daemon stopped while the restart waited for it (%v); starting a new one\n", err)
 		}
 	}
 	if err := restartStop(ctx, env); err != nil {
 		return err
 	}
-	return restartStart(ctx, env)
+	if err := restartStart(ctx, env); err != nil {
+		return fmt.Errorf("the old daemon stopped but a new one did not start: %w; run `shepherd daemon start`", err)
+	}
+	if drain {
+		fmt.Fprintln(env.Stdout, "restarted: the new daemon is running; runs the restart cut off are continued")
+	} else {
+		fmt.Fprintln(env.Stdout, "restarted: the new daemon is running")
+	}
+	return nil
+}
+
+// daemonGone waits up to stopWait for a daemon that is stopping to be gone: its runtime
+// file removed or its process ended. A daemon that answers is not gone. A stopping daemon
+// closes its HTTP server first and goes on ending its agents for a while, so not answering
+// is not the same as gone.
+func daemonGone(ctx context.Context, env Env) bool {
+	deadline := time.Now().Add(stopWait)
+	for {
+		rt, err := daemon.ReadRuntime(env.Layout.Runtime())
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return true
+		case err == nil && !processAlive(rt.PID):
+			return true
+		}
+		// A file that cannot be read (half written, say) says nothing: look again.
+		if _, err := connect(ctx, env); err == nil {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // drainPoll is how often a restart looks at the drain.
