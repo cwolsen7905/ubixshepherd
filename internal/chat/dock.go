@@ -259,9 +259,14 @@ func (m *Model) dockRows(items []dockItem) []string {
 	}
 	rows := []string{m.countsRow(items)}
 	room := m.dockBudget() - 1
-	// Budget pressure keeps its rows while it lasts, before the items.
-	if len(budget) > room {
-		budget = budget[:room]
+	// Budget pressure keeps its rows while it lasts, before the items, but never takes
+	// the last row from them: what needs the person outranks a warning.
+	keep := room
+	if len(items) > 0 {
+		keep = max(room-1, 0)
+	}
+	if len(budget) > keep {
+		budget = budget[:keep]
 	}
 	rows = append(rows, budget...)
 	room -= len(budget)
