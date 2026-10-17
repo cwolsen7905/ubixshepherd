@@ -85,3 +85,14 @@
 .sh-advanced .repo-picker li { padding-block: var(--sh-s2); }
 .sh-advanced .tag-risk .ui-chip { color: var(--sh-lantern-ink); border-color: var(--sh-lantern); background: var(--sh-lantern-wash); }
 .sh-diff-unplaced { margin: 0; padding: 0; list-style: none; font-size: var(--sh-t-meta); color: var(--sh-muted); }
+
+.sh-settings-meta { margin-left: auto; }
+.sh-settings-meta a { color: var(--sh-lichen); text-decoration: none; font-weight: 600; }
+.sh-settings .sh-setting-desc.tone-warn { color: var(--sh-lantern-ink); }
+
+/* A dropdown button and its menu. */
+.sh-menu { position: relative; display: inline-block; }
+.sh-menu-list { position: absolute; right: 0; top: calc(100% + 4px); z-index: 3; min-width: 100%; display: grid; border: 1px solid var(--sh-control); border-radius: var(--sh-r); background: var(--sh-raised); padding: 2px; }
+.sh-menu-list button { border: 0; background: transparent; color: var(--sh-ink); font: inherit; font-size: var(--sh-t-small); text-align: left; white-space: nowrap; padding: 4px 10px; border-radius: var(--sh-r); cursor: pointer; }
+.sh-menu-list button:hover { background: var(--sh-sunk); }
+.sh-menu-list button[aria-checked='true'] { font-weight: 600; }

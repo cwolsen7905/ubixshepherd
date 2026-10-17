@@ -27,8 +27,8 @@ export const NAV: NavGroup[] = [
   {
     name: 'Primary',
     items: [
-      { key: 'chat', label: 'Conversation', mark: 'C', to: () => href.chat(), current: (r) => r.page === 'chat' },
       { key: 'inbox', label: 'Inbox', mark: 'I', to: () => href.inbox(), current: (r) => r.page === 'inbox' },
+      { key: 'chat', label: 'Conversation', mark: 'C', to: () => href.chat(), current: (r) => r.page === 'chat' },
     ],
   },
   {

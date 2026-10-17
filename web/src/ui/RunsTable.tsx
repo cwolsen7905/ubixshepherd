@@ -64,17 +64,17 @@ export function RunsTable({ runs, variant = 'full' }: { runs: RunRow[]; variant?
         <thead>
           <tr>
             <th scope="col"><span className="visually-hidden">State</span></th>
-            <th scope="col"><span className="visually-hidden">Run</span></th>
-            <th scope="col"><span className="visually-hidden">Lane</span></th>
-            <th scope="col"><span className="visually-hidden">Result</span></th>
-            <th scope="col" className="num"><span className="visually-hidden">Cost</span></th>
+            <th scope="col">Run</th>
+            <th scope="col">Lane</th>
+            <th scope="col">Result</th>
+            <th scope="col" className="num">Cost</th>
           </tr>
         </thead>
         <tbody>
           {runs.map((r) => (
             <tr key={r.id} {...openRow({ kind: 'run', id: r.id })}>
               <td className="sh-runs-glyph">
-                <StatusGlyph glyph={glyphFor(r.state)} tone={glyphTone(r.state)} label={r.state} />
+                <StatusGlyph glyph={r.state === 'running' ? '●' : glyphFor(r.state)} tone={glyphTone(r.state)} label={r.state} />
               </td>
               <td className="sh-runs-run">
                 <a href={href.log(r.id)} title={runTitle(r.state, r.id)}>{r.id}</a>

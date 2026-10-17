@@ -26,6 +26,7 @@ import { MrBadge } from '../components/MrBadge'
 import { GateBadge } from '../components/GateBadge'
 import '../styles/projects.css'
 import '../styles/pages/board.css'
+import './Board.css'
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -35,11 +36,23 @@ function shortModel(model: string): string {
   return i >= 0 ? model.slice(i + 1) : model
 }
 
+/** Markdown as plain text, for a one-line sub-line: emphasis, code, links, headings and list marks go. */
+export function plainText(s: string): string {
+  return s
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')
+    .replace(/(^|[\s(])([*_])([^*_\s][^*_]*?)\2(?=[\s).,;:!?]|$)/g, '$1$3')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/^\s{0,3}(#{1,6}|[-*+]|\d+\.)\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function agentSub(it: BoardItem): string {
   const parts: string[] = []
   if (it.agent) parts.push(it.agent)
   if (it.run?.model) parts.push(shortModel(it.run.model))
-  parts.push(it.detail)
+  parts.push(plainText(it.detail))
   return parts.join(' · ')
 }
 

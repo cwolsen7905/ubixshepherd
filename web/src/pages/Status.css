@@ -30,3 +30,9 @@
 }
 .sh-status-page .daemon-group dt { color: var(--sh-muted); }
 .sh-status-page .daemon-group dd { margin: 0; overflow-wrap: anywhere; }
+
+/* One header row: the way back and the title on the left, the live state on the right. */
+.sh-status-page .sh-status-head { display: flex; align-items: baseline; gap: var(--sh-s4); margin: 0; }
+.sh-status-page .sh-status-head .back { margin: 0; font-size: var(--sh-t-small); }
+.sh-status-page .sh-status-head h1 { margin: 0; }
+.sh-status-page .sh-status-live { margin-left: auto; font-size: var(--sh-t-meta); color: var(--sh-muted); }

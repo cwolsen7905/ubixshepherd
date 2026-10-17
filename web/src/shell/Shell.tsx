@@ -13,6 +13,7 @@ import { pageTitle } from './title'
 import { useShellMode } from './useMedia'
 import type { NavKey } from './nav'
 import { swapAction } from './swap'
+import { isUnseen, useSeen } from '../state/seen'
 
 /** The divider and the swap to a page are for windows at least this wide. */
 export const DIVIDER_MIN = 768
@@ -66,6 +67,13 @@ export function Shell({
   swapLabel?: string
 }) {
   const mode = useShellMode()
+  // The front desk has something new for the person when a waiting item has not been looked at.
+  const seen = useSeen()
+  const unseenAll = (() => {
+    const fresh = (waiting?.items ?? []).some((it) => isUnseen(seen, it))
+    if (!fresh) return unseen
+    return new Set<NavKey>([...(unseen ?? []), 'chat'])
+  })()
   // The sheet is open for the route it was opened on: navigating closes it.
   const here = JSON.stringify(route)
   const [openFor, setOpenFor] = useState<string | null>(null)
@@ -113,7 +121,7 @@ export function Shell({
       </a>
       <aside ref={sidebar} id={sideId} className={cx('sh-side', compact && 'is-sheet', open && 'is-open')} data-component="Sidebar" hidden={!shown}>
         <ErrorBoundary region="The sidebar">
-          <Sidebar route={route} waiting={waiting} workspaces={workspaces} footer={footer} boardBroken={boardBroken} paletteOpen={paletteOpen} unseen={unseen} />
+          <Sidebar route={route} waiting={waiting} workspaces={workspaces} footer={footer} boardBroken={boardBroken} paletteOpen={paletteOpen} unseen={unseenAll} />
         </ErrorBoundary>
       </aside>
       {compact && open && <div className="sh-sheet-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}

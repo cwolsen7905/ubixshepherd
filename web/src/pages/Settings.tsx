@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ApiError, config as configApi, daemonInfo } from '../api/client'
-import type { ConfigDoc, ConfigField, ConfigPreview, ConfigRefusal, ConfigRisk, StatusDetail } from '../api/types'
-import { since, usd } from '../format'
+import { ApiError, config as configApi, daemonInfo, history } from '../api/client'
+import type { RunRecord, ConfigDoc, ConfigField, ConfigPreview, ConfigRefusal, ConfigRisk, StatusDetail } from '../api/types'
+import { clockTime, since, usd } from '../format'
+import { mergeHistories, rangeStart } from '../model/history'
 import { useNow } from '../hooks'
 import {
   deletedProjects, dotted, fieldState, getAt, listText, mapText, moveRepo, NEW_PROJECT, opsOf, ownerOf, parseList, parseMap, pickScope, PROJECT_NAME,
@@ -238,6 +239,15 @@ const KEYS: [string, string[]][] = [
 /** The model as the sub-line shows it: no provider prefix. */
 const bareModel = (m: string) => m.slice(m.indexOf('/') + 1)
 
+/** An agent's sub-line: today's lanes and spend, or when its quota hold lifts. */
+function AgentLine({ agent, model, today, hold, now }: { agent: string; model: string; today?: { lanes: number; usd: number }; hold?: { until: string }; now: number }) {
+  if (hold) return <div className="sh-setting-desc tone-warn" data-agent={agent}>Out of quota until {clockTime(hold.until, now)}</div>
+  if (today) {
+    return <div className="sh-setting-desc" data-agent={agent}>{today.lanes} {today.lanes === 1 ? 'lane' : 'lanes'} · {usd(today.usd) || '$0.00'} today</div>
+  }
+  return <div className="sh-setting-desc" data-agent={agent}>{model ? '0 lanes · $0.00 today' : 'Uses its CLI’s own default model'}</div>
+}
+
 function SettingRow({ label, desc, was, children, name }: { label: ReactNode; desc?: ReactNode; was?: string; children: ReactNode; name?: string }) {
   return (
     <div className={`sh-setting${was !== undefined ? ' is-edited' : ''}`} data-component="SettingRow" data-setting={name}>
@@ -270,6 +280,69 @@ function Segmented<T extends string>({ label, value, options, onPick }: { label:
       ))}
     </span>
   )
+}
+
+/** A dropdown button: the current choice with a caret, and the others in a menu under it. */
+function Menu<T extends string>({ label, value, options, onPick }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const away = (e: MouseEvent) => {
+      if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
+    }
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', away)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('mousedown', away)
+      document.removeEventListener('keydown', key)
+    }
+  }, [open])
+  const current = options.find(([v]) => v === value)?.[1] ?? value
+  return (
+    <span ref={root} className="sh-menu" data-component="MenuButton">
+      <button type="button" className="sh-btn" aria-haspopup="menu" aria-expanded={open} aria-label={`${label}: ${current}`} onClick={() => setOpen((o) => !o)}>
+        {current} <span aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <span className="sh-menu-list" role="menu" aria-label={label}>
+          {options.map(([v, text]) => (
+            <button key={v} type="button" role="menuitemradio" aria-checked={v === value} onClick={() => { setOpen(false); if (v !== value) onPick(v) }}>{text}</button>
+          ))}
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** What each agent did today: lanes it ran in and what it spent, from today's runs. */
+function useAgentToday(workspaces: number[]) {
+  const [rows, setRows] = useState<Map<string, { lanes: number; usd: number }>>(new Map())
+  const key = workspaces.join(',')
+  useEffect(() => {
+    if (!key) return
+    let live = true
+    const since = rangeStart('today', Date.now()).toISOString()
+    Promise.all(key.split(',').map((id) => history.runs(Number(id), since, '', 0))).then(
+      (parts) => {
+        if (!live) return
+        const m = new Map<string, { lanes: Set<number>; usd: number }>()
+        for (const r of mergeHistories(parts).runs as RunRecord[]) {
+          const e = m.get(r.agent) ?? { lanes: new Set<number>(), usd: 0 }
+          if (r.lane_id) e.lanes.add(r.lane_id)
+          e.usd += r.cost_usd ?? 0
+          m.set(r.agent, e)
+        }
+        setRows(new Map([...m].map(([a, e]) => [a, { lanes: e.lanes.size, usd: e.usd }])))
+      },
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [key])
+  return rows
 }
 
 /**
@@ -380,8 +453,11 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   const [projectProblem, setProjectProblem] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>(readTheme)
   const [forge, setForge] = useState<StatusDetail['forge'] | 'unknown' | undefined>(undefined)
+  const [workspaces, setWorkspaces] = useState<{ id: number; name: string }[]>([])
+  const [holds, setHolds] = useState<{ agent: string; until: string }[]>([])
   const projectBox = useRef<HTMLInputElement>(null)
   const now = useNow()
+  const today = useAgentToday(workspaces.map((w) => w.id))
 
   const load = useCallback(() => {
     configApi.get().then(
@@ -395,7 +471,14 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   }, [])
   useEffect(() => load(), [load])
   useEffect(() => {
-    daemonInfo.status().then((s) => setForge(s.detail?.forge ?? 'unknown'), () => setForge('unknown'))
+    daemonInfo.status().then(
+      (s) => {
+        setForge(s.detail?.forge ?? 'unknown')
+        setWorkspaces(s.workspaces ?? [])
+        setHolds(s.detail?.quota_holds ?? [])
+      },
+      () => setForge('unknown'),
+    )
   }, [])
   // "New project" on the Projects page lands here with the add box ready.
   const loaded = doc !== null
@@ -531,7 +614,10 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     <div className="sh-settings" data-component="Settings">
       <header className="sh-settings-head">
         <h1>Settings</h1>
-        <span className="sh-setting-desc">Editing <code>{doc.path}</code>{doc.missing ? ' (not written yet)' : ''}</span>
+        <span className="sh-settings-meta sh-setting-desc" title={`Editing ${doc.path}${doc.missing ? ' (not written yet)' : ''}`}>
+          {workspaces[0] && <>Workspace {workspaces.length === 1 ? workspaces[0].name : `${workspaces.length} workspaces`} · </>}
+          Changes apply when you press Save · <a href={href.status()}>Status →</a>
+        </span>
       </header>
       <div className="sh-settings-body">
         <div className="sh-section">
@@ -571,7 +657,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
                     <b>{a}</b>{' '}
                     {typeof m === 'string' && m ? <code className="sh-setting-model" title={m}>{bareModel(m)}</code> : null}
                   </div>
-                  <div className="sh-setting-desc">{typeof m === 'string' && m ? 'Model set in the defaults' : 'Uses its CLI’s own default model'}</div>
+                  <AgentLine agent={a} model={typeof m === 'string' && m ? m : ''} today={today.get(a)} hold={holds.find((h) => h.agent === a)} now={now} />
                 </div>
                 <a className="sh-btn" href={href.settings('defaults')} aria-label={`Configure ${a}`}>Configure</a>
               </div>
@@ -600,9 +686,9 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
                 name={`merge-${r}`}
                 label={<><code>{r}</code> {projectOf.has(r) && <span className="sh-setting-desc">in {projectOf.get(r)}</span>}</>}
                 desc={person ? 'A person approves each merge request.' : 'An agent arms merge when the pipeline passes; the forge still gates it.'}
-                was={was(path, (x) => (x === 'agent' ? 'Rule: agent' : 'By a person'))}
+                was={was(path, (x) => (x === 'agent' ? 'By an agent' : 'By a person'))}
               >
-                <Segmented label={`Merging for ${r}`} value={person ? 'human' : 'agent'} options={[['human', 'By a person'], ['agent', 'Rule: agent']]} onPick={(x) => stage(path, x)} />
+                <Menu label={`Merging for ${r}`} value={person ? 'human' : 'agent'} options={[['human', 'By a person'], ['agent', 'By an agent']]} onPick={(x) => stage(path, x)} />
               </SettingRow>
             )
           })}

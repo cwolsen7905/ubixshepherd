@@ -5,7 +5,7 @@ import { VIEW_KEY } from '../model/projects'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { lane, project, run, spend, status, unassigned } from '../test/fixtures'
-import { BoardPage, type DismissedControl } from './Board'
+import { BoardPage, plainText, type DismissedControl } from './Board'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
@@ -310,5 +310,13 @@ describe('BoardPage rows and the inspector', () => {
     const wraps = rows.map((r) => r.closest('.board-row'))
     expect(wraps[0]).toHaveAttribute('data-selected', 'true')
     expect(wraps[1]).not.toHaveAttribute('data-selected')
+  })
+})
+
+describe('plainText', () => {
+  it('drops markdown marks from a sub-line', () => {
+    expect(plainText('The CSV export: **memory usage**, **quoting rules** and `x`; see [the plan](docs/p.md)')).toBe(
+      'The CSV export: memory usage, quoting rules and x; see the plan',
+    )
   })
 })
