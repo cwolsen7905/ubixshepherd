@@ -194,10 +194,23 @@ describe('the inline decision card', () => {
     expect(screen.getByRole('link', { name: 'open' }).getAttribute('href')).toContain('open=decision')
   })
 
-  it('links the first artifact when the decision has artifacts', () => {
+  it('links every artifact, one link each', () => {
+    const d = { ...decision(), artifacts: [{ id: 7, path: 'a.md', title: 'a' }, { id: 8, path: 'b.md', title: 'b' }] } as DecisionView
+    show(d, 'inline')
+    expect(screen.getByRole('link', { name: 'artifact 7' }).getAttribute('href')).toContain('open=artifact')
+    expect(screen.getByRole('link', { name: 'artifact 8' }).getAttribute('href')).toContain('open=artifact')
+  })
+
+  it('says answering happens in the inspector when an inline decision has no options', () => {
+    show(decision({ options: [] }), 'inline')
+    expect(screen.getByText('Open this decision to write your answer.')).toBeTruthy()
+    expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('links the artifact when the decision has artifacts', () => {
     const d = { ...decision(), artifacts: [{ id: 7, path: 'docs/plan.md', title: 'plan' }] } as DecisionView
     show(d, 'inline')
-    const link = screen.getByRole('link', { name: '1 artifact' })
+    const link = screen.getByRole('link', { name: 'artifact 7' })
     expect(link.getAttribute('href')).toContain('open=artifact')
   })
 })

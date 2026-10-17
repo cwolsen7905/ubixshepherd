@@ -160,12 +160,15 @@ export function DecisionCard({
           {artifacts.length > 0 && (
             <>
               <span aria-hidden="true" className="meta-sep">·</span>
-              <a
-                className="meta-artifact"
-                href={withOpen(window.location.hash, { kind: 'artifact', id: artifacts[0]?.id ?? 0 })}
-              >
-                {artifacts.length} artifact{artifacts.length === 1 ? '' : 's'}
-              </a>
+              {artifacts.map((a) => (
+                <a
+                  key={a.id}
+                  className="meta-artifact"
+                  href={withOpen(window.location.hash, { kind: 'artifact', id: a.id })}
+                >
+                  artifact {a.id}
+                </a>
+              ))}
             </>
           )}
           <a className="meta-open" href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>open</a>
@@ -261,6 +264,14 @@ export function DecisionCard({
                 </div>
               )}
             </div>
+          )}
+          {options.length === 0 && inlineCard && (
+            <p className="send-hint faint">Open this decision to write your answer.</p>
+          )}
+          {inlineCard && sent.state === 'error' && (
+            <span className="tone-bad" role="alert">
+              Not sent: {sent.msg}
+            </span>
           )}
           {options.length > 0 && !inlineCard && (
             <ol className="options">
