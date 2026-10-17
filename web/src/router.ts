@@ -10,11 +10,15 @@ export type UsageRange = 'today' | 'week' | 'month' | 'custom'
 /** The timeline's range: since local midnight, the last 24 hours, or the last 7 days. */
 export type TimelineRange = 'today' | '24h' | 'week'
 
-/** What the inspector shows: `open=decision:5`, `open=lane:4/changes`, `open=run:17/log`. */
-export type Open = { kind: string; id: number; tab?: string }
+/**
+ * What the inspector shows: `open=decision:5`, `open=lane:4/changes`, `open=run:17/log`. A
+ * trailing `/full` (`open=lane:4/changes/full`) is the same view across the whole width, with a
+ * back arrow; `mr:N` is the merge request of lane N.
+ */
+export type Open = { kind: string; id: number; tab?: string; full?: boolean }
 
 /** The kinds the inspector can hold. A bare unknown kind is ignored rather than shown. */
-export const OPEN_KINDS = ['decision', 'question', 'request', 'lane', 'run', 'topic', 'artifact'] as const
+export const OPEN_KINDS = ['decision', 'question', 'request', 'lane', 'run', 'topic', 'artifact', 'mr'] as const
 
 type Page =
   | { page: 'board'; range?: Range }
@@ -40,15 +44,15 @@ export type Route = Page & { open?: Open }
 
 /** Reads an `open=` value, or undefined when it is not `kind:id[/tab]` of a known kind. */
 export function parseOpen(v: string | null | undefined): Open | undefined {
-  const m = /^([a-z]+):(\d+)(?:\/([a-z0-9-]+))?$/.exec(v ?? '')
+  const m = /^([a-z]+):(\d+)(?:\/(?!full(?:\/|$))([a-z0-9-]+))?(\/full)?$/.exec(v ?? '')
   if (!m || !(OPEN_KINDS as readonly string[]).includes(m[1] as string)) return undefined
   const id = Number(m[2])
   if (!Number.isSafeInteger(id) || id <= 0) return undefined
-  return { kind: m[1] as string, id, ...(m[3] ? { tab: m[3] } : {}) }
+  return { kind: m[1] as string, id, ...(m[3] ? { tab: m[3] } : {}), ...(m[4] ? { full: true } : {}) }
 }
 
 export function formatOpen(o: Open): string {
-  return `${o.kind}:${o.id}${o.tab ? `/${o.tab}` : ''}`
+  return `${o.kind}:${o.id}${o.tab ? `/${o.tab}` : ''}${o.full ? '/full' : ''}`
 }
 
 /** `hash` with its `open=` set, or removed when `o` is undefined. Other parameters are kept. */

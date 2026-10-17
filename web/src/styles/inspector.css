@@ -30,9 +30,13 @@
   flex: 0 0 clamp(416px, 40vw, 576px);
   position: sticky;
   top: var(--bar-h);
-  align-self: flex-start;
-  height: calc(100vh - var(--bar-h));
-  height: calc(100dvh - var(--bar-h));
+  /* Flush to the bottom edge: as tall as the window under the bar, and at least as tall as
+     the page beside it, so no gap shows beneath it in either theme. */
+  align-self: stretch;
+  min-height: calc(100vh - var(--bar-h));
+  min-height: calc(100dvh - var(--bar-h));
+  max-height: calc(100vh - var(--bar-h));
+  max-height: calc(100dvh - var(--bar-h));
   overflow: auto;
   box-shadow: none;
   border-width: 0 0 0 1px;
@@ -52,14 +56,27 @@
 
 .inspector-head { display: flex; align-items: center; gap: var(--s-2); padding: 10px var(--s-4); border-bottom: 1px solid var(--rule); font-size: var(--t-xs); color: var(--faint); }
 .inspector-head h2 { margin: 0; font-size: inherit; font-weight: 600; color: var(--ink); text-transform: capitalize; }
-/* Focus lands here on open so keyboards know where they are: a quiet ring, and only when the
-   browser says it should show (not after a mouse open). */
-.inspector-head h2:focus { outline: none; }
-.inspector-head h2:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; border-radius: var(--radius); }
+/* The title chip. Focus lands on it on open so keyboards know where they are, but it is not a
+   control: no ring is drawn around it, in any browser or mode. */
+.inspector-chip { padding: 1px var(--s-2); border: 1px solid var(--rule-strong); border-radius: 999px; background: var(--sheet); white-space: nowrap; }
+.inspector-head h2:focus,
+.inspector-head h2:focus-visible { outline: none; box-shadow: none; }
+.inspector-back { margin-left: calc(-1 * var(--s-2)); }
 .inspector-crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inspector-head-actions { margin-left: auto; display: flex; gap: 6px; flex: none; }
 .inspector-head-actions .ui-btn { font-size: inherit; text-decoration: none; }
-.inspector-body { padding: var(--s-4); margin: 0; }
+.inspector-body { padding: var(--s-4); margin: 0; flex: 1 1 auto; }
+.inspector-body .lane-tabs { padding-left: 0; }
+.tab-count { margin-left: 2px; padding: 0 6px; border-radius: 999px; background: var(--sheet); color: var(--muted); font-size: var(--t-xs); font-weight: 600; }
+.lane-runs { margin: 0; padding-left: 1.2em; }
+
+/* A full-width view: the page steps aside and the item takes its column, or the whole window
+   as a drawer or sheet. The back arrow in the head returns to the inspector. */
+.inspector-frame.is-full .inspector-page[hidden] { display: none; }
+.inspector-frame.is-split .inspector-full { flex: 1 1 auto; min-width: 0; border-width: 0; height: calc(100vh - var(--bar-h)); height: calc(100dvh - var(--bar-h)); max-height: none; }
+.inspector-overlay.inspector-full,
+.inspector-sheet.inspector-full { inset: 0; width: auto; max-height: none; border-radius: 0; }
+.inspector-full .inspector-body { width: 100%; max-width: 72rem; margin: 0 auto; }
 
 @keyframes inspector-in { from { transform: translateX(1rem); opacity: 0; } }
 @keyframes inspector-up { from { transform: translateY(1rem); opacity: 0; } }

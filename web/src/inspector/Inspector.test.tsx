@@ -7,7 +7,7 @@ import { lane, spend, status } from '../test/fixtures'
 import { InspectorFrame } from './Inspector'
 import { modeFor } from './useMode'
 
-const open = { kind: 'run', id: 5 }
+const open = { kind: 'topic', id: 5 }
 
 const still: Clock = { now: () => 0, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 const api = {
@@ -42,8 +42,8 @@ describe('InspectorFrame', () => {
 
   it('names what is open and focuses the heading', () => {
     render(<InspectorFrame open={open} mode="split">page</InspectorFrame>)
-    expect(screen.getByText('Open: run 5')).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'run 5' })).toHaveFocus()
+    expect(screen.getByText('Open: topic 5')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'topic 5' })).toHaveFocus()
   })
 
   it('shows a breadcrumb head with Open as page and Close Esc', () => {
@@ -54,13 +54,59 @@ describe('InspectorFrame', () => {
     expect(screen.getByRole('button', { name: 'Close inspector' })).toHaveTextContent('Close Esc')
   })
 
-  it('links a run to its log and gives a decision no page link', () => {
+  it('links a run to its log and a decision to the Decisions page', () => {
     const { unmount } = render(<InspectorFrame open={{ kind: 'run', id: 5 }} mode="split">page</InspectorFrame>)
     const head = within(document.querySelector('.inspector-head') as HTMLElement)
     expect(head.getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/runs/5/log')
     unmount()
     render(<InspectorFrame open={{ kind: 'decision', id: 5 }} mode="split">page</InspectorFrame>)
-    expect(within(document.querySelector('.inspector-head') as HTMLElement).queryByRole('link', { name: 'Open as page' })).toBeNull()
+    expect(within(document.querySelector('.inspector-head') as HTMLElement).getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/decisions?d=5')
+  })
+
+  it('has one header: the lane pane does not repeat the lane name or Open as page', async () => {
+    render(<InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame>)
+    await screen.findByRole('tablist', { name: 'Lane views' })
+    expect(screen.getAllByRole('link', { name: 'Open as page' })).toHaveLength(1)
+    expect(document.querySelector('.lane-sub')).toBeNull()
+    expect(screen.getAllByText('feat/export-csv').length).toBeGreaterThan(0)
+  })
+
+  it('offers Open full width on a cramped tab, and a back arrow once there', async () => {
+    const user = userEvent.setup()
+    window.location.hash = '#/?open=lane:4/changes'
+    const { rerender } = render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
+    await user.click(screen.getByRole('button', { name: 'Open full width' }))
+    expect(window.location.hash).toBe('#/?open=lane%3A4%2Fchanges%2Ffull')
+    rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes', full: true }} mode="split">page</InspectorFrame>)
+    expect(screen.queryByRole('button', { name: 'Open full width' })).toBeNull()
+    expect(screen.getByText('page').closest('.inspector-page')).toHaveAttribute('hidden')
+    await user.click(screen.getByRole('button', { name: 'Back to the inspector' }))
+    expect(window.location.hash).toBe('#/?open=lane%3A4%2Fchanges')
+  })
+
+  it('moves focus to the swapped-in button when entering and leaving full width', async () => {
+    const user = userEvent.setup()
+    window.location.hash = '#/?open=lane:4/changes'
+    const { rerender } = render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
+    await user.click(screen.getByRole('button', { name: 'Open full width' }))
+    rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes', full: true }} mode="split">page</InspectorFrame>)
+    expect(screen.getByRole('button', { name: 'Back to the inspector' })).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Back to the inspector' }))
+    rerender(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'changes' }} mode="split">page</InspectorFrame>)
+    expect(screen.getByRole('button', { name: 'Open full width' })).toHaveFocus()
+  })
+
+  it('leaves a full-width view on Esc instead of closing', async () => {
+    const user = userEvent.setup()
+    window.location.hash = '#/?open=lane:4/artifacts/full'
+    render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'artifacts', full: true }} mode="split">page</InspectorFrame>)
+    await user.keyboard('{Escape}')
+    expect(window.location.hash).toBe('#/?open=lane%3A4%2Fartifacts')
+  })
+
+  it('does not offer full width on a view that fits', () => {
+    render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'runs' }} mode="split">page</InspectorFrame>)
+    expect(screen.queryByRole('button', { name: 'Open full width' })).toBeNull()
   })
 
   it('returns focus on close and closes on Esc', async () => {
@@ -91,7 +137,7 @@ describe('InspectorFrame', () => {
     const user = userEvent.setup()
     for (const mode of ['overlay', 'sheet'] as const) {
       const { unmount } = render(
-        <InspectorFrame open={open} mode={mode}>
+        <InspectorFrame open={{ kind: 'decision', id: 5 }} mode={mode}>
           <button>row</button>
         </InspectorFrame>,
       )
@@ -99,13 +145,15 @@ describe('InspectorFrame', () => {
       expect(screen.getByRole('dialog')).toHaveAttribute('aria-modal', 'true')
       expect(screen.getByText('row').closest('.inspector-page')).toHaveAttribute('inert')
       // The head's Open as page link is the first stop, the composer's box the last (Send is
-      // disabled while it is empty).
+      // disabled while it is empty); the gone-decision note's own link sits between.
       const box = screen.getByRole('textbox')
       const page = screen.getByRole('link', { name: 'Open as page' })
       await user.tab()
       expect(page).toHaveFocus()
       await user.tab()
       expect(close).toHaveFocus()
+      await user.tab()
+      expect(screen.getByRole('link', { name: 'Open it on the Decisions page' })).toHaveFocus()
       await user.tab()
       expect(box).toHaveFocus()
       await user.tab()

@@ -6,7 +6,7 @@ import { laneSource } from '../conversation/api'
 import { useNow } from '../hooks'
 import { LogTab, RunChanges } from '../pages/Log'
 import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
-import { href, withOpen } from '../router'
+import { withOpen } from '../router'
 
 export const RUN_TABS = ['conversation', 'log', 'changes', 'asked', 'produced'] as const
 export type RunTab = (typeof RUN_TABS)[number]
@@ -86,7 +86,7 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
 }
 
 /** The inspector's body for `open=run:N[/tab]`: a short header, then the run's views. */
-export function RunInspector({ id, tab }: { id: number; tab?: string }) {
+export function RunInspector({ id, tab, full }: { id: number; tab?: string; full?: boolean }) {
   const { run, error, reload } = useRun(id)
   const [picked, setPicked] = useState<RunTab>(runTab(tab))
   const [seen, setSeen] = useState(tab)
@@ -110,15 +110,14 @@ export function RunInspector({ id, tab }: { id: number; tab?: string }) {
   return (
     <div className="inspector-body run-inspector">
       <p className="faint run-inspector-sub">
-        <a href={href.lane(run.lane_id)}>{run.lane}</a> · {run.agent} · {run.state} ·{' '}
-        <a href={href.log(run.id)}>Open as page</a>
+        {run.agent} · {run.state}
       </p>
       <RunPane
         run={run}
         tab={current}
         onTab={(t) => {
           setPicked(t)
-          window.location.hash = withOpen(window.location.hash, { kind: 'run', id, tab: t })
+          window.location.hash = withOpen(window.location.hash, { kind: 'run', id, tab: t, ...(full ? { full: true } : {}) })
         }}
         onDone={reload}
       />
