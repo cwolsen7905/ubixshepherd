@@ -38,6 +38,15 @@ describe('ChangesList', () => {
     expect(within(row).getByRole('link', { name: /in editor/ })).toHaveAttribute('href', expect.stringMatching(/^cursor:\/\/file\//))
   })
 
+  it('colours a renamed, copied or typechanged file as modified, not untracked', () => {
+    const renamed = { ...read, committed: [file('new.go', { status: 'renamed', old_path: 'old.go' }), file('c.go', { status: 'copied' }), file('t.go', { status: 'typechange' })], uncommitted: [], untracked: [] }
+    render(<ChangesList read={renamed} worktree="/w" editorUrl={null} variant="list" />)
+    for (const [path, letter] of [['new.go', 'R'], ['c.go', 'C'], ['t.go', 'T']]) {
+      const row = screen.getByText(path).closest('li') as HTMLElement
+      expect(within(row).getByText(letter)).toHaveClass('sh-change-s--M')
+    }
+  })
+
   it('list: rows do not expand', () => {
     render(<ChangesList read={read} worktree="/w" editorUrl={null} variant="list" />)
     expect(screen.queryByRole('button', { name: /src\/auth\.go/ })).toBeNull()

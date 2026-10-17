@@ -151,7 +151,7 @@ function FileRow({ file, group, read, worktree, editorUrl, runId, variant }: {
   const mark = STATUS_MARK[file.status] ?? '·'
   const scope: 'A' | 'M' | 'D' | 'U' = file.status === 'added' || file.status === 'untracked' ? 'A'
     : file.status === 'deleted' ? 'D'
-    : file.status === 'modified' ? 'M' : 'U'
+    : file.status === 'modified' || file.status === 'renamed' || file.status === 'copied' || file.status === 'typechange' ? 'M' : 'U'
   const counts = file.binary ? `binary, ${file.size ?? 0} bytes`
     : file.status === 'untracked' ? `${file.size ?? 0} bytes`
     : `+${file.added}/-${file.removed}`

@@ -95,7 +95,8 @@ export function laneStateAction({ lane, runs, latest, review, decisions, request
   if (request) return { kind: 'route', request }
   const running = runs.find((r) => r.state === 'running') ?? (latest?.state === 'running' ? latest : undefined)
   if (running) return { kind: 'follow', run: running }
-  const failed = runs.find((r) => endedBadly(r) && !r.dismissed) ?? (latest && endedBadly(latest) && !latest.dismissed ? latest : undefined)
+  // Only the latest run: an older failure a newer run has passed is history, not the state.
+  const failed = latest && endedBadly(latest) && !latest.dismissed ? latest : undefined
   if (failed) return { kind: 'open', run: failed }
   if (latest?.diagnosis) return { kind: 'failure', run: latest }
   if (defaultLaneDetailTab(lane, runs) === 'changes') return { kind: 'approve' }

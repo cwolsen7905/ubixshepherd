@@ -124,6 +124,12 @@ describe('laneStateAction', () => {
     expect(laneStateAction({ ...base, runs: [running], latest: running })?.kind).toBe('follow')
   })
 
+  it('ignores an older failed run once a newer run has passed', () => {
+    const old = run({ id: 1, state: 'failed' })
+    const ok = run({ id: 2, state: 'succeeded' })
+    expect(laneStateAction({ ...base, runs: [ok, old], latest: ok })?.kind).not.toBe('open')
+  })
+
   it('opens the log of a failed run', () => {
     const failed = run({ state: 'failed' })
     expect(laneStateAction({ ...base, runs: [failed], latest: failed })?.kind).toBe('open')
