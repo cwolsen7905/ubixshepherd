@@ -39,7 +39,7 @@ describe('the timeline chart', () => {
     expect(heads).toEqual([
       '▾acme-api7 lanes', '▾acme-docs3 lanes', '▾acme-infra5 lanes', '▾acme-mobile3 lanes', '▾acme-web6 lanes',
     ])
-    expect(container.querySelector('.tl-row .tl-name')).toHaveAttribute('href', expect.stringMatching(/^#\/lanes\/\d+$/))
+    expect(container.querySelector('.tl-row .tl-name')).toHaveAttribute('href', expect.stringMatching(/^#\/\?open=lane%3A\d+$/))
   })
 
   it('gives every bar a link to its log and an accessible name', () => {
@@ -47,7 +47,7 @@ describe('the timeline chart', () => {
     const bars = [...container.querySelectorAll<SVGAElement>('a.tl-run')]
     expect(bars.length).toBeGreaterThan(100)
     for (const b of bars) {
-      expect(b.getAttribute('href')).toMatch(/^#\/runs\/\d+\/log$/)
+      expect(b.getAttribute('href')).toMatch(/^#\/\?open=run%3A\d+$/)
       expect(b.getAttribute('aria-label')).toMatch(/^(claude|opencode|cursor|copilot), .+, (running for|succeeded in|failed after|interrupted after|stopped after) .+, \d+ commits?/)
     }
     expect(container.querySelectorAll('a.tl-run.is-running')).toHaveLength(5)
@@ -71,7 +71,7 @@ describe('the timeline chart', () => {
     expect(container.querySelectorAll('a.tl-ask.is-request')).toHaveLength(1)
     expect(container.querySelectorAll('a.tl-ask.is-answered')).toHaveLength(2)
     const decision = [...open].find((a) => !a.classList.contains('is-request'))
-    expect(decision).toHaveAttribute('href', '#/decisions?d=900')
+    expect(decision).toHaveAttribute('href', '#/?open=decision%3A900')
     expect(decision?.getAttribute('aria-label')).toMatch(/^Decision waiting on you, waiting .+: Stream the export/)
     expect(container.querySelectorAll('.tl-row.is-waiting')).toHaveLength(2)
   })
