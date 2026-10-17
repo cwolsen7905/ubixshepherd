@@ -403,7 +403,11 @@ func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Durati
 	if err := restartStart(ctx, env); err != nil {
 		return fmt.Errorf("the old daemon stopped but a new one did not start: %w; run `shepherd daemon start`", err)
 	}
-	fmt.Fprintln(env.Stdout, "restarted: the new daemon is running; runs the restart cut off are continued")
+	if drain {
+		fmt.Fprintln(env.Stdout, "restarted: the new daemon is running; runs the restart cut off are continued")
+	} else {
+		fmt.Fprintln(env.Stdout, "restarted: the new daemon is running")
+	}
 	return nil
 }
 

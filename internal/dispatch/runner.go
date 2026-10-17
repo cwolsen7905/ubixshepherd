@@ -954,11 +954,6 @@ func (r *Runner) Stop(ctx context.Context, id int64) error {
 	p, ok := r.procs[id]
 	if ok {
 		p.stopped = true
-		// A stop made while a restart drains the daemon is the restart's: it hurries
-		// the drain, and the run is continued after it.
-		if r.drain != nil {
-			p.restarting = true
-		}
 	}
 	r.mu.Unlock()
 	if !ok {

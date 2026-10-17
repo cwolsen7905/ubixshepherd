@@ -431,8 +431,8 @@ func TestRunStoppedAtTheDrainDeadlineIsContinuedOnce(t *testing.T) {
 	}
 }
 
-// A run stopped (as the desk did) while the daemon drains is the restart's and continues.
-func TestRunStoppedDuringADrainIsContinued(t *testing.T) {
+// A run the person stops while the daemon drains stays stopped and is not continued.
+func TestRunStoppedDuringADrainStaysTheirs(t *testing.T) {
 	f := napFixture(t, "30")
 	ctx := context.Background()
 	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
@@ -445,14 +445,12 @@ func TestRunStoppedDuringADrainIsContinued(t *testing.T) {
 	}
 	f.drained(t)
 	got, _ := f.st.Run(ctx, run.ID)
-	if got.Reason != store.ReasonRestart {
+	if got.State != store.RunStopped || got.Reason != "" {
 		t.Fatalf("run = %+v", got)
 	}
-	runs := f.resumedOnce(t)
-	if len(runs) != 2 || runs[0].Parent != run.ID {
-		t.Fatalf("runs = %+v", runs)
+	if runs := f.resumedOnce(t); len(runs) != 1 {
+		t.Errorf("runs = %+v, want only the stopped one", runs)
 	}
-	f.wait(t, runs[0].ID)
 }
 
 // A person's stop, with no restart, and one made before the drain began, are not continued.
