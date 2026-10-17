@@ -151,6 +151,11 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
         <span aria-hidden="true" className="daemon-dot-indicator">{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
         <span className="daemon-status-text">{statusText}</span>
       </button>
+      {counts && (
+        <span className="visually-hidden" role="status" aria-label="Status counts">
+          {counts.running} running, {counts.waiting} waiting on you, {counts.broken} broken or blocked, {counts.routing} needing routing
+        </span>
+      )}
       <div id={id} ref={pop} role="dialog" aria-label="Status" className="daemon-pop" hidden={!open} style={place}>
         {open && (
           <>

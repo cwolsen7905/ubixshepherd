@@ -93,6 +93,13 @@ describe('DaemonStatus', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /daemon/i })).toHaveTextContent('Daemon live, forge error'))
   })
 
+  it('keeps a polite status region with the lane counts, outside the popover', () => {
+    setup({ counts: { running: 2, waiting: 1, broken: 0, routing: 3 } })
+    const region = screen.getByRole('status', { name: 'Status counts' })
+    expect(region).toHaveTextContent('2 running, 1 waiting on you, 0 broken or blocked, 3 needing routing')
+    expect(region).toHaveClass('visually-hidden')
+  })
+
   it('draws the rail spend bar with its value and words', () => {
     render(<RailSpend spend={{ day: '2026-10-10', usd: 3.5, budget: 20, credit_usd: 0, by_source: null }} />)
     expect(screen.getByRole('meter', { name: 'Spent today' })).toHaveAttribute('aria-valuenow', '3.5')

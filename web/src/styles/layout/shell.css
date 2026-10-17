@@ -134,10 +134,10 @@
   .shell:has(.page.chat) .chat-layout > .chat-rail { max-height: 40vh; }
 }
 
-/* Chat below 760px: the page bar names the page, so the thread's own h1 steps aside, and the head stays one
+/* Chat below 760px: the page bar names the page, so the thread's own h1 is visually hidden (it stays the page's heading), and the head stays one
    row: the buttons first and whole, the topic chips after them, scrolling sideways when they do not fit. */
 .shell[data-mode="sheet"]:has(.page.chat) .page-bar-title { visibility: visible; }
 .shell[data-mode="sheet"] .chat-head { flex-wrap: nowrap; overflow-x: auto; min-width: 0; contain: inline-size; }
-.shell[data-mode="sheet"] .chat-head h1 { display: none; }
+.shell[data-mode="sheet"] .chat-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .shell[data-mode="sheet"] .chat-head .chat-tools { order: -1; margin-left: 0; flex: none; flex-wrap: nowrap; white-space: nowrap; }
 .shell[data-mode="sheet"] .chat-head .topic-bar { flex: none; }
