@@ -59,10 +59,10 @@ describe('IdChip', () => {
     expect(link).toHaveAttribute('href', '#/inbox')
     expect(link).toHaveAttribute('title', 'item 82')
   })
-  it('shows only the number bare, keeping the label for assistive tech and tooltips', () => {
+  it('shows only the number bare, with the full label readable by assistive tech', () => {
     render(<IdChip kind="run" id={311} bare />)
-    expect(screen.getByText('311')).toHaveAttribute('aria-label', 'run 311')
-    expect(screen.getByText('311')).toHaveAttribute('title', 'run 311')
+    expect(screen.getByText('311').closest('[data-component="IdChip"]')).toHaveAttribute('title', 'run 311')
+    expect(screen.getByText('run 311', { selector: '.visually-hidden' })).toBeInTheDocument()
   })
 })
 
