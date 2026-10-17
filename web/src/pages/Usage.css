@@ -59,7 +59,7 @@
 .sh-usage-day input { border: 1px solid var(--sh-control); border-radius: var(--sh-r); background: var(--sh-raised); color: var(--sh-ink); font: var(--sh-t-small) var(--sh-font); padding: var(--sh-s2) var(--sh-s4); }
 
 /* The four summary cards. */
-.sh-usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--sh-s8); margin: 0 0 var(--sh-s9); }
+.sh-usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); gap: var(--sh-s8); margin: 0 0 var(--sh-s9); }
 .sh-usage-stat { margin: 0; }
 .sh-usage-stat dt { color: var(--sh-muted); font-size: var(--sh-t-meta); }
 .sh-usage-stat dd { margin: var(--sh-s2) 0 0; display: flex; flex-direction: column; gap: var(--sh-s2); min-width: 0; }
