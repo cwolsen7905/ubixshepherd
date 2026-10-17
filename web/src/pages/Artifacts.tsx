@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { topics as topicsApi } from '../api/client'
 import { StoredArtifactView } from '../artifacts/StoredArtifact'
-import { intentTag, storedArtifacts, type Intent, type StoredArtifact } from '../artifacts/api'
+import { intentTag, intentTone, storedArtifacts, type Intent, type StoredArtifact } from '../artifacts/api'
 import { bytes } from '../artifacts/ArtifactViewer'
 import { since } from '../format'
 import { useNow } from '../hooks'
@@ -71,13 +71,17 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
   }, [viewing])
   useEffect(() => () => void (fromList = false), [])
 
+  const stepBack = () => {
+    fromList = false
+    window.history.back()
+  }
+
   useEffect(() => {
     if (!viewing) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open], [role="dialog"]')) {
         if (fromList) {
-          fromList = false
-          window.history.back()
+          stepBack()
         } else {
           go(withView(hash, 0))
         }
@@ -136,6 +140,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
             refreshKey={feedLast}
             layout="page"
             backHref={listHash}
+            onBack={fromList ? stepBack : undefined}
           />
         </div>
       </div>
@@ -147,7 +152,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
       <header className="sh-head">
         <h1>Artifacts</h1>
         {filtered && (
-          <a className="sh-head-right sh-link" href={href.artifacts()} onClick={(e) => { e.preventDefault(); go(href.artifacts()) }}>
+          <a className="sh-head-right sh-link" href={href.artifacts()} onClick={(e) => { e.preventDefault(); setIntent('all'); go(href.artifacts()) }}>
             Clear filters
           </a>
         )}
@@ -244,8 +249,6 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
                     key={a.id}
                     className="artifact-row"
                     tabIndex={0}
-                    role="button"
-                    aria-label={`Open ${a.title || a.path}`}
                     onClick={() => {
                       scrolled.current = window.scrollY
                       fromList = true
@@ -261,8 +264,18 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
                     }}
                   >
                     <td>
-                      <span className="artifact-title">{a.title || a.path}</span>
-                      {a.title && <span className={isCode(a) ? 'artifact-path-mono' : 'artifact-path'}> {a.path}</span>}
+                      <a
+                        className="artifact-title"
+                        href={withView(hash, a.id)}
+                        onClick={(e) => {
+                          // A modified click opens a new tab; a plain one is the row's.
+                          if (e.metaKey || e.ctrlKey || e.shiftKey) e.stopPropagation()
+                          else e.preventDefault()
+                        }}
+                      >
+                        {a.title || a.path}
+                      </a>
+                      {a.title && <span className={isCode(a) ? 'artifact-subpath-mono' : 'artifact-subpath'}> {a.path}</span>}
                     </td>
                     <td>
                       <a className="sh-link" href={href.lane(a.lane_id)} onClick={(e) => e.stopPropagation()}>
@@ -270,7 +283,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
                       </a>
                     </td>
                     <td>{a.run_id > 0 ? <a className="sh-link" href={nav({ run: a.run_id })} onClick={(e) => e.stopPropagation()}>{a.run_id}</a> : <span className="faint">none</span>}</td>
-                    <td><span className={`sh-tag ${intentTagClass(a)}`}>{intentTag(a)}</span></td>
+                    <td><span className={`sh-tag${intentTone(a) === 'plain' ? '' : ` sh-tag--${intentTone(a)}`}`}>{intentTag(a)}</span></td>
                     <td className="num faint">{bytes(a.size)}</td>
                     <td className="faint" title={a.updated}>{since(a.updated, now) || 'now'}</td>
                   </tr>
@@ -282,12 +295,4 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
       </div>
     </div>
   )
-}
-
-/** Class for the intent tag cell: keep is lichen, undecided is lantern, committed is muted. */
-function intentTagClass(a: Pick<StoredArtifact, 'intent' | 'state'>): string {
-  if (a.state === 'committed') return ''
-  if (a.intent === 'keep') return 'sh-tag--local'
-  if (a.intent === 'undecided') return 'sh-tag--warn'
-  return ''
 }

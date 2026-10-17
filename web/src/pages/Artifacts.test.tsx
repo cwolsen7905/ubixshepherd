@@ -51,9 +51,9 @@ describe('ArtifactsPage', () => {
     expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
     expect(screen.getByText('docs/b.md')).toBeInTheDocument()
     expect(screen.getByRole('cell', { name: 'undecided' })).toBeInTheDocument()
-    await act(async () => { await userEvent.click(screen.getByRole('button', { name: /Open docs\/a\.md/ })) })
+    await act(async () => { await userEvent.click(screen.getByRole('link', { name: 'docs/a.md' })) })
     expect(window.location.hash).toBe('#/artifacts?view=1')
-    expect(screen.getByRole('link', { name: /← Artifacts/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /← Artifacts/ })).toBeInTheDocument()
   })
 
   it('asks the daemon for a lane, run and topic, and filters a repo itself', async () => {
@@ -77,6 +77,18 @@ describe('ArtifactsPage', () => {
     await userEvent.selectOptions(intent, 'undecided')
     expect(screen.queryByText('docs/a.md')).toBeNull()
     expect(screen.getByText('docs/b.md')).toBeInTheDocument()
+  })
+
+  it('clears the intent filter with Clear filters', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Intent'), 'undecided')
+    expect(screen.queryByText('docs/a.md')).toBeNull()
+    await userEvent.click(screen.getByRole('link', { name: 'Clear filters' }))
+    expect(screen.getByLabelText('Intent')).toHaveValue('all')
+    expect(screen.getByText('docs/a.md')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Clear filters' })).toBeNull()
   })
 
   it('opens a deep link to a file full width, in place of the list, with its image from the lane', async () => {

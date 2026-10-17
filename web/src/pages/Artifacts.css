@@ -31,35 +31,25 @@
   padding-bottom: var(--sh-s2);
 }
 
-.artifact-table {
-  width: 100%;
-  border-spacing: 0;
+/* Table rules the old stylesheet (styles/pages/artifacts.css) also defines are left to it
+   until the cleanup lane removes that file; only what differs is set here, under the page. */
+.artifacts-page .artifact-table {
   font-size: var(--sh-t-small);
 }
 
-.artifact-table th,
-.artifact-table td {
-  text-align: left;
+.artifacts-page .artifact-table th,
+.artifacts-page .artifact-table td {
   padding: var(--sh-s4) var(--sh-s5);
   box-shadow: inset 0 -1px var(--sh-rule);
 }
 
-.artifact-table th {
-  font-weight: 600;
+.artifacts-page .artifact-table th {
   color: var(--sh-muted);
   white-space: nowrap;
 }
 
-.artifact-table td {
+.artifacts-page .artifact-table td {
   vertical-align: baseline;
-}
-
-.artifact-table .num {
-  text-align: right;
-}
-
-.artifact-table tbody tr:last-child td {
-  box-shadow: none;
 }
 
 .artifact-row {
@@ -77,14 +67,15 @@
 
 .artifact-title {
   color: var(--sh-ink);
+  text-decoration: none;
   font-weight: 500;
 }
 
-.artifact-path {
+.artifact-subpath {
   color: var(--sh-faint);
 }
 
-.artifact-path-mono {
+.artifact-subpath-mono {
   font-family: var(--sh-mono);
   color: var(--sh-faint);
 }

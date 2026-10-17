@@ -111,6 +111,14 @@ export function intentTag(a: Pick<StoredArtifact, 'intent' | 'state'>): string {
   return a.intent
 }
 
+/** Tone for the intent tag, shared by the list and the page: keep is lichen, undecided is lantern, the rest plain. */
+export function intentTone(a: Pick<StoredArtifact, 'intent' | 'state'>): 'local' | 'warn' | 'plain' {
+  if (a.state === 'committed') return 'plain'
+  if (a.intent === 'keep') return 'local'
+  if (a.intent === 'undecided') return 'warn'
+  return 'plain'
+}
+
 /**
  * Asks the front desk to have the lane's agent commit the file. Resolves once the desk took
  * the turn; the caller records the intent after, so a failed send never marks it.

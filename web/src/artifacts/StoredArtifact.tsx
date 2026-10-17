@@ -8,7 +8,7 @@ import { ArtifactMarkdown } from './ArtifactMarkdown'
 import { ArtifactView } from '../ui/ArtifactView'
 import { Button, Dialog, EmptyState, Skeleton } from '../ui'
 import { bytes } from './ArtifactViewer'
-import { askToCommit, intentTag, storedArtifacts, storedContentPath, storedText, type StoredArtifact } from './api'
+import { askToCommit, intentTag, intentTone, storedArtifacts, storedContentPath, storedText, type StoredArtifact } from './api'
 import { diffLines } from './diff'
 import '../styles/pages/artifacts.css'
 
@@ -37,14 +37,6 @@ function versionLabel(i: number, count: number): string {
   return i === 0 ? 'latest' : `v${count - i}`
 }
 
-/** Tone for the intent tag: keep is lichen, undecided is lantern, everything else is plain. */
-function tagTone(a: Pick<StoredArtifact, 'intent' | 'state'>): 'local' | 'warn' | 'plain' {
-  if (a.state === 'committed') return 'plain'
-  if (a.intent === 'keep') return 'local'
-  if (a.intent === 'undecided') return 'warn'
-  return 'plain'
-}
-
 /**
  * One stored artifact: its bar, the choice of what to do with it, its versions, and its
  * content: rendered, as source, or as a comparison of an older version with the latest.
@@ -56,12 +48,15 @@ export function StoredArtifactView({
   onChanged,
   layout = 'panel',
   backHref,
+  onBack,
 }: {
   id: number
   refreshKey?: number
   onChanged?: () => void
   layout?: 'panel' | 'page'
   backHref?: string
+  /** Steps back instead of following `backHref`, when the list is the previous entry. */
+  onBack?: () => void
 }) {
   const { artifact, error, reload } = useStoredArtifact(id, refreshKey)
   const now = useNow(30_000)
@@ -228,10 +223,11 @@ export function StoredArtifactView({
           layout="page"
           backLabel="← Artifacts"
           backHref={backHref}
+          onBack={onBack}
           title={a.title || a.path}
           path={a.path}
           tag={intentTag(a)}
-          tagTone={tagTone(a)}
+          tagTone={intentTone(a)}
           meta={meta}
           actions={actions}
           notice={notice}
