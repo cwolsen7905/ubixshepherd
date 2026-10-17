@@ -26,11 +26,19 @@ describe('RunsTable', () => {
     expect(screen.getByRole('columnheader', { name: 'Agent' })).toBeInTheDocument()
   })
 
-  it('list: one line per run, with its state in words', () => {
+  it('list: a compact table with glyph, run, lane meta, result with duration, and cost', () => {
     render(<RunsTable runs={runs} variant="list" />)
-    expect(screen.queryByRole('table')).toBeNull()
-    expect(screen.getByRole('link', { name: /Run 12/ })).toBeInTheDocument()
-    expect(screen.getByText('failed')).toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(table).toHaveAttribute('data-component', 'RunsTable')
+    expect(table).toHaveAttribute('data-variant', 'list')
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(2)
+    expect(screen.getByRole('link', { name: '12' })).toHaveAttribute('href', '#/runs/12/log')
+    expect(screen.getByTitle('Run 12 failed')).toBeInTheDocument()
+    expect(rows[0]?.querySelector('.sh-runs-lane')).toHaveTextContent(/claude-sonnet/)
+    expect(rows[0]?.querySelector('.sh-runs-result')).toHaveTextContent(/failed/)
+    expect(screen.getByText('(exit 2)')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '11' })).toBeInTheDocument()
   })
 
   it('says so with no runs', () => {

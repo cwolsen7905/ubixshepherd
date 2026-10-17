@@ -10,23 +10,14 @@ import { RunsPage } from './Runs'
 const NOW = Date.parse('2026-10-10T15:00:00Z')
 const still: Clock = { now: () => NOW, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
-const PROMPT = [
-  'You are working for uBixShepherd in lane feat/login of repo acme-api.',
-  'Work only inside this directory: /w (branch feat/login, cut from dev).',
-  '',
-  'Task:',
-  'Fix the login redirect',
-  'and cover it with a test',
-].join('\n')
-
-function run(o: Partial<RunRecord>): RunRecord {
+function makeRun(o: Partial<RunRecord> = {}): RunRecord {
   return {
     id: 10, lane_id: 1, repo: 'acme-api', lane: 'feat/login', lane_state: 'open', agent: 'claude', state: 'succeeded',
-    commits: 2, cost_usd: 0.5, started: '2026-10-10T12:00:00Z', ended: '2026-10-10T12:04:12Z', task: PROMPT, ...o,
+    commits: 2, cost_usd: 0.5, started: '2026-10-10T12:00:00Z', ended: '2026-10-10T12:04:12Z', task: 'Fix the login redirect', ...o,
   }
 }
 
-function history(runs: RunRecord[]): RunHistory {
+function makeHistory(runs: RunRecord[]): RunHistory {
   return { runs, count: runs.length, cost_usd: 0.5, credits: 0, agents: ['claude'], lanes: [{ id: 1, repo: 'acme-api', name: 'feat/login' }] }
 }
 
@@ -60,36 +51,53 @@ afterEach(() => {
   window.location.hash = ''
 })
 
-describe('the Runs page task column', () => {
-  it('shows the task, not the prompt’s preamble, and keeps the line in the title', async () => {
-    await show({}, history([run({}), run({ id: 11, task: 'Bump the modules' })]))
+describe('the Runs page', () => {
+  it('shows the design list: glyph, run, lane over agent/model/started, result over duration, cost', async () => {
+    await show({}, makeHistory([
+      makeRun({ id: 12, state: 'failed' }),
+      makeRun({ id: 11 }),
+    ]))
+    const table = await screen.findByRole('table')
+    expect(table).toHaveAttribute('data-component', 'RunsTable')
+    expect(table).toHaveAttribute('data-variant', 'list')
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows).toHaveLength(2)
+    const laneName = rows[0]?.querySelector('.sh-cell-trunc') as HTMLElement
+    expect(laneName).toHaveTextContent('acme-api / feat/login')
+    const laneMeta = rows[0]?.querySelector('.sh-cell-meta') as HTMLElement
+    expect(laneMeta).toHaveTextContent('claude · started')
+    const result = rows[0]?.querySelector('.sh-runs-result') as HTMLElement
+    expect(result).toHaveTextContent('failed')
+  })
+
+  it('shows the model without its provider prefix, and no empty separator when there is none', async () => {
+    await show({}, makeHistory([
+      makeRun({ id: 12, model: 'anthropic/claude-sonnet' }),
+      makeRun({ id: 11 }),
+    ]))
     const table = await screen.findByRole('table')
     const rows = within(table).getAllByRole('row').slice(1)
-    const cell = rows[0]?.querySelector('.run-task') as HTMLElement
-    expect(cell).toHaveTextContent('Fix the login redirect')
-    expect(cell).not.toHaveTextContent('You are working for')
-    expect(cell).toHaveAttribute('title', 'Fix the login redirect\nand cover it with a test')
-    expect(rows[1]?.querySelector('.run-task')).toHaveTextContent('Bump the modules')
+    expect(rows[0]?.querySelector('.sh-cell-meta')?.textContent).toMatch(/^claude · claude-sonnet · started /)
+    expect(rows[1]?.querySelector('.sh-cell-meta')?.textContent).toMatch(/^claude · started /)
   })
 
-  it('labels its columns in sentence case', async () => {
-    await show({}, history([run({})]))
-    const table = await screen.findByRole('table')
-    const heads = within(table).getAllByRole('columnheader').map((h) => h.textContent)
-    expect(heads).toEqual(['State', 'Run', 'Agent', 'Lane', 'Outcome', 'Commits', 'Cost', 'Started', 'Took', 'Task'])
-  })
-})
-
-describe('the Runs page filters', () => {
-  it('clears the filters with a button that goes back to the range', async () => {
-    await show({ range: 'week', agent: 'claude' }, history([run({})]))
+  it('has chips for range, agent and lane', async () => {
+    await show({}, makeHistory([makeRun()]))
     await screen.findByRole('table')
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Clear filters' }))
+    expect(screen.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Week' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'claude' })).toBeInTheDocument()
+  })
+
+  it('switches the range chip and clears unselected states', async () => {
+    await show({}, makeHistory([makeRun()]))
+    await screen.findByRole('table')
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Week' }))
     await waitFor(() => expect(window.location.hash).toBe('#/runs?range=week'))
   })
 
-  it('says what is empty with the kit’s empty state', async () => {
-    await show({ agent: 'copilot' }, history([]))
-    expect(await screen.findByText('No run matches these filters in today.')).toBeInTheDocument()
+  it('says what is empty with the kit empty state', async () => {
+    await show({}, makeHistory([]))
+    expect(await screen.findByText('No run started in today.')).toBeInTheDocument()
   })
 })

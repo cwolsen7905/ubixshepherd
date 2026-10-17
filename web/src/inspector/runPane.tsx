@@ -3,20 +3,26 @@ import { api } from '../api/client'
 import type { Decision, RunView } from '../api/types'
 import { Conversation } from '../conversation/Conversation'
 import { laneSource } from '../conversation/api'
+import { RunFailure } from '../components/RunFailure'
+import { costNote, duration, runCost, since } from '../format'
 import { useNow } from '../hooks'
-import { RunChanges } from '../pages/Log'
+import { endedBadly } from '../model/board'
+import { href, withOpen } from '../router'
+import { useLive } from '../state/context'
 import { RunLog } from '../ui/RunLog'
 import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
-import { withOpen } from '../router'
+import { RunChanges } from '../components/RunChanges'
 
-export const RUN_TABS = ['conversation', 'log', 'changes', 'asked', 'produced'] as const
+export const RUN_TABS = ['conversation', 'log', 'changes', 'asked', 'artifacts'] as const
 export type RunTab = (typeof RUN_TABS)[number]
 
-const TAB_NAMES: Record<RunTab, string> = { conversation: 'Conversation', log: 'Log', changes: 'Changes', asked: 'Asked', produced: 'Produced' }
+const TAB_NAMES: Record<RunTab, string> = { conversation: 'Conversation', log: 'Log', changes: 'Changes', asked: 'Asked', artifacts: 'Artifacts' }
 
-/** A tab name from an `open=run:N/tab` address; anything unknown is the conversation. */
+/** A tab name from an `open=run:N/tab` address; anything unknown is the log. */
 export function runTab(tab: string | undefined): RunTab {
-  return (RUN_TABS as readonly string[]).includes(tab ?? '') ? (tab as RunTab) : 'conversation'
+  // Older links and bookmarks name the artifacts tab 'produced'.
+  if (tab === 'produced') return 'artifacts'
+  return (RUN_TABS as readonly string[]).includes(tab ?? '') ? (tab as RunTab) : 'log'
 }
 
 /** Reads a run, and again every few seconds while it runs. `reload` reads it now. */
@@ -47,13 +53,105 @@ export function useRun(id: number) {
   return { run, error: failed, reload: () => setTick((n) => n + 1) }
 }
 
-/** The run's four views, shared by the inspector and the run page. */
+function glyphFor(state: RunView['state']) {
+  if (state === 'running') return '▸'
+  if (state === 'succeeded') return '✓'
+  if (state === 'failed' || state === 'interrupted' || state === 'stopped') return '✗'
+  return '●'
+}
+
+function glyphTone(state: RunView['state']): 'ok' | 'bad' | 'live' | 'idle' {
+  if (state === 'succeeded') return 'ok'
+  if (state === 'running') return 'live'
+  if (state === 'failed' || state === 'interrupted' || state === 'stopped') return 'bad'
+  return 'idle'
+}
+
+function titleFor(state: RunView['state'], id: number) {
+  if (state === 'succeeded') return `Run ${id} succeeded`
+  if (state === 'failed') return `Run ${id} failed`
+  if (state === 'running') return `Run ${id} running`
+  if (state === 'interrupted' || state === 'stopped') return `Run ${id} interrupted`
+  return `Run ${id}`
+}
+
+function shortModel(model: string | undefined): string {
+  if (!model) return ''
+  const i = model.lastIndexOf('/')
+  return i >= 0 ? model.slice(i + 1) : model
+}
+
+function RunArtifacts({ runId }: { runId: number }) {
+  const [list, setList] = useState<StoredArtifact[] | null>(null)
+  const [error, setError] = useState(false)
+  useEffect(() => {
+    let current = true
+    storedArtifacts.list({ run_id: runId }).then(
+      (a) => {
+        if (!current) return
+        setList(a)
+        setError(false)
+      },
+      () => current && setError(true),
+    )
+    return () => {
+      current = false
+    }
+  }, [runId])
+  if (error) return <p className="tone-bad">Could not read what this run produced.</p>
+  if (list === null) return <p className="faint">Reading…</p>
+  if (list.length === 0) return <p className="faint">This run produced no artifacts.</p>
+  return (
+    <ul className="artifact-produced">
+      {list.map((a) => (
+        <li key={a.id}>
+          <a href={withOpen(window.location.hash, { kind: 'artifact', id: a.id })}>{a.path}</a>{' '}
+          <span className="faint">{intentTag(a)}</span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The run's three views: Log, Changes, Artifacts. */
 export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab; onTab: (t: RunTab) => void; onDone?: () => void }) {
   const now = useNow(5000)
+  const live = useLive()
+  const [dismissError, setDismissError] = useState<string | null>(null)
   const source = useMemo(() => laneSource(run.lane_id), [run.lane_id])
   return (
-    <div className="run-pane">
-      <div className="lane-tabs" role="tablist" aria-label="Run views">
+    <div className="run-pane" data-component="RunPane">
+      <p className="run-title">
+        <span className={`sh-glyph sh-glyph--${glyphTone(run.state)}`} aria-hidden="true">{glyphFor(run.state)}</span>
+        <span>{titleFor(run.state, run.id)}</span>
+      </p>
+      <p className="run-meta faint">
+        <a href={href.lane(run.lane_id)}>{run.repo} / {run.lane}</a>
+        <span title={run.model || undefined}>{[run.agent, shortModel(run.model)].filter(Boolean).join(' · ')}</span>
+        <span>{run.state}</span>
+        <span>{duration(run.started, run.ended, now)}</span>
+        {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
+        {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
+        {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
+      </p>
+      {endedBadly(run) && (
+        <p className="row-actions">
+          <button
+            type="button"
+            className="link-button"
+            title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
+            onClick={() => {
+              setDismissError(null)
+              live.dismiss(run.id, !run.dismissed).then(onDone, (e: unknown) => setDismissError(e instanceof Error ? e.message : String(e)))
+            }}
+          >
+            {run.dismissed ? 'Undismiss' : 'Dismiss'}
+          </button>
+          {dismissError && <span className="tone-bad" role="alert"> Could not {run.dismissed ? 'undismiss' : 'dismiss'} this run: {dismissError}</span>}
+        </p>
+      )}
+      {run.diagnosis && <RunFailure run={run} onFixed={onDone} />}
+      <div role="tablist" aria-label="Run views" className="lane-tabs">
         {RUN_TABS.map((t) => (
           <button
             key={t}
@@ -71,7 +169,7 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
       </div>
       <div id="run-panel" role="tabpanel" aria-labelledby={`run-tab-${tab}`}>
         {/* The thread and the log stay mounted while hidden, so switching tabs does not read
-            the log again or lose its search, follow and expanded calls. */}
+            them again or lose search, follow and expanded calls. */}
         <div hidden={tab !== 'conversation'}>
           <Conversation source={source} run={run.id} now={now} />
         </div>
@@ -80,15 +178,19 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
         </div>
         {tab === 'changes' && <RunChanges run={run} now={now} />}
         {tab === 'asked' && <Asked runId={run.id} />}
-        {tab === 'produced' && <Produced runId={run.id} />}
+        {tab === 'artifacts' && <RunArtifacts runId={run.id} />}
       </div>
     </div>
   )
 }
 
-/** The inspector's body for `open=run:N[/tab]`: a short header, then the run's views. */
+/** The inspector's body for `open=run:N[/tab]` and the run page. */
 export function RunInspector({ id, tab, full }: { id: number; tab?: string; full?: boolean }) {
+  const live = useLive()
   const { run, error, reload } = useRun(id)
+  useEffect(() => {
+    if (run?.ended) live.markSeen(`run:${run.id}`)
+  }, [live, run?.id, run?.ended])
   const [picked, setPicked] = useState<RunTab>(runTab(tab))
   const [seen, setSeen] = useState(tab)
   // The address leads: Back and a pasted link change the tab.
@@ -110,9 +212,6 @@ export function RunInspector({ id, tab, full }: { id: number; tab?: string; full
   const current = picked
   return (
     <div className="inspector-body run-inspector">
-      <p className="faint run-inspector-sub">
-        {run.agent} · {run.state}
-      </p>
       <RunPane
         run={run}
         tab={current}
@@ -126,7 +225,8 @@ export function RunInspector({ id, tab, full }: { id: number; tab?: string; full
   )
 }
 
-function Asked({ runId }: { runId: number }) {
+/** The decisions the run asked, each opening in the inspector. */
+export function Asked({ runId }: { runId: number }) {
   const [list, setList] = useState<Decision[] | null>(null)
   const [error, setError] = useState(false)
   useEffect(() => {
@@ -160,38 +260,5 @@ function Asked({ runId }: { runId: number }) {
         </li>
       ))}
     </ol>
-  )
-}
-
-/** What the run declared or first produced: its artifacts, each opening the viewer. */
-function Produced({ runId }: { runId: number }) {
-  const [list, setList] = useState<StoredArtifact[] | null>(null)
-  const [error, setError] = useState(false)
-  useEffect(() => {
-    let current = true
-    storedArtifacts.list({ run_id: runId }).then(
-      (a) => {
-        if (!current) return
-        setList(a)
-        setError(false)
-      },
-      () => current && setError(true),
-    )
-    return () => {
-      current = false
-    }
-  }, [runId])
-  if (error) return <p className="tone-bad">Could not read what this run produced.</p>
-  if (list === null) return <p className="faint">Reading…</p>
-  if (list.length === 0) return <p className="faint">This run produced no artifacts.</p>
-  return (
-    <ul className="artifact-produced">
-      {list.map((a) => (
-        <li key={a.id}>
-          <a href={withOpen(window.location.hash, { kind: 'artifact', id: a.id })}>{a.path}</a>{' '}
-          <span className="faint">{intentTag(a)}</span>
-        </li>
-      ))}
-    </ul>
   )
 }
