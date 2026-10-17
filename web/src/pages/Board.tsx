@@ -13,7 +13,7 @@ import { useProjectList } from '../state/projects'
 import { projectHref } from './Projects'
 import '../styles/projects.css'
 import '../styles/pages/board.css'
-import { Button, Chip, EmptyState } from '../ui'
+import { Button, Chip, EmptyState, Popover } from '../ui'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
@@ -28,6 +28,22 @@ import { useLive, useSnapshot } from '../state/context'
 
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/** The model id shown under the agent: drop any provider/vendor prefix before the last '/'. */
+function shortModel(model: string): string {
+  const i = model.lastIndexOf('/')
+  return i >= 0 ? model.slice(i + 1) : model
+}
+
+function AgentCell({ agent, model }: { agent?: string; model?: string }) {
+  const short = model ? shortModel(model) : null
+  return (
+    <span className="row-agent">
+      <span className="row-agent-name">{agent ?? ''}</span>
+      {short && <span className="row-model" title={model}>{short}</span>}
+    </span>
+  )
+}
 
 /** A project with no open lane and nothing on the board has nothing to show: it folds. */
 const isQuiet = (g: ProjectGroup) => g.items.length === 0 && g.summary.open === 0
@@ -139,7 +155,7 @@ export function BoardPage({
                 <>
                   <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={sentence(GROUP_NAMES[it.group])} />
                   <span className="row-lane">{it.name}</span>
-                  <span className="row-agent">{it.agent ?? ''}</span>
+                  <AgentCell agent={it.agent} model={it.run?.model} />
                   <span className="row-repo">{it.repo}</span>
                   <span className="row-mr">{it.lane && <MrBadge lane={it.lane} link={false} />}{it.lane?.gate && <> <GateBadge gate={it.lane.gate} /></>}</span>
                   <span className="row-detail">{it.detail}</span>
@@ -182,7 +198,9 @@ export function BoardPage({
                         const review = finishedLanes.get(it.lane.id)
                         return review && <FinishedMark review={review} lastRun={it.run?.state} />
                       })()}
-                      <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
+                      <Popover label="…">
+                        <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
+                      </Popover>
                     </p>
                   )}
                   {dr && (canDismiss(it) || (dismissed?.show && dr.dismissed)) && (

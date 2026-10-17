@@ -174,8 +174,43 @@ describe('BoardPage closing', () => {
     ])
     expect(await screen.findAllByText(/finished: ready to close/)).toHaveLength(2)
     const row = (name: string) => within(screen.getByText(name).closest('li') as HTMLElement)
+    await userEvent.click(row('feat/login').getByRole('button', { name: '…' }))
     expect(row('feat/login').getByRole('button', { name: 'Close lane' })).toBeEnabled()
+    await userEvent.click(row('docs-pass').getByRole('button', { name: '…' }))
     expect(row('docs-pass').getByRole('button', { name: 'Close lane' })).toBeDisabled()
+  })
+})
+
+describe('BoardPage agent column', () => {
+  it('shows the model under the agent', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: 'claude-sonnet' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    expect(row.getByText('claude')).toBeInTheDocument()
+    expect(row.getByText('claude-sonnet')).toBeInTheDocument()
+  })
+
+  it('shortens a model id to the part after the last slash', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: 'openrouter/moonshotai/kimi-k2.7-code' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    expect(row.getByText('kimi-k2.7-code')).toBeInTheDocument()
+    expect(row.getByTitle('openrouter/moonshotai/kimi-k2.7-code')).toBeInTheDocument()
+  })
+
+  it('shows no model line when the run has none', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: undefined }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const rowElement = screen.getByText('feat/login').closest('li') as HTMLElement
+    const row = within(rowElement)
+    expect(row.getByText('claude')).toBeInTheDocument()
+    expect(rowElement.querySelector('.row-model')).toBeNull()
   })
 })
 

@@ -139,7 +139,8 @@ describe('NextPage', () => {
     const second = screen.getByText('Second approved').closest('li') as HTMLElement
     await userEvent.click(within(second).getByRole('button', { name: /up$/ }))
     expect(api.update).toHaveBeenCalledWith(2, { move: 'up' })
-    await userEvent.selectOptions(within(second).getByRole('combobox'), 'feat/export-csv')
+    await userEvent.click(within(second).getByRole('button', { name: 'Link…' }))
+    await userEvent.click(within(second).getByRole('button', { name: /acme-api\/feat\/export-csv/ }))
     expect(api.update).toHaveBeenCalledWith(2, { lane_id: 4 })
   })
 
@@ -264,5 +265,58 @@ describe('NextPage', () => {
     )
     await screen.findByText('First approved')
     await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(2))
+  })
+
+  it('opens the inspector on a linked row click and Enter, not via action buttons', async () => {
+    window.location.hash = '#/next'
+    const list: NextList = {
+      ...everything,
+      items: [
+        nextItem({ id: 7, title: 'Linked', state: 'approved', stored_state: 'approved', lane_id: 4, lane: 'feat/export-csv', lane_name: 'feat/export-csv' }),
+        nextItem({ id: 8, title: 'Startable', state: 'approved', stored_state: 'approved' }),
+      ],
+    }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    const linked = (await screen.findByText('Linked')).closest('li') as HTMLElement
+    await userEvent.click(screen.getByText('Linked'))
+    expect(window.location.hash).toContain('open=lane%3A4')
+    await waitFor(() => expect(linked).toHaveClass('row-open'))
+
+    window.location.hash = '#/next'
+    await userEvent.type(linked, '{enter}')
+    expect(window.location.hash).toContain('open=lane%3A4')
+
+    const startable = screen.getByText('Startable').closest('li') as HTMLElement
+    window.location.hash = '#/next'
+    await userEvent.click(within(startable).getByRole('button', { name: 'Start' }))
+    expect(window.location.hash).not.toContain('open=lane')
+
+    window.location.hash = '#/next'
+    await userEvent.click(within(startable).getByRole('button', { name: 'Link…' }))
+    expect(window.location.hash).not.toContain('open=lane')
+  })
+
+  it('does not open the inspector when Space is pressed on a button inside a linked row', async () => {
+    window.location.hash = '#/next'
+    const list: NextList = {
+      ...everything,
+      items: [
+        nextItem({ id: 7, title: 'Linked', state: 'approved', stored_state: 'approved', lane_id: 4, lane: 'feat/export-csv', lane_name: 'feat/export-csv' }),
+      ],
+    }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    const linked = (await screen.findByText('Linked')).closest('li') as HTMLElement
+    const defer = within(linked).getByRole('button', { name: 'Defer' })
+    defer.focus()
+    await userEvent.keyboard(' ')
+    expect(window.location.hash).toBe('#/next')
   })
 })

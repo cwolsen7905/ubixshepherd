@@ -55,11 +55,11 @@
 }
 .artifacts-page .page-head h1 {
   font-size: var(--t-xl);
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0;
 }
 .artifact-table th,
-.artifacts-page .filters label span {
+.artifacts-page .filters .filter-group > .faint {
   font-size: var(--t-sm);
   font-weight: 600;
   color: var(--muted);
@@ -116,7 +116,7 @@
 }
 .artifact-full-head h1 {
   font-size: var(--t-xl);
-  font-weight: 700;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 .artifact-back {

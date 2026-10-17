@@ -201,15 +201,15 @@ describe('the Runs page', () => {
     expect(asked?.searchParams.get('lane_id')).toBe('1')
     expect(Date.parse(asked?.searchParams.get('since') as string)).toBe(NOW - 7 * 24 * 3600 * 1000)
     expect(await screen.findByText(/matching the filters/)).toBeInTheDocument()
-    expect(screen.getByRole('combobox', { name: 'Agent' })).toHaveValue('claude')
-    expect(screen.getByRole('combobox', { name: 'Lane' })).toHaveValue('1')
+    expect(screen.getByRole('button', { name: 'claude' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /acme-api \/ feat\/login/ })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('puts a filter choice in the address', async () => {
     daemon()
     await show()
     await screen.findByRole('table')
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Agent' }), 'copilot')
+    await userEvent.click(screen.getByRole('button', { name: 'copilot' }))
     await waitFor(() => expect(window.location.hash).toBe('#/runs?range=today&agent=copilot'))
     window.location.hash = ''
   })

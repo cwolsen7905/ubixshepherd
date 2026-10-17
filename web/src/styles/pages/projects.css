@@ -4,7 +4,7 @@
 .projects-page .page-head, .project-page .page-head {
   display: flex; align-items: center; gap: var(--s-3); height: 3.2143rem; margin: 0;
 }
-.projects-page .page-head h1, .project-page .page-head h1 { font-size: var(--t-xl); font-weight: 700; letter-spacing: 0; }
+.projects-page .page-head h1, .project-page .page-head h1 { font-size: var(--t-xl); font-weight: 600; letter-spacing: 0; }
 .page-head-repos { color: var(--muted); font-size: var(--t-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projects-page .page-head > .page-actions, .project-page .page-head > .page-actions {
   margin: 0 0 0 auto; flex-wrap: nowrap; white-space: nowrap; font-size: var(--t-sm);
