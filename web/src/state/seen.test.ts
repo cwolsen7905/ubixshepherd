@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { WaitingItem } from '../api/types'
 import type { FeedEntry } from '../model/feed'
-import { announceText, awaySummary, isUnseen, KEEP_SEEN, needsLine, notifiable, quiet, routineLine, SeenStore } from './seen'
+import { browserStorage, announceText, awaySummary, isUnseen, KEEP_SEEN, needsLine, notifiable, quiet, routineLine, SeenStore } from './seen'
 
 const mem = (): Storage => {
   const m = new Map<string, string>()
@@ -57,7 +57,7 @@ describe('awaySummary', () => {
 
 describe('wording', () => {
   it('counts by what the person must do', () => {
-    expect(needsLine([dec(1), dec(2), { kind: 'mr', action: 'approve', title: 'm' }, { kind: 'question', action: 'reply', title: 'q' }])).toBe('2 decisions, 1 question, 1 approval')
+    expect(needsLine([dec(1), dec(2), { kind: 'mr', action: 'approve', title: 'm' }, { kind: 'question', action: 'reply', title: 'q' }])).toBe('2 decisions, 1 question, 1 merge request to review')
   })
   it('announces a new item with its lane, and notifies only for questions and decisions', () => {
     expect(announceText(dec(1))).toBe('New decision from feat/x')
@@ -76,5 +76,15 @@ describe('look', () => {
     expect(woke).toBe(0)
     s.mark(['a'])
     expect(woke).toBe(1)
+  })
+})
+
+describe('browserStorage', () => {
+  it('is null, not a throw, where reading localStorage is blocked', () => {
+    const spy = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError')
+    })
+    expect(browserStorage()).toBeNull()
+    spy.mockRestore()
   })
 })

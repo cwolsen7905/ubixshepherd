@@ -82,7 +82,16 @@ export class SeenStore {
   }
 }
 
-export const seenStore = new SeenStore(typeof window === 'undefined' ? null : window.localStorage)
+/** The browser's storage, or null where reading it throws (blocked cookies, a sandboxed frame). */
+export function browserStorage(): Storage | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
+export const seenStore = new SeenStore(browserStorage())
 
 export function useSeen(store: SeenStore = seenStore): SeenRecord {
   return useSyncExternalStore(store.subscribe, store.getSnapshot)
@@ -124,16 +133,16 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 /** Waiting items by what the person must do, as "2 decisions, 1 question". */
 export function needsLine(items: readonly WaitingItem[]): string {
   const n = (f: (w: WaitingItem) => boolean) => items.filter(f).length
-  const dec = n((w) => w.kind === 'decision')
-  const q = n((w) => w.kind === 'question')
-  const appr = n((w) => w.kind === 'mr' || w.kind === 'ship' || w.kind === 'next')
-  const other = items.length - dec - q - appr
-  return [
-    dec && plural(dec, 'decision'),
-    q && plural(q, 'question'),
-    appr && plural(appr, 'approval'),
-    other && plural(other, 'other item'),
+  const kinds: [WaitingItem['kind'], string, string][] = [
+    ['decision', 'decision', 'decisions'],
+    ['question', 'question', 'questions'],
+    ['mr', 'merge request to review', 'merge requests to review'],
+    ['ship', 'lane to ship', 'lanes to ship'],
+    ['next', 'next-up item', 'next-up items'],
   ]
+  const named = kinds.map(([k, one, many]) => [n((w) => w.kind === k), one, many] as const)
+  const other = items.length - named.reduce((t, [c]) => t + c, 0)
+  return [...named.map(([c, one, many]) => c > 0 && plural(c, one, many)), other > 0 && plural(other, 'other item')]
     .filter(Boolean)
     .join(', ')
 }
