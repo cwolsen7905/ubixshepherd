@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Decision } from '../api/types'
+import type { Decision, DecisionView } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { decision, spend, status } from '../test/fixtures'
@@ -142,16 +142,25 @@ describe('DecisionCard', () => {
 })
 
 describe('the inline decision card', () => {
-  it('has a primary Answer that is not natively disabled and does nothing until there are words', async () => {
-    const user = userEvent.setup()
+  it('has no textarea and no Answer button', () => {
     show(decision(), 'inline')
-    const btn = screen.getByRole('button', { name: 'Answer' })
-    expect(btn).toHaveClass('ui-btn-primary')
-    expect(btn).not.toBeDisabled()
-    expect(btn).toHaveAttribute('aria-disabled', 'true')
-    await user.click(btn)
-    expect(screen.queryByText(/^Answered/)).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Answer' })).toBeNull()
   })
+
+  it('shows numbered chips and clicking one picks it', async () => {
+    const user = userEvent.setup()
+    show(decision({ options: ['Stream', 'Buffer'], recommendation: 'Buffer' }), 'inline')
+    const buttons = screen.getAllByRole('button', { name: /Stream|Buffer/ })
+    const [stream, buffer] = buttons
+    if (!stream || !buffer) throw new Error('expected both chips')
+    expect(stream).toHaveAttribute('aria-pressed', 'false')
+    expect(buffer).toHaveAttribute('aria-pressed', 'false')
+    await user.click(stream)
+    expect(stream).toHaveAttribute('aria-pressed', 'true')
+    expect(buffer).toHaveAttribute('aria-pressed', 'false')
+  })
+
   it('is the headline and the options, with the long body left for the inspector', () => {
     show(decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] }), 'inline')
     expect(screen.getByText('Add the decision card to the chat thread')).toBeInTheDocument()
@@ -159,6 +168,13 @@ describe('the inline decision card', () => {
     expect(screen.queryByText('Why this is yours')).toBeNull()
     expect(screen.getByRole('button', { name: /Stream/ })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'open' }).getAttribute('href')).toContain('open=decision')
+  })
+
+  it('links the first artifact when the decision has artifacts', () => {
+    const d = { ...decision(), artifacts: [{ id: 7, path: 'docs/plan.md', title: 'plan' }] } as unknown as DecisionView
+    show(d, 'inline')
+    const link = screen.getByRole('link', { name: '1 artifact' })
+    expect(link.getAttribute('href')).toContain('open=artifact')
   })
 })
 
@@ -184,9 +200,12 @@ describe('the decision in the inspector', () => {
         <DecisionCard d={decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] })} variant="pane" focused onSent={onSent} />
       </LiveProvider>,
     )
-    expect(screen.getByText('Why this is yours')).toBeInTheDocument()
+    expect(screen.getByText('Why this is yours:')).toBeInTheDocument()
     expect(screen.getByText('Steps')).toBeInTheDocument()
-    await user.keyboard('2')
+    const send = screen.getByRole('button', { name: 'Send answer' })
+    expect(send).toHaveClass('ui-btn-attention')
+    expect(screen.getByText(/⌘↵|Ctrl\+Enter/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Buffer/ }))
     await user.keyboard('{Meta>}{Enter}{/Meta}')
     expect(answer).toHaveBeenCalledWith(expect.any(Number), 'Buffer')
     expect(await screen.findByText(/Answered/)).toBeInTheDocument()

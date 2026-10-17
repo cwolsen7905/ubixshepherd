@@ -19,6 +19,37 @@
 .decision-md .cv-md li + li { margin-top: 2px; }
 .decision-more { margin-top: var(--s-1); }
 
+/* Inline compact card in the thread: raised card with a lantern band and inline chips. */
+.decision-inline {
+  display: block;
+  padding: var(--s-3);
+  margin: var(--s-2) 0;
+  border-left: 3px solid var(--lantern);
+  border-radius: var(--radius);
+  background: var(--raised);
+  box-shadow: var(--shadow-1);
+}
+.decision-inline.is-focused { background: var(--raised); }
+.decision-inline .decision-meta {
+  display: flex; align-items: center; gap: var(--s-1);
+  margin: 0;
+  font-size: var(--t-sm); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.decision-inline .decision-meta a { text-decoration: none; color: inherit; }
+.decision-inline .decision-meta a:hover { text-decoration: underline; }
+.decision-inline .decision-meta .meta-sep { color: var(--faint); }
+.decision-inline .decision-meta .meta-open { margin-left: auto; color: var(--lichen); text-decoration: underline; }
+.decision-inline .decision-q { margin: var(--s-2) 0 0; font-size: var(--t-md); font-weight: 500; }
+.decision-inline .decision-options {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--s-1); margin: var(--s-2) 0 0;
+}
+.decision-inline .ui-chip { background: var(--sheet); border-color: var(--rule); }
+.decision-inline .ui-chip[aria-pressed="true"] { background: var(--lichen-wash); border: 2px solid var(--lichen); }
+.decision-inline .option-num { color: var(--muted); font-weight: 500; margin-right: 0.25em; }
+.decision-inline .option-text { white-space: normal; overflow-wrap: anywhere; }
+
 .decision-aside {
   margin: 0 0 var(--s-3); padding: var(--s-2) var(--s-3);
   border-left: 3px solid var(--rule); border-radius: 0 var(--radius) var(--radius) 0;

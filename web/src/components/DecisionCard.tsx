@@ -8,8 +8,20 @@ import { href, withOpen } from '../router'
 import { useLive } from '../state/context'
 import '../styles/conversation.css'
 import '../styles/decisions.css'
-import { Button, useToast } from '../ui'
+import { Button, Chip, useToast } from '../ui'
 import { Glyph } from './Glyph'
+
+interface ArtifactLink {
+  id: number
+  path: string
+  title?: string
+}
+
+type DecisionWithArtifacts = DecisionView & { artifacts?: ArtifactLink[] }
+
+function artifactsOf(d: DecisionView): ArtifactLink[] {
+  return (((d as DecisionWithArtifacts).artifacts) ?? []).filter((a): a is ArtifactLink => a.id > 0)
+}
 
 /** A question longer than this (characters or lines) starts clamped, with a "Show all". */
 export const LONG_CHARS = 700
@@ -69,6 +81,8 @@ export function DecisionCard({
   const ref = useRef<HTMLElement>(null)
   const uid = useId()
   const id = `decision-${d.id}-${uid.replace(/:/g, '')}`
+  const mac = navigator.userAgent.includes('Mac')
+  const artifacts = inlineCard ? artifactsOf(d) : []
 
   const setOwn = (v: string) => {
     setOwnText(v)
@@ -133,15 +147,42 @@ export function DecisionCard({
 
   const content = (
     <div className="decision-body">
-      <p className="decision-meta">
-        <span>decision {d.id}</span>
-        {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : <span>{d.lane}</span>}
-        <span>{d.agent}</span>
-        <a href={href.log(d.run_id)}>run {d.run_id}</a>
-        <span className="faint">{d.repo}</span>
-        <span className="faint">waiting {since(d.created, now)}</span>
-        {inlineCard && <a href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>open</a>}
-      </p>
+      {inlineCard ? (
+        <p className="decision-meta">
+          <span className="meta-kind">Decision {d.id}</span>
+          <span aria-hidden="true" className="meta-sep">·</span>
+          {laneId !== undefined ? (
+            <a href={href.lane(laneId)} className="meta-lane">{d.lane}</a>
+          ) : (
+            <span className="meta-lane">{d.lane}</span>
+          )}
+          <span aria-hidden="true" className="meta-sep">·</span>
+          <span className="meta-agent">{d.agent}, <a href={href.log(d.run_id)}>run {d.run_id}</a></span>
+          <span aria-hidden="true" className="meta-sep">·</span>
+          <span className="meta-age">{since(d.created, now)}</span>
+          {artifacts.length > 0 && (
+            <>
+              <span aria-hidden="true" className="meta-sep">·</span>
+              <a
+                className="meta-artifact"
+                href={withOpen(window.location.hash, { kind: 'artifact', id: artifacts[0]?.id ?? 0 })}
+              >
+                {artifacts.length} artifact{artifacts.length === 1 ? '' : 's'}
+              </a>
+            </>
+          )}
+          <a className="meta-open" href={withOpen(window.location.hash, { kind: 'decision', id: d.id })}>open</a>
+        </p>
+      ) : (
+        <p className="decision-meta">
+          <span>decision {d.id}</span>
+          {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : <span>{d.lane}</span>}
+          <span>{d.agent}</span>
+          <a href={href.log(d.run_id)}>run {d.run_id}</a>
+          <span className="faint">{d.repo}</span>
+          <span className="faint">waiting {since(d.created, now)}</span>
+        </p>
+      )}
       {head &&
         (inlineCard || pane ? (
           <p id={`${id}-q`} className="decision-q">{inline(head)}</p>
@@ -167,7 +208,12 @@ export function DecisionCard({
           )}
         </div>
       )}
-      {d.why && !inlineCard && (
+      {d.why && pane && (
+        <p className="decision-why-line">
+          <strong>Why this is yours:</strong> {d.why}
+        </p>
+      )}
+      {d.why && !inlineCard && !pane && (
         <aside className="decision-aside decision-why" aria-label="Why this is your call">
           <span className="decision-aside-h">Why this is yours</span>
           <Markdown text={d.why} />
@@ -194,7 +240,24 @@ export function DecisionCard({
       ) : (
         <fieldset className="decision-answer" disabled={sent.state === 'sending'}>
           <legend className="visually-hidden">Your answer to decision {d.id}</legend>
-          {options.length > 0 && (
+          {options.length > 0 && inlineCard && (
+            <div className="decision-options" role="group" aria-label={`Options for decision ${d.id}`}>
+              {options.map((o, i) => (
+                <Chip
+                  key={o}
+                  selected={choice === o}
+                  onClick={() => {
+                    setChoice(o)
+                    setOwn('')
+                  }}
+                >
+                  <span aria-hidden="true" className="option-num">{i + 1}.</span>
+                  <span className="option-text">{inline(o)}</span>
+                </Chip>
+              ))}
+            </div>
+          )}
+          {options.length > 0 && !inlineCard && (
             <ol className="options">
               {options.map((o, i) => {
                 const rec = !!d.recommendation && o.trim() === d.recommendation.trim()
@@ -218,25 +281,43 @@ export function DecisionCard({
               })}
             </ol>
           )}
-          <label className="own">
-            <span className="visually-hidden">Or write your own answer to decision {d.id}</span>
-            <textarea
-              rows={own ? 3 : 1}
-              placeholder={options.length ? 'Or write your own answer' : 'Write your answer'}
-              value={own}
-              onChange={(e) => setOwn(e.target.value)}
-            />
-          </label>
-          <div className="send">
-            <Button variant="primary" {...(inlineCard ? { 'aria-disabled': !words } : { disabled: !words })} onClick={() => void send()}>
-              {sent.state === 'sending' ? 'Sending…' : inlineCard ? 'Answer' : words ? `Send “${clip(words, 48)}”` : 'Send answer'}
-            </Button>
-            {sent.state === 'error' && (
-              <span className="tone-bad" role="alert">
-                Not sent: {sent.msg}
-              </span>
-            )}
-          </div>
+          {!inlineCard && (
+            <label className="own">
+              <span className="visually-hidden">Or write your own answer to decision {d.id}</span>
+              <textarea
+                rows={own ? 3 : 1}
+                placeholder={options.length ? 'Or write your own answer' : 'Write your answer'}
+                value={own}
+                onChange={(e) => setOwn(e.target.value)}
+              />
+            </label>
+          )}
+          {!inlineCard && (
+            <div className="send">
+              {pane ? (
+                <>
+                  <Button variant="attention" disabled={!words} onClick={() => void send()}>
+                    {sent.state === 'sending' ? 'Sending…' : 'Send answer'}
+                  </Button>
+                  <Button variant="secondary" onClick={() => window.dispatchEvent(new CustomEvent('shepherd:focus-context-composer'))}>
+                    Ask the desk first
+                  </Button>
+                  <span className="send-hint faint">
+                    <kbd>{mac ? '⌘↵' : 'Ctrl+Enter'}</kbd> send, then next
+                  </span>
+                </>
+              ) : (
+                <Button variant="primary" disabled={!words} onClick={() => void send()}>
+                  {sent.state === 'sending' ? 'Sending…' : words ? `Send “${clip(words, 48)}”` : 'Send answer'}
+                </Button>
+              )}
+              {sent.state === 'error' && (
+                <span className="tone-bad" role="alert">
+                  Not sent: {sent.msg}
+                </span>
+              )}
+            </div>
+          )}
         </fieldset>
       )}
     </div>
