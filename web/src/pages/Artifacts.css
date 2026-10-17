@@ -1,0 +1,99 @@
+/* Artifacts view (wide): filter selects over a full-width table, and the artifact page. */
+
+.artifact-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sh-s6) var(--sh-s8);
+  align-items: flex-end;
+  margin-bottom: var(--sh-s6);
+}
+
+.artifact-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sh-s2);
+  min-width: 10rem;
+}
+
+.artifact-filter span {
+  font-size: var(--sh-t-meta);
+  color: var(--sh-muted);
+  font-weight: 600;
+}
+
+.artifact-filter select {
+  min-width: 8rem;
+}
+
+.artifact-run-chip {
+  font-size: var(--sh-t-small);
+  color: var(--sh-muted);
+  padding-bottom: var(--sh-s2);
+}
+
+.artifact-table {
+  width: 100%;
+  border-spacing: 0;
+  font-size: var(--sh-t-small);
+}
+
+.artifact-table th,
+.artifact-table td {
+  text-align: left;
+  padding: var(--sh-s4) var(--sh-s5);
+  box-shadow: inset 0 -1px var(--sh-rule);
+}
+
+.artifact-table th {
+  font-weight: 600;
+  color: var(--sh-muted);
+  white-space: nowrap;
+}
+
+.artifact-table td {
+  vertical-align: baseline;
+}
+
+.artifact-table .num {
+  text-align: right;
+}
+
+.artifact-table tbody tr:last-child td {
+  box-shadow: none;
+}
+
+.artifact-row {
+  cursor: pointer;
+}
+
+.artifact-row:hover {
+  background: var(--sh-sunk);
+}
+
+.artifact-row:focus-visible {
+  outline: 2px solid var(--sh-lichen);
+  outline-offset: -2px;
+}
+
+.artifact-title {
+  color: var(--sh-ink);
+  font-weight: 500;
+}
+
+.artifact-path {
+  color: var(--sh-faint);
+}
+
+.artifact-path-mono {
+  font-family: var(--sh-mono);
+  color: var(--sh-faint);
+}
+
+.artifact-repo {
+  color: var(--sh-faint);
+}
+
+/* The artifact page sits inside .sh-scroll; give its body a readable max width. */
+.artifacts-page .sh-artifact {
+  max-width: var(--sh-measure);
+}
