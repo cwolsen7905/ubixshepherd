@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { StatusDetail } from '../api/types'
 import { RailSpend } from '../shell/RailSpend'
@@ -78,6 +78,26 @@ describe('DaemonStatus', () => {
     await screen.findByText('v0.9.0')
     expect(pop().textContent).toContain('$3.50 of $20.00')
     expect(pop().textContent).toContain('2 running, 1 waiting, 0 broken, 3 to route')
+  })
+
+  it('says how long ago the forge was polled, without opening the popover', async () => {
+    const { load, dot } = setup({ watch: true })
+    await waitFor(() => expect(dot).toHaveTextContent('Daemon live, forge 1m ago'))
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(dot).toHaveAccessibleName('Daemon live, forge 1m ago')
+  })
+
+  it('says the forge failed when its poll errors', async () => {
+    const load = vi.fn(() => Promise.resolve(loaded(detail({ forge: { error: 'glab: 401' } }))))
+    render(<DaemonStatus error={null} downSince={null} ready load={load} now={NOW} watch />)
+    await waitFor(() => expect(screen.getByRole('button', { name: /daemon/i })).toHaveTextContent('Daemon live, forge error'))
+  })
+
+  it('keeps a polite status region with the lane counts, outside the popover', () => {
+    setup({ counts: { running: 2, waiting: 1, broken: 0, routing: 3 } })
+    const region = screen.getByRole('status', { name: 'Status counts' })
+    expect(region).toHaveTextContent('2 running, 1 waiting on you, 0 broken or blocked, 3 needing routing')
+    expect(region).toHaveClass('visually-hidden')
   })
 
   it('draws the rail spend bar with its value and words', () => {

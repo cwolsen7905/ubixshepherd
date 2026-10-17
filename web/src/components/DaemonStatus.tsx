@@ -21,8 +21,11 @@ export function loadDaemon(): Promise<Loaded> {
 /** How often the open popover reads again. */
 export const REFRESH_MS = 5000
 
-/** Reads the daemon's detail while `active`, and again every REFRESH_MS. */
-export function useDaemonDetail(active: boolean, load: () => Promise<Loaded>) {
+/** How often the closed status line reads the forge's last poll. */
+export const WATCH_MS = 30_000
+
+/** Reads the daemon's detail while `active`, and again every `every` ms (REFRESH_MS by default). */
+export function useDaemonDetail(active: boolean, load: () => Promise<Loaded>, every = REFRESH_MS) {
   const [data, setData] = useState<Loaded | null>(null)
   const [failed, setFailed] = useState<string | null>(null)
   useEffect(() => {
@@ -34,12 +37,12 @@ export function useDaemonDetail(active: boolean, load: () => Promise<Loaded>) {
         (e: unknown) => live && setFailed(e instanceof Error ? e.message : String(e)),
       )
     void read()
-    const t = window.setInterval(() => void read(), REFRESH_MS)
+    const t = window.setInterval(() => void read(), every)
     return () => {
       live = false
       window.clearInterval(t)
     }
-  }, [active, load])
+  }, [active, load, every])
   return { data, failed }
 }
 
@@ -55,6 +58,8 @@ interface Props {
   /** Lane counts, spelled out in the popover. */
   counts?: StatusCounts
   load?: () => Promise<Loaded>
+  /** Read the forge's last poll while the popover is closed, so the line can say "forge 41s ago". */
+  watch?: boolean
   /** The time now in ms; the clock ticks by itself when omitted. */
   now?: number
 }
@@ -65,7 +70,7 @@ interface Props {
  * signed out or refused. Hovering, focusing or tapping it opens a short popover; Escape
  * closes it. The detail is read only while it is open. "Details" opens the Status page.
  */
-export function DaemonStatus({ error, downSince, ready, chat = null, spend = null, counts, load = loadDaemon, now: nowProp }: Props) {
+export function DaemonStatus({ error, downSince, ready, chat = null, spend = null, counts, load = loadDaemon, watch = false, now: nowProp }: Props) {
   const ticking = useNow(10_000)
   const now = nowProp ?? ticking
   const id = useId()
@@ -74,7 +79,7 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
   const box = useRef<HTMLSpanElement>(null)
   const pop = useRef<HTMLDivElement>(null)
   const [place, setPlace] = useState<CSSProperties>({})
-  const { data, failed } = useDaemonDetail(open, load)
+  const { data, failed } = useDaemonDetail(open || watch, load, open ? REFRESH_MS : WATCH_MS)
 
   const close = useCallback(() => {
     setOpen(false)
@@ -107,16 +112,18 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
 
   const tone = worstTone({ error, ready }, chat)
   const down = error !== null
-  const statusText =
-    tone === 'up' ? 'Daemon live'
-    : tone === 'warn' ? `Chat ${chatWords(chat)}`
-    : tone === 'pending' ? 'Daemon connecting'
-    : down ? 'Daemon down'
-    : `Chat ${chatWords(chat)}`
   // A held snapshot is not current once the daemon is down or a refresh has failed.
   const fresh = !down && !failed ? data : null
   const d = fresh?.status.detail
   const poll = d?.forge?.last_poll
+  const forgeAge = poll ? since(poll, now) : ''
+  const forgeWords = d?.forge?.error ? ', forge error' : poll ? `, forge ${forgeAge ? `${forgeAge} ago` : 'just now'}` : ''
+  const statusText =
+    tone === 'up' ? `Daemon live${forgeWords}`
+    : tone === 'warn' ? `Chat ${chatWords(chat)}`
+    : tone === 'pending' ? 'Daemon connecting'
+    : down ? 'Daemon down'
+    : `Chat ${chatWords(chat)}`
   const unknown = <span className="faint">{down || failed ? 'unknown' : '…'}</span>
 
   return (
@@ -144,6 +151,11 @@ export function DaemonStatus({ error, downSince, ready, chat = null, spend = nul
         <span aria-hidden="true" className="daemon-dot-indicator">{tone === 'up' ? '●' : tone === 'warn' ? '◐' : '○'}</span>
         <span className="daemon-status-text">{statusText}</span>
       </button>
+      {counts && (
+        <span className="visually-hidden" role="status" aria-label="Status counts">
+          {counts.running} running, {counts.waiting} waiting on you, {counts.broken} broken or blocked, {counts.routing} needing routing
+        </span>
+      )}
       <div id={id} ref={pop} role="dialog" aria-label="Status" className="daemon-pop" hidden={!open} style={place}>
         {open && (
           <>

@@ -25,10 +25,11 @@ function setWidth(width: number) {
   }) as unknown as typeof window.matchMedia
 }
 
-function view(w: Waiting | null = waiting, hash = '#/') {
+function view(w: Waiting | null = waiting, hash = '#/', lanes?: { id: number; name: string }[]) {
   return render(
     <Shell
       route={parse(hash)}
+      lanes={lanes}
       waiting={w}
       workspaces={[{ id: 1, name: 'acme', path: '/a', created: '', repos: 1, lanes: 1 }]}
       footer={<button type="button">help</button>}
@@ -108,7 +109,6 @@ describe('Shell', () => {
     setWidth(1440)
     view()
     expect(screen.getByRole('navigation', { name: 'Views' })).toBeInTheDocument()
-    expect(screen.getByRole('banner')).toBeInTheDocument()
     expect(screen.getByRole('main')).toBeInTheDocument()
     expect(screen.getByRole('complementary')).toBeInTheDocument()
     // The skip link first, then the views, then the footer, then the page head.
@@ -120,6 +120,39 @@ describe('Shell', () => {
     const at = (re: RegExp) => seen.findIndex((t) => re.test(t))
     expect(at(/Skip to the page/)).toBe(0)
     expect(at(/Inbox/)).toBeLessThan(at(/^help$/))
+  })
+
+  it('has no page bar from 760px up, so the page head is the one title', () => {
+    for (const w of [1440, 1200, 760]) {
+      setWidth(w)
+      const { container, unmount } = view(waiting, '#/board')
+      expect(container.querySelector('.page-bar')).toBeNull()
+      expect(screen.queryByRole('banner')).toBeNull()
+      unmount()
+    }
+  })
+
+  it('shows the menu, the title and the waiting count in a bar below 760px', () => {
+    setWidth(390)
+    view(waiting, '#/runs')
+    const bar = screen.getByRole('banner')
+    expect(within(bar).getByRole('button', { name: 'Menu' })).toBeInTheDocument()
+    expect(within(bar).getByText('Runs')).toHaveClass('page-bar-title')
+    const count = within(bar).getByRole('link', { name: '4 waiting on you' })
+    expect(count).toHaveAttribute('href', '#/inbox')
+  })
+
+  it('leaves the count out of the bar when nothing waits', () => {
+    setWidth(390)
+    view(null, '#/runs')
+    expect(within(screen.getByRole('banner')).queryByRole('link')).toBeNull()
+  })
+
+  it('titles the bar by the route: the lane page shows its lane, not Board', () => {
+    setWidth(390)
+    view(waiting, '#/lanes/7', [{ id: 7, name: 'feat/export-csv' }])
+    expect(screen.getByRole('banner')).toHaveTextContent('feat/export-csv')
+    expect(screen.getByRole('banner')).not.toHaveTextContent('Board')
   })
 
   it('moves focus to the page on the skip link', async () => {
