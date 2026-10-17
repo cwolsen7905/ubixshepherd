@@ -19,7 +19,7 @@ function Brief({ view }: { view: BriefView }) {
   const pending = view.pending
   return (
     <section aria-labelledby="project-brief">
-      <GroupHeader variant="section" label={<span id="project-brief">Brief</span>} hint="Read-only here. Only the approved text is given to agents." />
+      <GroupHeader variant="section" label={<span id="project-brief">Brief</span>} hint="Read-only here. Only the approved text is given to agents; a draft waits until the person approves it through the front desk." />
       {approved ? (
         <BriefText
           brief={approved}
