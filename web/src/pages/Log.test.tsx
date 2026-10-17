@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -45,6 +45,28 @@ describe('the run page', () => {
       </LiveProvider>,
     )
     expect(screen.getByRole('link', { name: '← Board' })).toHaveAttribute('href', '#/board')
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps the title, meta, actions and tabs in the shared page header', async () => {
+    const live = new Live({ ...baseApi, run: async () => run({ state: 'failed', exit_code: 1 }) }, still)
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (u: string) =>
+      new Response(JSON.stringify(u.includes('/conversation') ? { items: [], cursor: 0, more: false, running: false } : /\/v1\/runs\/1$/.test(u) ? run({ state: 'failed', exit_code: 1 }) : { offset: 0, data: '', size: 0, done: true }), { status: 200 }),
+    )
+    render(
+      <LiveProvider live={live}>
+        <LogPage run={1} />
+      </LiveProvider>,
+    )
+    const head = (await screen.findByRole('heading', { level: 1, name: /failed/ })).closest('[data-component="PageHeader"]') as HTMLElement
+    const h = within(head)
+    expect(h.getByRole('button', { name: /^Close\s*Esc$/ })).toBeInTheDocument()
+    expect(h.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
+    expect(h.getByRole('button', { name: 'Dismiss' })).toBeInTheDocument()
+    expect(h.getAllByRole('tab').map((t) => t.textContent)).toEqual(['Conversation', 'Log', 'Changes', 'Asked', 'Artifacts'])
     vi.unstubAllGlobals()
   })
 

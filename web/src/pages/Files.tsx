@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
+import { BackLink, pageExit } from '../components/BackLink'
 import { Button, EmptyState } from '../ui'
+import { PageHeader } from '../ui/PageHeader'
 import { FileBrowser } from '../ui/FileBrowser'
 import './Files.css'
 
@@ -27,48 +29,55 @@ export function FilesPage({ repo = 0, lane = 0, gitRef = '' }: { repo?: number; 
 
   const pick = (o: { repo?: number; lane?: number; ref?: string }) => go(href.files(o))
 
+  const picker = (
+    <form
+      className="files-pick"
+      onSubmit={(e) => {
+        e.preventDefault()
+        pick({ repo: repoId, lane: target?.id, ref: draft.trim() })
+      }}
+    >
+      <label>
+        <span className="faint">Repo</span>
+        <select value={repoId} onChange={(e) => pick({ repo: Number(e.target.value) })}>
+          <option value={0}>Choose a repo</option>
+          {repos.map((r) => (
+            <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span className="faint">Lane</span>
+        <select value={target?.id ?? 0} disabled={lanes.length === 0} onChange={(e) => pick({ repo: repoId, lane: Number(e.target.value) })}>
+          {lanes.map((l) => (
+            <option key={l.id} value={l.id}>{l.name}{l.state === 'open' ? '' : ' (closed)'}</option>
+          ))}
+        </select>
+      </label>
+      <label>
+        <span className="faint">Ref</span>
+        <input value={draft} placeholder="worktree, or a branch, tag or sha" onChange={(e) => setDraft(e.target.value)} />
+      </label>
+      <Button type="submit" variant="secondary" size="small">Show</Button>
+    </form>
+  )
+
   return (
     <div className="page page-wide files-page" data-component="Files">
-      <header className="page-head">
-        <h1>Files</h1>
-        <p className="page-sub faint">Read-only. Secrets in a file are masked.</p>
-      </header>
+      <PageHeader
+        back={<BackLink />}
+        {...pageExit(undefined)}
+        handleEscape
+        title="Files"
+        meta={<span>Read-only. Secrets in a file are masked.</span>}
+        actions={repos.length > 0 ? picker : undefined}
+      />
       {repos.length === 0 ? (
         <EmptyState title={snap.ready ? 'No repo to browse.' : 'Loading…'}>
           {snap.ready && 'A repo is browsable once it has a lane. Open one with shepherd lane open.'}
         </EmptyState>
       ) : (
         <>
-          <form
-            className="files-pick"
-            onSubmit={(e) => {
-              e.preventDefault()
-              pick({ repo: repoId, lane: target?.id, ref: draft.trim() })
-            }}
-          >
-            <label>
-              <span className="faint">Repo</span>
-              <select value={repoId} onChange={(e) => pick({ repo: Number(e.target.value) })}>
-                <option value={0}>Choose a repo</option>
-                {repos.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="faint">Lane</span>
-              <select value={target?.id ?? 0} disabled={lanes.length === 0} onChange={(e) => pick({ repo: repoId, lane: Number(e.target.value) })}>
-                {lanes.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}{l.state === 'open' ? '' : ' (closed)'}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span className="faint">Ref</span>
-              <input value={draft} placeholder="worktree, or a branch, tag or sha" onChange={(e) => setDraft(e.target.value)} />
-            </label>
-            <Button type="submit" variant="secondary" size="small">Show</Button>
-          </form>
           {!target ? (
             <EmptyState title="Choose a repo.">Pick one above to read its files.</EmptyState>
           ) : (

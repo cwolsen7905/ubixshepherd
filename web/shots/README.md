@@ -42,6 +42,16 @@ The Inbox shots wait 16 seconds, because the page reads what finished today agai
 To look at the stub in a browser: `node web/shots/stub-daemon.mjs web/dist 5199`, then
 open `http://127.0.0.1:5199/`. `NODEC=1` leaves no open decisions or requests.
 
+`LONG=1` makes the lane's changes, its runs, the run log and a kept plan long enough to scroll,
+for the `*-scrolled` pages (`lane-changes-scrolled`, `lane-runs-scrolled`, `run-log-scrolled`,
+`mr-page-scrolled`, `artifact-view-scrolled`, `artifact-page-scrolled`, `run-page-scrolled`, `decision-page-scrolled`, `files-scrolled`). Each scrolls the
+window and any column that scrolls itself by 600 px before the shot, so the page header must still be
+whole at the top:
+
+```sh
+LONG=1 SHOTS_PAGES="lane-changes lane-changes-scrolled" web/shots/shots.sh
+```
+
 `BUSY=1` serves a heavy day for the timeline instead of the small one: about 25 lanes in
 five repos, each with 3 to 12 runs through the working hours so far, all four agents, two
 failures, a decision waiting and two answered, a request that needs routing and six that

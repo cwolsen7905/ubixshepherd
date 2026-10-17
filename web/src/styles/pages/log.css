@@ -1,7 +1,7 @@
 /* Run log: the agent's words in mono on the rail; tool calls fold into one line. */
 .log-head h1 { display: flex; align-items: baseline; margin-left: calc(-1 * var(--gutter)); }
 .log-tools {
-  position: sticky; top: var(--bar-h); z-index: 4;
+  position: sticky; top: calc(var(--bar-h) + var(--sh-page-head-h, 0px)); z-index: 2;
   display: flex; align-items: center; gap: var(--s-3);
   margin: 0 calc(-1 * var(--pad)); padding: 0.375rem var(--pad) 0.375rem calc(var(--pad) + var(--gutter));
   background: var(--field); border-bottom: 1px solid var(--rule);
@@ -43,3 +43,5 @@
 .run-pane .lane-tabs { padding-left: 0; }
 .run-inspector-sub { margin: 0 0 var(--s-3); }
 .run-asked { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+
+.inspector-full .log-tools { top: var(--sh-page-head-h, 0px); }

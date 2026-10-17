@@ -5,6 +5,7 @@ import { since } from '../format'
 import { LaneDetail, laneDetailTab, defaultLaneDetailTab, type LaneDetailTab } from '../ui/LaneDetail'
 import { rememberedTab } from '../ui/LaneDetailMemory'
 import type { ConversationSource } from '../conversation/types'
+import { PageHeader, type PageChrome } from '../ui/PageHeader'
 
 export const LANE_TABS = ['overview', 'changes', 'artifacts', 'conversation', 'runs', 'files'] as const
 export type LaneTab = (typeof LANE_TABS)[number]
@@ -18,7 +19,7 @@ export function laneTab(tab: string | undefined): LaneTab {
  * A lane in the inspector. The tab lives in the address (`open=lane:4/changes`), so Back and a
  * shared link return to it. The full page (`#/lanes/4`) is its "open as page" form.
  */
-export function LaneInspector({ open, conversation }: { open: Open; conversation?: (laneId: number) => ConversationSource }) {
+export function LaneInspector({ open, conversation, chrome }: { open: Open; conversation?: (laneId: number) => ConversationSource; chrome?: PageChrome }) {
   const snap = useSnapshot()
   const now = useNow()
   const lane = snap.lanes.find((l) => l.id === open.id)
@@ -31,6 +32,7 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
   if (!lane) {
     return (
       <div className="inspector-body">
+        {chrome && <PageHeader {...chrome} title={`Lane ${open.id}`} />}
         <p className="faint">{snap.ready ? `No open lane ${open.id}.` : 'Loading…'}</p>
         <p><a href={href.lane(open.id)}>Open as page</a></p>
       </div>
@@ -50,6 +52,8 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
         onTab={select}
         feedLast={feedLast}
         conversation={conversation}
+        full={!!chrome}
+        chrome={chrome}
       />
     </div>
   )

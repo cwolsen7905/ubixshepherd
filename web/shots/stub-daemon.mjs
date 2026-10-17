@@ -15,6 +15,8 @@ const dist = path.resolve(process.argv[2] ?? 'dist')
 const port = Number(process.argv[3] || process.env.SHOTS_PORT || 5199)
 const NODEC = !!process.env.NODEC
 const BUSY = !!process.env.BUSY
+// LONG=1 makes the lane page, the run log and the changes long enough to scroll.
+const LONG = !!process.env.LONG
 
 
 // A busy day (BUSY=1), built from the current time and a fixed seed, so a shot repeats.
@@ -217,6 +219,7 @@ const run = (id, lane_id, ln, repo, state, endedMinAgo, o = {}) => ({
   started: ago(endedMinAgo + (o.minutes ?? 9)), ended: state === 'running' ? undefined : ago(endedMinAgo),
   cost_usd: Math.round((0.4 + id / 7) * 100) / 100, lane: ln, repo, worktree: `/work/${repo}-${lane_id}`, ...o,
 })
+const longRuns = () => LONG ? Array.from({ length: 24 }, (_, i) => run(100 + i, 4, 'feat/export-csv', 'acme-web', 'succeeded', 200 + i * 20, { minutes: 8, prompt: `Follow-up ${i + 1} on the CSV export.` })) : []
 const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
   run(14, 2, 'fix/cache-invalidation', 'acme-api', 'failed', 140, { minutes: 22, commits: 0, exit_code: 1, error: 'make check failed: TestPriceChange timed out after 30s', prompt: 'Invalidate the product cache when a price changes.' }),
   run(15, 1, 'feat/login-sessions', 'acme-api', 'succeeded', 48, { minutes: 31, commits: 3, prompt: 'Store session tokens server side with a 12 hour expiry.' }),
@@ -231,6 +234,7 @@ const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
   }),
   run(19, 3, 'chore/bump-deps', 'acme-web', 'succeeded', 1500, { minutes: 6, agent: 'cursor', prompt: 'Bump the minor versions of the dependencies.' }),
   run(20, 6, 'docs/install-guide', 'acme-docs', 'succeeded', 75, { minutes: 17, agent: 'copilot', prompt: 'Write an install guide for Linux and macOS.' }),
+  ...longRuns(),
 ]
 
 const PLAN_MD = `# Export orders as CSV
@@ -373,7 +377,7 @@ const localDay = () => { const d = new Date(); return `${d.getFullYear()}-${Stri
 const spend = () => ({ day: localDay(), usd: BUSY ? busyNow().spendUsd : 20.4, budget: 25, credit_usd: 0.4, by_source: {} })
 
 const runLog = (id) => `# run ${id} · claude · feat/export-csv
-
+${LONG ? Array.from({ length: 40 }, (_, i) => `step ${i + 1}: read the next file and check the quoting rules\n`).join('') : ''}
 I read the lane brief and the scope. The export belongs in web/orders/**.
 
 > Read web/orders/table.tsx
@@ -504,6 +508,7 @@ function laneDiff(id, file) {
     untracked: [f('scratch/notes.txt', 'untracked', 0, 0, { size: 412, in_scope: false }), f('docs/plans/export-csv.md', 'untracked', 0, 0, { size: 2800, in_scope: false })],
     out_of_scope: 2,
   }
+  if (LONG) base.committed.push(...Array.from({ length: 30 }, (_, i) => f(`internal/auth/part${i + 1}.go`, 'modified', 10 + i, i)))
   if (!file) return base
   return { ...base, file, patch: [
     `diff --git a/${file} b/${file}`, 'index 3f2a1c4..9d8e7b6 100644', `--- a/${file}`, `+++ b/${file}`,
@@ -635,7 +640,7 @@ const ARTIFACTS = () => [
   { id: 4, workspace_id: 1, repo_id: 1, lane_id: 1, run_id: 15, path: 'scratch/session-notes.txt', kind: 'text', source: 'run', intent: 'undecided', intent_by: '', state: 'live', size: 412, created: ago(95), updated: ago(70),
     versions: [{ artifact_id: 4, sha256: 'e'.repeat(64), size: 412, run_id: 15, seen: ago(70) }] },
 ]
-const ARTIFACT_TEXT = { 1: PLAN_MD, 3: EXPORT_TS, 4: 'Session expiry: 12 hours, sliding.\nRevoke on logout and on password change.\nOpen: should the cookie carry only the id?\n' }
+const ARTIFACT_TEXT = { 1: LONG ? PLAN_MD + Array.from({ length: 12 }, (_, i) => `\n## Follow-up ${i + 1}\n\nRows stream in chunks of 64 KB, and the writer pauses when the buffer fills, so the export stays flat however long the table is.\n`).join('') : PLAN_MD, 3: EXPORT_TS, 4: 'Session expiry: 12 hours, sliding.\nRevoke on logout and on password change.\nOpen: should the cookie carry only the id?\n' }
 const laneArtifactList = (id) => ({
   lane_id: id, lane: lanes().find((l) => l.id === id)?.name ?? '', globs: ['docs/**', 'scratch/**'],
   artifacts: ARTIFACTS().filter((a) => a.lane_id === id).map((a) => ({ path: a.path, kind: a.kind, source: a.source, status: a.state, size: a.size, readable: true, ...(a.kind === 'image' ? { mime: 'image/png' } : {}) })),

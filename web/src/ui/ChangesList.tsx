@@ -33,12 +33,14 @@ type Variant = 'list' | 'diff'
  * A lane's changes: commits, and committed / uncommitted / untracked file sections. The `diff`
  * variant lets each file expand to its patch; the `list` variant keeps rows collapsed.
  */
-export function ChangesList({ read, worktree, editorUrl, run, variant = 'list' }: {
+export function ChangesList({ read, worktree, editorUrl, run, variant = 'list', lead = true }: {
   read: LaneDiff
   worktree: string
   editorUrl: string | null
   run?: RunRange
   variant?: Variant
+  /** False where the page shows the summary line and the commits elsewhere (the lane page's facts rail). */
+  lead?: boolean
 }) {
   const outside = new Set(run?.outside ?? [])
   const marked = (f: DiffFile): DiffFile => (outside.has(f.path) && f.in_scope ? { ...f, in_scope: false } : f)
@@ -52,7 +54,7 @@ export function ChangesList({ read, worktree, editorUrl, run, variant = 'list' }
   const outsideCount = Object.values(lists).flat().filter((f) => !f.in_scope).length
   return (
     <div className="changes" data-component="ChangesList" data-variant={variant}>
-      <p className="changes-summary">
+      {lead && <p className="changes-summary">
         {run && <>Run {run.id}: </>}
         <code>{read.branch}</code> at <code>{shortSha(read.head)}</code> against <code>{read.base_ref || read.base}</code>
         {' · '}{read.commits_total} {read.commits_total === 1 ? 'commit' : 'commits'}, {files}{read.files_more ? `+${read.files_more}` : ''} {files === 1 ? 'file' : 'files'}
@@ -63,7 +65,7 @@ export function ChangesList({ read, worktree, editorUrl, run, variant = 'list' }
             <StatusGlyph glyph="✓" tone={read.gate.state === 'passed' ? 'ok' : read.gate.state === 'failed' ? 'bad' : 'warn'} label={`gate ${read.gate.state}`} />
           </>
         )}
-      </p>
+      </p>}
       {(read.truncated || (read.notes?.length ?? 0) > 0) && (
         <ul className="changes-notes faint">
           {read.notes?.map((n) => <li key={n}>{n}</li>)}
@@ -71,23 +73,27 @@ export function ChangesList({ read, worktree, editorUrl, run, variant = 'list' }
       )}
       {read.redacted ? <p className="faint">{read.redacted} {read.redacted === 1 ? 'span' : 'spans'} masked: this view is not the raw bytes.</p> : null}
 
-      <h2 className="section-h">Commits</h2>
-      {read.commits.length === 0 ? (
-        <p className="faint">No commits ahead of the base.</p>
-      ) : (
+      {lead && (
         <>
-          {read.commits_total > read.commits.length && (
-            <p className="faint">The newest {read.commits.length} of {read.commits_total}.</p>
+          <h2 className="section-h">Commits</h2>
+          {read.commits.length === 0 ? (
+            <p className="faint">No commits ahead of the base.</p>
+          ) : (
+            <>
+              {read.commits_total > read.commits.length && (
+                <p className="faint">The newest {read.commits.length} of {read.commits_total}.</p>
+              )}
+              <ol className="change-commits">
+                {read.commits.map((c) => (
+                  <li key={c.sha}>
+                    <code title={c.sha}>{shortSha(c.sha)}</code>
+                    <span className="change-subject">{c.subject}</span>
+                    <span className="faint">{c.files} {c.files === 1 ? 'file' : 'files'}</span>
+                  </li>
+                ))}
+              </ol>
+            </>
           )}
-          <ol className="change-commits">
-            {read.commits.map((c) => (
-              <li key={c.sha}>
-                <code title={c.sha}>{shortSha(c.sha)}</code>
-                <span className="change-subject">{c.subject}</span>
-                <span className="faint">{c.files} {c.files === 1 ? 'file' : 'files'}</span>
-              </li>
-            ))}
-          </ol>
         </>
       )}
 

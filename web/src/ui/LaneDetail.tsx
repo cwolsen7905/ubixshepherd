@@ -4,17 +4,19 @@ import type { ReactNode } from 'react'
 import type { DecisionView, LaneRecord, LaneReview, LaneView, NextItem, RequestView, RunView, WaitingItem } from '../api/types'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { LaneApprove } from '../components/LaneApprove'
-import { GateBadge } from '../components/GateBadge'
-import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
-import { editorHref } from '../editorLink'
-import { clockTime, duration, runCost, shortSha, since } from '../format'
+import { clockTime, since } from '../format'
 import { boardItems, endedBadly, GROUP_NAMES } from '../model/board'
 import { ending } from '../model/history'
 import { aboutLane } from '../model/feed'
 import { MARKS } from '../model/marks'
 import { GROUP_MARKS } from '../model/groups'
 import { go, href, withOpen } from '../router'
+import { PageHeader, PageTabs, pageTabIds, usePageTabBase, type PageChrome } from './PageHeader'
+import { ApproveAction, useLaneApproval, type LaneApprovalState } from './LaneDetailApprove'
+import { CloseLaneAction } from './LaneDetailClose'
+import { LaneChangesTab } from './LaneDetailChanges'
+import { LaneFacts } from './LaneDetailFacts'
 import { glyphTone, StatusGlyph } from './StatusGlyph'
 import { Button } from './Button'
 import { useLive, useSnapshot } from '../state/context'
@@ -25,8 +27,6 @@ import { laneSource } from '../conversation/api'
 import { Changes } from '../components/Changes'
 import { FileBrowser } from './FileBrowser'
 import { RunsTable } from './RunsTable'
-import { dialogShown, isEditable } from './LaneDetailEscape'
-import { Kbd } from './Kbd'
 import { Tabs } from './Tabs'
 import { tabLabel, useLaneCounts } from '../inspector/laneCounts'
 import { rememberedScroll, rememberScroll, rememberTab, scroller } from './LaneDetailMemory'
@@ -123,7 +123,7 @@ export function defaultLaneDetailTab(lane: LaneView, runs: RunView[] = []): Lane
  * The detail of one lane, as the side panel on the Board or the "Open as page" view. The tab
  * is owned by the caller and usually lives in the URL, so Back and links bring it back.
  */
-export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation, full, back, known = true, record }: {
+export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation, full, back, chrome, known = true, record }: {
   lane: LaneView
   runs: RunView[]
   now: number
@@ -134,6 +134,8 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
   full?: boolean
   /** The page's back link, drawn in its header. */
   back?: ReactNode
+  /** Where the page's header takes the person: the board by default. */
+  chrome?: Partial<PageChrome>
   /** False for a lane the daemon no longer lists: there is no worktree to read. */
   known?: boolean
   /** The history's record of a closed lane, for how it ended. */
@@ -148,6 +150,9 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
   const review = finished.get(lane.id)
   const snap = useSnapshot()
   const waiting = snap.waiting?.items ?? []
+
+  const approval = useLaneApproval(lane.id, feedLast, !!full && known && lane.state === 'open')
+  const tabBase = usePageTabBase()
 
   const action = laneStateAction({
     lane,
@@ -178,13 +183,16 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
           record={record}
           editorUrl={editorUrl}
           page={!!full}
+          approval={approval}
         />
       ),
     },
     {
       id: 'changes',
       label: tabLabel('Changes', counts.changes),
-      content: (
+      content: full && known ? (
+        <LaneChangesTab lane={lane} runs={runs} latest={latest} now={now} editorUrl={editorUrl} refreshKey={feedLast} approval={approval} />
+      ) : (
         <>
           {known && lane.state === 'open' && (
             <div className="lane-detail-action">
@@ -221,50 +229,52 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
     return () => target.removeEventListener('scroll', save)
   }, [lane.id, tab])
 
-  // The page's header is sticky; the tabs stick under it, at the height it measures.
-  useLayoutEffect(() => {
-    const head = root.current?.querySelector<HTMLElement>('.sh-lane-head')
-    if (!full || !head) return
-    const set = () => root.current?.style.setProperty('--sh-lane-head-h', `${head.offsetHeight}px`)
-    set()
-    if (typeof ResizeObserver === 'undefined') return
-    const watch = new ResizeObserver(set)
-    watch.observe(head)
-    return () => watch.disconnect()
-  }, [full])
-
-  // Esc closes the page, as it closes the panel, unless something on top of it took the key.
-  useEffect(() => {
-    if (!full) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return
-      if (isEditable(e.target) || dialogShown()) return
-      go(href.board())
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [full])
+  const current = items.find((t) => t.id === tab) ?? items[0]
+  const here = full
+    ? {
+        back,
+        beside: lane.state === 'open' ? { label: 'Open beside the board', onClick: () => go(withOpen(href.board(), { kind: 'lane', id: lane.id, tab })) } : undefined,
+        onClose: () => go(href.board()),
+        ...chrome,
+      }
+    : undefined
+  const tabEls = full ? (
+    <PageTabs tabs={items.map(({ id, label }) => ({ id, label }))} value={current?.id ?? tab} onChange={(t) => onTab(t as LaneDetailTab)} label="Lane views" base={tabBase} />
+  ) : null
 
   return (
     <div ref={root} className="lane-detail" data-component="LaneDetail" data-layout={full ? 'page' : 'panel'}>
-      {full && <LaneHeader lane={lane} runs={runs} latest={latest} action={action} tab={tab} now={now} back={back} />}
-      <Tabs items={items} value={tab} onChange={(t) => onTab(t as LaneDetailTab)} label="Lane views" />
+      {full && here ? (
+        <>
+          <LaneHeader lane={lane} runs={runs} latest={latest} action={action} approval={approval} tab={tab} onTab={onTab} now={now} chrome={here} tabs={tabEls} />
+          {current && (
+            <div role="tabpanel" id={pageTabIds(tabBase, current.id).panel} aria-labelledby={pageTabIds(tabBase, current.id).tab} className="sh-tabpanel">
+              {current.content}
+            </div>
+          )}
+        </>
+      ) : (
+        <Tabs items={items} value={tab} onChange={(t) => onTab(t as LaneDetailTab)} label="Lane views" />
+      )}
     </div>
   )
 }
 
 /**
- * The page's sticky header: a top bar, the lane's title and meta line, and on the right the
- * state's primary action, a secondary one and Close lane. The tabs sit under it.
+ * The page's header, from the shared PageHeader: the lane's title and meta line, the state's
+ * primary action, a secondary one, and Close lane… on the right. The tabs sit under it.
  */
-function LaneHeader({ lane, runs, latest, action, tab, now, back }: {
+function LaneHeader({ lane, runs, latest, action, approval, tab, onTab, now, chrome, tabs }: {
   lane: LaneView
   runs: RunView[]
   latest?: RunView
   action?: LanePrimary
+  approval: LaneApprovalState
   tab: LaneDetailTab
+  onTab: (t: LaneDetailTab) => void
   now: number
-  back?: ReactNode
+  chrome: PageChrome
+  tabs: ReactNode
 }) {
   const snap = useSnapshot()
   // The lane's open decisions and requests count: the board files them as 'needs you', and the word must agree.
@@ -276,47 +286,49 @@ function LaneHeader({ lane, runs, latest, action, tab, now, back }: {
   }, [snap, lane])
   const state = group ? GROUP_NAMES[group].toLowerCase() : lane.state
   const secondary = latest && action?.kind !== 'open' && action?.kind !== 'failure' && action?.kind !== 'follow'
+  // Approve is the header's own once the forge says the merge request can be approved: the primary of a lane
+  // to review, and on the Changes tab whatever else the lane's state asks first.
+  const approve = approval.canApprove && (action?.kind === 'approve' || tab === 'changes')
+  const running = runs.some((r) => r.state === 'running')
   return (
-    <header className="sh-lane-head" data-component="LaneHeader">
-      <div className="sh-lane-head-bar">
-        {back}
-        <span className="sh-lane-head-bar-actions">
-          {lane.state === 'open' && (
-            <Button variant="ghost" onClick={() => go(withOpen(href.board(), { kind: 'lane', id: lane.id, tab }))}>
-              Open beside the board
-            </Button>
-          )}
-          <Button variant="ghost" onClick={() => go(href.board())}>
-            Close <Kbd keys="Esc" />
-          </Button>
-        </span>
-      </div>
-      <div className="sh-lane-head-title">
-        {group && <StatusGlyph glyph={GROUP_MARKS[group].glyph} tone={glyphTone(GROUP_MARKS[group].tone)} label={GROUP_NAMES[group]} />}
-        <h1>{lane.name}</h1>
-      </div>
-      <p className="sh-lane-head-meta">
-        <span>{lane.repo}</span>
-        <span>
-          <code>{lane.branch}</code>
-          {lane.base && <> onto <code>{lane.base}</code></>}
-        </span>
-        <span>{lane.state === 'closed' ? `closed ${since(lane.closed, now)} ago` : `opened ${since(lane.created, now)} ago`}</span>
-        <span>{state}</span>
-      </p>
-      {lane.state === 'open' && (
-        <div className="sh-lane-head-actions">
-          {action && <PrimaryButton lane={lane} action={action} />}
-          {secondary && latest && (
-            <Button variant="ghost" onClick={() => go(href.log(latest.id))}>Open run</Button>
-          )}
-          <span className="lane-detail-close">
-            {action?.kind === 'close' && <FinishedMark review={action.review} lastRun={latest?.state} detail />}
-            <LaneCloseButton lane={lane} running={runs.some((r) => r.state === 'running')} />
+    <PageHeader
+      {...chrome}
+      handleEscape={chrome.escape !== 'beside'}
+      glyph={group && <StatusGlyph glyph={GROUP_MARKS[group].glyph} tone={glyphTone(GROUP_MARKS[group].tone)} label={GROUP_NAMES[group]} />}
+      title={lane.name}
+      meta={
+        <>
+          <span>{lane.repo}</span>
+          <span>
+            <code>{lane.branch}</code>
+            {lane.base && <> onto <code>{lane.base}</code></>}
           </span>
-        </div>
-      )}
-    </header>
+          <span>{lane.state === 'closed' ? `closed ${since(lane.closed, now)} ago` : `opened ${since(lane.created, now)} ago`}</span>
+          <span>{state}</span>
+        </>
+      }
+      actions={
+        lane.state === 'open' && (
+          <>
+            {action && action.kind !== 'approve' && <PrimaryButton lane={lane} action={action} />}
+            {action?.kind === 'approve' && !approve && tab !== 'changes' && <PrimaryButton lane={lane} action={action} />}
+            {/* One lantern primary per view: the state's own, else Approve. */}
+            {approve && <ApproveAction approval={approval} secondary={!!action && action.kind !== 'approve'} />}
+            {approve && tab !== 'changes' && <Button variant="ghost" onClick={() => onTab('changes')}>Review changes</Button>}
+            {secondary && latest && <Button variant="ghost" onClick={() => go(href.log(latest.id))}>Open run</Button>}
+          </>
+        )
+      }
+      danger={
+        lane.state === 'open' && (
+          <>
+            {action?.kind === 'close' && <FinishedMark review={action.review} lastRun={latest?.state} detail />}
+            <CloseLaneAction lane={lane} running={running} />
+          </>
+        )
+      }
+      tabs={tabs}
+    />
   )
 }
 
@@ -354,7 +366,7 @@ function LaneTimeline({ lane, now }: { lane: LaneView; now: number }) {
   )
 }
 
-function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record, editorUrl, page }: {
+function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record, editorUrl, page, approval }: {
   lane: LaneView
   runs: RunView[]
   latest?: RunView
@@ -365,106 +377,18 @@ function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record
   record?: LaneRecord
   editorUrl: string | null
   page: boolean
+  approval: LaneApprovalState
 }) {
   const live = useLive()
   const snap = useSnapshot()
-  const link = editorHref(editorUrl, lane.worktree)
   const group = useMemo(() => boardItems({ ...snap, lanes: [lane], decisions: [], requests: [] })[0]?.group, [snap, lane])
   const decisions = snap.decisions.filter((d) => d.state === 'open' && d.lane === lane.name && d.repo === lane.repo)
-  const pipelineUrl = pipelineLink(lane)
-  const commits = runs.filter((r) => r.commits > 0)
-  const facts = (
-    <dl className="sh-dl">
-      {!page && (
-        <>
-          <dt>Repo</dt>
-          <dd>{lane.repo}</dd>
-          <dt>Branch</dt>
-          <dd>
-            <code>{lane.branch}</code>
-            {lane.base && <> onto <code>{lane.base}</code></>}
-          </dd>
-        </>
-      )}
-      <dt>Merge request</dt>
-      <dd>
-        {lane.mr ? (
-          <>
-            <MrBadge lane={lane} /> <span className="faint">{lane.mr_state}</span>
-            {lane.pipeline ? (
-              <>
-                {' '}
-                {pipelineUrl ? <a href={pipelineUrl} target="_blank" rel="noreferrer">pipeline {lane.pipeline}</a> : `pipeline ${lane.pipeline}`}{' '}
-                <span className="faint">{lane.pipeline_status}</span>
-              </>
-            ) : (
-              <span className="faint"> no pipeline seen</span>
-            )}
-          </>
-        ) : (
-          <span className="faint">None yet</span>
-        )}
-      </dd>
-      {lane.gate && (
-        <>
-          <dt>Gate</dt>
-          <dd><GateBadge gate={lane.gate} now={now} /></dd>
-        </>
-      )}
-      <dt>Scope</dt>
-      <dd>
-        <ul className="scope">
-          {lane.scope.map((s) => (
-            <li key={s}><code>{s}</code></li>
-          ))}
-        </ul>
-      </dd>
-      <dt>Commits</dt>
-      <dd>
-        {commits.length > 0 ? (
-          <ul className="commits">
-            {commits.map((r) => (
-              <li key={r.id}>
-                <code>{shortSha(r.start_sha)}..{shortSha(r.end_sha)}</code> {r.commits} by run {r.id}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <span className="faint">None from Shepherd's runs</span>
-        )}
-      </dd>
-      <dt>Worktree</dt>
-      <dd>
-        <code className="path">{lane.worktree}</code>
-        {link && <> <a href={link} title="Open in editor">open in editor</a></>}
-      </dd>
-      <dt>Opened by</dt>
-      <dd>{origin(lane)}</dd>
-      {latest && !page && (
-        <>
-          <dt>Latest run</dt>
-          <dd>
-            Run {latest.id} · {latest.agent}
-            {' · '}
-            {latest.state}
-            {latest.ended && <> · {duration(latest.started, latest.ended, now)}</>}
-            {runCost(latest) && <> · {runCost(latest)}</>}
-          </dd>
-        </>
-      )}
-    </dl>
-  )
+  const facts = <LaneFacts lane={lane} runs={runs} latest={latest} now={now} editorUrl={editorUrl} page={page} approval={page ? approval : undefined} />
   const failure = lane.state === 'open' && (action?.kind === 'open' || action?.kind === 'failure') && (
     <div className="lane-detail-action">
       <RunFailure run={action.run} onFixed={() => void live.refresh()} />
     </div>
   )
-  const approve = lane.state === 'open' && action?.kind === 'approve' && (
-    <div className="lane-detail-action">
-      <LaneApprove laneId={lane.id} refreshKey={feedLast} />
-    </div>
-  )
-
   if (page) {
     return (
       <div className="lane-detail-overview lane-overview-page">
@@ -497,7 +421,6 @@ function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record
             </p>
           )}
           {failure}
-          {approve}
           <h2 className="lane-section-h">Runs</h2>
           <RunsTable runs={runs} variant="full" />
           <LaneTimeline lane={lane} now={now} />
@@ -612,18 +535,4 @@ function PrimaryButton({ lane, action }: { lane: LaneView; action: LanePrimary }
       // Finished already shows the mark beside the close below; no separate primary.
       return null
   }
-}
-
-/** The daemon gives a pipeline's id but not its URL; on GitLab it sits beside the MR's. */
-function pipelineLink(lane: LaneView): string | null {
-  if (!lane.mr_url || !lane.pipeline) return null
-  const m = /^(.*)\/-\/merge_requests\/\d+$/.exec(lane.mr_url)
-  return m ? `${m[1]}/-/pipelines/${lane.pipeline}` : null
-}
-
-function origin(l: LaneView): string {
-  const o = l.origin
-  if (!o.via) return 'unknown'
-  const parts = [o.agent, o.run ? `run ${o.run}` : '', o.detail].filter(Boolean)
-  return parts.length ? `${o.via} (${parts.join(', ')})` : o.via
 }

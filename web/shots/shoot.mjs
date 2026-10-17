@@ -22,6 +22,17 @@ const ALL_PAGES = [
   ['lane-files', '#/lanes/4', { tab: 'Files', click: [['README.md', '.sh-file-tree-item']] }],
   ['lane-artifacts', '#/lanes/4', { tab: 'Artifacts' }],
   ['lane-runs', '#/lanes/4', { tab: 'Runs' }],
+  // The same pages scrolled well down: the page header must stay fully in view.
+  ['lane-changes-scrolled', '#/lanes/4', { tab: 'Changes', file: 'internal/auth/session.go', scroll: 600 }],
+  ['lane-runs-scrolled', '#/lanes/4', { tab: 'Runs', scroll: 600 }],
+  ['run-log-scrolled', '#/runs/17/log', { scroll: 600 }],
+  ['decision-page-scrolled', '#/inbox?open=decision%3A5/full', { scroll: 600 }],
+  ['mr-page-scrolled', '#/inbox?open=mr%3A1/changes/full', { scroll: 600 }],
+  ['artifact-page-scrolled', '#/artifacts?open=artifact%3A3/full', { scroll: 600 }],
+  ['artifact-view', '#/artifacts?view=1'],
+  ['artifact-view-scrolled', '#/artifacts?view=1', { scroll: 600 }],
+  ['run-page-scrolled', '#/runs?open=run%3A17/full', { scroll: 600 }],
+  ['files-scrolled', '#/files?lane=4', { click: [['README.md', '.sh-file-tree-item']], scroll: 600 }],
   ['lane-closed', '#/lanes/7'],
   ['run-log', '#/runs/17/log'],
   ['decisions', '#/decisions'],
@@ -143,6 +154,13 @@ async function shot(name, route, theme, steps) {
     await sleep(800)
     if (steps.file) await click(steps.file, '.change-toggle')
     await sleep(800)
+    if (steps.scroll) {
+      // The window, and any column that scrolls itself (a full-width inspector).
+      await s('Runtime.evaluate', {
+        expression: `(() => { window.scrollTo(0, ${+steps.scroll}); for (const el of document.querySelectorAll('*')) if (el.scrollHeight > el.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(el).overflowY)) el.scrollTop = ${+steps.scroll} })()`,
+      })
+      await sleep(500)
+    }
   }
   const { data } = await s('Page.captureScreenshot', { format: 'png' })
   const file = path.join(SHOTS_OUT, `${name}-${theme}.png`)

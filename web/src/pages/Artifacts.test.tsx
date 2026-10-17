@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -54,6 +54,19 @@ describe('ArtifactsPage', () => {
     await act(async () => { await userEvent.click(screen.getByRole('link', { name: 'docs/a.md' })) })
     expect(window.location.hash).toBe('#/artifacts?view=1')
     expect(screen.getByRole('button', { name: /← Artifacts/ })).toBeInTheDocument()
+  })
+
+  it('draws an opened file under the shared page header, with its actions in it', async () => {
+    window.location.hash = '#/artifacts?view=1'
+    await show({}, [])
+    const head = (await screen.findByRole('heading', { level: 1 })).closest('[data-component="PageHeader"]') as HTMLElement
+    expect(head).not.toBeNull()
+    const h = within(head)
+    expect(h.getByRole('link', { name: '← Artifacts' })).toBeInTheDocument()
+    expect(h.getByRole('button', { name: /^Close\s*Esc$/ })).toBeInTheDocument()
+    expect(h.getByRole('button', { name: 'Open beside the artifacts' })).toBeInTheDocument()
+    expect(h.getAllByText('docs/a.md').length).toBeGreaterThan(0)
+    expect(h.getByRole('group', { name: 'What to do with this file' })).toBeInTheDocument()
   })
 
   it('asks the daemon for a lane, run and topic, and filters a repo itself', async () => {

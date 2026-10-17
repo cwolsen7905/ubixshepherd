@@ -93,7 +93,7 @@ describe('the Conversation tab', () => {
     expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^Close\s*Esc/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Close lane' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close lane…' })).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
     expect(screen.getByRole('complementary', { name: 'Lane facts' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument()
@@ -400,10 +400,55 @@ describe('approving from the Changes tab', () => {
       </LiveProvider>,
     )
     await userEvent.click(await screen.findByRole('tab', { name: 'Changes' }))
-    const box = await screen.findByLabelText('Merge request approval')
-    expect(box).toHaveTextContent('not approved')
-    expect(box).toHaveTextContent('require-approval failed')
-    expect(within(box).getByRole('button', { name: 'Approve !7…' })).toBeInTheDocument()
+    // The header's Approve is the lane's approval; the body has no second one, and the rail says the state.
+    const head = document.querySelector('[data-component="PageHeader"]') as HTMLElement
+    expect(await within(head).findByRole('button', { name: 'Approve !7…' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Merge request approval')).toBeNull()
+    expect(screen.getAllByRole('button', { name: /^Approve/ })).toHaveLength(1)
+    const rail = screen.getByRole('complementary', { name: 'Lane facts' })
+    expect(rail).toHaveTextContent('waits for your approval')
+    expect(rail).toHaveTextContent('require-approval failed')
+  })
+})
+
+describe('one lantern primary in the header', () => {
+  async function head(decisions: ReturnType<typeof decision>[]) {
+    const live = liveWith(undefined, { decisions: async () => decisions })
+    await act(async () => {
+      await live.refresh()
+    })
+    vi.stubGlobal('fetch', async (path: string) => {
+      if (path === '/v1/lanes/1/approval') {
+        return new Response(JSON.stringify({ supported: true, mr: 7, mr_url: 'https://forge/mr/7', mr_state: 'opened', sha: 'abcdef0123456789', approved: false }))
+      }
+      if (path.includes('/diff')) {
+        return new Response(JSON.stringify({ lane_id: 1, lane: 'x', branch: 'x', base: 'dev', base_ref: 'origin/dev', head: 'abc1234', mode: 'stat', read_at: '2026-10-08T10:04:00Z', commits: [], commits_total: 0, committed: [], uncommitted: [], untracked: [], out_of_scope: 0 }))
+      }
+      return new Response(JSON.stringify(path.startsWith('/v1/runs') ? [run()] : []))
+    })
+    render(
+      <LiveProvider live={live}>
+        <LanePage id={1} />
+      </LiveProvider>,
+    )
+    await userEvent.click(await screen.findByRole('tab', { name: 'Changes' }))
+    const bar = document.querySelector('[data-component="PageHeader"]') as HTMLElement
+    await within(bar).findByRole('button', { name: 'Approve !7…' })
+    return within(bar)
+  }
+
+  it('keeps the decision, which blocks the agent, in lantern and draws Approve as a default outlined button', async () => {
+    const h = await head([decision({ lane: 'feat/login', repo: 'acme-api' })])
+    expect(h.getByRole('button', { name: 'Answer decision' })).toHaveClass('sh-btn--warn')
+    const approve = h.getByRole('button', { name: 'Approve !7…' })
+    expect(approve).not.toHaveClass('sh-btn--warn')
+    expect(approve).not.toHaveClass('sh-btn--primary')
+    expect(document.querySelectorAll('[data-component="PageHeader"] .sh-btn--warn')).toHaveLength(1)
+  })
+
+  it('makes Approve the lantern primary when nothing else is asked first', async () => {
+    const h = await head([])
+    expect(h.getByRole('button', { name: 'Approve !7…' })).toHaveClass('sh-btn--warn')
   })
 })
 
@@ -450,18 +495,18 @@ describe('closing from the lane page', () => {
     // The header's action row shows the finished mark beside Close lane at the right.
     expect(await screen.findByText(/finished: ready to close/)).toBeInTheDocument()
     expect(screen.getByText(/every change on it is in origin\/dev; last run succeeded/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Close lane' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Close lane…' })).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
   })
 
   it('shows no marker for a lane the review does not call finished', async () => {
     await showWith([run({ state: 'succeeded' })], [{ ...finishedReview[0], verdict: 'live', why: 'it has uncommitted changes' }])
-    await screen.findByRole('button', { name: 'Close lane' })
+    await screen.findByRole('button', { name: 'Close lane…' })
     expect(screen.queryByText(/finished: ready to close/)).not.toBeInTheDocument()
   })
 
   it('disables closing while a run is going in the lane', async () => {
     await showWith([run({ state: 'running' })], [])
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Close lane' })).toBeDisabled())
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Close lane…' })).toBeDisabled())
   })
 })

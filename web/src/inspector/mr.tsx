@@ -14,7 +14,8 @@ import { neighbour, waitingKey } from '../model/waitingStep'
 import { inboxOpen } from '../pages/Inbox'
 import { go, href, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
-import { Button, EmptyState, Kbd, Tabs } from '../ui'
+import { Button, EmptyState, Kbd, StatusGlyph, Tabs } from '../ui'
+import { PageHeader, PageTabs, pageTabIds, usePageTabBase, type PageChrome } from '../ui/PageHeader'
 import '../pages/Inbox.css'
 import { LaneRuns } from './lane'
 import { tabLabel, useLaneCounts } from './laneCounts'
@@ -200,7 +201,7 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
  * forge has it. The Approval tab holds the person's own Approve (the same action the lane's
  * Changes tab has); the other tabs are the lane's, so the merge request can be judged here.
  */
-export function MrInspector({ open }: { open: Open }) {
+export function MrInspector({ open, chrome }: { open: Open; chrome?: PageChrome }) {
   const snap = useSnapshot()
   const now = useNow()
   const tab = mrTab(open.tab)
@@ -209,6 +210,7 @@ export function MrInspector({ open }: { open: Open }) {
   const feedLast = snap.feed.at(-1)?.id ?? 0
   const counts = useLaneCounts(open.id, feedLast)
   const runCount = snap.runs.filter((r) => r.lane_id === open.id).length
+  const tabBase = usePageTabBase()
 
   const select = (t: string) =>
     go(withOpen(window.location.hash, { kind: 'mr', id: open.id, ...(t === 'approval' ? {} : { tab: t }), ...(open.full ? { full: true } : {}) }))
@@ -216,6 +218,7 @@ export function MrInspector({ open }: { open: Open }) {
   if (!lane) {
     return (
       <div className="inspector-body">
+        {chrome && <PageHeader {...chrome} title={`MR of lane ${open.id}`} />}
         <p className="faint">{snap.ready ? `No open lane ${open.id}, so no merge request.` : 'Loading…'}</p>
         <p><a href={href.lane(open.id)}>Open the lane</a></p>
       </div>
@@ -233,6 +236,43 @@ export function MrInspector({ open }: { open: Open }) {
     { id: 'conversation', label: 'Conversation', content: <Conversation source={source} refreshKey={feedLast} now={now} /> },
     { id: 'runs', label: tabLabel('Runs', runCount), content: <LaneRuns laneId={lane.id} /> },
   ]
+
+  if (chrome) {
+    const current = items.find((t) => t.id === tab) ?? items[0]
+    // The glyph is lantern, so only a merge request the daemon lists as waiting for this person's approval wears it.
+    const waiting = (snap.waiting?.items ?? []).some((it) => it.kind === 'mr' && it.action === 'approve' && it.lane_id === lane.id)
+    return (
+      <div className="inspector-body mr-inspector">
+        <PageHeader
+          {...chrome}
+          glyph={waiting ? <StatusGlyph glyph="◆" tone="warn" label="waiting for your approval" /> : undefined}
+          title={lane.mr ? `Merge request !${lane.mr}` : `Merge request of lane ${lane.id}`}
+          meta={
+            <>
+              <span>{lane.repo}</span>
+              <span>
+                <code>{lane.branch}</code>
+                {lane.base && <> onto <code>{lane.base}</code></>}
+              </span>
+              {lane.mr_state && <span>{lane.mr_state}</span>}
+              {lane.pipeline ? <span>pipeline {lane.pipeline} {lane.pipeline_status}</span> : null}
+            </>
+          }
+          actions={
+            <Button variant="ghost" onClick={() => go(href.lane(lane.id))}>
+              Open the lane page
+            </Button>
+          }
+          tabs={<PageTabs tabs={items.map(({ id, label }) => ({ id, label }))} value={current?.id ?? tab} onChange={select} label="Merge request views" base={tabBase} />}
+        />
+        {current && (
+          <div role="tabpanel" id={pageTabIds(tabBase, current.id).panel} aria-labelledby={pageTabIds(tabBase, current.id).tab} className="sh-tabpanel">
+            {current.content}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="inspector-body mr-inspector">

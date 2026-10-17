@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { lane, status } from '../test/fixtures'
@@ -49,6 +49,15 @@ describe('the Files page', () => {
     const again = await show({ lane: 1, gitRef: 'v1.0' })
     await screen.findAllByText('README.md')
     expect(again.at(-1)?.searchParams.get('ref')).toBe('v1.0')
+  })
+
+  it('has the shared page header: the way back, Close with Esc, the title and the pickers', async () => {
+    await show({ repo: 1 })
+    const head = document.querySelector('[data-component="PageHeader"]') as HTMLElement
+    expect(within(head).getByRole('link', { name: '← Board' })).toBeInTheDocument()
+    expect(within(head).getByRole('button', { name: /^Close\s*Esc$/ })).toBeInTheDocument()
+    expect(within(head).getByRole('heading', { level: 1, name: 'Files' })).toBeInTheDocument()
+    expect(within(head).getByRole('combobox', { name: 'Repo' })).toBeInTheDocument()
   })
 
   it('says so when no repo has a lane', async () => {

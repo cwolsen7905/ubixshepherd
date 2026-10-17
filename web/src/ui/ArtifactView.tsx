@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react'
+import { go } from '../router'
 import { cx } from './cx'
+import { PageBack, PageHeader } from './PageHeader'
 import './ArtifactView.css'
 
 export type ArtifactViewLayout = 'page' | 'inline'
@@ -56,30 +58,36 @@ export function ArtifactView({
     )
   }
   const back = onBack ? (
-    <button type="button" className="sh-artifact-back" onClick={onBack}>
-      {backLabel}
-    </button>
+    <PageBack onClick={onBack}>{backLabel}</PageBack>
   ) : backHref ? (
-    <a className="sh-artifact-back" href={backHref}>
-      {backLabel}
-    </a>
+    <PageBack href={backHref} onClick={() => go(backHref)}>{backLabel}</PageBack>
   ) : null
+  // Close goes where the back arrow goes. Beside shows the same file in the list's side panel;
+  // the address names the file (`view=`), so it is read from there.
+  const viewing = Number(new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('view'))
+  const here = backHref ?? '#/artifacts'
   return (
     <div className="sh-artifact" data-component="ArtifactView" data-layout="page">
-      {back}
-      {title && <h1 className="sh-artifact-title">{title}</h1>}
-      {path && (
-        <div className="sh-artifact-path">
-          <code>{path}</code>
-          {tag && <span className={cx('sh-tag', tagTone === 'local' && 'sh-tag--local', tagTone === 'warn' && 'sh-tag--warn')}>{tag}</span>}
-        </div>
-      )}
-      {meta && <div className="sh-artifact-meta">{meta}</div>}
-      {actions && (
-        <div className="sh-artifact-actions" role="group" aria-label="What to do with this file">
-          {actions}
-        </div>
-      )}
+      <PageHeader
+        back={back}
+        onClose={onBack ?? (() => go(here))}
+        beside={viewing > 0 ? { label: 'Open beside the artifacts', onClick: () => go(`${here.split('?')[0]}?open=${encodeURIComponent(`artifact:${viewing}`)}`) } : undefined}
+        title={title}
+        meta={
+          (path || meta) && (
+            <>
+              {path && (
+                <span className="sh-artifact-path">
+                  <code>{path}</code>
+                  {tag && <span className={cx('sh-tag', tagTone === 'local' && 'sh-tag--local', tagTone === 'warn' && 'sh-tag--warn')}>{tag}</span>}
+                </span>
+              )}
+              {meta && <span className="sh-artifact-meta">{meta}</span>}
+            </>
+          )
+        }
+        actions={actions && <div className="sh-artifact-actions" role="group" aria-label="What to do with this file">{actions}</div>}
+      />
       {notice}
       <div className="sh-artifact-body">{children}</div>
     </div>
