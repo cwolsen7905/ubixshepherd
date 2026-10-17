@@ -4,6 +4,8 @@ import type { ConfigDoc } from '../api/types'
 import { Chip, EmptyState, GroupHeader } from '../ui'
 import './Rules.css'
 
+export type Verdict = 'refuse' | 'hold' | 'ask' | 'proceed'
+
 export type RuleLayer = 'built-in' | 'workspace' | 'project' | 'repo'
 
 export interface Rule {
@@ -17,6 +19,8 @@ export interface Rule {
   holder: string
   /** What it allows, in words. */
   allows: string
+  /** What the rule does to an agent. */
+  verdict: Verdict
 }
 
 export const LAYERS: { id: RuleLayer; label: string; hint: string }[] = [
@@ -32,19 +36,20 @@ type Verb = (typeof AUTONOMY)[number]
 const NAMES: Record<Verb, string> = { push: 'Push', merge: 'Merge', tag: 'Tag', deploy: 'Deploy' }
 
 /** What a choice of one autonomy field lets happen. */
-export function allows(verb: Verb, value: string): { holder: string; text: string } {
+/** The verdict follows the effect: an agent or Shepherd acting proceeds, a person's action holds the agent. */
+export function allows(verb: Verb, value: string): { holder: string; text: string; verdict: Verdict } {
   const v = value || 'human'
   if (verb === 'push') {
-    if (v === 'agent') return { holder: 'agent', text: "An agent may push its own lane's branch during its run." }
-    if (v === 'shepherd') return { holder: 'shepherd', text: "Shepherd pushes a lane's branch and opens its merge request once the repo gate passes." }
-    return { holder: 'person', text: 'Only the person pushes a lane.' }
+    if (v === 'agent') return { holder: 'agent', verdict: 'proceed', text: "An agent may push its own lane's branch during its run." }
+    if (v === 'shepherd') return { holder: 'shepherd', verdict: 'proceed', text: "Shepherd pushes a lane's branch and opens its merge request once the repo gate passes." }
+    return { holder: 'person', verdict: 'hold', text: 'Only the person pushes a lane.' }
   }
   if (verb === 'merge') {
-    if (v === 'agent') return { holder: 'agent', text: "An agent may arm merge-when-pipeline-succeeds on its own lane's merge request. The forge's approvals, pipelines and threads still gate it." }
-    return { holder: 'person', text: 'Only the person merges, through the approval flow.' }
+    if (v === 'agent') return { holder: 'agent', verdict: 'proceed', text: "An agent may arm merge-when-pipeline-succeeds on its own lane's merge request. The forge's approvals, pipelines and threads still gate it." }
+    return { holder: 'person', verdict: 'hold', text: 'Only the person merges, through the approval flow.' }
   }
-  if (v === 'agent') return { holder: 'agent', text: `An agent may ${verb} without asking.` }
-  return { holder: 'person', text: `Only the person may ${verb}.` }
+  if (v === 'agent') return { holder: 'agent', verdict: 'proceed', text: `An agent may ${verb} without asking.` }
+  return { holder: 'person', verdict: 'hold', text: `Only the person may ${verb}.` }
 }
 
 function autonomyOf(o: unknown): Partial<Record<Verb, string>> {
@@ -57,23 +62,23 @@ function autonomyOf(o: unknown): Partial<Record<Verb, string>> {
 /** The rules the config holds today, layer by layer. Crook's own rule files are not read yet. */
 export function rulesFrom(doc: ConfigDoc): Rule[] {
   const out: Rule[] = [
-    { id: 'built-in:own-work', layer: 'built-in', source: 'Shepherd', name: 'Approval', holder: 'person', allows: 'An agent never approves its own work.' },
+    { id: 'built-in:own-work', layer: 'built-in', source: 'Shepherd', name: 'Approval', holder: 'person', allows: 'An agent never approves its own work.', verdict: 'refuse' },
   ]
   for (const v of AUTONOMY) {
     const a = allows(v, 'human')
-    out.push({ id: `built-in:${v}`, layer: 'built-in', source: 'Shepherd', name: NAMES[v], holder: a.holder, allows: a.text })
+    out.push({ id: `built-in:${v}`, layer: 'built-in', source: 'Shepherd', name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
   }
   const base = autonomyOf(doc.defaults?.effective)
   for (const v of AUTONOMY) {
     const a = allows(v, base[v] ?? '')
-    out.push({ id: `workspace:${v}`, layer: 'workspace', source: 'config defaults', name: NAMES[v], holder: a.holder, allows: a.text })
+    out.push({ id: `workspace:${v}`, layer: 'workspace', source: 'config defaults', name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
   }
   for (const name of Object.keys(doc.projects ?? {}).sort()) {
     const set = autonomyOf(doc.projects[name]?.raw)
     for (const v of AUTONOMY) {
       if (set[v] === undefined) continue
       const a = allows(v, set[v])
-      out.push({ id: `project:${name}:${v}`, layer: 'project', source: `project ${name}`, name: NAMES[v], holder: a.holder, allows: a.text })
+      out.push({ id: `project:${name}:${v}`, layer: 'project', source: `project ${name}`, name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
     }
   }
   for (const name of Object.keys(doc.repos ?? {}).sort()) {
@@ -82,18 +87,10 @@ export function rulesFrom(doc: ConfigDoc): Rule[] {
     for (const v of AUTONOMY) {
       if (!(p?.overridden ?? []).includes(`autonomy.${v}`)) continue
       const a = allows(v, eff[v] ?? '')
-      out.push({ id: `repo:${name}:${v}`, layer: 'repo', source: `repo ${name}`, name: NAMES[v], holder: a.holder, allows: a.text })
+      out.push({ id: `repo:${name}:${v}`, layer: 'repo', source: `repo ${name}`, name: NAMES[v], holder: a.holder, allows: a.text, verdict: a.verdict })
     }
   }
   return out
-}
-
-export type Verdict = 'refuse' | 'hold' | 'ask' | 'proceed'
-
-/** What the rule does to an agent: refuse what no one may do, hold what waits for the person, proceed where an agent or Shepherd may act. */
-export function verdictOf(r: Rule): Verdict {
-  if (r.id === 'built-in:own-work') return 'refuse'
-  return r.holder === 'person' ? 'hold' : 'proceed'
 }
 
 /** The layers that decide what an agent may do unasked: the built-in rules, then the config's workspace, project and repo sections. */
@@ -162,7 +159,7 @@ export function RulesPage() {
                           <td className="rules-what">
                             {r.name}: {r.holder}. <span className="rules-allows">{r.allows}</span>
                           </td>
-                          <td className="rules-verdict-col"><span className={`sh-tag rules-verdict--${verdictOf(r)}`}>{verdictOf(r)}</span></td>
+                          <td className="rules-verdict-col"><span className={`sh-tag rules-verdict--${r.verdict}`}>{r.verdict}</span></td>
                           <td className="rules-source"><code>{r.source}</code></td>
                         </tr>
                       ))}
