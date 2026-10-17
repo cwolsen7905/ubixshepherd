@@ -316,8 +316,8 @@ describe('Live', () => {
       expect(attentionCount(w)).toBe(2)
       expect(inboxCount(w)).toBe(2)
       expect(attentionTitle(w)).toBe('2 waiting on you')
-      expect(withAttention({ needs: 0, broken: 0, review: 0, working: 0, done: 0 }, w).needs).toBe(3)
-      expect(backlogWithAttention({ needs: 9, broken: 0, idle: 0, working: 0, review: 0 }, w).needs).toBe(3)
+      expect(withAttention({ needs: 0, broken: 0, review: 0, working: 0, done: 0 }, w).needs).toBe(2)
+      expect(backlogWithAttention({ needs: 9, broken: 0, idle: 0, working: 0, review: 0 }, w).needs).toBe(2)
       // Until the list has loaded the models' own rules stand.
       expect(withAttention({ needs: 2, broken: 0, review: 0, working: 0, done: 0 }, null).needs).toBe(2)
       expect(attentionCount(null)).toBe(0)

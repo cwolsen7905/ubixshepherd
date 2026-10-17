@@ -223,8 +223,21 @@ export function counts(items: BoardItem[]): Record<Group, number> {
  * agree with every other place that counts what waits on the person. Until the list has
  * loaded the board's own rule stands.
  */
-export function withAttention(n: Record<Group, number>, waiting: { count: number } | null): Record<Group, number> {
-  return waiting ? { ...n, needs: waiting.count } : n
+export function withAttention(n: Record<Group, number>, waiting: { items?: { kind: string }[] } | null): Record<Group, number> {
+  return waiting ? { ...n, needs: waitingOnYouCount(waiting) } : n
+}
+
+/** Waiting kinds counted under "needs routing" or "broken", not "waiting on you". */
+const COUNTED_ELSEWHERE = ['request', 'blocked']
+
+/** Whether a waiting item of this kind waits on the person alone. */
+export function waitsOnYou(kind: string): boolean {
+  return !COUNTED_ELSEWHERE.includes(kind)
+}
+
+/** How many items wait on the person alone: the one count the title, strip and groups share. */
+export function waitingOnYouCount(waiting: { items?: { kind: string }[] }): number {
+  return (waiting.items ?? []).filter((it) => waitsOnYou(it.kind)).length
 }
 
 /** The groups that hold anything, most urgent first: "1 needs you · 2 broken". */
