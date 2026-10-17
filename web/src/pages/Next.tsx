@@ -13,7 +13,7 @@ import { go, href, useFocusTarget, useRoute, type Open } from '../router'
 import { useSnapshot } from '../state/context'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { Button, Chip, EmptyState, Popover } from '../ui'
-import { isOpenNow, openInInspector } from '../components/BacklogOpen'
+import { openInInspector, openRow } from '../components/BacklogOpen'
 import '../styles/pages/next.css'
 
 export interface NextApi {
@@ -271,19 +271,18 @@ function NextRow({
   const movable = it.stored_state === 'approved' || it.stored_state === 'planned' || it.stored_state === 'deferred'
   const laneName = it.lane_name ?? it.lane
   const open: Open | undefined = it.lane_id ? { kind: 'lane', id: it.lane_id } : undefined
-  const openProps = open
+  const rowOpen = open ? openRow(open) : undefined
+  const target = open
+  const openProps = rowOpen && target
     ? {
-        tabIndex: 0,
-        onClick: (e: React.MouseEvent) => {
-          const t = e.target as HTMLElement
-          if (t.closest('a, button, input, select')) return
-          openInInspector(open)
-        },
+        ...rowOpen,
+        role: 'button' as const,
         onKeyDown: (e: React.KeyboardEvent) => {
-          const t = e.target as HTMLElement
-          if (e.key === 'Enter' && !t.closest('a, button, input, select')) {
+          if (e.key === ' ') {
             e.preventDefault()
-            openInInspector(open)
+            openInInspector(target)
+          } else {
+            rowOpen.onKeyDown?.(e)
           }
         },
       }
@@ -291,9 +290,9 @@ function NextRow({
   return (
     <li
       {...openProps}
-      className={`next-row state-${it.state}${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}${open && isOpenNow(open) ? ' row-open' : ''}`}
+      className={`next-row state-${it.state}${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}${rowOpen?.className ? ' row-open' : ''}`}
       data-next-id={it.id}
-      aria-current={open && isOpenNow(open) ? 'true' : isNext || focused ? 'true' : undefined}
+      aria-current={rowOpen?.['aria-current'] ?? (isNext || focused ? 'true' : undefined)}
     >
       <span className="next-glyph">
         {isNext ? (
