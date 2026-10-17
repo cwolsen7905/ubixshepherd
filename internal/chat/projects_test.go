@@ -227,3 +227,28 @@ func TestDockViewSearchTakesTypedKeys(t *testing.T) {
 		t.Errorf("query %q, grouped %v, collapsed %v", m.pager.query, m.dockGroup, m.collapsed)
 	}
 }
+
+func TestBudgetRowsLeaveARowForTheItems(t *testing.T) {
+	m, _ := projectModel()
+	m.height = 6 // a budget of two rows: the counts and one more
+	m.projects[0].Budget = &api.ProjectBudgetView{Amount: 10, Cap: "hard", Period: "day", Spent: 10}
+	m.projects[1].Budget = &api.ProjectBudgetView{Amount: 10, Cap: "soft", Period: "day", Spent: 9}
+	got := plainRows(m.dockRows(m.dockItems()))
+	if !strings.Contains(got, "decision 9") && !strings.Contains(got, "feat-login") {
+		t.Errorf("an item should keep a row:\n%s", got)
+	}
+	if strings.Contains(got, "budget") {
+		t.Errorf("no room for budget rows beside an item:\n%s", got)
+	}
+}
+
+func TestGroupedDockShowsItemsOfAnUnlistedUnassigned(t *testing.T) {
+	m, _ := projectModel()
+	m.dockGroup = true
+	m.projects = m.projects[:2] // the daemon listed no Unassigned
+	m.lanes[2].MR, m.lanes[2].MRState, m.lanes[2].PipelineStatus = 4, api.MRStateOpen, api.PipelineFailed
+	got := plainRows(m.renderDock())
+	if !strings.Contains(got, "unassigned  1 open") || !strings.Contains(got, "scratch") {
+		t.Errorf("an item of no listed project vanished:\n%s", got)
+	}
+}

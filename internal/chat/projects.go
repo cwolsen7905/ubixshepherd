@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // The dock knows projects through GET /v1/projects: which repos a project holds, how many
@@ -152,7 +153,7 @@ func (m *Model) renderDock() []string {
 		}
 		return rows
 	}
-	for _, p := range m.projects {
+	for _, p := range m.projectGroups(items) {
 		name := p.Name
 		if p.Unassigned {
 			name = ""
@@ -189,6 +190,33 @@ func (m *Model) renderDock() []string {
 		}
 	}
 	return rows
+}
+
+// projectGroups are the daemon's projects, plus an Unassigned group when it did not list
+// one but some item belongs to no listed project (the lanes and projects reads are
+// separate calls), so the grouped view never shows fewer items than the flat one.
+func (m *Model) projectGroups(items []dockItem) []api.ProjectSummary {
+	groups := m.projects
+	has := false
+	for _, p := range groups {
+		has = has || p.Unassigned
+	}
+	if has {
+		return groups
+	}
+	for _, it := range items {
+		if it.project != "" {
+			continue
+		}
+		open := 0
+		for _, l := range m.lanes {
+			if l.State == store.LaneOpen && m.projectOf(l.Repo) == "" {
+				open++
+			}
+		}
+		return append(append([]api.ProjectSummary(nil), groups...), api.ProjectSummary{Unassigned: true, Lanes: open})
+	}
+	return groups
 }
 
 const dockHint = "p group by project · 1-9 collapse a project · ↑↓ PgUp/PgDn scroll · q back"
