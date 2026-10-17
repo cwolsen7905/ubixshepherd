@@ -15,7 +15,7 @@ import './Usage.css'
  * By agent / By model cards from the 14 days' usage, the quota holds, and the most
  * expensive runs. A wide view with no side panel.
  */
-export function UsagePage({ now: nowProp }: { now?: number } = {}) {
+export function UsagePage({ now: nowProp }: { now?: number; range?: unknown; from?: unknown; to?: unknown } = {}) {
   const ticking = useNow(30_000)
   const now = nowProp ?? ticking
   const snap = useSnapshot()
