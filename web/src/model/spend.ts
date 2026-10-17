@@ -27,6 +27,12 @@ export function chartDays(now: number): string[] {
   return out
 }
 
+/** The first and last day a usage read covers: the chart's window ending on now's local day. */
+export function usageWindow(now: number): { from: string; to: string } {
+  const days = chartDays(now)
+  return { from: days[0] as string, to: days[days.length - 1] as string }
+}
+
 /** How far through the day's budget today's spend is; null when there is no cap. */
 export function budgetUse(spend: SpendToday): { fraction: number; percent: number; near: boolean; over: boolean } | null {
   if (!(spend.budget > 0)) return null

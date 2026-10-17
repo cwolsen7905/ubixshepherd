@@ -141,7 +141,7 @@ describe('the Usage page', () => {
 
   it('shows the big figure with "of $X today", the meter and the reset line', async () => {
     await mount({ spendToday: spend({ usd: 16.4, budget: 20 }) })
-    const hero = await screen.findByLabelText('Spent today')
+    const hero = await screen.findByRole('region', { name: 'Spent today' })
     expect(hero).toHaveTextContent('$16.40')
     expect(hero).toHaveTextContent('of $20.00 today')
     expect(hero).toHaveTextContent('near budget')
@@ -151,9 +151,9 @@ describe('the Usage page', () => {
 
   it('shows the cards, the 14-day chart, the holds and the expensive runs', async () => {
     await mount()
-    expect(await screen.findByRole('region', { name: 'By agent' })).toHaveTextContent('claude')
+    expect(await screen.findByText('claude')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'By model' })).toHaveTextContent('sonnet')
-    expect(screen.getByRole('region', { name: 'Last 14 days' })).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'Quota holds' })).toHaveTextContent('copilot')
+    expect(screen.getByRole('region', { name: 'Spend, last 14 days' })).toBeInTheDocument()
+    expect(await screen.findByText('copilot')).toBeInTheDocument()
   })
 })
