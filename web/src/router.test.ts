@@ -109,7 +109,7 @@ describe('open=', () => {
 })
 
 describe('the view table', () => {
-  const VIEWS = ['Conversation', 'Inbox', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Usage', 'Settings', 'Status']
+  const VIEWS = ['Inbox', 'Conversation', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Usage', 'Settings', 'Status']
 
   it('lists every view in the nav, in the design order, each reaching its own route', () => {
     const items = NAV.flatMap((g) => g.items)

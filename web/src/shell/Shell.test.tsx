@@ -5,6 +5,8 @@ import { faviconHref } from '../favicon'
 import { NAV } from './nav'
 import { parse } from '../router'
 import { Shell } from './Shell'
+import { waitingKey } from '../model/waitingStep'
+import { seenStore } from '../state/seen'
 import { useAttentionChrome } from './useAttentionChrome'
 
 const waiting: Waiting = {
@@ -46,6 +48,26 @@ afterEach(() => {
 })
 
 describe('Shell', () => {
+  it('lists Inbox before Conversation and dots Conversation while a waiting item is unseen', () => {
+    setWidth(1440)
+    seenStore.mark([])
+    view()
+    const nav = screen.getByRole('navigation', { name: 'Views' })
+    const links = within(nav).getAllByRole('link')
+    expect(links[0]).toHaveTextContent('Inbox')
+    expect(links[1]).toHaveTextContent('Conversation')
+    expect(within(links[1] as HTMLElement).getByTitle('New since you last looked')).toBeInTheDocument()
+    expect(within(links[0] as HTMLElement).queryByTitle('New since you last looked')).toBeNull()
+  })
+
+  it('drops the Conversation dot once every waiting item has been seen', () => {
+    setWidth(1440)
+    act(() => seenStore.mark(waiting.items.map(waitingKey)))
+    view()
+    const nav = screen.getByRole('navigation', { name: 'Views' })
+    expect(within(nav).queryByTitle('New since you last looked')).toBeNull()
+  })
+
   it('puts the Keep going switch in the sidebar footer', async () => {
     setWidth(1440)
     vi.stubGlobal('fetch', vi.fn(() =>

@@ -3,6 +3,7 @@ import { DaemonDetail, loadDaemon, useDaemonDetail, type Loaded } from '../compo
 import { useNow } from '../hooks'
 import { href } from '../router'
 import { useChatLink } from '../shell/chatLink'
+import { StatusGlyph } from '../ui/StatusGlyph'
 import { useSnapshot } from '../state/context'
 import './Status.css'
 
@@ -14,9 +15,16 @@ export function StatusPage({ load = loadDaemon, now: nowProp }: { load?: () => P
   const { data, failed } = useDaemonDetail(true, load)
   return (
     <div className="page sh-status-page">
-      <BackLink fallback={href.settings()} />
-      <header className="page-head">
+      <header className="page-head sh-status-head">
+        <BackLink fallback={href.settings()} />
         <h1>Status</h1>
+        <span className="sh-status-live" role="status">
+          {snap.error !== null ? (
+            <><StatusGlyph glyph="✗" tone="bad" /> Offline · retrying</>
+          ) : (
+            <><StatusGlyph glyph="●" tone="ok" /> Online · updates live</>
+          )}
+        </span>
       </header>
       <div className="sh-status-grid">
         <DaemonDetail

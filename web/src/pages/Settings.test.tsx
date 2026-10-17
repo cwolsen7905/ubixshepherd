@@ -143,7 +143,30 @@ describe('SettingsPage sections', () => {
     // The model shows without its provider prefix, the full id in the title.
     expect(screen.getByText('claude-sonnet-5')).toHaveAttribute('title', 'anthropic/claude-sonnet-5')
     expect(await screen.findByText(/Polled \d+s ago · every 60s/)).toBeInTheDocument()
-    expect(screen.getByRole('group', { name: 'Merging for api' })).toHaveTextContent('By a person')
+    expect(screen.getByRole('button', { name: 'Merging for api: By a person' })).toHaveTextContent('By a person')
+  })
+
+  it('says nothing of an agent\'s usage before it loads or when the read fails, then lanes and spend today', async () => {
+    const body = { version: '1', workspaces: [{ id: 1, name: 'acme' }], detail: { forge: { last_poll: new Date().toISOString() } } }
+    const claude = (path: string) => path.startsWith('/v1/history/runs') && path.includes('agent=claude')
+    // A failed read: no figures, no zeros.
+    daemon(doc(), (_m, p) => (p === '/v1/status?detail=1' ? json(body) : p.startsWith('/v1/history/runs') ? json({ error: 'down' }, 500) : undefined))
+    const failed = render(<SettingsPage />)
+    await screen.findByText('Daily cap')
+    await screen.findByText(/Polled \d+s ago/)
+    expect(document.querySelector('[data-agent="claude"]')).toBeNull()
+    failed.unmount()
+    // A read that answers: claude's totals, and nothing shown before they arrive.
+    daemon(doc(), (_m, p) => {
+      if (p === '/v1/status?detail=1') return json(body)
+      if (claude(p)) return json({ runs: [{ id: 1, lane_id: 7, agent: 'claude', cost_usd: 2 }], count: 1, cost_usd: 2, credits: 0, agents: ['claude'], lanes: [] })
+      if (p.startsWith('/v1/history/runs')) return json({ runs: [], count: 0, cost_usd: 0, credits: 0, agents: [], lanes: [] })
+      return undefined
+    })
+    render(<SettingsPage />)
+    await screen.findByText('Daily cap')
+    expect(document.querySelector('[data-agent="claude"]')).toBeNull()
+    expect(await screen.findByText('1 lane · $2.00 today')).toBeInTheDocument()
   })
 
   it('writes nothing before Save: staging previews only, Discard drops it', async () => {
@@ -199,7 +222,8 @@ describe('SettingsPage sections', () => {
     })
     const user = userEvent.setup()
     render(<SettingsPage />)
-    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    await user.click(await screen.findByRole('button', { name: /^Merging for api/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'By an agent' }))
     expect(screen.getByText('Not saved · was By a person')).toBeInTheDocument()
     const diff = await screen.findByRole('region', { name: 'Diff of config.yaml' })
     await waitFor(() => expect(within(diff).getByText('Risky')).toBeInTheDocument())
@@ -225,7 +249,8 @@ describe('SettingsPage sections', () => {
     )
     const user = userEvent.setup()
     render(<SettingsPage />)
-    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    await user.click(await screen.findByRole('button', { name: /^Merging for api/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'By an agent' }))
     const diff = await screen.findByRole('region', { name: 'Diff of config.yaml' })
     await waitFor(() => expect(within(diff).getAllByText(/Risky/)).toHaveLength(1))
     expect(within(diff).getByText('merge: agent').closest('.sh-diff-line')).toHaveTextContent('Risky')
@@ -240,7 +265,8 @@ describe('SettingsPage sections', () => {
     )
     const user = userEvent.setup()
     render(<SettingsPage />)
-    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    await user.click(await screen.findByRole('button', { name: /^Merging for api/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'By an agent' }))
     const list = await screen.findByRole('list', { name: 'Risky changes not shown on a line' })
     expect(list).toHaveTextContent('repos.api.autonomy.merge')
     expect(within(screen.getByRole('region', { name: 'Diff of config.yaml' })).getByText('merge: agent').closest('.sh-diff-line')).not.toHaveTextContent('Risky')
@@ -252,7 +278,8 @@ describe('SettingsPage sections', () => {
     )
     const user = userEvent.setup()
     render(<SettingsPage />)
-    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    await user.click(await screen.findByRole('button', { name: /^Merging for api/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'By an agent' }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('robot')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()

@@ -80,3 +80,6 @@
   .sh-runs--list .sh-runs-result { grid-area: result; }
   .sh-runs--list .sh-runs-cost { grid-area: cost; }
 }
+
+/* The column header row: small muted labels over Run, Lane, Result and Cost. */
+.sh-runs--list th { font-size: var(--sh-t-meta); font-weight: 600; }
