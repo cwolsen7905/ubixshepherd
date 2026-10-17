@@ -1,0 +1,80 @@
+/* Runs page styles: filter chips and the list variant of RunsTable. */
+.runs-head { align-items: center; }
+.runs-total strong { font-variant-numeric: tabular-nums; }
+
+.runs-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sh-s4) var(--sh-s6);
+  margin: 0 0 var(--sh-s6);
+}
+
+.runs-filter-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sh-s2);
+}
+
+/* List variant of RunsTable. */
+.sh-runs--list { table-layout: fixed; }
+
+.sh-runs--list th,
+.sh-runs--list td {
+  padding: var(--sh-s3) var(--sh-s4);
+  vertical-align: top;
+}
+
+.sh-runs--list thead th {
+  border-bottom: 1px solid var(--sh-rule);
+  font-weight: 600;
+  color: var(--sh-muted);
+}
+
+.sh-runs--list tbody tr {
+  border-bottom: 1px solid var(--sh-rule);
+}
+
+.sh-runs-glyph { width: 2rem; }
+.sh-runs-run { width: 5rem; white-space: nowrap; }
+
+.sh-runs-lane {
+  min-width: 0;
+  width: auto;
+}
+
+.sh-runs-lane-name,
+.sh-runs-result,
+.sh-runs-lane-meta,
+.sh-runs-result-meta {
+  display: block;
+}
+
+.sh-runs-lane-name,
+.sh-runs-result > span:first-child {
+  color: var(--sh-ink);
+}
+
+.sh-runs-lane-meta,
+.sh-runs-result-meta {
+  font-size: var(--sh-t-meta);
+}
+
+.sh-runs-result {
+  width: 8rem;
+}
+
+.sh-runs-cost {
+  width: 5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .sh-runs--list .sh-runs-lane,
+  .sh-runs--list .sh-runs-result {
+    width: auto;
+  }
+}
