@@ -58,24 +58,24 @@ function QuestionActions({
   }
 
   return (
-    <div className="question-actions" role="group" aria-label={`Question ${q.id} is waiting on you`}>
-      <span className="question-flag tone-warn">Waiting on you</span>
+    <div className="sh-question" role="group" aria-label={`Question ${q.id} is waiting on you`}>
+      <span className="sh-question-flag">? Waiting on you</span>
       {!replying && (
         <>
-          <button type="button" className="button" onClick={() => setReplying(true)} disabled={busy}>
+          <Button size="small" onClick={() => setReplying(true)} disabled={busy}>
             Reply here
-          </button>
-          <button type="button" className="button" onClick={() => void close('skip')} disabled={busy}>
+          </Button>
+          <Button size="small" onClick={() => void close('skip')} disabled={busy}>
             Skip
-          </button>
-          <button type="button" className="button" onClick={() => void close('answer')} disabled={busy}>
+          </Button>
+          <Button size="small" onClick={() => void close('answer')} disabled={busy}>
             Mark answered
-          </button>
+          </Button>
         </>
       )}
       {replying && (
         <form
-          className="question-reply"
+          className="sh-question-reply"
           onSubmit={(e) => {
             e.preventDefault()
             void send()
@@ -103,13 +103,13 @@ function QuestionActions({
           <Button type="submit" variant="primary" disabled={busy || !text.trim()}>
             {busy ? 'Sending…' : 'Send reply'}
           </Button>
-          <button type="button" className="button" onClick={() => setReplying(false)} disabled={busy}>
+          <Button onClick={() => setReplying(false)} disabled={busy}>
             Cancel
-          </button>
+          </Button>
         </form>
       )}
       {problem && (
-        <p className="tone-bad" role="alert">
+        <p className="sh-question-problem" role="alert">
           {problem}
         </p>
       )}

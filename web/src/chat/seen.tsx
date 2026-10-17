@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WaitingItem } from '../api/types'
 import type { FeedEntry } from '../model/feed'
 import { openKey, waitingKey } from '../model/waitingStep'
+import { clockTime, duration } from '../format'
+import { useNow } from '../hooks'
 import { href, parse } from '../router'
 import {
-  AWAY_AFTER_MS, announceText, awaySummary, needsLine, notifiable, quiet, routineLine, seenStore, useSeen,
+  AWAY_AFTER_MS, announceText, awaySummary, notifiable, quiet, routineLine, seenStore, useSeen,
 } from '../state/seen'
 import { mayNotify, notifyWaiting } from './notify'
 import { showWaiting } from './strip'
@@ -103,35 +105,66 @@ export function Announcer({ items }: { items: readonly WaitingItem[] | null }) {
   )
 }
 
-/** "While you were away": what needs the person first, the routine news folded to one quiet line. */
+const LABEL: Partial<Record<WaitingItem['kind'], string>> = { blocked: 'Blocked', scope: 'Scope', decision: 'Decision', question: 'Question', mr: 'Merge request', ship: 'To ship', next: 'Next up', request: 'Request' }
+/** The most waiting items the card lists by name; the rest are counted. */
+const AWAY_ITEMS = 5
+
+/**
+ * "Since you were away" (`.sh-away`): what now waits on the person and is newer than their last
+ * look, each named with a way to open it, and the routine finishes folded to one line. "Mark all
+ * seen" clears the dots and the card. A gap with nothing to say shows nothing.
+ */
 export function AwayBlock({
-  since, items, feed, onDismiss,
+  since, items, feed, onDismiss, now: given,
 }: {
   since: number | null
   items: readonly WaitingItem[]
   feed: readonly FeedEntry[]
+  /** Closes the card; "Mark all seen" calls it after marking everything waiting as seen. */
   onDismiss: () => void
+  now?: number
 }) {
+  const ticked = useNow(60_000)
+  const now = given ?? ticked
   const a = useMemo(() => (since === null ? null : awaySummary(items, feed, since)), [since, items, feed])
-  if (!a || quiet(a)) return null
+  if (!a || since === null || quiet(a)) return null
   const routine = routineLine(a)
+  const named = a.needs.slice(0, AWAY_ITEMS)
+  const rest = a.needs.length - named.length
   return (
-    <section className="away" aria-label="While you were away">
-      <p className="away-line">
-        <strong>While you were away</strong>
-        {a.needs.length > 0 && (
-          <>
-            {': '}
-            <a className="away-needs" href={href.inbox()}>
-              {needsLine(a.needs)} waiting on you
-            </a>
-          </>
-        )}
-        {routine && <span className="faint away-routine">{a.needs.length > 0 ? '. Also: ' : ': '}{routine}.</span>}
-        <button type="button" className="link-button away-dismiss" onClick={onDismiss}>
-          Dismiss
+    <section className="sh-away" data-component="AwayCard" aria-label="Since you were away">
+      <div className="sh-away-head">
+        <b>Since you were away</b>
+        <span className="sh-away-when">
+          {duration(new Date(since).toISOString(), undefined, now)}, last here {clockTime(new Date(since).toISOString(), now)}
+        </span>
+        <button
+          type="button"
+          className="sh-away-mark"
+          onClick={() => {
+            seenStore.mark(items.map(waitingKey))
+            onDismiss()
+          }}
+        >
+          Mark all seen
         </button>
-      </p>
+      </div>
+      <ul>
+        {named.map((it) => (
+          <li key={waitingKey(it)}>
+            {LABEL[it.kind] ?? it.kind}: {it.title}{' '}
+            <button type="button" className="sh-link sh-away-open" onClick={() => showWaiting(it)}>
+              {it.action === 'answer' ? 'Answer' : it.action === 'reply' ? 'Reply' : 'Open'}
+            </button>
+          </li>
+        ))}
+        {rest > 0 && (
+          <li>
+            {rest} more waiting on you. <a href={href.inbox()}>Open the inbox</a>
+          </li>
+        )}
+        {routine && <li>{routine}.</li>}
+      </ul>
     </section>
   )
 }

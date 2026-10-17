@@ -1,0 +1,14 @@
+/* ArtifactView: the artifact's page, or its content inline in another page. */
+.sh-artifact-back { display: inline-block; padding: 0; border: 0; background: none; font: inherit; font-size: var(--sh-t-small); color: var(--sh-muted); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.sh-artifact-back:hover { color: var(--sh-ink); }
+.sh-artifact-title { font-size: var(--sh-t-inspect); margin: 10px 0 8px; text-wrap: pretty; }
+.sh-artifact-path { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sh-artifact-path code { font: var(--sh-t-small) var(--sh-mono); overflow-wrap: anywhere; }
+.sh-artifact-meta { font-size: var(--sh-t-small); color: var(--sh-muted); display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 6px; }
+.sh-artifact-meta a { color: var(--sh-muted); text-decoration: underline; text-underline-offset: 3px; }
+.sh-artifact-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 12px 0 0; padding-bottom: 14px; border-bottom: 1px solid var(--sh-rule); }
+.sh-artifact-body { padding-top: 14px; min-width: 0; }
+.sh-artifact--inline > .sh-artifact-body { padding-top: 0; }
+.sh-artifact-body img { max-width: 100%; height: auto; border: 1px solid var(--sh-rule); border-radius: var(--sh-r); }
+.sh-artifact-body pre { margin: 0; font: var(--sh-t-meta)/1.65 var(--sh-mono); background: var(--sh-surface); border: 1px solid var(--sh-rule); border-radius: var(--sh-r); padding: 10px 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100ch; }
+.sh-artifact-body p { max-width: var(--sh-measure); }

@@ -17,6 +17,11 @@ const ALL_PAGES = [
   ['run-log', '#/runs/17/log'],
   ['decisions', '#/decisions'],
   ['timeline', '#/timeline'],
+  // The Conversation: the thread, a decision swapped into the main column, and the return card.
+  ['conversation', '#/'],
+  ['conversation-work', '#/', { click: [['Show work', 'summary']] }],
+  ['conversation-away', '#/', { top: true, storage: () => ({ 'shepherd.seen.v1': JSON.stringify({ seen: [], looked: Date.now() - 3 * 3600_000, notify: false }) }) }],
+  ['conversation-decision', '#/?open=decision%3A5'],
 ]
 // SHOTS_PAGES names the pages to take ("timeline board"); by default, all of them.
 const only = (SHOTS_PAGES ?? '').split(/\s+/).filter(Boolean)
@@ -67,6 +72,12 @@ async function shot(name, route, theme, steps) {
   await s('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-color-scheme', value: theme }, { name: 'prefers-reduced-motion', value: 'reduce' }],
   })
+  // A page may start with things in localStorage (the seen record, to show the away card).
+  if (steps?.storage) {
+    const items = JSON.stringify(steps.storage())
+    await s('Page.enable')
+    await s('Page.addScriptToEvaluateOnNewDocument', { source: `for (const [k, v] of Object.entries(${items})) localStorage.setItem(k, v)` })
+  }
   await s('Page.navigate', { url: `${SHOTS_BASE}/${route}` })
   // Ready when the lists and the thread have loaded; a page that never settles is taken as it is.
   const settled = 'document.body.innerText.length > 80 && !/Connecting|Loading|not ready/i.test(document.body.innerText)'
@@ -81,6 +92,8 @@ async function shot(name, route, theme, steps) {
     const click = (text, role) => s('Runtime.evaluate', { expression: `(() => { const el = [...document.querySelectorAll('${role}')].find((e) => e.textContent.includes(${JSON.stringify(text)})); el?.click(); return !!el })()`, returnByValue: true })
     if (steps.rail) await click(steps.rail, '.backlog-views button')
     if (steps.tab) await click(steps.tab, '[role=tab]')
+    for (const [text, selector] of steps.click ?? []) await click(text, selector)
+    if (steps.top) await s('Runtime.evaluate', { expression: "document.querySelector('[data-component=Thread]').scrollTop = 0" })
     await sleep(800)
     if (steps.file) await click(steps.file, '.change-toggle')
     await sleep(800)

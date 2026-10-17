@@ -1,0 +1,44 @@
+/* Thread: the rows the design draws (.sh-msg, .sh-event, .sh-card are in components.css) and what it leaves open. */
+
+.sh-scroll--thread { min-width: 0; padding-inline: 20px; }
+.sh-scroll--thread > * { min-width: 0; }
+.sh-scroll--side { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; }
+.sh-scroll--thread:focus-visible { outline: 2px solid var(--sh-lichen); outline-offset: -2px; }
+.sh-msg--desk { justify-self: start; }
+.sh-msg .sh-who { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.sh-msg--you .sh-who { justify-content: flex-end; }
+.sh-msg--you p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sh-msg--desk p { overflow-wrap: anywhere; }
+.sh-msg--desk.is-asked { border-left: 3px solid var(--sh-lantern); padding-left: 10px; }
+.sh-msg--desk.is-partial::after { content: "…"; color: var(--sh-faint); }
+.is-flash { animation: sh-flash 2.5s ease-out; }
+@keyframes sh-flash { from { background: var(--sh-lichen-wash); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .is-flash { animation: none; background: var(--sh-lichen-wash); } }
+
+/* "Needs you:" and the list under it; "Nothing needs you." */
+.sh-desk-needs { margin: 0; font-weight: 600; color: var(--sh-lantern-ink); }
+.sh-desk-nothing { margin: 0; font-weight: 600; }
+.sh-desk-lead ol { margin: 2px 0 0; padding-left: 22px; }
+.sh-desk-lead ol + ul, .sh-desk-lead p + ul:not(:first-child) { margin: 6px 0 0; padding-left: 18px; color: var(--sh-muted); font-size: var(--sh-t-body); }
+.sh-desk-lead li a { font-weight: 600; white-space: nowrap; }
+
+/* Show work: closed until opened. */
+.sh-work { margin-top: 6px; }
+.sh-work > summary { display: inline-block; font-size: var(--sh-t-meta); color: var(--sh-muted); cursor: pointer; list-style: none; }
+.sh-work > summary::-webkit-details-marker { display: none; }
+.sh-work > summary:hover { color: var(--sh-ink); }
+.sh-work > summary:focus-visible { outline: 2px solid var(--sh-lichen); outline-offset: 2px; }
+.sh-work-body { margin-top: 4px; font: var(--sh-t-meta)/1.7 var(--sh-mono); color: var(--sh-muted); background: var(--sh-surface); border: 1px solid var(--sh-rule); border-radius: var(--sh-r); padding: 6px 10px; overflow-wrap: anywhere; }
+.sh-work-note { font-family: var(--sh-font); }
+
+/* The "n new" divider: a lichen rule either side. */
+.sh-newdiv { display: flex; align-items: center; gap: 10px; font-size: var(--sh-t-meta); font-weight: 600; color: var(--sh-lichen); }
+.sh-newdiv::before, .sh-newdiv::after { content: ""; flex: 1; height: 1px; background: var(--sh-lichen); opacity: .45; }
+
+.sh-thread-decision { min-width: 0; }
+.sh-thread-decision .sh-card { max-width: none; }
+.sh-event { align-items: baseline; flex-wrap: wrap; }
+.sh-event > span:nth-child(2) { min-width: 0; overflow-wrap: anywhere; }
+.sh-event a { color: var(--sh-lichen); }
+
+.sh-msg a { color: var(--sh-lichen); }

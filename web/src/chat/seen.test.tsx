@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
+import { seenStore } from '../state/seen'
 import type { WaitingItem } from '../api/types'
 import { AwayBlock, Announcer } from './seen'
 
@@ -9,10 +10,23 @@ afterEach(() => window.localStorage.clear())
 describe('AwayBlock', () => {
   it('names what needs the person first and renders nothing for a quiet gap', () => {
     const since = Date.parse('2026-10-16T09:00:00Z')
-    const { container, rerender } = render(<AwayBlock since={since} items={[dec(1)]} feed={[]} onDismiss={() => {}} />)
-    expect(screen.getByRole('link').textContent).toBe('1 decision waiting on you')
+    const { container, rerender } = render(<AwayBlock since={since} items={[dec(1)]} feed={[]} onDismiss={() => {}} now={Date.parse('2026-10-16T11:14:00Z')} />)
+    expect(screen.getByRole('region', { name: 'Since you were away' })).toBeInTheDocument()
+    expect(screen.getByText(/Decision: d1/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Answer' })).toBeInTheDocument()
+    expect(screen.getByText(/2h 14m, last here/)).toBeInTheDocument()
     rerender(<AwayBlock since={since} items={[]} feed={[]} onDismiss={() => {}} />)
     expect(container.textContent).toBe('')
+  })
+})
+
+describe('AwayBlock, Mark all seen', () => {
+  it('marks everything waiting as seen and dismisses the card', () => {
+    const onDismiss = vi.fn()
+    render(<AwayBlock since={Date.parse('2026-10-16T09:00:00Z')} items={[dec(1), dec(2)]} feed={[]} onDismiss={onDismiss} now={Date.parse('2026-10-16T11:14:00Z')} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Mark all seen' }))
+    expect(onDismiss).toHaveBeenCalled()
+    expect(seenStore.getSnapshot().seen).toEqual(expect.arrayContaining(['decision:1:0', 'decision:2:0']))
   })
 })
 

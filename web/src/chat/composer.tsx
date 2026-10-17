@@ -1,18 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import { DRAFT_EVENT, clearDraft, draftKey, readDraft, writeDraft } from '../model/chatDraft'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
-import { Button } from '../ui'
+import { Button, ContextComposer } from '../ui'
 
 function Composer({
-  thread, workspaceId, d, disabled, following, topicId, onSend,
+  thread, workspaceId, d, disabled, topicId, onSend,
 }: {
   thread: DeskThread
   workspaceId: number
   d: DeskSnapshot
   disabled: boolean
-  following: boolean
   /** The topic being viewed: the turn is filed under it. */
   topicId: number | null
+  /** Called as a message goes out, so the thread follows it to the bottom. */
   onSend: () => void
 }) {
   const key = draftKey(workspaceId)
@@ -46,60 +46,58 @@ function Composer({
     box.current?.focus()
   }
 
+  // "Ask the desk first" on a decision page sends the person here.
+  useEffect(() => {
+    const focus = () => box.current?.focus()
+    window.addEventListener('shepherd:focus-context-composer', focus)
+    return () => window.removeEventListener('shepherd:focus-context-composer', focus)
+  }, [])
+
   return (
     <form
-      className="composer"
+      className="sh-conv-composer"
       onSubmit={(e) => {
         e.preventDefault()
         void send()
       }}
     >
-      {!following && (
-        <button type="button" className="button chat-jump" onClick={onSend}>
-          Jump to latest
-        </button>
-      )}
       {d.problem && (
-        <p className="chat-problem tone-bad" role="alert">
+        <p className="sh-conv-problem" role="alert">
           {d.problem.message}
         </p>
       )}
       {d.notice && !d.problem && (
-        <p className="chat-notice faint" role="status">
+        <p className="sh-conv-notice" role="status">
           {d.notice}
         </p>
       )}
-      <label htmlFor="chat-input" className="visually-hidden">
-        Message to the front desk
-      </label>
-      <div className="composer-row">
-      <textarea
-        id="chat-input"
-        ref={box}
-        rows={2}
-        value={text}
-        readOnly={sending}
-        disabled={disabled}
-        placeholder="Message the front desk. Enter sends, Shift+Enter adds a line."
-        onChange={(e) => edit(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault()
-            void send()
-          }
-        }}
-      />
-      <div className="composer-bar">
+      <ContextComposer variant="composer">
+        <label htmlFor="chat-input" className="visually-hidden">
+          Message to the front desk
+        </label>
+        <textarea
+          id="chat-input"
+          ref={box}
+          rows={2}
+          value={text}
+          readOnly={sending}
+          disabled={disabled}
+          placeholder="Message the front desk. Enter sends, Shift+Enter adds a line."
+          onChange={(e) => edit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              void send()
+            }
+          }}
+        />
         {d.busy && (
-          <button type="button" className="button" onClick={() => void thread.interrupt()}>
-            Interrupt
-          </button>
+          <Button onClick={() => void thread.interrupt()}>Interrupt</Button>
         )}
         <Button type="submit" variant="primary" disabled={sending || disabled || !text.trim()}>
           {sending ? 'Sending…' : 'Send'}
         </Button>
-      </div>
-      </div>
+      </ContextComposer>
     </form>
   )
 }

@@ -1,103 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { DecisionView, DeskEvent, DeskQuestion, WaitingItem } from '../api/types'
+import type { DeskQuestion, WaitingItem } from '../api/types'
 import type { FeedEntry } from '../model/feed'
 import { ErrorBoundary } from '../components/ErrorBoundary'
-import { TopicBar } from '../components/TopicBar'
-import { TopicPill } from '../components/TopicPill'
-import { DecisionCard } from '../components/DecisionCard'
-import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
-import { MARKS } from '../model/marks'
+import { EventGlyph } from '../components/Glyph'
 import { inTopic, memberKeys, readTopicFilter, topicByTurn, withTopicFilter, type TopicView } from '../model/topic'
 import { deskQuestions, topics as topicsApi } from '../api/client'
-import { href } from '../router'
+import { href, parse } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type ThreadItem } from '../state/desk'
 import { useNow } from '../hooks'
 import { useFollowBottom, Countdown, useThread, STREAM_LINE } from './md'
 import { Button } from '../ui'
+import { cx } from '../ui/cx'
+import { Thread, ThreadRow, WorkFold, type ThreadEntry } from '../ui/Thread'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
-import { QuestionActions } from './questions'
 import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
 import { PendingStrip } from './strip'
-import { Markdown } from './md'
+import { deskEntry, feedEntry, workSteps } from './rows'
+import { TopicChips } from './TopicChips'
 import { backlogItems, threadId } from '../model/backlog'
 import { takeStep, STEP_EVENT, stepAnchor } from '../model/waitingStep'
 import { isUnseen, useSeen } from '../state/seen'
-import { UnseenDot } from '../components/UnseenDot'
 import { Announcer, AwayBlock, useSeenWatch } from './seen'
+import { DecisionCard } from '../components/DecisionCard'
 import { NotifyToggle } from './notify'
-
-const RUN_KINDS = new Set(['run_ended', 'run_passed', 'run_failed', 'run_interrupted', 'run_quota'])
-
-function FeedRow({
-  item, now, decision, flash = false, unseen = false,
-}: {
-  item: { id?: number; event: string; text: string; ref?: number; created: string }
-  now: number
-  decision?: DecisionView
-  flash?: boolean
-  /** The decision here waits on the person and has not been opened. */
-  unseen?: boolean
-}) {
-  const age = since(item.created, now)
-  return (
-    <div id={item.id ? threadId(`f${item.id}`) : undefined} className={`trow${decision ? ' trow-decision' : ''}${flash ? ' is-flash' : ''}`}>
-      {unseen ? <UnseenDot /> : null}
-      <EventGlyph event={item.event} />
-      <div className="trow-body">
-        <p className="trow-line">
-          {!decision && <span>{item.text}</span>}{' '}
-          {RUN_KINDS.has(item.event) && item.ref ? <a href={href.log(item.ref)}>log</a> : null}{' '}
-          {!decision && <time dateTime={item.created} title={item.created} className="faint trow-age">{age}</time>}
-        </p>
-        {decision && <DecisionCard d={decision} variant="inline" />}
-      </div>
-    </div>
-  )
-}
-
-function ToolLine({ text }: { text: string }) {
-  return (
-    <p className="trow trow-tool faint">
-      <Glyph glyph={MARKS.report.glyph} tone="muted" label="tool call" />
-      <span className="mono">{text}</span>
-    </p>
-  )
-}
-
-function WokeNote({ text, when }: { text: string; when: ReactNode }) {
-  return (
-    <details className="trow trow-system">
-      <summary>
-        <Glyph glyph={MARKS.info.glyph} tone="muted" label="note" /> Shepherd woke the front desk {when}
-      </summary>
-      <p className="msg-text">{text}</p>
-    </details>
-  )
-}
-
-/** A turn's tool calls and wake notes, folded: "Show work (N)". */
-function WorkFold({ work, now, open }: { work: DeskEvent[]; now: number; open?: boolean }) {
-  const tools = work.filter((w) => w.kind === 'tool').length
-  const woke = work.length - tools
-  const label = [tools > 0 ? `${tools} tool ${tools === 1 ? 'call' : 'calls'}` : '', woke > 0 ? 'woke the front desk' : ''].filter(Boolean).join(', ')
-  return (
-    <details className="work-fold" open={open}>
-      <summary>
-        <Glyph glyph={MARKS.report.glyph} tone="muted" label="work" /> Show work ({label})
-      </summary>
-      {work.map((w) =>
-        w.kind === 'tool' ? (
-          <ToolLine key={w.seq} text={w.text ?? ''} />
-        ) : (
-          <WokeNote key={w.seq} text={w.text ?? ''} when={<time dateTime={w.created} title={w.created} className="faint trow-age">{since(w.created, now)}</time>} />
-        ),
-      )}
-    </details>
-  )
-}
+import './convo.css'
 
 /** Three or more events between messages as one row: their glyphs, expandable. */
 function UpdatesFold({
@@ -112,137 +41,41 @@ function UpdatesFold({
   const [shown, setShown] = useState(false)
   // A jump to a row inside opens the fold and it stays open; the toggle acts on what shows.
   if (!shown && reveal !== '' && feed.some((f) => `f${f.id}` === reveal)) setShown(true)
-  const isOpen = shown
   const id = threadId(`u${feed[0]?.id}`)
   return (
-    <div id={id} className="updates-fold">
-      <button type="button" className="updates-toggle" aria-expanded={isOpen} onClick={() => setShown(!isOpen)}>
-        <span className="updates-glyphs" aria-hidden="true">
+    <div id={id} className="sh-updates">
+      <button type="button" className="sh-updates-toggle" aria-expanded={shown} onClick={() => setShown(!shown)}>
+        <span className="sh-updates-glyphs" aria-hidden="true">
           {feed.slice(0, 8).map((f) => (
             <EventGlyph key={f.id} event={f.event} />
           ))}
         </span>
         <span>{feed.length} updates</span>
-        <span className="faint trow-age">{since(feed[feed.length - 1]?.created ?? '', now)}</span>
+        <span className="sh-event-time">{since(feed[feed.length - 1]?.created ?? '', now)}</span>
       </button>
-      {isOpen && feed.map((f) => <FeedRow key={f.id} item={f} now={now} flash={flash === `f${f.id}`} />)}
+      {shown && (
+        <div className="sh-updates-body">
+          {feed.map((f) => (
+            <ThreadRow key={f.id} it={feedEntry({ f, now, flash: flash === `f${f.id}` })} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-function DeskRow({
-  e, now, topic, activeTopic = null, onTopic, questions = [], flash = '', thread, topicFilter = null, onCleared, work = [], onReplyRef, unseen = false,
-}: {
-  e: DeskEvent
-  /** Tool calls and wake notes of this reply's turn, folded above it. */
-  work?: DeskEvent[]
-  now: number
-  /** Desk questions asked in this message's turn, of any state: each is an anchor, the open ones carry actions. */
-  questions?: DeskQuestion[]
-  /** Scrolls to the row of the question a reply names; false when the thread holds none. */
-  onReplyRef?: (questionId: number) => void
-  /** A question asked here waits on the person and has not been opened. */
-  unseen?: boolean
-  flash?: string
-  thread?: DeskThread
-  topicFilter?: number | null
-  onCleared?: () => void
-  /** The topic this turn is tied to; none, no pill. */
-  topic?: TopicView
-  activeTopic?: number | null
-  onTopic?: (id: number | null) => void
-}) {
-  const text = e.text ?? ''
-  const age = since(e.created, now)
-  const when = <time dateTime={e.created} title={e.created} className="faint trow-age">{age}</time>
-  const pill = topic && onTopic ? <TopicPill topic={topic} active={activeTopic === topic.id} onFilter={onTopic} /> : null
-  switch (e.kind) {
-    case 'user': {
-      const ref = replyRef(text)
-      return (
-        <div className="msg msg-user">
-          <span className="msg-who">You {when}{pill}</span>
-          {ref !== null && onReplyRef && (
-            <button type="button" className="link-button msg-replyref" onClick={() => onReplyRef(ref)}>
-              Replying to your question {ref}
-            </button>
-          )}
-          <p className="msg-text">{text}</p>
-        </div>
-      )
-    }
-    case 'assistant': {
-      const asked = questions[0]
-      const waiting = questions.some((q) => q.state === 'open')
-      return (
-        <div
-          id={asked ? threadId(`q${asked.id}`) : undefined}
-          className={`msg msg-assistant${waiting ? ' msg-asked' : ''}${questions.some((q) => flash === `q${q.id}`) ? ' is-flash' : ''}`}
-        >
-          <span className="msg-who">{unseen ? <UnseenDot /> : null}Front desk {when}{pill}</span>
-          <Markdown text={text} />
-          {work.length > 0 && <WorkFold work={work} now={now} />}
-          {questions.slice(1).map((q) => (
-            <span key={`a${q.id}`} id={threadId(`q${q.id}`)} />
-          ))}
-          {thread && questions.filter((q) => q.state === 'open').map((q) => (
-            <QuestionActions key={q.id} q={q} thread={thread} topicId={topicFilter} onCleared={() => onCleared?.()} />
-          ))}
-        </div>
-      )
-    }
-    case 'system':
-      return <WokeNote text={text} when={when} />
-    case 'tool':
-      return <ToolLine text={text} />
-    case 'error':
-      return (
-        <p className="trow tone-bad" role="alert">
-          <Glyph glyph={MARKS.run_failed.glyph} tone="bad" label="error" />
-          <span>{text}</span>
-        </p>
-      )
-    case 'new':
-      return (
-        <p className="trow trow-new">
-          <Glyph glyph={MARKS.lane_opened.glyph} tone="accent" label="new conversation" />
-          <span>New conversation {when}</span>
-        </p>
-      )
-    case 'turn_end':
-      // A turn that ended well needs no row; one that did not says how.
-      return text && text !== 'done' ? (
-        <p className="trow faint">
-          <Glyph glyph={MARKS.run_interrupted.glyph} tone="broken" label="turn ended early" />
-          <span>Turn ended: {text}</span>
-        </p>
-      ) : null
-    case 'cost':
-      return text ? (
-        <p className="trow faint">
-          <Glyph glyph="$" tone="muted" label="cost" />
-          <span>Turn cost ${text}</span>
-        </p>
-      ) : null
-    case 'turn_start':
-      return null
-    default:
-      // A kind a newer daemon adds still shows, as a note.
-      return (
-        <p className="trow faint">
-          <Glyph glyph={MARKS.info.glyph} tone="muted" label={e.kind} />
-          <span>{text || e.kind}</span>
-        </p>
-      )
-  }
-}
-
 function ChatThread({
-  thread: make, workspaceId, children,
+  thread: make, workspaceId, children, side = false, topic: fixedTopic, keys = true,
 }: {
   thread: (workspaceId: number) => DeskThread
   workspaceId: number
   children?: ReactNode
+  /** The column beside a main-body page: no topic chips, no "Since you were away", as wide as its panel. */
+  side?: boolean
+  /** A topic the thread is held to, whatever the address says (null: all of it). */
+  topic?: number | null
+  /** The pending bar answers `]` and `[`; off where the page beside has its own. */
+  keys?: boolean
 }) {
   const [thread] = useState(() => make(workspaceId))
   useEffect(() => {
@@ -287,12 +120,14 @@ function ChatThread({
   }, [])
   const { away, dismiss: dismissAway } = useSeenWatch(waitingItems, hash)
   const unseenDecisions = useMemo(() => new Set((waitingItems ?? []).flatMap((w) => (w.decision_id && isUnseen(seen, w) ? [w.decision_id] : []))), [waitingItems, seen])
+  const unseenTurns = useMemo(() => new Set((waitingItems ?? []).flatMap((w) => (w.question_id && w.turn !== undefined && isUnseen(seen, w) ? [w.turn] : []))), [waitingItems, seen])
   const unseenQuestions = useMemo(() => new Set((waitingItems ?? []).flatMap((w) => (w.question_id && isUnseen(seen, w) ? [w.question_id] : []))), [waitingItems, seen])
 
   const all = useMemo(() => timeline(d.events, live.feed), [d.events, live.feed])
   // The topic filter is a view over the one thread, kept in the hash so it can be linked
   // and survives a reload; the desk and history are never filtered.
-  const [topicId, setTopicId] = useState<number | null>(() => readTopicFilter(window.location.hash))
+  const [hashTopic, setTopicId] = useState<number | null>(() => readTopicFilter(window.location.hash))
+  const topicId = fixedTopic !== undefined ? fixedTopic : hashTopic
   const [topicList, setTopicList] = useState<TopicView[]>([])
   useEffect(() => {
     const onHash = () => setTopicId(readTopicFilter(window.location.hash))
@@ -465,25 +300,131 @@ function ChatThread({
   const offline = d.connection === 'reconnecting'
   const stopped = d.connection === 'signed-out' || d.connection === 'refused'
 
+  // The topics holding something that waits on the person and has not been opened.
+  const unseenTopics = new Set(
+    topicList.flatMap((t) => (t.links.some((l) => (l.kind === 'decision' && unseenDecisions.has(Number(l.ref))) || (l.kind === 'turn' && unseenTurns.has(Number(l.ref)))) ? [t.id] : [])),
+  )
+  const openDecision = parse(hash).open?.kind === 'decision' ? parse(hash).open?.id : undefined
+
+  // The rows, as the shared thread draws them. A row's time is kept to place "n new".
+  const entries: ThreadEntry[] = []
+  const times: number[] = []
+  const add = (e: ThreadEntry | null, created: string | undefined) => {
+    if (!e) return
+    entries.push(e)
+    times.push(created ? Date.parse(created) : 0)
+  }
+  for (const r of rows) {
+    if (r.type === 'updates') {
+      add({ kind: 'node', key: r.key, children: <UpdatesFold feed={r.feed} now={now} flash={flash} reveal={reveal} /> }, r.feed[0]?.created)
+      continue
+    }
+    if (r.type === 'work') {
+      add({ kind: 'node', key: r.key, children: <WorkFold steps={workSteps(r.work, now)} /> }, r.work[0]?.created)
+      continue
+    }
+    const it: ThreadItem = r.type === 'reply' ? { type: 'desk', key: r.key, e: r.e } : r.it
+    if (it.type === 'desk') {
+      add(
+        deskEntry({
+          e: it.e, key: it.key, now, work: r.type === 'reply' ? r.work : undefined,
+          topic: it.e.turn === undefined ? undefined : byTurn.get(it.e.turn),
+          activeTopic: topicId, onTopic: side ? undefined : filterTo,
+          questions: questionsAt.get(it.e.seq), flash, thread, topicFilter: topicId, onCleared: readQuestions, onReplyRef: jumpToQuestion,
+          unseen: (questionsAt.get(it.e.seq) ?? []).some((q) => unseenQuestions.has(q.id)),
+        }),
+        it.e.created,
+      )
+    } else {
+      const asked = it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined
+      add(
+        feedEntry({
+          f: it.f, now, flash: flash === `f${it.f.id}`, decision: asked, selected: asked !== undefined && asked.id === openDecision,
+          unseen: it.f.event === 'decision_asked' && unseenDecisions.has(it.f.ref ?? 0),
+        }),
+        it.f.created,
+      )
+    }
+  }
+  for (const x of unplaced) {
+    add(
+      { kind: 'decision', key: `d${x.id}`, anchor: `d${x.id}`, flash: flash === `d${x.id}`, children: <DecisionCard d={x} variant="inline" unseen={unseenDecisions.has(x.id)} selected={x.id === openDecision} /> },
+      undefined,
+    )
+  }
+  if (d.partial !== '') add({ kind: 'desk', key: 'partial', text: d.partial, partial: true }, undefined)
+  // Scrolled up, the reader has a way back to the newest message, which stays in view as the thread scrolls.
+  if (!follow.following) {
+    add({ kind: 'node', key: 'jump', children: <Button className="sh-conv-jump" onClick={follow.jump}>Jump to latest</Button> }, undefined)
+  }
+  // "n new": everything from the first row newer than the person's last look.
+  if (away !== null && !side) {
+    const at = times.findIndex((t) => t > away)
+    if (at >= 0) entries.splice(at, 0, { kind: 'new', key: 'new', label: `${entries.length - at} new` })
+  }
+
+  const before = (
+    <>
+      {topicId !== null && !side && (
+        <p className="sh-conv-note" role="status">
+          Showing: {topic && topic.id === topicId ? topic.title : `topic ${topicId}`}, {items.length} {items.length === 1 ? 'row' : 'rows'}.{' '}
+          <button type="button" className="sh-link" onClick={() => filterTo(null)}>
+            Show all
+          </button>
+        </p>
+      )}
+      {d.more && (
+        <p className="sh-conv-note">
+          <button type="button" className="sh-link" onClick={() => void thread.loadEarlier()}>
+            Load earlier messages
+          </button>
+        </p>
+      )}
+      {replyNote !== '' && (
+        <p className="sh-conv-note" role="status">
+          {replyNote}{' '}
+          <button type="button" className="sh-link" onClick={() => setReplyNote('')}>
+            Dismiss
+          </button>
+        </p>
+      )}
+      {stepNote && (
+        <p className="sh-conv-note" role="status">
+          Not in the loaded thread: {stepNote.title}.{' '}
+          {stepNote.action === 'review' && stepNote.next_id ? <a href={href.next(stepNote.next_id)}>Review</a> : null}
+          {stepNote.lane_id ? <a href={href.lane(stepNote.lane_id)}>Open lane</a> : null}{' '}
+          <button type="button" className="sh-link" onClick={() => setStepNote(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
+      {!side && <AwayBlock since={away} items={away === null ? [] : (waitingItems ?? [])} feed={live.feed} onDismiss={dismissAway} now={now} />}
+    </>
+  )
+
   return (
-    <div className="page chat">
-      <header className="chat-head">
-        <h1>Conversation</h1>
-        <ErrorBoundary region="The topics">
-          <TopicBar active={topicId} onFilter={filterTo} manage={topics} />
-        </ErrorBoundary>
+    <div className={cx('page chat sh-conv', side && 'sh-conv--side')} data-component="Conversation" data-layout={side ? 'side' : 'main'}>
+      <header className="sh-head sh-conv-head">
+        {side ? <h2 className="sh-conv-title">Conversation</h2> : <h1>Conversation</h1>}
+        {side ? (
+          topicId !== null && <span className="sh-conv-topic" title={topic?.title}>{topic?.title ?? `topic ${topicId}`}</span>
+        ) : (
+          <ErrorBoundary region="The topics">
+            <TopicChips active={topicId} onFilter={filterTo} manage={topics} unseen={unseenTopics} />
+          </ErrorBoundary>
+        )}
         {children}
-        <span className="chat-state faint" role="status">
+        <span className="sh-head-right" role="status">
           {offline ? 'Reconnecting…' : d.busy ? (d.queued > 1 ? `Working, ${d.queued - 1} waiting…` : 'Working…') : 'Front desk is idle'}
         </span>
-        <span className="chat-tools">
+        <span className="sh-conv-tools">
           {offline && (
             <Button size="small" onClick={() => thread.wake()}>
               Retry now
             </Button>
           )}
           {confirming ? (
-            <span className="chat-confirm" ref={confirmRoot} role="group" aria-label="Start a new conversation?">
+            <span className="sh-conv-confirm" ref={confirmRoot} role="group" aria-label="Start a new conversation?">
               <span>Start fresh? The desk forgets this conversation&rsquo;s context.</span>
               <Button
                 size="small"
@@ -505,16 +446,18 @@ function ChatThread({
               </Button>
             </span>
           ) : (
-            <span className="chat-more" ref={moreRoot}>
+            <span className="sh-conv-more" ref={moreRoot}>
               <Button size="small" variant="ghost" aria-label="More" aria-haspopup="true" aria-expanded={menu} onClick={() => setMenu(!menu)}>
                 &hellip;
               </Button>
               {menu && (
-                <div className="chat-menu" role="group" aria-label="Conversation options">
+                <div className="sh-conv-menu" role="group" aria-label="Conversation options">
                   <NotifyToggle />
-                  <Button size="small" aria-pressed={topics} onClick={() => { setMenu(false); setTopics(!topics) }}>
-                    {topics ? 'Hide topics' : 'All topics'}
-                  </Button>
+                  {!side && (
+                    <Button size="small" aria-pressed={topics} onClick={() => { setMenu(false); setTopics(!topics) }}>
+                      {topics ? 'Hide topics' : 'All topics'}
+                    </Button>
+                  )}
                   <Button size="small" onClick={() => { setMenu(false); setConfirming(true) }}>
                     New conversation
                   </Button>
@@ -526,124 +469,48 @@ function ChatThread({
       </header>
 
       {stopped && !d.problem && (
-        <p className="chat-problem tone-bad" role="alert">
+        <p className="sh-conv-problem" role="alert">
           {d.loadError ?? `You are signed out. ${SIGN_IN_HINT}`}
         </p>
       )}
       {offline && d.loaded && (
-        <p className="chat-problem tone-bad" role="alert">
+        <p className="sh-conv-problem" role="alert">
           The daemon is not answering, so this conversation may be out of date. It reconnects by itself
           {d.failures >= 3 ? `; if it keeps failing the daemon may have moved: ${SIGN_IN_HINT}` : '.'}
         </p>
       )}
       {d.loadError && !stopped && !d.loaded && (
-        <p className="chat-problem tone-bad" role="alert">
+        <p className="sh-conv-problem" role="alert">
           Could not read the conversation: {d.loadError}. Retrying.
         </p>
       )}
 
-      <div className="chat-layout">
-        <ErrorBoundary region="The conversation">
-        <div className="chat-main">
-        {topicId !== null && (
-          <p className="topic-filter" role="status">
-            Showing: {topic && topic.id === topicId ? topic.title : `topic ${topicId}`}, {items.length} {items.length === 1 ? 'row' : 'rows'}.{' '}
-            <button type="button" className="link-button" onClick={() => filterTo(null)}>
-              Show all
-            </button>
+      <ErrorBoundary region="The conversation">
+        <div className="sh-conv-body">
+          <Thread
+            items={entries}
+            scrollRef={setScroller}
+            layout={side ? 'side' : 'main'}
+            busy={!d.loaded}
+            before={before}
+            empty={d.loaded && d.partial === '' ? <p className="sh-conv-empty">Nothing said yet. Ask the front desk what the flock is doing.</p> : null}
+          />
+          <Announcer items={waitingItems} />
+          <PendingStrip keys={keys} />
+          {/* Always mounted, so a change of its text is announced; empty while the stream is live. */}
+          <p className={cx('sh-conv-stream', line?.down && 'is-down')} role="status">
+            {line && (
+              <>
+                {line.text}
+                {offline && <Countdown at={d.retryAt} />}
+              </>
+            )}
           </p>
-        )}
-        {d.more && (
-          <p className="chat-earlier">
-            <button type="button" className="link-button" onClick={() => void thread.loadEarlier()}>
-              Load earlier messages
-            </button>
-          </p>
-        )}
-
-        {replyNote !== '' && (
-          <p className="topic-filter" role="status">
-            {replyNote}{' '}
-            <button type="button" className="link-button" onClick={() => setReplyNote('')}>
-              Dismiss
-            </button>
-          </p>
-        )}
-        {stepNote && (
-          <p className="topic-filter" role="status">
-            Not in the loaded thread: {stepNote.title}.{' '}
-            {stepNote.action === 'review' && stepNote.next_id ? <a href={href.next(stepNote.next_id)}>Review</a> : null}
-            {stepNote.lane_id ? <a href={href.lane(stepNote.lane_id)}>Open lane</a> : null}{' '}
-            <button type="button" className="link-button" onClick={() => setStepNote(null)}>
-              Dismiss
-            </button>
-          </p>
-        )}
-        <AwayBlock since={away} items={away === null ? [] : (waitingItems ?? [])} feed={live.feed} onDismiss={dismissAway} />
-        <Announcer items={waitingItems} />
-        <div ref={setScroller} className="thread" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with the front desk" aria-busy={!d.loaded} tabIndex={0}>
-          <div className="thread-body">
-          {d.loaded && items.length === 0 && d.partial === '' && unplaced.length === 0 && (
-            <p className="faint thread-empty">Nothing said yet. Ask the front desk what the flock is doing.</p>
-          )}
-          {rows.map((r) => {
-            if (r.type === 'updates') return <UpdatesFold key={r.key} feed={r.feed} now={now} flash={flash} reveal={reveal} />
-            if (r.type === 'work') return <WorkFold key={r.key} work={r.work} now={now} />
-            const it: ThreadItem = r.type === 'reply' ? { type: 'desk', key: r.key, e: r.e } : r.it
-            const work = r.type === 'reply' ? r.work : undefined
-            return it.type === 'desk' ? (
-              <DeskRow
-                key={it.key}
-                work={work}
-                e={it.e}
-                now={now}
-                topic={it.e.turn === undefined ? undefined : byTurn.get(it.e.turn)}
-                activeTopic={topicId}
-                onTopic={filterTo}
-                questions={questionsAt.get(it.e.seq)}
-                flash={flash}
-                thread={thread}
-                topicFilter={topicId}
-                onCleared={readQuestions}
-                onReplyRef={jumpToQuestion}
-                unseen={(questionsAt.get(it.e.seq) ?? []).some((q) => unseenQuestions.has(q.id))}
-              />
-            ) : (
-              <FeedRow key={it.key} item={it.f} now={now} flash={flash === `f${it.f.id}`} unseen={it.f.event === 'decision_asked' && unseenDecisions.has(it.f.ref ?? 0)} decision={it.f.event === 'decision_asked' ? open.get(it.f.ref ?? 0) : undefined} />
-            )
-          })}
-          {unplaced.map((x) => (
-            <div key={`d${x.id}`} id={threadId(`d${x.id}`)} className={`trow trow-decision${flash === `d${x.id}` ? ' is-flash' : ''}`}>
-              {unseenDecisions.has(x.id) ? <UnseenDot /> : null}
-              <Glyph glyph={MARKS.decision_asked.glyph} tone="warn" label="decision waiting" />
-              <DecisionCard d={x} variant="inline" />
-            </div>
-          ))}
-          {d.partial !== '' && (
-            <div className="msg msg-assistant is-partial">
-              <span className="msg-who">Front desk</span>
-              <Markdown text={d.partial} />
-            </div>
-          )}
-                  </div>
+          <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} topicId={topicId} onSend={follow.jump} />
         </div>
-
-        <PendingStrip />
-        {/* Always mounted, so a change of its text is announced; empty while the stream is live. */}
-        <p className={`chat-stream${line?.down ? ' is-down' : ''}`} role="status">
-          {line && (
-            <>
-              {line.text}
-              {offline && <Countdown at={d.retryAt} />}
-            </>
-          )}
-        </p>
-        <Composer thread={thread} workspaceId={workspaceId} d={d} disabled={stopped} following={follow.following} topicId={topicId} onSend={follow.jump} />
-        </div>
-        </ErrorBoundary>
-      </div>
+      </ErrorBoundary>
     </div>
   )
 }
 
-export { ChatThread, FeedRow, DeskRow }
+export { ChatThread }

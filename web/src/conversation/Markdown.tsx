@@ -2,7 +2,8 @@ import { Fragment, type ReactNode } from 'react'
 import { CopyButton } from '../components/CopyButton'
 
 // What an agent wrote is text, never markup: elements are built here, so nothing of it
-// reaches innerHTML, and a link survives only as an http or https anchor.
+// reaches innerHTML, and a link survives only as an http or https anchor, or as a route of
+// this app (`#/...`), which opens in the same tab.
 
 function safeHref(raw: string): string | null {
   try {
@@ -13,6 +14,9 @@ function safeHref(raw: string): string | null {
   }
 }
 
+/** A route of this app: a hash, then a path. Never a scheme, so it cannot run anything. */
+const APP_ROUTE = /^#\/[\w\-./%:?=&]*$/
+
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\s]+\))/
 
 /** Inline markdown only (code, bold, links), for a line that sits inside a heading or a button. */
@@ -22,7 +26,15 @@ export function inline(text: string): ReactNode[] {
     if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>
     const m = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part)
     if (m) {
-      const url = safeHref(m[2] ?? '')
+      const target = m[2] ?? ''
+      if (APP_ROUTE.test(target)) {
+        return (
+          <a key={i} href={target}>
+            {m[1]}
+          </a>
+        )
+      }
+      const url = safeHref(target)
       if (url) {
         return (
           <a key={i} href={url} target="_blank" rel="noopener noreferrer">
