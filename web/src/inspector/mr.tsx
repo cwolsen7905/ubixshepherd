@@ -118,6 +118,7 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
       if (!mounted.current) return
       setConfirming(false)
       setApproved(true)
+      void read()
       // The next merge request opens here (the shared step only knows decisions and questions).
       const next = neighbour(items, key, 'down', key)
       const to = next ? inboxOpen(next) : null
@@ -143,7 +144,7 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
 
   return (
     <section className="mr-approval" aria-label="Merge request approval" data-component="MrApproval">
-      <h2 className="mr-approval-h">{view.approved ? `Merge request !${mr} is approved` : `Approve merge request !${mr}?`}</h2>
+      <h2 className="mr-approval-h">{view.approved || approved ? `Merge request !${mr} is approved` : `Approve merge request !${mr}?`}</h2>
       <p>{approvalSentence(view, lane, now)}</p>
       {diff && (
         <>
@@ -177,7 +178,7 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
         </p>
       )}
       <div className="mr-actions">
-        {open && !view.approved && !confirming && (
+        {open && !view.approved && !approved && !confirming && (
           <Button variant="attention" disabled={busy || !sha} onClick={() => setConfirming(true)}>Approve !{mr}</Button>
         )}
         <button type="button" className="sh-link" onClick={onReview}>Review changes</button>
@@ -215,7 +216,7 @@ export function MrInspector({ open }: { open: Open }) {
   }
 
   const items = [
-    { id: 'approval', label: 'Approval', content: <MrApproval lane={lane} refreshKey={feedLast} now={now} onReview={() => select('changes')} /> },
+    { id: 'approval', label: 'Approval', content: <MrApproval key={lane.id} lane={lane} refreshKey={feedLast} now={now} onReview={() => select('changes')} /> },
     {
       id: 'changes',
       label: tabLabel('Changes', counts.changes),

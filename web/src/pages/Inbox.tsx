@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, history, nextUp, waitingOnYou } from '../api/client'
 import type { LaneRecord, WaitingItem } from '../api/types'
 import { splitQuestion } from '../components/DecisionCard'
@@ -43,6 +43,9 @@ const MARK: Record<WaitingItem['kind'], { glyph: string; tone: GlyphTone }> = {
   scope: { glyph: '!', tone: 'warn' },
   blocked: { glyph: '✗', tone: 'bad' },
 }
+
+/** The least time between two reads of what finished today. */
+const MIN_REREAD = 15_000
 
 function startOfDay(now: number): Date {
   const d = new Date(now)
@@ -135,22 +138,37 @@ export function InboxPage({ kind }: { kind?: string }) {
 
   // Done today: merge requests that merged since local midnight, and decisions answered since.
   const workspaceIds = (snap.status?.workspaces ?? []).map((w) => w.id).join(',')
+  const feedLast = snap.feed.at(-1)?.id ?? 0
+  const lastRead = useRef(0)
   useEffect(() => {
     let current = true
-    const from = startOfDay(Date.now())
-    const ids = workspaceIds === '' ? [] : workspaceIds.split(',').map(Number)
-    Promise.all(ids.map((id) => history.lanes(id, from.toISOString()))).then(
-      (ls) => current && setMerged(ls.flat().filter((l) => l.outcome === 'merged' && l.closed && Date.parse(l.closed) >= from.getTime()).sort((a, b) => Date.parse(b.closed ?? '') - Date.parse(a.closed ?? ''))),
-      () => current && setMerged([]),
-    )
-    api.decisions('answered').then(
-      (ds) => current && setAnswered(ds.filter((d) => d.answered && Date.parse(d.answered) >= from.getTime()).length),
-      () => current && setAnswered(0),
-    )
+    const read = () => {
+      lastRead.current = Date.now()
+      const from = startOfDay(Date.now())
+      const ids = workspaceIds === '' ? [] : workspaceIds.split(',').map(Number)
+      Promise.all(ids.map((id) => history.lanes(id, from.toISOString()))).then(
+        (ls) => current && setMerged(ls.flat().filter((l) => l.outcome === 'merged' && l.closed && Date.parse(l.closed) >= from.getTime()).sort((a, b) => Date.parse(b.closed ?? '') - Date.parse(a.closed ?? ''))),
+        () => current && setMerged([]),
+      )
+      api.decisions('answered').then(
+        (ds) => current && setAnswered(ds.filter((d) => d.answered && Date.parse(d.answered) >= from.getTime()).length),
+        () => current && setAnswered(0),
+      )
+    }
+    // A busy feed reads at most once in MIN_REREAD, with one trailing read when the window ends.
+    const wait = MIN_REREAD - (Date.now() - lastRead.current)
+    if (wait <= 0) read()
+    else {
+      const t = window.setTimeout(read, wait)
+      return () => {
+        current = false
+        window.clearTimeout(t)
+      }
+    }
     return () => {
       current = false
     }
-  }, [workspaceIds, snap.decisions.length, snap.waiting?.version])
+  }, [workspaceIds, feedLast])
 
   // The row whose panel is open: the shared openKey knows decisions and questions only, so merge
   // requests (and lanes) match through inboxOpen. A panel that changes drops the cursor.

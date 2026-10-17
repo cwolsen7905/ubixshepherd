@@ -283,4 +283,16 @@ describe('MR approval panel', () => {
     await userEvent.click(screen.getByRole('button', { name: /^Approve at / }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not approved: head moved')
   })
+
+  it('shows the approved state and drops the Approve button after approving', async () => {
+    const read = vi.spyOn(laneApprove, 'read').mockResolvedValueOnce(view).mockResolvedValue({ ...view, approved: true })
+    vi.spyOn(laneChanges, 'diff').mockResolvedValue(diff as never)
+    vi.spyOn(laneApprove, 'approve').mockResolvedValue({ ...view, approved: true, retried: false })
+    await panel()
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve !12' }))
+    await userEvent.click(screen.getByRole('button', { name: /^Approve at / }))
+    expect(await screen.findByRole('heading', { name: 'Merge request !12 is approved' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve !12' })).toBeNull()
+    expect(read).toHaveBeenCalledTimes(2)
+  })
 })
