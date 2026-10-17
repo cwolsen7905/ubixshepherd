@@ -207,9 +207,10 @@ describe('BoardPage agent column', () => {
     await show([
       { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: undefined }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
     ])
-    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    const rowElement = screen.getByText('feat/login').closest('li') as HTMLElement
+    const row = within(rowElement)
     expect(row.getByText('claude')).toBeInTheDocument()
-    expect(row.queryByTitle('claude-sonnet')).toBeNull()
+    expect(rowElement.querySelector('.row-model')).toBeNull()
   })
 })
 

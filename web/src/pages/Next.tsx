@@ -273,12 +273,13 @@ function NextRow({
   const open: Open | undefined = it.lane_id ? { kind: 'lane', id: it.lane_id } : undefined
   const rowOpen = open ? openRow(open) : undefined
   const target = open
+  const inner = (e: { target: EventTarget }) => e.target instanceof HTMLElement && !!e.target.closest('a, button, input, select')
   const openProps = rowOpen && target
     ? {
         ...rowOpen,
         role: 'button' as const,
         onKeyDown: (e: React.KeyboardEvent) => {
-          if (e.key === ' ') {
+          if (e.key === ' ' && !inner(e)) {
             e.preventDefault()
             openInInspector(target)
           } else {

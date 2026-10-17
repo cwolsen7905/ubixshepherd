@@ -299,4 +299,24 @@ describe('NextPage', () => {
     await userEvent.click(within(startable).getByRole('button', { name: 'Link…' }))
     expect(window.location.hash).not.toContain('open=lane')
   })
+
+  it('does not open the inspector when Space is pressed on a button inside a linked row', async () => {
+    window.location.hash = '#/next'
+    const list: NextList = {
+      ...everything,
+      items: [
+        nextItem({ id: 7, title: 'Linked', state: 'approved', stored_state: 'approved', lane_id: 4, lane: 'feat/export-csv', lane_name: 'feat/export-csv' }),
+      ],
+    }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
+      </LiveProvider>,
+    )
+    const linked = (await screen.findByText('Linked')).closest('li') as HTMLElement
+    const defer = within(linked).getByRole('button', { name: 'Defer' })
+    defer.focus()
+    await userEvent.keyboard(' ')
+    expect(window.location.hash).toBe('#/next')
+  })
 })
