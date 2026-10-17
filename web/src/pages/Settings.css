@@ -1,8 +1,8 @@
 /* Settings: one column of sections, each a stack of rows; edits are staged in a bar below. */
-.sh-settings { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; overflow: hidden; background: var(--sh-field); color: var(--sh-ink); }
+.sh-settings { display: flex; flex-direction: column; min-width: 0; min-height: 100%; background: var(--sh-field); color: var(--sh-ink); }
 .sh-settings-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; min-height: 45px; padding: 10px 20px; border-bottom: 1px solid var(--sh-rule); }
 .sh-settings-head h1 { font-size: var(--sh-t-view); margin: 0 8px 0 0; }
-.sh-settings-body { flex: 1; overflow: auto; padding: 4px 20px 24px; }
+.sh-settings-body { flex: 1; padding: 4px 20px 24px; }
 .sh-settings .sh-section h2 { font-size: var(--sh-t-card); margin: 22px 0 2px; }
 .sh-settings .sh-section h2:first-of-type { margin-top: 18px; }
 .sh-settings .banner { margin: var(--sh-s4) 0 0; padding: var(--sh-s3) var(--sh-s4); border: 1px solid var(--sh-rule); border-radius: var(--sh-r); background: var(--sh-surface); font-size: var(--sh-t-small); }
@@ -29,7 +29,7 @@
 .sh-keyref .sh-kbd { margin: 0 0 0 4px; }
 
 /* The staged bar: what will be written, and the two ways out. */
-.sh-staged { flex: none; border-top: 1px solid var(--sh-rule); background: var(--sh-surface); padding: 12px 20px 14px; max-height: 48vh; overflow: auto; }
+.sh-staged { position: sticky; bottom: 0; z-index: 2; flex: none; border-top: 1px solid var(--sh-rule); background: var(--sh-surface); padding: 12px 20px 14px; max-height: 48vh; overflow: auto; }
 .sh-staged-inner { max-width: 44rem; display: grid; gap: 10px; }
 .sh-staged-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .sh-staged-actions { margin-left: auto; display: flex; gap: var(--sh-s4); }
