@@ -3,7 +3,7 @@ package config
 import "fmt"
 
 // DefaultNextExpireDays is how long a proposed next-up item may wait for the person's
-// approval before it expires to deferred (docs/design/next-up-guards.md).
+// approval before it expires to deferred.
 const DefaultNextExpireDays = 14
 
 // Next holds the next-up list's settings.

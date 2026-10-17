@@ -202,8 +202,8 @@ Items known today, added by the person (or the desk, on the person's go-ahead) w
 | Backlog actions: ship from a card, first run of a never-run lane, per-lane fix-try count, multi-select | deferred | [backlog-actions.md](backlog-actions.md) |
 | Rail: run progress bar, per-project grouping, per-lane spend, board feed strip | deferred | [web-chat.md](web-chat.md) |
 | Terminal dock grouped by project | deferred | [web-projects.md](web-projects.md) |
-| Workspace-wide leases | planned | [roadmap.md](roadmap.md) |
-| GitHub mirror proofs; typed cross-repo work orders and triage | planned | [roadmap.md](roadmap.md) |
+| Workspace-wide leases | planned | |
+| GitHub mirror proofs; typed cross-repo work orders and triage | planned | |
 
 Not seeded: the rail's "density default" and "all-pages live rail", which are open
 choices for the person rather than work, and anything only in earlier chat threads that

@@ -29,7 +29,7 @@ package daemon
 //     routes or sign-in minting, so it cannot make itself a fresh link.
 //
 // What it does not: a process running as the same OS user can read daemon.json and use
-// the operator token (design.md §3.17); with the operator token, a sign-in link is one
+// the operator token; with the operator token, a sign-in link is one
 // call away. Another local user can see the link in the browser opener's arguments for
 // the moment it runs, and could race the browser to spend it; `shepherd web --print` on a
 // shared machine avoids that. Plain HTTP on loopback has no Secure cookies; TLS for direct

@@ -61,7 +61,7 @@ var ArtifactIntents = []string{ArtifactCommit, ArtifactKeep, ArtifactScratch}
 const ArtifactDir = ".shepherd/artifacts/"
 
 // Artifact is a file in a lane that the person may want to read, whatever its git
-// state (docs/design/artifacts.md). Path is relative to the worktree, with slashes.
+// state. Path is relative to the worktree, with slashes.
 type Artifact struct {
 	ID          int64 `json:"id"`
 	WorkspaceID int64 `json:"workspace_id"`

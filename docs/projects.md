@@ -22,7 +22,7 @@ The sections below state each in place.
 
 ## Why
 
-A workspace ([design.md §3.14](design.md#314-workspaces-one-shepherd-over-many-repos)) is a
+A workspace is a
 directory of repos, and today a repo is the only unit with its own rules. People do not
 think that way. They think "uBixCore" or "the shop", a handful of repos that share a goal,
 a focus this month, a bill, and a way of taking requests. Three gaps follow:
@@ -290,9 +290,7 @@ advice; the release itself is still the human's tag.
 
 ### Relation to typed cross-repo work orders
 
-CLAUDE.md and [v1.md](v1.md) list **typed cross-repo work orders and triage** as not
-implemented, and [design.md §3.3](design.md#33-typed-work-orders) describes the work order
-schema. This proposal is not that, and is meant to fit under it:
+**Typed cross-repo work orders and triage** are not implemented. This proposal is not that, and is meant to fit under it:
 
 - A **work order** is what an agent is given to do in one repo: goal, scope, gate,
   deliverables.
@@ -303,7 +301,7 @@ schema. This proposal is not that, and is meant to fit under it:
   lane's task and scope as a prompt does today; when they do, the same fields fill the
   schema, and the request needs no change.
 - "Triage" is the intake rules: deterministic matching first, with the front desk only
-  for requests that need routing judgment, as in [v1.md](v1.md#dispatch-in-v1).
+  for requests that need routing judgment.
 
 So the end-to-end cross-repo delivery criterion (a framework change, its tag, a host's
 pin bump, with no relaying) is the request plus the release plus the `follows` lane,
@@ -358,9 +356,7 @@ nothing in it names a product.
 8. **Is `touches` trustworthy enough to match on?** It is declared, so the narrow lane
    scope is the real control. If that proves too loose, the receiving project can set
    `decide: hold` for everything from a given sender and accept the load on the person.
-9. **Vocabulary.** "Project" already appears loosely in design.md; if accepted, it
-   needs a row in [naming.md](naming.md) and a numbered entry in
-   [open-questions.md](open-questions.md). This document does not edit either.
+9. **Vocabulary.** If accepted, "project" needs a row in [naming.md](naming.md).
 
 ## Implementation plan
 
@@ -503,15 +499,11 @@ not earlier, so phases 3 to 5 do not queue behind the desk lane's files.
 ### Docs follow-up (a later docs lane)
 
 These are outside this lane's scope and are made only when the maintainer decides the
-related calls, since a decided question moves out of `open-questions.md` only by the
-maintainer:
+related calls:
 
 | File | Entry |
 |---|---|
 | `docs/naming.md` | A **Project** row in the family vocabulary: a named group of repos in one workspace, holding a brief, a budget and intake rules; not a directory, a pack or a product. Add "intake" if the term sticks. |
-| `docs/open-questions.md` | One numbered entry for the project concept (the approval and its date), plus one each for questions 1 to 8 above (1, 2 and 4 are decided, with their date, and the `caches` and `soft`/`hard` cap calls go with them) as they are recorded, keeping stable numbers and linking back here. |
-| `docs/design.md` | A short §3.14 note pointing at this document; it stays **Proposed**. |
-| `docs/v1.md` and `docs/roadmap.md` | Where the project concept lands among the milestones, and the status of each phase as it merges; the end-to-end cross-repo criterion's status changes only when phase 5 and a real run prove it. |
 | `CLAUDE.md` | "Where things stand" and the Code section, once phases merge, not before. |
 | `README.md` | The "Read next" table row for this document. |
 

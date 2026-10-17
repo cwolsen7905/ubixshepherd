@@ -9,7 +9,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// Artifact routes (docs/design/artifacts.md §6). The lane-level discovery read is
+// Artifact routes. The lane-level discovery read is
 // PathLaneArtifacts; these are the stored list and the declaration.
 const PathArtifacts = "/v1/artifacts"
 

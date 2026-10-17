@@ -409,7 +409,6 @@ tokens in `theme.css`, it is a two-line move once that lane lands.
 | `internal/daemon/daemon.go` | Register `GET /v1/timeline` for the same role as the history routes. | 2 |
 | `internal/daemon/auth_test.go` | The route in the role table. | 2 |
 | `CHANGELOG.md` | An Unreleased entry per phase. | each |
-| `docs/roadmap.md`, `docs/web-*.md` | One line each, if the maintainer wants the page indexed. | 3 |
 
 Nothing in `internal/` names a product, so `core-boundary` is unaffected, and nothing here
 needs a new Go or npm dependency.

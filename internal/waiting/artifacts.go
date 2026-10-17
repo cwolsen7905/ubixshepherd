@@ -10,7 +10,7 @@ import (
 )
 
 // MergedArtifactItems are the open lanes whose merge request merged but whose
-// uncommitted files nobody decided (docs/design/artifacts.md §4): the automatic close
+// uncommitted files nobody decided: the automatic close
 // refuses them, so the lane waits for the person to keep, commit or discard. Files in
 // the Shepherd directory never hold a lane. workspaceID 0 is every workspace.
 func MergedArtifactItems(ctx context.Context, st store.Store, workspaceID int64) ([]api.WaitingItem, error) {

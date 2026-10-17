@@ -241,7 +241,7 @@ command on hover; "not run" is drawn neutral.
   reference once built, and the same sections move into it (the pattern of
   `docs/web-projects.md`). `docs/desk.md`'s "What tools return to the desk" gains one
   paragraph on `lane_diff`'s modes. `docs/config.md` documents `web.editor_url`.
-  `docs/roadmap.md` and `CHANGELOG.md` get one line each. `docs/v1.md` is untouched.
+  `CHANGELOG.md` gets one line.
 
 ## Out of scope
 
@@ -266,7 +266,7 @@ command on hover; "not run" is drawn neutral.
 | config | `internal/config/config.go` (`web.editor_url`), tests |
 | gate record | `internal/store/store.go`, `internal/store/sqlite/` (an appended migration and the table), `internal/dispatch/ship.go` (the two call sites) |
 | web | `web/src/pages/Lane.tsx`, `web/src/pages/Runs.tsx`, `web/src/components/` (`Changes`, `GateBadge`), `web/src/api/types.ts`, `web/src/api/client.ts`, `web/src/styles/`, their tests |
-| docs | this file, `docs/desk.md`, `docs/config.md`, `docs/roadmap.md`, `CHANGELOG.md` |
+| docs | this file, `docs/desk.md`, `docs/config.md`, `CHANGELOG.md` |
 
 ## Sequencing
 

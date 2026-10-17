@@ -220,8 +220,6 @@ crash is unaffected.
   `shepherd repo add <name>`; see what was found with `shepherd repo scan`".
 - `docs/config.md`: a repo is managed in the store, not by `config.yaml`; a profile
   does not manage a repo; the finding that says so.
-- `docs/v1.md` and `docs/roadmap.md`: a line under M2 (workspace) for repo
-  add/remove.
 - `docs/web-settings.md`: the Repos section.
 - `docs/desk.md`: the three tools and the finding in the brief.
 - `CLAUDE.md`: one bullet under Code: where repo management lives and that the

@@ -30,7 +30,7 @@ type stallState struct {
 }
 
 // checkStall posts one feed item when keep-going is on, nothing runs and approved
-// Next-up items wait with nothing able to start them (docs/design/keep-going-stall-alert.md).
+// Next-up items wait with nothing able to start them.
 // It fires once per stall: the state resets only when the workspace stops stalling.
 func (k *KeepGoing) checkStall(ctx context.Context, row store.KeepGoing) {
 	ws := row.WorkspaceID

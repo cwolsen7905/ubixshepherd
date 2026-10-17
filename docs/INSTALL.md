@@ -180,7 +180,7 @@ and the `shepherd-worker` entry in `~/.cursor/mcp.json` if you ran
 
 - **GitLab is the only forge for lanes.** Merge request polling and merge closure use
   `glab`. GitHub-as-a-forge, cross-repo typed work orders and triage, and workspace-wide
-  leases are not built. See [roadmap.md](roadmap.md).
+  leases are not built.
 - **macOS and Linux are tested; Windows is not.** Windows has no login-service
   integration and no config reload.
 - **Not a security boundary against a hostile agent.** Scoped tokens and the pre-push hook

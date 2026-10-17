@@ -36,7 +36,7 @@ type Config struct {
 	// KeepGoing bounds keep-going mode, the switch that lets the front desk act on what
 	// is already approved (docs/keep-going.md).
 	KeepGoing KeepGoing `yaml:"keep_going,omitempty" json:"keep_going"`
-	// Next holds the next-up list's settings (docs/design/next-up-guards.md).
+	// Next holds the next-up list's settings.
 	Next Next `yaml:"next,omitempty" json:"next"`
 	// Web holds the browser UI's settings; the page reads them from GET /v1/config.
 	Web      Web                `yaml:"web" json:"web"`
@@ -519,7 +519,7 @@ type Artifacts struct {
 	CapMB int `yaml:"cap_mb,omitempty" json:"cap_mb,omitempty"`
 }
 
-// The retention defaults for artifact snapshots (docs/design/artifacts.md §4).
+// The retention defaults for artifact snapshots.
 const (
 	DefaultArtifactKeepDays = 30
 	DefaultArtifactCapMB    = 500

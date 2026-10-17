@@ -3,7 +3,7 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/ubixsys/ubixshepherd/internal/version.Version=$(VERSION)
 TARGETS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
-# Core code must not name a product: product knowledge lives in packs (design.md §3.12).
+# Core code must not name a product: product knowledge lives in packs.
 CORE_DIRS := cmd internal
 PRODUCT_PATTERN := ubixcore|ubixvault|ubixops|replikate|ubixos
 
