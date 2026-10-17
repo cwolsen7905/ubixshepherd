@@ -9,13 +9,16 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
-## [0.5.0-beta.1] - 2026-10-14
+## [0.5.0-beta.1] - unreleased
 
-A beta of uBixShepherd with a keep-going mode that lets the front desk carry on with
-what is already approved, a Waiting on you list that now also shows blocked lanes and
-unapplied scope widenings, tracked questions from the desk to the person, review threads
-handed back to a lane's agent, GitLab links in reports, and a daemon upgrade from the
-update notice. Nothing is removed or changed incompatibly.
+A beta of uBixShepherd with a redesigned web UI built from one design system, a
+keep-going mode that lets the front desk carry on with what is already approved, files
+that agents produce kept as artifacts, restarts that drain running agents and continue
+them, runs that stop without finishing continued once, a Waiting on you list that also
+shows blocked lanes and unapplied scope widenings, tracked questions from the desk to the
+person, review threads handed back to a lane's agent, GitLab links in reports, and a
+daemon upgrade from the update notice. Nothing is removed or changed incompatibly. See
+Known limits at the end of this section for what is not built yet.
 
 ### Interface changes
 
@@ -46,8 +49,30 @@ update notice. Nothing is removed or changed incompatibly.
   pipelines and review threads.
 - New command `shepherd links` and MCP tool `links_thread`, which turn a discussion id
   into its note URL.
-- Appended store migrations add `lane_forge.threads_seen` and relabel planned `desk`
-  items as `chat`. They apply when the daemon starts, and a binary refuses a store
+- New route `GET /v1/lanes/{id}/files?path=&ref=`, a read-only listing of a directory or
+  one file (up to 1 MiB inline, larger and binary files are listed without data) of the
+  lane's worktree, or of a ref in its repo.
+- Artifacts: new routes `GET /v1/artifacts`, `GET /v1/artifacts/{id}`,
+  `GET /v1/lanes/{id}/artifacts`, `POST /v1/runs/{id}/artifacts` (the run's own token
+  only), a snapshot content route, and routes to move an artifact to keep, discard, pin
+  and edit its intent (the web and the operator only). New command `shepherd worker
+  artifact PATH`, `shepherd artifact gc`, the MCP tool `artifact`, the desk tools
+  `artifact_list` and `artifact_read`, `--artifact` on `ask-human`, and the feed kind
+  `artifact`. New config keys `artifacts.keep_days` (30) and `artifacts.cap_mb` (500).
+- `POST /v1/desk/turn` takes a structured `about` (what the person's message is about),
+  which the web's context composer sends.
+- `shepherd daemon restart --drain [--timeout 10m]`; `make install` uses it, and
+  `DRAIN_TIMEOUT` sets how long it waits. Runs gain a `reason` column and a new
+  `held_starts` table keeps starts held during a drain.
+- New config keys: `max_runs` under `defaults` or a repo (a cap on agents running in one
+  repo; `daemon.max_runs` stays the machine's cap), `next.expire_days` (days a proposed
+  Next-up item may wait), and `autonomy.tag: agent` with `autonomy.push: shepherd`, under
+  which Shepherd pushes a release tag the lane's agent reserved. New command `shepherd
+  workspace rename` and MCP tool `workspace_rename`.
+- Next-up items gain `done_when` and `depends_on`, and suggestions appear in Waiting on you.
+- Appended store migrations add `lane_forge.threads_seen`, the artifact tables, the
+  `held_starts` table and the run `reason` column, and relabel planned `desk` items as
+  `chat`. They apply when the daemon starts, and a binary refuses a store
   migrated by a newer one.
 
 ### Added
@@ -61,8 +86,9 @@ update notice. Nothing is removed or changed incompatibly.
   turns itself off when a limit is reached and records why. It never answers a decision,
   approves, merges, tags or deploys, and only the person turns it on. The mode is per
   workspace, lives in the store and survives a restart. The desk's "do not start new
-  work" sentence now comes from one function that reads the flag. The web switch and the
-  `keep_going` feed kind are not built yet. See [docs/keep-going.md](docs/keep-going.md).
+  work" sentence now comes from one function that reads the flag. The web has a switch and the
+  feed has a `keep_going` kind, and an alert is posted once when a stall leaves approved
+  items unstarted. Known limits below says what the mode does not do yet. See [docs/keep-going.md](docs/keep-going.md).
 - **Waiting on you lists blocked lanes and unapplied scope widenings.** A lane whose last
   run reported blocked, an answered scope-widening decision the lane's scope does not
   cover, and an approved Next-up item whose lane closed without a merge now wait on the
@@ -118,12 +144,90 @@ update notice. Nothing is removed or changed incompatibly.
   decisions. `shepherd chat` gains `/next`, which lists them. Nothing is added to the API:
   the count comes from the existing `GET /v1/next`.
 
+- **The web UI is redesigned from one design system.** Every page is rebuilt from shared
+  parts with `--sh-*` tokens in light and dark themes, in IBM Plex Sans and Mono. The
+  layout is a sidebar, a main body and a side panel: selecting a row opens it in the side
+  panel without leaving the list, every panel offers "Open as page", and a draggable
+  divider keeps at least 40 characters for the main body and is remembered per view. The
+  sidebar shows status counts that stay visible at zero, the footer says in words whether
+  the daemon is reachable, lists take `j`, `k` and Enter, `]` jumps to the next item
+  waiting on you, and Cmd+K opens a command palette. Settings never save by themselves.
+- **Conversation is the home page.** The desk's messages open with "Needs you:" or
+  "Nothing needs you" and no longer paste the waiting line. "Show work" folds the tool
+  calls, "Since you were away" marks what happened while the page was closed, decisions
+  show full width with their options, and a context composer says what a reply is about.
+- **Inbox, with an approval panel for merge requests.** Everything waiting on the person in
+  one list. A merge request opens in an approval panel, with the ship action for repos set
+  to `push: shepherd`; the AI review row is a placeholder (see Known limits).
+- **Board, with lane detail as a panel or a page.** Lanes grouped by state, with gate and
+  merge request badges. A lane's header and tabs are Overview, Changes, Artifacts,
+  Conversation, Runs and Files.
+- **A read-only Files view.** Browse a lane's worktree or a ref through the new files
+  endpoint; binary and oversized files are named without their content.
+- **Artifacts, Runs, Timeline, History, Next up, Projects, Rules, Usage, Settings and
+  Status views.** Artifacts lists agents' files; Runs has the run log; Timeline is a
+  Gantt; History lists past work; Next up is rebuilt with an inline detail panel, drag
+  reordering and keyboard moves; Projects shows each repo; Rules shows the config; Usage
+  shows spend with estimates marked; Settings stages edits, shows a diff of the config,
+  marks risky lines and asks before saving them; Status shows the daemon.
+- **Agents' files are kept as artifacts.** An agent declares a file with `shepherd worker
+  artifact` (or the `artifact` tool), and a run's end records files matching the repo's
+  artifact globs and everything under `.shepherd/artifacts/`, which Shepherd adds to the
+  repo's `info/exclude`. Content is snapshotted, redacted, to `~/.shepherd/artifacts/`
+  with versions, so a file survives its worktree. Closing a lane names the files to keep
+  or discard, a merged lane held open by undecided files waits on the person, and
+  retention is `artifacts.keep_days` and `artifacts.cap_mb`. The desk can list and read
+  them. The brief tells agents about the tool.
+- **Restarts drain running agents, start the new daemon whatever the timing and continue
+  the runs they cut off.** `shepherd daemon restart --drain` holds new starts (with the
+  reason "Shepherd is restarting"), waits for running agents, and at the timeout stops
+  the rest gracefully with their sessions kept. The new daemon continues each such run
+  once and starts what was held, and a crash-interrupted run is left alone. Only the runs
+  the drain itself stops are continued: those it stops at its deadline, and those a
+  shutdown stops while the drain is under way. Any stop made during a drain by a person
+  or the desk stays stopped. The restart starts a new daemon even if the old one was
+  stopped under it, saying why when it cannot.
+- **A run that stops without finishing is continued once, then fails.** An exit with
+  uncommitted changes and no commit (or, for OpenCode, no change at all) that did not
+  ask or report is continued once in its session; a second such end fails with "ended
+  twice without finishing".
+- **Per-repo run cap, release tags pushed for `push: shepherd` repos, and workspace
+  rename.** See the interface changes above.
+- **Next-up items are guarded and settle themselves.** An item's agent is told to check
+  whether the work has landed and report `ALREADY DONE:` if so, leaving Shepherd to offer
+  the person a mark-done; the watcher finishes an item when the forge reports its lane
+  merged, and a lane close takes the forge's word for a squash merge. A proposed item
+  expires after `next.expire_days`.
+- **Review threads are fixed, answered and resolved by the agent.** The hand-back tells
+  the agent to push its fix, reply with the commit link and resolve the thread, or reply
+  "Dismissed: reason" and leave it open; a thread still open without a reply goes back
+  once more within `watch.fix_tries`. An AI review job that reports unreviewed is retried
+  once, then reported as "no automated review".
+- **OpenCode's brief note depends on the model.** A local model keeps the small-model
+  limits; a hosted one gets the standard rules, tests included. Every run gets the
+  tool-calling guidance and the commit-as-you-go rule.
+- **The keep-going checks are tests,** KEEP-C-01 to C-12 in the daemon package, and the
+  `check-keep-going` target fails if they do not build.
+- **The docs move.** The vision, design, plans, roadmap and audits are no longer in this
+  repo; `docs/` holds user and contributor docs for what has shipped.
+
 ### Fixed
 
 - **The web Backlog and board no longer hide a lane whose open merge request has no
   pipeline.** Only a queued or running pipeline counts as waiting on the forge. A merge
   request with no pipeline (a repo whose CI skips the branch), or with a canceled, skipped
   or unknown one, now shows under "To review" so the person sees it is waiting on them.
+
+### Known limits
+
+- The AI review row has no data feed yet: it shows "unreviewed" every time.
+- Merges by rule and the Revert link are not built. A repo's merges are made by the
+  person or by an agent with `autonomy.merge: agent`; merge rules come later.
+- The Rules view shows the config and empty states until the rule engine lands.
+- A stop made at the desk during a drain is not continued after the restart.
+- A screenshot declared as an artifact can be lost when its lane closes.
+- The keep-going drive is not built: with the mode on, the desk acts on events within the
+  limits, but keep going does not start work by itself.
 
 ## [0.4.0-beta.1] - 2026-10-12
 
