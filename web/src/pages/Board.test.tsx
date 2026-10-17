@@ -181,6 +181,38 @@ describe('BoardPage closing', () => {
   })
 })
 
+describe('BoardPage agent column', () => {
+  it('shows the model under the agent', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: 'claude-sonnet' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    expect(row.getByText('claude')).toBeInTheDocument()
+    expect(row.getByText('claude-sonnet')).toBeInTheDocument()
+  })
+
+  it('shortens a model id to the part after the last slash', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: 'openrouter/moonshotai/kimi-k2.7-code' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    expect(row.getByText('kimi-k2.7-code')).toBeInTheDocument()
+    expect(row.getByTitle('openrouter/moonshotai/kimi-k2.7-code')).toBeInTheDocument()
+  })
+
+  it('shows no model line when the run has none', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: undefined }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    expect(row.getByText('claude')).toBeInTheDocument()
+    expect(row.queryByTitle('claude-sonnet')).toBeNull()
+  })
+})
+
 describe('BoardPage quiet projects', () => {
   const quiet = [
     project({ name: 'attic', repos: ['old'], lanes: 0, spend_today: 0 }),

@@ -36,6 +36,9 @@
 .row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-lane { font-weight: 600; }
 .row-agent, .row-repo { color: var(--muted); }
+.row-agent { display: flex; flex-direction: column; justify-content: center; line-height: 1.25; }
+.row-agent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-model { font-size: var(--t-xs); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-detail { color: var(--muted); }
 .row-age { text-align: right; color: var(--faint); font-size: var(--t-xs); }
 

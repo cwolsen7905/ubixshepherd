@@ -70,7 +70,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
         <RangeFilter range={range} href={(r) => nav({ range: r })} />
         <span className="filter-group">
           <span className="faint">Agent</span>
-          <span className="chip-options">
+          <span className="chip-options" role="group" aria-label="Agent">
             <Chip kind="filter" selected={agent === ''} onClick={() => go(nav({ agent: undefined }))}>All</Chip>
             {agentChoices.map((a) => (
               <Chip key={a} kind="filter" selected={agent === a} onClick={() => go(nav({ agent: a }))}>{a}</Chip>
@@ -79,9 +79,11 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
         </span>
         <span className="filter-group">
           <span className="faint">Lane</span>
-          <span className="chip-options">
+          <span className="chip-options" role="group" aria-label="Lane">
             <Chip kind="filter" selected={lane === 0} onClick={() => go(nav({ lane: undefined }))}>All</Chip>
-            {!laneKnown && <Chip kind="filter" selected>lane {lane}</Chip>}
+            {lane > 0 && !laneKnown && (
+              <Chip kind="filter" selected onClick={() => go(nav({ lane }))}>lane {lane}</Chip>
+            )}
             {lanes.map((l) => (
               <Chip key={l.id} kind="filter" selected={lane === l.id} onClick={() => go(nav({ lane: l.id }))}>{l.repo} / {l.name}</Chip>
             ))}

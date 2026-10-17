@@ -136,7 +136,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
       <div className="filters">
         <span className="filter-group">
           <span className="faint">Repo</span>
-          <span className="chip-options">
+          <span className="chip-options" role="group" aria-label="Repo">
             <Chip kind="filter" selected={repo === 0} onClick={() => go(nav({ repo: undefined, lane: undefined }))}>All</Chip>
             {repos.map(([id, name]) => (
               <Chip key={id} kind="filter" selected={repo === id} onClick={() => go(nav({ repo: id, lane: undefined }))}>{name}</Chip>
@@ -145,9 +145,11 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
         </span>
         <span className="filter-group">
           <span className="faint">Lane</span>
-          <span className="chip-options">
+          <span className="chip-options" role="group" aria-label="Lane">
             <Chip kind="filter" selected={lane === 0} onClick={() => go(nav({ lane: undefined }))}>All</Chip>
-            {lane > 0 && !laneById.has(lane) && <Chip kind="filter" selected>lane {lane}</Chip>}
+            {lane > 0 && !laneById.has(lane) && (
+              <Chip kind="filter" selected onClick={() => go(nav({ lane }))}>lane {lane}</Chip>
+            )}
             {snap.lanes
               .filter((l) => !repo || l.repo_id === repo)
               .map((l) => (
@@ -157,9 +159,11 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
         </span>
         <span className="filter-group">
           <span className="faint">Topic</span>
-          <span className="chip-options">
+          <span className="chip-options" role="group" aria-label="Topic">
             <Chip kind="filter" selected={topic === 0} onClick={() => go(nav({ topic: undefined }))}>All</Chip>
-            {topic > 0 && !topicList.some((t) => t.id === topic) && <Chip kind="filter" selected>topic {topic}</Chip>}
+            {topic > 0 && !topicList.some((t) => t.id === topic) && (
+              <Chip kind="filter" selected onClick={() => go(nav({ topic }))}>topic {topic}</Chip>
+            )}
             {topicList.map((t) => (
               <Chip key={t.id} kind="filter" selected={topic === t.id} onClick={() => go(nav({ topic: t.id }))}>{t.title}</Chip>
             ))}
