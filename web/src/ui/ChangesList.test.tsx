@@ -41,7 +41,7 @@ describe('ChangesList', () => {
   it('colours a renamed, copied or typechanged file as modified, not untracked', () => {
     const renamed = { ...read, committed: [file('new.go', { status: 'renamed', old_path: 'old.go' }), file('c.go', { status: 'copied' }), file('t.go', { status: 'typechange' })], uncommitted: [], untracked: [] }
     render(<ChangesList read={renamed} worktree="/w" editorUrl={null} variant="list" />)
-    for (const [path, letter] of [['new.go', 'R'], ['c.go', 'C'], ['t.go', 'T']]) {
+    for (const [path, letter] of [['new.go', 'R'], ['c.go', 'C'], ['t.go', 'T']] as [string, string][]) {
       const row = screen.getByText(path).closest('li') as HTMLElement
       expect(within(row).getByText(letter)).toHaveClass('sh-change-s--M')
     }
