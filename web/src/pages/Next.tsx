@@ -124,13 +124,10 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
       selected={selected === it.id}
       now={now}
       onSelect={() => setSelected(it.id)}
-      onMove={async (from, to) => {
-        const flat = queueItems
-        if (from === to || from < 0 || to < 0 || from >= flat.length || to >= flat.length) return
-        const target = flat[to]
-        if (!target) return
-        const dir = to < from ? 'up' : 'down'
-        await act(it.id, () => api.update(it.id, { move: dir }))
+      onMove={async (draggedId, dir, steps) => {
+        for (let i = 0; i < steps; i++) {
+          await act(draggedId, () => api.update(draggedId, { move: dir }))
+        }
       }}
     />
   )
@@ -278,7 +275,7 @@ function NextRow({
   selected: boolean
   now: number
   onSelect: () => void
-  onMove: (from: number, to: number) => void
+  onMove: (draggedId: number, dir: 'up' | 'down', steps: number) => void
 }) {
   const mark = it.proposed ? { glyph: '≡', tone: 'warn' as const, label: 'proposed, waiting on you' } : NEXT_MARKS[it.state]
   const movable = it.stored_state === 'approved' || it.stored_state === 'planned' || it.stored_state === 'deferred'
@@ -307,12 +304,23 @@ function NextRow({
     if (!movable) return
     const fromId = Number(e.dataTransfer.getData('text/plain'))
     const from = all.findIndex((x) => x.id === fromId)
-    if (from >= 0) onMove(from, flatIdx)
+    if (from < 0 || from === flatIdx) return
+    const dir = flatIdx < from ? 'up' : 'down'
+    const steps = Math.abs(flatIdx - from)
+    onMove(fromId, dir, steps)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      onSelect()
+    }
   }
 
   return (
     <li
       ref={rowRef}
+      tabIndex={0}
       className={`next-row${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}${selected ? ' is-selected' : ''}`}
       data-next-id={it.id}
       draggable={movable}
@@ -321,6 +329,7 @@ function NextRow({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       onClick={onSelect}
+      onKeyDown={handleKeyDown}
       aria-current={isNext || focused ? 'true' : undefined}
     >
       <span className="next-row-handle" aria-hidden={!movable} aria-label={movable ? `Drag to reorder ${it.title}` : undefined} title={movable ? 'Drag to reorder' : undefined}>

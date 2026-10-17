@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
 import type { MatrixRow, NextItem, NextList } from '../api/types'
@@ -295,14 +295,37 @@ describe('NextPage', () => {
     expect(await screen.findByText('Nothing is planned')).toBeInTheDocument()
   })
 
-  it('reads the list again when a plan event arrives on the feed', async () => {
-    const load = vi.fn(async (): Promise<NextList> => everything)
+  it('opens the detail panel when Enter is pressed on a focused row', async () => {
     render(
-      <LiveProvider live={live([{ id: 9, kind: 'plan', text: 'next-up item 3 approved: Idea', created: '2026-10-08T10:00:00Z' }])}>
-        <NextPage load={load} api={{ add: vi.fn(), update: vi.fn() }} />
+      <LiveProvider live={live()}>
+        <NextPage load={async () => everything} api={{ add: vi.fn(), update: vi.fn() }} />
       </LiveProvider>,
     )
-    await screen.findByText('First approved')
-    await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(2))
+    const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
+    first.focus()
+    await userEvent.keyboard('{enter}')
+    expect(screen.getByRole('complementary', { name: /Details for First approved/ })).toBeInTheDocument()
+  })
+
+  it('drag reorder moves the dragged item toward the drop target', async () => {
+    const api = { add: vi.fn(), update: vi.fn(async () => ({})) }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => everything} api={api} />
+      </LiveProvider>,
+    )
+    const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
+    const second = screen.getByText('Second approved').closest('li') as HTMLElement
+    const store: Record<string, string> = {}
+    const dataTransfer = {
+      setData: (type: string, value: string) => { store[type] = value },
+      getData: (type: string) => store[type] ?? '',
+      effectAllowed: '',
+      dropEffect: '',
+    }
+    fireEvent.dragStart(first, { dataTransfer })
+    fireEvent.dragOver(second, { dataTransfer })
+    fireEvent.drop(second, { dataTransfer })
+    expect(api.update).toHaveBeenCalledWith(1, { move: 'down' })
   })
 })
