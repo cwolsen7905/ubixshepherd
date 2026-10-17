@@ -88,7 +88,6 @@
 
 .sh-settings-meta { margin-left: auto; }
 .sh-settings-meta a { color: var(--sh-lichen); text-decoration: none; font-weight: 600; }
-.sh-settings .sh-setting-desc.tone-warn { color: var(--sh-lantern-ink); }
 
 /* A dropdown button and its menu. */
 .sh-menu { position: relative; display: inline-block; }

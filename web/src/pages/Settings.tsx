@@ -240,11 +240,11 @@ const KEYS: [string, string[]][] = [
 const bareModel = (m: string) => m.slice(m.indexOf('/') + 1)
 
 /** An agent's sub-line: today's lanes and spend, or when its quota hold lifts. */
-function AgentLine({ agent, model, today, hold, now }: { agent: string; model: string; today?: { lanes: number; usd: number }; hold?: { until: string }; now: number }) {
-  if (hold) return <div className="sh-setting-desc tone-warn" data-agent={agent}>Out of quota until {clockTime(hold.until, now)}</div>
+function AgentLine({ agent, model, today, hold, now }: { agent: string; model: string; today?: AgentToday; hold?: { until: string }; now: number }) {
+  if (hold) return <div className="sh-setting-desc" data-agent={agent}><StatusGlyph glyph="‖" tone="idle" label="Held" /> Out of quota until {clockTime(hold.until, now)}</div>
   if (!today && !model) return <div className="sh-setting-desc" data-agent={agent}>Uses its CLI’s own default model</div>
-  const { lanes, usd: spent } = today ?? { lanes: 0, usd: 0 }
-  return <div className="sh-setting-desc" data-agent={agent}>{lanes} {lanes === 1 ? 'lane' : 'lanes'} · {usd(spent) || '$0.00'} today</div>
+  const { lanes, usd: spent, more } = today ?? { lanes: 0, usd: 0, more: false }
+  return <div className="sh-setting-desc" data-agent={agent}>{lanes}{more ? '+' : ''} {lanes === 1 && !more ? 'lane' : 'lanes'} · {usd(spent) || '$0.00'} today</div>
 }
 
 function SettingRow({ label, desc, was, children, name }: { label: ReactNode; desc?: ReactNode; was?: string; children: ReactNode; name?: string }) {
@@ -332,29 +332,34 @@ function Menu<T extends string>({ label, value, options, onPick }: { label: stri
 /** How often the page reads today's agent figures and quota holds again. */
 const AGENT_REFRESH_MS = 30_000
 
-/** What each agent did today: lanes it ran in and what it spent, from today's runs. */
-function useAgentToday(workspaces: number[]) {
-  const [rows, setRows] = useState<Map<string, { lanes: number; usd: number }>>(new Map())
+/** What each agent did today: what it spent (the daemon's total over all its runs) and the lanes it ran in (`more` when the list of runs was cut). */
+interface AgentToday { lanes: number; usd: number; more: boolean }
+
+function useAgentToday(workspaces: number[], agents: string[]) {
+  const [rows, setRows] = useState<Map<string, AgentToday>>(new Map())
   const key = workspaces.join(',')
+  const names = agents.join(',')
   useEffect(() => {
     if (!key) return
     let live = true
     const load = () => {
       const since = rangeStart('today', Date.now()).toISOString()
-    void Promise.all(key.split(',').map((id) => history.runs(Number(id), since, '', 0))).then(
-      (parts) => {
-        if (!live) return
-        const m = new Map<string, { lanes: Set<number>; usd: number }>()
-        for (const r of mergeHistories(parts).runs as RunRecord[]) {
-          const e = m.get(r.agent) ?? { lanes: new Set<number>(), usd: 0 }
-          if (r.lane_id) e.lanes.add(r.lane_id)
-          e.usd += r.cost_usd ?? 0
-          m.set(r.agent, e)
-        }
-        setRows(new Map([...m].map(([a, e]) => [a, { lanes: e.lanes.size, usd: e.usd }])))
-      },
-      () => undefined,
-    )
+      // One read per agent: the totals are the daemon's, so a long day is not cut at the list's limit.
+      void Promise.all(
+        names.split(',').map((a) =>
+          Promise.all(key.split(',').map((id) => history.runs(Number(id), since, a, 0))).then((parts) => {
+            const h = mergeHistories(parts)
+            const lanes = new Set((h.runs as RunRecord[]).flatMap((r) => (r.lane_id ? [r.lane_id] : [])))
+            return [a, h.count === 0 ? null : { lanes: lanes.size, usd: h.cost_usd, more: h.count > h.runs.length }] as const
+          }),
+        ),
+      ).then(
+        (all) => {
+          if (!live) return
+          setRows(new Map(all.flatMap(([a, v]) => (v ? [[a, v] as const] : []))))
+        },
+        () => undefined,
+      )
     }
     load()
     const t = window.setInterval(load, AGENT_REFRESH_MS)
@@ -362,7 +367,7 @@ function useAgentToday(workspaces: number[]) {
       live = false
       window.clearInterval(t)
     }
-  }, [key])
+  }, [key, names])
   return rows
 }
 
@@ -478,7 +483,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   const [holds, setHolds] = useState<{ agent: string; until: string }[]>([])
   const projectBox = useRef<HTMLInputElement>(null)
   const now = useNow()
-  const today = useAgentToday(workspaces.map((w) => w.id))
+  const today = useAgentToday(workspaces.map((w) => w.id), AGENTS)
 
   const load = useCallback(() => {
     configApi.get().then(
