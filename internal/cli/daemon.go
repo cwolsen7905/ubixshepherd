@@ -53,6 +53,8 @@ func isDaemonRun(args []string) bool {
 func runDaemon(ctx context.Context, env Env, args []string) error {
 	fs := flags("daemon", env)
 	force := fs.Bool("force-from-run", false, "allow start, restart or install from inside an agent run")
+	drain := fs.Bool("drain", false, "restart: stop starting runs, let the running ones finish, then restart (they are continued after)")
+	timeout := fs.Duration("timeout", 10*time.Minute, "restart --drain: how long to wait for runs before stopping them (0: do not wait)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -90,6 +92,14 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 			return fmt.Errorf("%w\n  a running daemon was left as it is; fix %s, then restart", err, env.Layout.Config())
 		}
 		printConfigWarnings(env, warns)
+		if *timeout < 0 {
+			return errors.New("--timeout must not be negative")
+		}
+		if *drain && *timeout > 0 {
+			if err := daemonDrain(ctx, env, *timeout); err != nil {
+				return err
+			}
+		}
 		if err := daemonStop(ctx, env); err != nil {
 			return err
 		}
@@ -373,6 +383,59 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 	}
 }
 
+// drainPoll is how often a restart looks at the drain.
+const drainPoll = 500 * time.Millisecond
+
+// daemonDrain has a running daemon stop starting runs and wait, up to timeout, for the
+// agents going to finish; those still going then are stopped, their sessions kept, and
+// continued after the restart. It returns when the daemon has nothing running. A daemon
+// that is not running has nothing to drain.
+func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
+	c, err := connect(ctx, env)
+	if err != nil {
+		return nil
+	}
+	d, err := c.Drain(ctx, timeout)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			// A daemon from before the drain: nothing to wait for, but it can restart.
+			fmt.Fprintln(env.Stderr, "this daemon is too old to drain; restarting it as it is")
+			return nil
+		}
+		return fmt.Errorf("drain the daemon: %w (a running daemon was left as it is)", err)
+	}
+	if d.Runs > 0 {
+		fmt.Fprintf(env.Stdout, "%s; new starts are held until after the restart\n", d.Text(time.Now()))
+	}
+	last := d.Runs
+	// The daemon stops what is left at the timeout and then needs a moment to record it.
+	limit := time.Now().Add(timeout + time.Minute)
+	for !d.Drained {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(drainPoll):
+		}
+		st, err := c.Status(ctx)
+		if err != nil {
+			return fmt.Errorf("drain the daemon: %w", err)
+		}
+		if st.Draining == nil {
+			break // the daemon gave the drain up; restart as asked
+		}
+		d = *st.Draining
+		if d.Runs != last && !d.Drained {
+			last = d.Runs
+			fmt.Fprintln(env.Stdout, d.Text(time.Now()))
+		}
+		if time.Now().After(limit) {
+			return errors.New("the daemon did not finish draining; it was left running")
+		}
+	}
+	fmt.Fprintln(env.Stdout, "drained: restarting")
+	return nil
+}
+
 // stopWait is how long stop waits for the daemon to exit.
 const stopWait = 30 * time.Second
 
@@ -459,6 +522,9 @@ func daemonStatus(ctx context.Context, env Env) error {
 	if c, err := connect(ctx, env); err == nil {
 		st, _ := c.Status(ctx)
 		fmt.Fprintf(w, "daemon   running, pid %d, version %s, since %s\n", st.PID, st.Version, st.Started.Local().Format("2006-01-02 15:04"))
+		if st.Draining != nil {
+			fmt.Fprintf(w, "         %s\n", st.Draining.Text(time.Now()))
+		}
 	} else {
 		fmt.Fprintln(w, "daemon   not running")
 	}

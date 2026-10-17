@@ -171,6 +171,7 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathRepos+"/{id}/unmanage", desk, s.acted(s.describeUnmanage, s.unmanageRepo))
 	handle("GET "+api.PathResolve, desk|worker, s.resolve)
 	handle("POST "+api.PathShutdown, operatorOnly, s.shutdown)
+	handle("POST "+api.PathDrain, operatorOnly, s.drain)
 	handle("GET "+api.PathLanes, desk, s.listLanes)
 	handle("POST "+api.PathLanes, desk, s.openLane)
 	handle("POST "+api.PathLanes+"/{id}/close", desk, s.acted(s.describeCloseLane, s.closeLane))
@@ -410,7 +411,40 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		}
 		out.Detail = &d
 	}
+	out.Draining = s.draining()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// draining is the restart's wait for the status, nil when none is under way.
+func (s *Server) draining() *api.Draining {
+	if s.Runner == nil {
+		return nil
+	}
+	d := s.Runner.Draining()
+	if d == nil {
+		return nil
+	}
+	return &api.Draining{Runs: d.Runs, Until: d.Until, Drained: d.Drained}
+}
+
+// drain answers POST /v1/drain: from now no run starts (a start is held and goes after
+// the restart), and the agents going are given the timeout to finish, then stopped with
+// their sessions kept.
+func (s *Server) drain(w http.ResponseWriter, r *http.Request) {
+	var req api.DrainRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.Runner == nil {
+		writeError(w, http.StatusConflict, errors.New("this daemon runs no agents"))
+		return
+	}
+	if req.TimeoutSeconds < 0 {
+		writeError(w, http.StatusBadRequest, errors.New("timeout_seconds must not be negative"))
+		return
+	}
+	s.Runner.Drain(time.Duration(req.TimeoutSeconds) * time.Second)
+	writeJSON(w, http.StatusAccepted, s.draining())
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -835,6 +869,11 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run, err := s.Runner.Start(r.Context(), req)
+	if errors.Is(err, dispatch.ErrQueued) {
+		// Not refused: kept, and started after the restart.
+		writeJSON(w, http.StatusAccepted, api.RunView{Held: err.Error()})
+		return
+	}
 	if err != nil {
 		s.foldError(w, err)
 		return
@@ -1910,6 +1949,14 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	defer s.Close()
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
+	if s.Runner != nil {
+		// Runs a restart interrupted, and starts it held, go on once the daemon answers.
+		go func() {
+			if err := s.Runner.ResumeRestarted(context.Background()); err != nil {
+				s.Log.Error("resume after restart", "err", err)
+			}
+		}()
+	}
 	s.Log.Info("shepherd daemon listening", "addr", rt.Addr, "version", rt.Version)
 
 	select {

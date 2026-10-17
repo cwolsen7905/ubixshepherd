@@ -149,6 +149,14 @@ func (c *Client) Shutdown(ctx context.Context) error {
 	return c.do(ctx, http.MethodPost, api.PathShutdown, nil, &out)
 }
 
+// Drain has the daemon stop starting runs and wait for the agents going to finish, for
+// at most timeout (0: stop them at once); a start asked for meanwhile goes after the
+// restart.
+func (c *Client) Drain(ctx context.Context, timeout time.Duration) (api.Draining, error) {
+	var out api.Draining
+	return out, c.do(ctx, http.MethodPost, api.PathDrain, api.DrainRequest{TimeoutSeconds: int(timeout.Seconds())}, &out)
+}
+
 func (c *Client) Lanes(ctx context.Context, workspaceID, repoID int64) ([]api.LaneView, error) {
 	var out []api.LaneView
 	q := fmt.Sprintf("%s?workspace_id=%d", api.PathLanes, workspaceID)

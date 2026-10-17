@@ -64,7 +64,7 @@ func commands() []command {
 		{"web", "Sign a browser in to the web UI the daemon serves (a one-time link)",
 			"shepherd web [--print] [--sign-out-all]", runWeb},
 		{"daemon", "Run or manage the daemon (start, stop, restart, status, install, uninstall)",
-			"shepherd daemon [run | start | stop | restart | status | install | uninstall]", runDaemon},
+			"shepherd daemon [run | start | stop | restart [--drain [--timeout 10m]] | status | install | uninstall]", runDaemon},
 		{"init", "Register a workspace and choose which of its repos Shepherd manages",
 			"shepherd init [dir] [--name NAME] [--yes | --all | --only a,b] [--prune]", runInit},
 		{"repo", "See, add and remove the repos Shepherd manages, with no restart and no init",

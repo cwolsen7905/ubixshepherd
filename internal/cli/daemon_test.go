@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
@@ -108,5 +109,33 @@ func TestDaemonCheck(t *testing.T) {
 	}
 	if code := run("daemon:\n  old_pol: 30s\n"); code != 1 {
 		t.Errorf("typo: %d", code)
+	}
+}
+
+func TestRestartDrainWaitsForTheDaemonToBeDrained(t *testing.T) {
+	h := newHarness(t, "", false)
+	if err := daemonDrain(context.Background(), h.env, 10*time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.out.String(), "drained: restarting") {
+		t.Errorf("output = %q", h.out)
+	}
+	// The daemon reports it, in the status words, until it is stopped.
+	if h.run("daemon", "status"); !strings.Contains(h.out.String(), "drained (restarting)") {
+		t.Errorf("status = %q", h.out)
+	}
+}
+
+func TestDrainWithAZeroTimeoutIsToday(t *testing.T) {
+	h := newHarness(t, "", false)
+	if err := os.WriteFile(h.env.Layout.Config(), []byte(badConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The bad config stops the restart before anything is drained or stopped.
+	if code := h.run("daemon", "restart", "--drain", "--timeout", "0"); code != 1 {
+		t.Fatalf("restart: %d %q", code, h.err)
+	}
+	if h.run("daemon", "status"); strings.Contains(h.out.String(), "drain") {
+		t.Errorf("the daemon was drained: %q", h.out)
 	}
 }

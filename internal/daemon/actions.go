@@ -175,6 +175,9 @@ func (s *Server) describeStart(ctx context.Context, _ *http.Request, body, resp 
 	if json.Unmarshal(body, &req) != nil || json.Unmarshal(resp, &run) != nil {
 		return 0, ""
 	}
+	if run.Held != "" {
+		return 0, ""
+	}
 	ws, _ := s.workspaceOfLane(ctx, run.LaneID)
 	what := fmt.Sprintf("started run %d in lane %s", run.ID, run.Lane)
 	if req.Continue > 0 {

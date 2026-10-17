@@ -178,6 +178,7 @@ func (r *Runner) RouteRequest(ctx context.Context, id int64, lane, agent string)
 // Route moves every open request on as far as it can go now: to its target lane, from
 // the target's reply back into the asker's conversation. It runs whenever a run ends.
 func (r *Runner) Route(ctx context.Context) {
+	r.RunHeld(ctx)
 	r.routeMu.Lock()
 	defer r.routeMu.Unlock()
 	reqs, err := r.Store.Requests(ctx, store.RequestPending, store.RequestRouted, store.RequestReplyReady)

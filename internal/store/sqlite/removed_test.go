@@ -20,6 +20,12 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := db.db.ExecContext(ctx, `DROP TABLE held_starts`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.db.ExecContext(ctx, `ALTER TABLE runs DROP COLUMN reason`); err != nil {
+		t.Fatal(err)
+	}
 	for _, tbl := range []string{"keep_going", "keep_going_starts"} {
 		if _, err := db.db.ExecContext(ctx, `DROP TABLE `+tbl); err != nil {
 			t.Fatal(err)
@@ -55,7 +61,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-12)); err != nil {
+	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-13)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

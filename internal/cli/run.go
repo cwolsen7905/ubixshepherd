@@ -63,6 +63,10 @@ func laneRun(ctx context.Context, env Env, args []string) error {
 
 // started reports a new run and follows it unless detached.
 func started(ctx context.Context, env Env, c *client.Client, run api.RunView, detach bool) error {
+	if run.Held != "" {
+		fmt.Fprintf(env.Stdout, "held: %s\n", run.Held)
+		return nil
+	}
 	how := "new conversation"
 	if run.Parent != 0 {
 		how = fmt.Sprintf("continuing run %d's conversation", run.Parent)
