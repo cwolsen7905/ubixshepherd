@@ -62,9 +62,21 @@
 }
 
 @media (max-width: 760px) {
-  .sh-runs--list .sh-runs-lane,
-  .sh-runs--list .sh-runs-result,
-  .sh-runs--list th:nth-child(4) {
-    width: auto;
+  /* Narrow: each run is a small grid, the lane on top, the result and cost beneath. */
+  .sh-runs--list { table-layout: auto; }
+  .sh-runs--list thead { display: none; }
+  .sh-runs--list tbody, .sh-runs--list tr { display: block; }
+  .sh-runs--list tr {
+    display: grid;
+    grid-template-columns: 1.5rem 2.5rem minmax(0, 1fr) auto;
+    grid-template-areas: "glyph run lane lane" ". . result cost";
+    border-bottom: 1px solid var(--sh-rule);
+    padding: var(--sh-s3) 0;
   }
+  .sh-runs--list td { display: block; width: auto; border: 0; padding: var(--sh-s1) var(--sh-s2); }
+  .sh-runs--list .sh-runs-glyph { grid-area: glyph; }
+  .sh-runs--list .sh-runs-run { grid-area: run; }
+  .sh-runs--list .sh-runs-lane { grid-area: lane; }
+  .sh-runs--list .sh-runs-result { grid-area: result; }
+  .sh-runs--list .sh-runs-cost { grid-area: cost; }
 }

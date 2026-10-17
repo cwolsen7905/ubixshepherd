@@ -36,5 +36,5 @@
 
 @media (max-width: 900px) {
   .next-body.has-detail { grid-template-columns: minmax(0, 1fr); }
-  .next-detail { border-left: 0; border-top: 1px solid var(--sh-rule); }
+  .next-detail { border-left: 0; border-top: 1px solid var(--sh-rule); top: auto; bottom: 0; max-height: 50vh; }
 }

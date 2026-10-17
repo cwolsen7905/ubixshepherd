@@ -24,11 +24,11 @@ export function ContextChart({ sections }: { sections: ChartSection[] }) {
           <h3>{s.title}</h3>
           <ul>
             {s.rows.map((r) => {
-              const over = r.over > 0
+              const over = (r.over ?? 0) > 0
               const detail =
                 `${r.key}: peak ${tokens(r.peak)} tokens` +
                 (r.window ? ` of a ${tokens(r.window)} window` : '') +
-                `, ${r.over} of ${r.measured} over 200k`
+                (r.over === undefined ? '' : `, ${r.over} of ${r.measured} over 200k`)
               return (
                 <li key={r.key} className="ctx-row" title={detail}>
                   <span className="ctx-label">
@@ -42,7 +42,7 @@ export function ContextChart({ sections }: { sections: ChartSection[] }) {
                   <span className="ctx-value">
                     <strong>{tokens(r.peak)}</strong>
                     {r.window > 0 && <span className="faint"> of {tokens(r.window)}</span>}
-                    {over ? <span className="ctx-over"> · {r.over} over 200k</span> : <span className="faint"> · none over 200k</span>}
+                    {r.over === undefined ? null : over ? <span className="ctx-over"> · {r.over} over 200k</span> : <span className="faint"> · none over 200k</span>}
                   </span>
                 </li>
               )

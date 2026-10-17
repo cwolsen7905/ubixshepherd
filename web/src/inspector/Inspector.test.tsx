@@ -7,6 +7,7 @@ import { decision, FakeSource, fakeDeskApi, lane, spend, status } from '../test/
 import { DeskThread } from '../state/desk'
 import { act, waitFor } from '@testing-library/react'
 import { InspectorFrame } from './Inspector'
+import { storedArtifacts } from '../artifacts/api'
 import { modeFor } from './useMode'
 
 const open = { kind: 'topic', id: 5 }
@@ -104,6 +105,14 @@ describe('InspectorFrame', () => {
     render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'artifacts', full: true }} mode="split">page</InspectorFrame>)
     await user.keyboard('{Escape}')
     expect(window.location.hash).toBe('#/?open=lane%3A4%2Fartifacts')
+  })
+
+  it('names an open artifact by its title in the header chip', async () => {
+    const one = vi.spyOn(storedArtifacts, 'one').mockResolvedValue({ id: 1, title: 'Export orders as CSV', path: 'docs/plans/export-csv.md', versions: [] } as never)
+    window.location.hash = '#/artifacts?open=artifact:1'
+    render(<InspectorFrame open={{ kind: 'artifact', id: 1 }} mode="split">page</InspectorFrame>)
+    expect(await screen.findByRole('heading', { name: 'Export orders as CSV', level: 2 })).toBeInTheDocument()
+    one.mockRestore()
   })
 
   it('does not offer full width on a view that fits', () => {

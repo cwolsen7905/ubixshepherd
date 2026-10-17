@@ -6,6 +6,7 @@ import { useMode, type Mode } from './useMode'
 import { LaneInspector } from './lane'
 import { MrInspector } from './mr'
 import { RunInspector } from './runPane'
+import { useStoredArtifact } from '../artifacts/StoredArtifact'
 import { ArtifactInspector } from './artifactPane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
@@ -100,6 +101,12 @@ export function leaveFull(open: Open) {
   go(withOpen(window.location.hash, { kind: open.kind, id: open.id, ...(open.tab ? { tab: open.tab } : {}) }))
 }
 
+/** The artifact's own title, or its path, once it is read; "artifact N" until then. */
+function ArtifactName({ id, fallback }: { id: number; fallback: string }) {
+  const { artifact } = useStoredArtifact(id, 0)
+  return <>{artifact?.title || artifact?.path || fallback}</>
+}
+
 /**
  * The one header: where the item lives (lane, then the tab), what it is as a chip, then
  * Open full width, Open as page and Close. A full-width view swaps Close for a back arrow.
@@ -129,7 +136,7 @@ function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject
         </>
       )}
       <h2 id="inspector-title" ref={heading} tabIndex={-1} className="inspector-chip">
-        {titleOf(open, snap)}
+        {open.kind === 'artifact' ? <ArtifactName id={open.id} fallback={titleOf(open, snap)} /> : titleOf(open, snap)}
       </h2>
       <span className="inspector-head-actions">
         {!open.full && isWide(open) && (
