@@ -70,24 +70,26 @@ func (s *Server) nextView(ctx context.Context, it store.NextItem) api.NextItemVi
 	return v
 }
 
-// blockedOn is the dependencies of it that are not done, judged by each one's effective
-// state (a lane-derived done counts). all is the whole list. Nothing stores it.
-func (s *Server) blockedOn(ctx context.Context, it store.NextItem, all []store.NextItem) []api.NextBlocker {
-	if len(it.DependsOn) == 0 {
-		return nil
-	}
-	state := map[int64]string{}
-	title := map[int64]string{}
+// nextStates is each item's effective state (a lane-derived done counts) by id, and
+// blockedOn the dependencies of it that are not done among them. Nothing stores it.
+type nextStates map[int64]api.NextItemView
+
+func (s *Server) effectiveStates(ctx context.Context, all []store.NextItem) nextStates {
+	out := nextStates{}
 	for _, o := range all {
-		for _, d := range it.DependsOn {
-			if o.ID == d {
-				state[d], title[d] = s.nextView(ctx, o).State, o.Title
-			}
-		}
+		out[o.ID] = s.nextView(ctx, o)
+	}
+	return out
+}
+
+func (st nextStates) blockedOn(it store.NextItem) []api.NextBlocker {
+	state := map[int64]string{}
+	for _, d := range it.DependsOn {
+		state[d] = st[d].State
 	}
 	var out []api.NextBlocker
 	for _, d := range store.Blocked(it, state) {
-		out = append(out, api.NextBlocker{ID: d, Title: title[d], State: state[d]})
+		out = append(out, api.NextBlocker{ID: d, Title: st[d].Title, State: state[d]})
 	}
 	return out
 }
@@ -97,7 +99,7 @@ func (s *Server) itemView(ctx context.Context, it store.NextItem) api.NextItemVi
 	v := s.nextView(ctx, it)
 	if len(it.DependsOn) > 0 {
 		if all, err := s.Store.NextItems(ctx); err == nil {
-			v.BlockedOn = s.blockedOn(ctx, it, all)
+			v.BlockedOn = s.effectiveStates(ctx, all).blockedOn(it)
 		}
 	}
 	return v
@@ -156,9 +158,10 @@ func (s *Server) listNext(w http.ResponseWriter, r *http.Request) {
 	}
 	// Effective state decides the order shown: approved, then planned, deferred, with
 	// started items among the rest by their stored place.
+	states := s.effectiveStates(ctx, items)
 	for _, it := range items {
-		v := s.nextView(ctx, it)
-		v.BlockedOn = s.blockedOn(ctx, it, items)
+		v := states[it.ID]
+		v.BlockedOn = states.blockedOn(it)
 		if !all && (v.State == store.NextDone || v.State == store.NextDropped) {
 			continue
 		}

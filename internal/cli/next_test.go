@@ -169,6 +169,12 @@ func TestNextGuardFieldsCLIAndMCP(t *testing.T) {
 	if code := h.run("next", "update", "1", "--depends", "2"); code == 0 {
 		t.Error("a dependency cycle was accepted")
 	}
+	if code := h.run("next", "update", "1", "--depends", "1"); code == 0 {
+		t.Error("a self dependency was accepted")
+	}
+	if code := h.run("next", "update", "1", "--depends", "99"); code == 0 {
+		t.Error("a dependency on an unknown item was accepted")
+	}
 	if code := h.run("next", "update", "2", "--depends", "bad"); code == 0 {
 		t.Error("a bad --depends was accepted")
 	}
