@@ -1,32 +1,10 @@
-import { restoreScroll, routeName } from '../components/BackLink'
+import { BackLink } from '../components/BackLink'
 import { DaemonDetail, loadDaemon, useDaemonDetail, type Loaded } from '../components/DaemonStatus'
 import { useNow } from '../hooks'
-import { cameFrom, go, href, parse } from '../router'
+import { href } from '../router'
 import { useChatLink } from '../shell/chatLink'
 import { useSnapshot } from '../state/context'
 import './Status.css'
-
-/** Back to the page the person came from; opened directly, Status belongs to Settings. */
-function StatusBack() {
-  const came = cameFrom()
-  const target = came ? came.hash : href.settings()
-  const label = routeName(came ? parse(came.hash) : { page: 'settings' })
-  return (
-    <p className="back">
-      <a
-        href={target.startsWith('#') ? target : `#${target}`}
-        onClick={(e) => {
-          if (!came || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
-          e.preventDefault()
-          go(came.hash)
-          restoreScroll(came.scroll)
-        }}
-      >
-        ← {label}
-      </a>
-    </p>
-  )
-}
 
 /** The full status of the daemon, this browser and the chat stream: what the rail's popover only summarises. */
 export function StatusPage({ load = loadDaemon, now: nowProp }: { load?: () => Promise<Loaded>; now?: number } = {}) {
@@ -36,7 +14,7 @@ export function StatusPage({ load = loadDaemon, now: nowProp }: { load?: () => P
   const { data, failed } = useDaemonDetail(true, load)
   return (
     <div className="page sh-status-page">
-      <StatusBack />
+      <BackLink fallback={href.settings()} />
       <header className="page-head">
         <h1>Status</h1>
       </header>

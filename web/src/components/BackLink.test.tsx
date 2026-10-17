@@ -16,6 +16,11 @@ describe('BackLink', () => {
     expect(a).toHaveAttribute('href', '#/board')
   })
 
+  it('names the page given as the fallback when it was opened directly', () => {
+    render(<BackLink fallback={href.settings()} />)
+    expect(screen.getByRole('link', { name: '← Settings' })).toHaveAttribute('href', '#/settings')
+  })
+
   it('goes back to the page it came from, with its filters and scroll, labelled for it', async () => {
     const scrollTo = vi.fn()
     vi.stubGlobal('scrollTo', scrollTo)
