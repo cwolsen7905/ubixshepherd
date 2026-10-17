@@ -323,6 +323,7 @@ export function BoardPage({
         error={closed.error}
         offset={shown}
         now={now}
+        selected={clamped}
         onSelect={setSel}
         rows={rows}
       />
@@ -332,7 +333,7 @@ export function BoardPage({
 
 /** Closed lanes, newest first: what ran and how it ended. Rows go on after the board's own. */
 function FinishedSection({
-  lanes, range, loading, error, offset, now, onSelect, rows,
+  lanes, range, loading, error, offset, now, selected, onSelect, rows,
 }: {
   lanes: LaneRecord[]
   range: Range
@@ -340,6 +341,7 @@ function FinishedSection({
   error: string | null
   offset: number
   now: number
+  selected: number
   onSelect: (i: number) => void
   rows: React.MutableRefObject<(HTMLAnchorElement | HTMLDivElement | null)[]>
 }) {
@@ -363,7 +365,7 @@ function FinishedSection({
             const cost = runCost(l) || usd(0)
             return (
               <li key={l.id}>
-              <div {...openRow({ kind: 'lane', id: l.id })} className="row row-finished" tabIndex={-1}>
+              <div {...openRow({ kind: 'lane', id: l.id })} className="row row-finished" tabIndex={-1} data-selected={i === selected ? 'true' : undefined}>
                 <Glyph glyph="−" tone={end.tone} label="closed" />
                 <span className="row-lane">
                   <a

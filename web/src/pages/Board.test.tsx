@@ -217,6 +217,9 @@ describe('BoardPage quiet projects', () => {
 })
 
 describe('BoardPage rows and the inspector', () => {
+  afterEach(() => {
+    window.location.hash = ''
+  })
   it('marks the open row with aria-current and the keyboard cursor with data-selected, apart', async () => {
     window.location.hash = '#/?open=lane%3A2'
     await show()
@@ -225,6 +228,5 @@ describe('BoardPage rows and the inspector', () => {
     expect(rows[0]).not.toHaveAttribute('aria-current')
     expect(rows[0]).toHaveAttribute('data-selected', 'true')
     expect(rows[1]).not.toHaveAttribute('data-selected')
-    window.location.hash = ''
   })
 })
