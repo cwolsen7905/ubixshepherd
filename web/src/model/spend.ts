@@ -27,6 +27,24 @@ export function chartDays(now: number): string[] {
   return out
 }
 
+/** The most days the chart draws for a long range. */
+export const MAX_CHART_DAYS = 60
+
+/** The chart's days for a range: its own days, at least CHART_DAYS and at most MAX_CHART_DAYS, ending on its last day, oldest first. */
+export function rangeChartDays(from: string, to: string): string[] {
+  const end = new Date(`${to}T12:00:00`)
+  const start = new Date(`${from}T12:00:00`)
+  const span = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
+  const n = Math.min(MAX_CHART_DAYS, Math.max(CHART_DAYS, Number.isFinite(span) ? span : CHART_DAYS))
+  const out: string[] = []
+  for (let back = n - 1; back >= 0; back--) {
+    const d = new Date(end)
+    d.setDate(d.getDate() - back)
+    out.push(localDay(d))
+  }
+  return out
+}
+
 /** The first and last day a usage read covers: the chart's window ending on now's local day. */
 export function usageWindow(now: number): { from: string; to: string } {
   const days = chartDays(now)

@@ -1,18 +1,13 @@
 import { useMemo } from 'react'
 import { daemonInfo, usage } from '../api/client'
 import type { StatusDetail, UsageStats } from '../api/types'
-import { chartDays } from '../model/spend'
+import { rangeChartDays } from '../model/spend'
 import type { Loaded } from './history'
 import { useFeedLast, useUsageLoad } from './usageLoad'
 
-/** The 14-day chart's days, oldest first, from now's local day. */
-export function useChartDays(now: number): string[] {
-  return useMemo(() => chartDays(now), [now])
-}
-
 export interface UsagePageData {
   days: string[]
-  /** The 14 days' usage for the cards; null while it loads. */
+  /** The range's usage for the cards and tables; null while it loads. */
   stats: Loaded<UsageStats>
   /** Each chart day's total; a day whose read failed keeps nothing. */
   totals: Record<string, number>
@@ -21,13 +16,13 @@ export interface UsagePageData {
   holds: Loaded<StatusDetail['quota_holds']>
 }
 
-/** The page's reads: the 14 days' usage for the cards, one day's usage per chart bar, and
- * the daemon's quota holds. */
-export function useUsagePage(now: number): UsagePageData {
+/** The page's reads: the range's usage for the cards and tables, one day's usage per chart
+ * bar, and the daemon's quota holds. */
+export function useUsagePage(range: { from: string; to: string }): UsagePageData {
   const feedLast = useFeedLast()
-  const days = useChartDays(now)
-  const key = days.join(',')
-  const stats = useUsageLoad(`${key}:stats`, () => usage(days[0] as string, days[days.length - 1] as string), feedLast)
+  const days = useMemo(() => rangeChartDays(range.from, range.to), [range.from, range.to])
+  const key = `${range.from}:${range.to}`
+  const stats = useUsageLoad(`${key}:stats`, () => usage(range.from, range.to), feedLast)
   const perDay = useUsageLoad(
     `${key}:days`,
     () => Promise.all(days.map((day) => usage(day, day).then((s) => ({ day, usd: s.total.cost_usd }), () => null))),

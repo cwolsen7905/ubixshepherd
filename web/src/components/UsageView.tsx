@@ -75,14 +75,14 @@ export function HoldsCard({ holds, now }: { holds: { agent: string; until: strin
   )
 }
 
-/** A 14-day day as the chart's axis names it: "Oct 3". */
+/** A chart day as the chart's axis names it: "Oct 3". */
 export function dayShort(day: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
   if (!m) return day
   return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1]} ${Number(m[3])}`
 }
 
-/** A 14-day day as its number alone: "3". The narrow chart names only this; the bar's
+/** A chart day as its number alone: "3". The narrow chart names only this; the bar's
  * hover and its screen-reader words keep the full day. */
 export function dayNum(day: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
@@ -98,15 +98,15 @@ export function clockShort(iso: string, now: number): string {
   return sameDay ? hm : `${dayShort(`${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`)} ${hm}`
 }
 
-/** The 14-day chart: a bar per day, lichen under 80% of the cap, lantern at 80% and past
+/** The daily chart: a bar per day, lichen under 80% of the cap, lantern at 80% and past
  * it, broken at the cap. Only the bar heights are inline, as they are computed. */
 export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: number; state: 'over' | 'near' | 'under' }[]; max: number; cap: number }) {
   const pct = (n: number) => `${max > 0 ? Math.min(100, (n / max) * 100) : 0}%`
   const capPct = cap > 0 ? pct(cap) : null
   return (
-    <section className="sh-spend-chart" aria-label="Spend, last 14 days" data-component="SpendChart">
-      <GroupHeader label="Last 14 days" hint={cap > 0 ? `daily cap ${usd(cap)}` : undefined} />
-      <div role="img" aria-label={`Spend per day for the last 14 days${cap > 0 ? `, daily cap ${usd(cap)}` : ''}`}>
+    <section className="sh-spend-chart" aria-label={`Spend, last ${bars.length} days`} data-component="SpendChart">
+      <GroupHeader label={`Last ${bars.length} days`} hint={cap > 0 ? `daily cap ${usd(cap)}` : undefined} />
+      <div role="img" aria-label={`Spend per day for the last ${bars.length} days${cap > 0 ? `, daily cap ${usd(cap)}` : ''}`}>
         <div className="sh-chart-plot">
           {capPct !== null && <span className="sh-chart-cap" style={{ '--cap-at': capPct } as CSSProperties} title={`Daily cap ${usd(cap)}`} />}
           {bars.map((b) => (
@@ -141,7 +141,7 @@ export function CostliestList({ runs }: {
     <section className="sh-spend-runs" aria-label="Most expensive runs" data-component="CostliestList">
       <GroupHeader label="Most expensive runs" />
       {runs.length === 0 ? (
-        <EmptyState title="No run in the last 14 days." />
+        <EmptyState title="No run in this range." />
       ) : (
         <ul className="sh-spend-runlist">
           {runs.map((r) => (
