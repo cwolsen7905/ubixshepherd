@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { DecisionView, DeskEvent, DeskQuestion, WaitingItem } from '../api/types'
 import type { FeedEntry } from '../model/feed'
-import { Backlog } from '../components/Backlog'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { TopicBar } from '../components/TopicBar'
 import { TopicPill } from '../components/TopicPill'
@@ -16,6 +15,7 @@ import { useSnapshot } from '../state/context'
 import { DeskThread, SIGN_IN_HINT, timeline, type ThreadItem } from '../state/desk'
 import { useNow } from '../hooks'
 import { useFollowBottom, Countdown, useThread, STREAM_LINE } from './md'
+import { Button } from '../ui'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
 import { QuestionActions } from './questions'
@@ -23,10 +23,8 @@ import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './
 import { PendingStrip } from './strip'
 import { Markdown } from './md'
 import { clipHead } from './md'
-import { prefillDraft } from '../model/chatDraft'
 import { backlogItems, threadId } from '../model/backlog'
 import { takeStep, STEP_EVENT, stepAnchor } from '../model/waitingStep'
-import { draftKey } from '../model/chatDraft'
 import { isUnseen, useSeen } from '../state/seen'
 import { UnseenDot } from '../components/UnseenDot'
 import { Announcer, AwayBlock, useSeenWatch } from './seen'
@@ -182,9 +180,9 @@ function DeskRow({
           id={asked ? threadId(`q${asked.id}`) : undefined}
           className={`msg msg-assistant${waiting ? ' msg-asked' : ''}${questions.some((q) => flash === `q${q.id}`) ? ' is-flash' : ''}`}
         >
-          {work.length > 0 && <WorkFold work={work} now={now} />}
           <span className="msg-who">{unseen ? <UnseenDot /> : null}Front desk {when}{pill}</span>
           <Markdown text={text} />
+          {work.length > 0 && <WorkFold work={work} now={now} />}
           {questions.slice(1).map((q) => (
             <span key={`a${q.id}`} id={threadId(`q${q.id}`)} />
           ))}
@@ -256,8 +254,27 @@ function ChatThread({
   const live = useSnapshot()
   const now = useNow()
   const [confirming, setConfirming] = useState(false)
-  const newButton = useRef<HTMLButtonElement>(null)
-  const confirmButton = useRef<HTMLButtonElement>(null)
+  const [menu, setMenu] = useState(false)
+  const [topics, setTopics] = useState(false)
+  const moreRoot = useRef<HTMLSpanElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      setMenu(false)
+      moreRoot.current?.querySelector('button')?.focus()
+    }
+    const away = (e: MouseEvent) => {
+      if (moreRoot.current && !moreRoot.current.contains(e.target as Node)) setMenu(false)
+    }
+    document.addEventListener('keydown', key)
+    document.addEventListener('mousedown', away)
+    return () => {
+      document.removeEventListener('keydown', key)
+      document.removeEventListener('mousedown', away)
+    }
+  }, [menu])
+  const confirmRoot = useRef<HTMLSpanElement>(null)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
 
   const seen = useSeen()
@@ -356,7 +373,7 @@ function ChatThread({
     return questionsByMessage(items.flatMap((it) => (it.type === 'desk' ? [it.e] : [])), questions)
   }, [items, questions])
 
-  // The rail's "in thread" links name rows the thread shows; one that is not loaded has none.
+  // Where an idle lane went quiet in the thread, for the header counter's arrows; a row not loaded has none.
   const backlog = useMemo(() => {
     const shownFeed = new Set(items.flatMap((it) => (it.type === 'feed' ? [it.f.id] : [])))
     // A decision's long markdown stays in its card: the rail names it by its headline.
@@ -435,7 +452,7 @@ function ChatThread({
 
   const follow = useFollowBottom(scroller, [d.loaded, items.length, d.partial, unplaced.length])
   useEffect(() => {
-    if (confirming) confirmButton.current?.focus()
+    if (confirming) confirmRoot.current?.querySelector('button')?.focus()
   }, [confirming])
 
   const line = d.connection === 'live' ? null : STREAM_LINE[d.connection]
@@ -447,50 +464,58 @@ function ChatThread({
       <header className="chat-head">
         <h1>Conversation</h1>
         <ErrorBoundary region="The topics">
-          <TopicBar active={topicId} onFilter={filterTo} />
+          <TopicBar active={topicId} onFilter={filterTo} manage={topics} />
         </ErrorBoundary>
         {children}
+        <span className="chat-state faint" role="status">
+          {offline ? 'Reconnecting…' : d.busy ? (d.queued > 1 ? `Working, ${d.queued - 1} waiting…` : 'Working…') : 'Front desk is idle'}
+        </span>
         <span className="chat-tools">
-          <NotifyToggle />
-          {d.busy && (
-            <span className="faint">
-              {d.queued > 1 ? `Working, ${d.queued - 1} waiting` : 'Working'}…
-            </span>
-          )}
           {offline && (
-            <button type="button" className="button" onClick={() => thread.wake()}>
+            <Button size="small" onClick={() => thread.wake()}>
               Retry now
-            </button>
+            </Button>
           )}
-          {!confirming ? (
-            <button ref={newButton} type="button" className="button" onClick={() => setConfirming(true)}>
-              New conversation
-            </button>
-          ) : (
-            <span className="chat-confirm" role="group" aria-label="Start a new conversation?">
+          {confirming ? (
+            <span className="chat-confirm" ref={confirmRoot} role="group" aria-label="Start a new conversation?">
               <span>Start fresh? The desk forgets this conversation&rsquo;s context.</span>
-              <button
-                ref={confirmButton}
-                type="button"
-                className="button button-primary"
+              <Button
+                size="small"
+                variant="primary"
                 onClick={() => {
                   setConfirming(false)
                   void thread.newConversation()
-                  newButton.current?.focus()
+                  moreRoot.current?.querySelector('button')?.focus()
                 }}
               >
                 Start new
-              </button>
-              <button
-                type="button"
-                className="button"
+              </Button>
+              <Button
+                size="small"
                 onClick={() => {
                   setConfirming(false)
-                  window.setTimeout(() => newButton.current?.focus(), 0)
+                  window.setTimeout(() => moreRoot.current?.querySelector('button')?.focus(), 0)
                 }}
               >
                 Cancel
-              </button>
+              </Button>
+            </span>
+          ) : (
+            <span className="chat-more" ref={moreRoot}>
+              <Button size="small" variant="ghost" aria-label="More" aria-haspopup="true" aria-expanded={menu} onClick={() => setMenu(!menu)}>
+                &hellip;
+              </Button>
+              {menu && (
+                <div className="chat-menu" role="group" aria-label="Conversation options">
+                  <NotifyToggle />
+                  <Button size="small" aria-pressed={topics} onClick={() => { setMenu(false); setTopics(!topics) }}>
+                    {topics ? 'Hide topics' : 'All topics'}
+                  </Button>
+                  <Button size="small" onClick={() => { setMenu(false); setConfirming(true) }}>
+                    New conversation
+                  </Button>
+                </div>
+              )}
             </span>
           )}
         </span>
@@ -514,15 +539,6 @@ function ChatThread({
       )}
 
       <div className="chat-layout">
-        <div className="chat-rail">
-          <Backlog
-            items={backlog}
-            now={now}
-            spend={null}
-            onJump={jump}
-            onStart={(text) => prefillDraft(window.localStorage, draftKey(workspaceId), text)}
-          />
-        </div>
         <ErrorBoundary region="The conversation">
         <div className="chat-main">
         {topicId !== null && (

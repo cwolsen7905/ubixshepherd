@@ -16,22 +16,23 @@ export type LoadTopicBar = (all: boolean) => Promise<TopicList>
  * A strip in the conversation head, after the title: "All" and one chip per active topic, then "+N idle" to reveal
  * the quiet ones. The selected topic is always a chip, idle or not. It filters
  * through the same `onFilter` the rail's Topics section uses, so the hash is the one
- * source of truth and the two cannot disagree. "All topics" opens the full list in a
+ * source of truth and the two cannot disagree. With `manage` the full list opens in a
  * panel under the chips: rename, clear, reopen, merge and add live there.
  */
 export function TopicBar({
-  active, onFilter, load = defaultLoad,
+  active, onFilter, manage = false, load = defaultLoad,
 }: {
   /** The topic the thread is filtered to, or null for all. */
   active: number | null
   onFilter: (id: number | null) => void
+  /** Shows the full topic list under the chips (rename, clear, reopen, merge, add); the host opens it. */
+  manage?: boolean
   load?: LoadTopicBar
 }) {
   const [list, setList] = useState<TopicView[]>([])
   const [showIdle, setShowIdle] = useState(() => readFlag(IDLE_KEY))
   const [now, setNow] = useState(() => Date.now())
   const strip = useRef<HTMLDivElement>(null)
-  const [menu, setMenu] = useState(false)
 
   useEffect(() => {
     let live = true
@@ -99,11 +100,8 @@ export function TopicBar({
             )}
           </div>
         )}
-        <button type="button" className="link-button topic-menu-toggle" aria-expanded={menu} onClick={() => setMenu(!menu)}>
-          {menu ? 'Hide topics' : 'All topics'}
-        </button>
       </div>
-      {menu && (
+      {manage && (
         <div className="topic-menu">
           <Topics active={active} now={now} onFilter={onFilter} load={load} />
         </div>
