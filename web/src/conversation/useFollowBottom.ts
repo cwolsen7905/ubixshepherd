@@ -3,12 +3,40 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 /** How close to the bottom, in px, still counts as being at it. */
 const NEAR_BOTTOM = 24
 
+/** Scrolls an element to its end and returns where it landed. */
+function scrollToEnd(box: HTMLElement): number {
+  box.scrollTop = box.scrollHeight
+  return box.scrollTop
+}
+
+/** Moves the nearest scroller of `target` (the window when none) to its end, noting where it landed. */
+function scrollToBottom(target: RefObject<HTMLElement | null>, lastY: { current: number }) {
+  const box = ownScroller(target.current)
+  if (box) {
+    lastY.current = scrollToEnd(box)
+    return
+  }
+  const el = document.documentElement
+  window.scrollTo({ top: el.scrollHeight })
+  lastY.current = Math.max(0, el.scrollHeight - window.innerHeight)
+}
+
+/** The nearest ancestor that scrolls on its own, else null for the page (the window). */
+function ownScroller(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement; p; p = p.parentElement) {
+    const y = window.getComputedStyle(p).overflowY
+    if (y === 'auto' || y === 'scroll') return p
+  }
+  return null
+}
+
 /**
  * Keeps the page at the bottom of a growing thread while the reader is there, and leaves
  * them alone once they scroll up. The same behaviour as the chat page's hook, kept here
- * so the two pages do not depend on each other: the reader leaves by scrolling up
- * (scrollY falls, or the wheel goes up) and returns by reaching the bottom, while our
- * own scrolling and content growth never move scrollY up. `deps` re-pins on our own
+ * so the two pages do not depend on each other. It scrolls only the nearest scrollable
+ * ancestor of `target` (the window when none), never the page around a side panel: the
+ * reader leaves by scrolling up (the offset falls, or the wheel goes up) and returns by reaching the bottom, while our
+ * own scrolling and content growth never move the offset up. `deps` re-pins on our own
  * changes, and a ResizeObserver on `target` on content that grows by itself.
  */
 export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unknown[]) {
@@ -22,20 +50,18 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
       setFollowing(v)
     }
   }, [])
-  const toBottom = useCallback(() => {
-    const el = document.documentElement
-    window.scrollTo({ top: el.scrollHeight })
-    lastY.current = Math.max(0, el.scrollHeight - window.innerHeight)
-  }, [])
+  const toBottom = useCallback(() => scrollToBottom(target, lastY), [target])
   const jump = useCallback(() => {
     pin(true)
     toBottom()
   }, [pin, toBottom])
 
   useEffect(() => {
+    const box = ownScroller(target.current)
     const onScroll = () => {
-      const y = window.scrollY
-      if (window.innerHeight + y >= document.documentElement.scrollHeight - NEAR_BOTTOM) pin(true)
+      const y = box ? box.scrollTop : window.scrollY
+      const atEnd = box ? box.clientHeight + y >= box.scrollHeight - NEAR_BOTTOM : window.innerHeight + y >= document.documentElement.scrollHeight - NEAR_BOTTOM
+      if (atEnd) pin(true)
       else if (y < lastY.current) pin(false)
       lastY.current = y
     }
@@ -45,14 +71,15 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
     const onResize = () => {
       if (pinned.current) toBottom()
     }
-    lastY.current = window.scrollY
-    window.addEventListener('scroll', onScroll, { passive: true })
+    lastY.current = box ? box.scrollTop : window.scrollY
+    const scrollTarget: EventTarget = box ?? window
+    scrollTarget.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('wheel', onWheel, { passive: true })
     window.addEventListener('resize', onResize)
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
     if (target.current) ro?.observe(target.current)
     return () => {
-      window.removeEventListener('scroll', onScroll)
+      scrollTarget.removeEventListener('scroll', onScroll)
       window.removeEventListener('wheel', onWheel)
       window.removeEventListener('resize', onResize)
       ro?.disconnect()
