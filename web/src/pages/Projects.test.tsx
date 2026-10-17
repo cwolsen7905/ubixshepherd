@@ -153,6 +153,22 @@ describe('ProjectPage', () => {
     expect(within(runs).getAllByText('feat/login')[0]?.closest('a')).toHaveAttribute('href', expect.stringContaining('open=run'))
   })
 
+  it('shows stopped and interrupted runs as failures and titles the model with its full id', async () => {
+    const runs = [
+      run({ id: 11, lane: 'feat/stopped', state: 'stopped', model: 'anthropic/claude-sonnet-5-5' }),
+      run({ id: 12, lane: 'feat/cut', state: 'interrupted' }),
+      run({ id: 13, lane: 'feat/done', state: 'succeeded' }),
+    ]
+    daemon({ projects: [] }, { ...detail, runs })
+    await show(<ProjectPage name="shop" />)
+    const section = screen.getByText('Recent runs').closest('section') as HTMLElement
+    for (const lane of ['feat/stopped', 'feat/cut']) {
+      expect(within(section).getByText(lane).closest('a')).toHaveTextContent('✗')
+    }
+    expect(within(section).getByText('feat/done').closest('a')).toHaveTextContent('✓')
+    expect(within(section).getByText('claude-sonnet-5-5')).toHaveAttribute('title', 'anthropic/claude-sonnet-5-5')
+  })
+
   it('] moves through the waiting rows, wrapping round', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="shop" />)

@@ -194,14 +194,21 @@ export function ProjectPage({ name }: { name: string | null }) {
         {data.runs.length === 0 && <EmptyState title="No run yet." />}
         {data.runs.map((r) => {
           const open = { kind: 'run' as const, id: r.id }
+          const failed = r.state === 'failed' || r.state === 'stopped' || r.state === 'interrupted'
+          const model = r.model ? r.model.replace(/^.*\//, '') : ''
           return (
             <ListRow
               key={r.id}
-              glyph={r.state === 'running' ? '●' : r.state === 'succeeded' ? '✓' : r.state === 'failed' ? '✗' : '○'}
-              tone={r.state === 'running' ? 'live' : r.state === 'succeeded' ? 'ok' : r.state === 'failed' ? 'bad' : 'idle'}
+              glyph={r.state === 'running' ? '●' : r.state === 'succeeded' ? '✓' : failed ? '✗' : '○'}
+              tone={r.state === 'running' ? 'live' : r.state === 'succeeded' ? 'ok' : failed ? 'bad' : 'idle'}
               glyphLabel={r.state}
               title={r.lane}
-              sub={`${r.agent}${r.model ? ` ${r.model.replace(/^.*\//, '')}` : ''} · ${r.state} · ${duration(r.started, r.ended, now)} · ${runCost(r) || usd(0)}`}
+              sub={
+                <>
+                  {r.agent}
+                  {model && <> <span title={r.model}>{model}</span></>} · {r.state} · {duration(r.started, r.ended, now)} · {runCost(r) || usd(0)}
+                </>
+              }
               age={since(r.started, now)}
               selected={isOpenNow(open)}
               href={openHref(open)}
