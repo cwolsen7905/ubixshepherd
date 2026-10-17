@@ -6,7 +6,7 @@ import { age as ageOf, duration, runCost, since, usd } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { UNASSIGNED } from '../model/projects'
 import { go, href } from '../router'
-import { isOpenNow, openInInspector, useHashOpen } from '../components/BacklogOpen'
+import { isOpenNow, openHref, useHashOpen } from '../components/BacklogOpen'
 import { useProject } from '../state/projects'
 import type { BriefView, LaneView, ProjectBrief } from '../api/types'
 import { Count, EmptyState, GroupHeader, ListRow, Skeleton } from '../ui'
@@ -47,7 +47,8 @@ function BriefText({ brief, heading, stale, draft }: { brief: ProjectBrief; head
   )
 }
 
-/** A lane row: the lane over its repo and gate, the merge request at the right. */
+/** A lane row: the lane over its repo and gate, the merge request at the right. A link to
+ * the inspector address, so middle-click and open-in-new-tab keep working. */
 function LaneRow({ lane, now }: { lane: LaneView; now: number }) {
   const open = { kind: 'lane' as const, id: lane.id }
   const badge = mrBadge(lane)
@@ -68,7 +69,7 @@ function LaneRow({ lane, now }: { lane: LaneView; now: number }) {
       rightTone={badge?.tone === 'ok' ? 'ok' : badge?.tone === 'bad' ? 'bad' : 'muted'}
       age={since(lane.created, now)}
       selected={isOpenNow(open)}
-      onSelect={() => openInInspector(open)}
+      href={openHref(open)}
     />
   )
 }
@@ -81,9 +82,12 @@ export function ProjectPage({ name }: { name: string | null }) {
   const title = name ?? UNASSIGNED
   useKeys(
     {
+      // Each press moves to the next waiting row after the focused one, wrapping round.
       ']': () => {
-        const el = document.querySelector('[data-waiting] [data-component="ListRow"]') as HTMLElement | null
-        el?.focus()
+        const rows = [...document.querySelectorAll<HTMLElement>('[data-waiting] [data-component="ListRow"]')]
+        if (rows.length === 0) return
+        const at = rows.findIndex((el) => el === document.activeElement || el.contains(document.activeElement))
+        rows[(at + 1) % rows.length]?.focus()
       },
     },
     [data],
@@ -151,7 +155,7 @@ export function ProjectPage({ name }: { name: string | null }) {
               sub={`${d.lane} · ${d.agent}`}
               age={since(d.created, now)}
               selected={isOpenNow(open)}
-              onSelect={() => openInInspector(open)}
+              href={openHref(open)}
             />
           )
         })}
@@ -200,7 +204,7 @@ export function ProjectPage({ name }: { name: string | null }) {
               sub={`${r.agent}${r.model ? ` ${r.model.replace(/^.*\//, '')}` : ''} · ${r.state} · ${duration(r.started, r.ended, now)} · ${runCost(r) || usd(0)}`}
               age={since(r.started, now)}
               selected={isOpenNow(open)}
-              onSelect={() => openInInspector(open)}
+              href={openHref(open)}
             />
           )
         })}

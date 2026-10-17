@@ -3,7 +3,7 @@
    design's status cards, with 12.5/600 uppercase muted titles. */
 .sh-status-page { max-width: 80rem; }
 .sh-status-page .sh-status-grid { margin-top: var(--sh-s4); }
-.sh-status-page .daemon-offline { margin: 0 0 var(--sh-s4); }
+.sh-status-page .daemon-offline { grid-column: 1 / -1; margin: 0 0 var(--sh-s4); }
 .sh-status-page .daemon-group {
   border: 1px solid var(--sh-rule);
   background: var(--sh-raised);

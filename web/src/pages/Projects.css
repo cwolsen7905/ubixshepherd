@@ -7,6 +7,13 @@
 .sh-project-repos { list-style: none; margin: var(--sh-s2) 0 0; padding: 0; display: grid; gap: var(--sh-s1); font-size: var(--sh-t-small); color: var(--sh-muted); }
 .sh-project-repos .sh-project-rule { color: var(--sh-faint); }
 .sh-project-note { margin: var(--sh-s6) 0 0; max-width: var(--sh-measure); font-size: var(--sh-t-small); color: var(--sh-muted); }
+/* Rules the dropped page stylesheets used to carry for markup still in use here:
+   the header's repo list and spend, and the Work matrix's section (components/Work). */
+.page-head-repos { color: var(--sh-muted); font-size: var(--sh-t-small); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-spend { margin: 0; font-size: var(--sh-t-small); color: var(--sh-muted); }
+.project-section { margin: 0 0 var(--sh-s9); }
+.project-section h2 { margin: 0 0 var(--sh-s2); font-size: var(--sh-t-card); font-weight: 600; display: flex; align-items: baseline; gap: var(--sh-s4); }
+.project-section > p { margin: var(--sh-s2) 0; }
 .sh-project-page .sh-brief { margin: 0; max-width: var(--sh-measure); }
 .sh-project-page .sh-brief-text {
   margin: var(--sh-s2) 0 0; padding: var(--sh-s6) var(--sh-s7); white-space: pre-wrap; overflow-wrap: anywhere;

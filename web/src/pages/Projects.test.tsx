@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ConfigDoc, ProjectDetail, ProjectList, ProjectWork } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -138,8 +138,33 @@ describe('ProjectPage', () => {
     expect(screen.getByText(/Older than 30d/)).toBeInTheDocument()
     expect(screen.getByText(/not approved/)).toBeInTheDocument()
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
-    // Read-only: the only buttons are the rows opening the inspector; nothing approves or edits.
-    for (const b of screen.queryAllByRole('button')) expect(b).toHaveAttribute('data-component', 'ListRow')
+    // Read-only: nothing here can approve or edit.
+    expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('links lane, decision and run rows to their inspector addresses', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectPage name="shop" />)
+    const lanes = screen.getByText('Open lanes').closest('section') as HTMLElement
+    expect(within(lanes).getByText('feat/login').closest('a')).toHaveAttribute('href', expect.stringContaining('open=lane'))
+    const waiting = screen.getByText('Waiting on you').closest('section') as HTMLElement
+    expect(within(waiting).getByText('Use SSO?').closest('a')).toHaveAttribute('href', expect.stringContaining('open=decision'))
+    const runs = screen.getByText('Recent runs').closest('section') as HTMLElement
+    expect(within(runs).getAllByText('feat/login')[0]?.closest('a')).toHaveAttribute('href', expect.stringContaining('open=run'))
+  })
+
+  it('] moves through the waiting rows, wrapping round', async () => {
+    daemon({ projects: [] })
+    await show(<ProjectPage name="shop" />)
+    const waiting = screen.getByText('Waiting on you').closest('section') as HTMLElement
+    const rows = within(waiting).getAllByText(/Use SSO\?|needs routing/).map((el) => el.closest('a') as HTMLElement)
+    expect(rows).toHaveLength(2)
+    fireEvent.keyDown(window, { key: ']' })
+    expect(document.activeElement).toBe(rows[0])
+    fireEvent.keyDown(window, { key: ']' })
+    expect(document.activeElement).toBe(rows[1])
+    fireEvent.keyDown(window, { key: ']' })
+    expect(document.activeElement).toBe(rows[0])
   })
 
   it('counts each section with a badge and keeps Edit secondary', async () => {
