@@ -1,6 +1,7 @@
 export { Button, type ButtonProps, type ButtonVariant } from './Button'
 export { Count, Badge, type BadgeTone } from './Count'
 export { Chip } from './Chip'
+export { IdChip, type IdKind } from './IdChip'
 export { Kbd } from './Kbd'
 export { Tabs, type TabItem } from './Tabs'
 export { Dialog, type DialogSize } from './Dialog'

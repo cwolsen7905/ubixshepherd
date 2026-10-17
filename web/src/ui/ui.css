@@ -1,6 +1,6 @@
-/* The kit parts the design has no class for: popover, toast, empty state, skeleton and the
-   dev gallery. Buttons, chips, tabs, dialogs, kbd and counts are the design's .sh-* classes in
-   styles/components.css. */
+/* The kit parts the design has no class for: popover, toast, empty state, skeleton, the
+   typed-ID chip and the dev gallery. Buttons, chips, tabs, dialogs, kbd and counts are the
+   design's .sh-* classes in styles/components.css. */
 
 .ui-popover-anchor { position: relative; display: inline-block; }
 .ui-popover {
@@ -39,7 +39,17 @@
 .ui-kit-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); gap: var(--sh-s4); }
 .ui-kit-swatch { padding: var(--sh-s6); border: 1px solid var(--sh-rule); border-radius: var(--sh-r); font-size: var(--sh-t-meta); }
 
+/* Typed-ID chip. Small, faint and monospace, sharing the Chip tokens (border, pill
+   radius, meta size, muted ink on the raised surface) without reusing Chip itself. */
+.ui-idchip {
+  white-space: nowrap; border: 1px solid var(--sh-rule); border-radius: var(--sh-r-pill);
+  padding: 1px 10px; font: var(--sh-t-meta) var(--sh-mono); color: var(--sh-faint);
+  background: var(--sh-raised); user-select: all;
+}
+a.ui-idchip { color: var(--sh-faint); }
+a.ui-idchip:hover { border-color: var(--sh-control); }
+
 @media (forced-colors: active) {
-  .sh-btn, .sh-chip, .sh-modal, .ui-popover, .ui-toast { border: 1px solid CanvasText; }
+  .sh-btn, .sh-chip, .sh-modal, .ui-idchip, .ui-popover, .ui-toast { border: 1px solid CanvasText; }
   .sh-tab.is-on { box-shadow: inset 0 -2px 0 Highlight; }
 }

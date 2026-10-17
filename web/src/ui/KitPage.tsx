@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Badge, Button, Chip, Dialog, EmptyState, Kbd, Popover, Skeleton, Tabs, ToastProvider, useToast, type ButtonVariant } from './index'
+import { Badge, Button, Chip, Dialog, EmptyState, IdChip, Kbd, Popover, Skeleton, Tabs, ToastProvider, useToast, type ButtonVariant } from './index'
 
 const VARIANTS: ButtonVariant[] = ['primary', 'secondary', 'ghost', 'danger', 'attention']
 const SURFACES = ['--field', '--surface', '--raised', '--sunk', '--lichen', '--lantern', '--broken', '--ok']
@@ -61,6 +61,15 @@ function Kit() {
           <Chip onRemove={() => {}}>topic</Chip>
           <Kbd keys="⌘K" />
           <Kbd keys={['g', 'i']} />
+        </div>
+      </section>
+      <section>
+        <h2>IdChip</h2>
+        <div className="ui-kit-row">
+          <IdChip kind="decision" id={275} />
+          <IdChip kind="question" id={43} />
+          <IdChip kind="run" id={311} bare />
+          <IdChip kind="item" id={82} href="#/inbox" />
         </div>
       </section>
       <section>
