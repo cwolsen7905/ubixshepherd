@@ -3,6 +3,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -33,6 +34,15 @@ type fakeForge struct {
 	calls int
 	// threads are the request's unresolved review threads, for Threads.
 	threads []forge.Thread
+	// log, when set, is every job's log.
+	log string
+}
+
+func (f *fakeForge) ReplyCommand(mr int, d string) string {
+	return fmt.Sprintf("glab api -X POST 'projects/g%%2Fapp/merge_requests/%d/discussions/%s/notes' -f body='...'", mr, d)
+}
+func (f *fakeForge) ResolveCommand(mr int, d string) string {
+	return fmt.Sprintf("glab api -X PUT 'projects/g%%2Fapp/merge_requests/%d/discussions/%s' -f resolved=true", mr, d)
 }
 
 func (f *fakeForge) Threads(context.Context, int) ([]forge.Thread, error) { return f.threads, nil }
@@ -61,6 +71,9 @@ func (f *fakeForge) CreateMR(context.Context, string, string, string, string) (*
 	return &forge.MR{IID: 1, State: "opened"}, nil
 }
 func (f *fakeForge) JobLog(_ context.Context, id int64, _ int) (string, error) {
+	if f.log != "" {
+		return f.log, nil
+	}
 	return "--- FAIL: TestParse (job log)", nil
 }
 

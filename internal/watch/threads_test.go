@@ -26,10 +26,15 @@ func TestReviewThreadsGoBackOnce(t *testing.T) {
 	f.settle(t)
 	runs, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10)
 	if len(runs) != 2 || !strings.Contains(runs[0].Prompt, "[handle nil](https://gl/mr/7#note_55) [d1abcdef] (a.go:4)") ||
-		!strings.Contains(runs[0].Prompt, "[!7](https://gl/mr/7)") || !strings.Contains(runs[0].Prompt, "Do not resolve") {
+		!strings.Contains(runs[0].Prompt, "[!7](https://gl/mr/7)") || strings.Contains(runs[0].Prompt, "Do not resolve") ||
+		!strings.Contains(runs[0].Prompt, "glab api -X POST 'projects/g%2Fapp/merge_requests/7/discussions/d1abcdef0123/notes' -f body=") ||
+		!strings.Contains(runs[0].Prompt, "glab api -X PUT 'projects/g%2Fapp/merge_requests/7/discussions/d1abcdef0123' -f resolved=true") ||
+		!strings.Contains(runs[0].Prompt, "Dismissed: <reason>") {
 		t.Fatalf("runs = %+v", runs)
 	}
-	// Seen again: nothing, even from a fresh watcher (the ids are stored).
+	// The agent replied (the thread has a second note) but left it open: nothing goes
+	// back, even from a fresh watcher (the ids are stored).
+	f.f.threads[0].Notes = 2
 	w2 := &Watcher{Store: f.w.Store, Fold: f.w.Fold, Runner: f.w.Runner, Log: f.w.Log, Interval: f.w.Interval, ForgeFor: f.w.ForgeFor}
 	w2.Check(f.ctx)
 	if n, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10); len(n) != 2 {
@@ -105,5 +110,66 @@ func TestRequireApprovalFailureIsNotHandedToTheAgent(t *testing.T) {
 	runs, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10)
 	if len(runs) != 2 || strings.Contains(runs[0].Prompt, forge.RequireApprovalJob) || !strings.Contains(runs[0].Prompt, "go-check") {
 		t.Errorf("runs = %+v", runs)
+	}
+}
+
+func TestUnansweredThreadGoesBackOnceMore(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.f.threads = []forge.Thread{{ID: "d1", Body: "bot: handle nil", Notes: 1}}
+	runs := func() int { n, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10); return len(n) }
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if runs() != 2 {
+		t.Fatalf("runs = %d, want 2", runs())
+	}
+	// The run ended with the thread open and no reply: it goes back once more.
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := runs(); n != 3 {
+		t.Fatalf("runs = %d, want 3", n)
+	}
+	rs, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10)
+	if !strings.Contains(rs[0].Prompt, "still unanswered") {
+		t.Errorf("prompt = %s", rs[0].Prompt)
+	}
+	// Not a third time, and the budget (2 by default) is spent anyway.
+	f.w.Check(f.ctx)
+	if n := runs(); n != 3 {
+		t.Errorf("runs = %d after the retry", n)
+	}
+}
+
+func TestRepliedOrResolvedThreadIsNotRetried(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.f.threads = []forge.Thread{{ID: "d1", Body: "bot: a", Notes: 1}, {ID: "d2", Body: "bot: b", Notes: 1}}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	// d1 got the agent's reply; d2 was resolved, so it is no longer listed.
+	f.f.threads = []forge.Thread{{ID: "d1", Body: "bot: a", Notes: 2}}
+	f.w.Check(f.ctx)
+	if n, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10); len(n) != 2 {
+		t.Fatalf("runs = %d, want 2", len(n))
+	}
+}
+
+func TestRetryIsLeftToThePersonWhenTheBudgetIsSpent(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	one := 1
+	cfg := config.Default()
+	cfg.Defaults.Watch.FixTries = &one
+	f.run.SetConfig(cfg)
+	f.f.threads = []forge.Thread{{ID: "d1", Body: "bot: a", Notes: 1}}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	f.w.Check(f.ctx)
+	f.w.Check(f.ctx)
+	if n, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10); len(n) != 2 {
+		t.Fatalf("runs = %d, want 2", len(n))
+	}
+	if got := f.feed(t); strings.Count(got, "are spent") != 1 {
+		t.Errorf("feed = %s", got)
 	}
 }
