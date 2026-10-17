@@ -55,3 +55,8 @@ export function itemOpen(it: { decision?: { id: number }; laneId?: number }): Op
   if (it.laneId !== undefined) return { kind: 'lane', id: it.laneId }
   return null
 }
+
+/** The props of an `<a>` that opens `o` in the inspector, marked when it is the open one. */
+export function openLink(o: Open) {
+  return { href: openHref(o), 'aria-current': isOpenNow(o) ? ('true' as const) : undefined, onClick: openClick(o) }
+}

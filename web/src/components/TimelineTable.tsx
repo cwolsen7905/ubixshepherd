@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { clockTime, duration, ESTIMATE_NOTE, runCost } from '../format'
 import { EventGlyph } from './Glyph'
 import { href } from '../router'
+import { openRow } from './BacklogOpen'
 import type { TRun } from '../model/timeline'
 import { taskLine, taskText } from '../timeline/task'
 import '../styles/pages/runs.css'
@@ -79,7 +80,7 @@ export function TimelineTable({ rows, now }: { rows: Row[]; now: number }) {
       </thead>
       <tbody>
         {sorted.map(({ run, repo, lane }) => (
-          <tr key={run.id}>
+          <tr key={run.id} {...openRow({ kind: 'run', id: run.id })}>
             <td><EventGlyph event={STATE_EVENT[run.state]} /></td>
             <td><a href={href.log(run.id)} title="Open the log">{run.id}</a></td>
             <td>{run.agent}</td>

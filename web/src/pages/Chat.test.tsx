@@ -451,7 +451,7 @@ describe('backlog rail', () => {
     const rows = within(rail).getAllByRole('listitem')
     expect(rows[0]).toHaveTextContent('decision 3')
     expect(rows[rows.length - 1]).toHaveTextContent('last run 11 succeeded')
-    expect(within(rows[rows.length - 1] as HTMLElement).getByRole('link', { name: 'docs/readme' })).toHaveAttribute('href', '#/lanes/2')
+    expect(within(rows[rows.length - 1] as HTMLElement).getByRole('link', { name: 'docs/readme' })).toHaveAttribute('href', '#/?open=lane%3A2')
   })
 
   it('jumps to the thread row where an idle lane went quiet', async () => {

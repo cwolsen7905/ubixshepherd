@@ -10,6 +10,7 @@ import {
   type TimelineLayout,
 } from '../model/timeline'
 import { href, type TimelineRange } from '../router'
+import { openLink } from './BacklogOpen'
 import { TimelineTooltip, type Tip, type TipAt } from './TimelineTooltip'
 import '../timeline/timeline.css'
 
@@ -107,7 +108,7 @@ const Bar = memo(function Bar({
   ].filter(Boolean).join(' ')
   return (
     <a
-      href={href.log(r.id)}
+      {...openLink({ kind: 'run', id: r.id })}
       className={classes}
       role="link"
       aria-label={runLabel(r, lane, now)}
@@ -161,11 +162,11 @@ const Density = memo(function Density({
 const Ask = memo(function Ask({ mark, lane, g, now, onTip }: { mark: DecisionMark; lane: string; g: Geometry; now: number; onTip: OnTip }) {
   const cy = g.rowH / 2
   const r = 0.4 * g.rem
-  const to = mark.source === 'decision' ? href.decisions(mark.id) : href.decisions()
+  const link = mark.source === 'decision' ? openLink({ kind: 'decision', id: mark.id }) : { href: href.decisions() }
   const tip: Tip = { kind: 'decision', mark, lane }
   if (!mark.open) {
     return (
-      <a href={to} className="tl-ask is-answered" role="link" aria-label={`Decision answered: ${mark.question}`} {...tipHandlers(tip, onTip)}>
+      <a {...link} className="tl-ask is-answered" role="link" aria-label={`Decision answered: ${mark.question}`} {...tipHandlers(tip, onTip)}>
         <text className="tl-answered" x={mark.x} y={cy} textAnchor="middle" dominantBaseline="central">?</text>
         <rect className="tl-hit" x={mark.x - 7} y={0} width={14} height={g.rowH} />
       </a>
@@ -174,7 +175,7 @@ const Ask = memo(function Ask({ mark, lane, g, now, onTip }: { mark: DecisionMar
   const what = mark.source === 'request' ? 'Request needing routing' : 'Decision waiting on you'
   return (
     <a
-      href={to}
+      {...link}
       className={`tl-ask is-open${mark.source === 'request' ? ' is-request' : ''}`}
       role="link"
       aria-label={`${what}, waiting ${duration(new Date(mark.created).toISOString(), undefined, now)}: ${mark.question}`}
@@ -193,7 +194,7 @@ const Merge = memo(function Merge({ mark, lane, laneId, g, onTip }: { mark: Merg
   const r = 0.26 * g.rem
   return (
     <a
-      href={href.lane(laneId)}
+      {...openLink({ kind: 'lane', id: laneId })}
       className="tl-merge"
       role="link"
       aria-label={`${mark.mr ? `!${mark.mr} merged` : 'Merged'} about ${timeOfDay(mark.at)}, ${lane}`}
@@ -213,7 +214,7 @@ const Row = memo(function Row({
 }: { track: LaneTrack; width: number; g: Geometry; now: number; agent: string; onTip: OnTip }) {
   return (
     <div className={`tl-row${track.waiting ? ' is-waiting' : ''}`} data-lane={track.id}>
-      <a className="tl-name" href={href.lane(track.id)} title={track.name}>
+      <a className="tl-name" {...openLink({ kind: 'lane', id: track.id })} title={track.name}>
         {track.name}
       </a>
       <svg className="tl-track" width={width} height={g.rowH} aria-label={`${track.name}: ${track.bars.length} marks`} role="group">
