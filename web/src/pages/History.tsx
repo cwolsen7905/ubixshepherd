@@ -184,7 +184,7 @@ export function HistoryPage({ kind = '', project = '', q = '' }: { kind?: string
       </form>
       {days.length === 0 ? (
         <EmptyState title={snap.ready && (listed || !project) ? 'Nothing matches.' : 'Loading…'}>
-          {snap.ready && (listed || !project) && (kind || project || needle || range !== '7d' ? 'Clear a filter to see more.' : 'Nothing has happened in the feed yet.')}
+          {snap.ready && (listed || !project) && (snap.feed.length === 0 ? 'Nothing has happened in the feed yet.' : inRange.length === 0 ? 'Nothing in this range: choose a longer one.' : 'Clear a filter to see more.')}
         </EmptyState>
       ) : (
         days.map((d) => (
