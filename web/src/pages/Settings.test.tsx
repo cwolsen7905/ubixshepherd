@@ -1,14 +1,14 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ConfigChange, ConfigDoc } from '../api/types'
-import { SettingsPage } from './Settings'
+import { SettingsPage, THEME_KEY } from './Settings'
 
 const doc = (o: Partial<ConfigDoc> = {}): ConfigDoc => ({
   path: '/h/config.yaml', etag: 'e1', can_write: true,
   raw: { repos: { api: { base_branch: 'dev' } } },
-  effective: { daemon: { max_runs: 4 }, desk: {}, chat: {}, opencode: {} },
-  defaults: { raw: {}, effective: { gate: 'make check', autonomy: { push: 'human' } }, overridden: [] },
-  repos: { api: { raw: { base_branch: 'dev' }, effective: { gate: 'make check', base_branch: 'dev', autonomy: { push: 'human' } }, overridden: ['base_branch'] } },
+  effective: { daemon: { max_runs: 4, budget: 20, poll: '60s' }, keep_going: { cap: 5 }, desk: {}, chat: {}, opencode: {} },
+  defaults: { raw: {}, effective: { gate: 'make check', autonomy: { push: 'human' }, agent: { model: { claude: 'anthropic/claude-sonnet-5' } } }, overridden: [] },
+  repos: { api: { raw: { base_branch: 'dev' }, effective: { gate: 'make check', base_branch: 'dev', autonomy: { push: 'human', merge: 'human' } }, overridden: ['base_branch'] } },
   projects: {},
   sections: [
     { id: 'defaults', label: 'Defaults', root: ['defaults'], fields: [] },
@@ -35,6 +35,7 @@ function daemon(d: ConfigDoc, answer: (m: string, p: string, b?: ConfigChange) =
     if (path === '/v1/web/session') return new Response(JSON.stringify({ role: 'web', csrf: 'c' }))
     const custom = answer(method, path, body)
     if (custom) return custom
+    if (path === '/v1/status?detail=1') return new Response(JSON.stringify({ version: '1', detail: { forge: { last_poll: new Date(Date.now() - 41000).toISOString() } } }))
     if (path === '/v1/config' && method === 'GET') return new Response(JSON.stringify(d))
     return new Response('{"error":"no"}', { status: 404 })
   })
@@ -59,18 +60,26 @@ const withProjects = (): ConfigDoc =>
     ],
   })
 
+
+
+/** The ops of the latest preview the page asked for, once it has. */
+const previewed = async (seen: Seen[]) => {
+  await waitFor(() => expect(seen.some((s) => s.path === '/v1/config/preview')).toBe(true))
+  return [...seen].reverse().find((s) => s.path === '/v1/config/preview')?.body?.ops
+}
+
+const diffOf = (lines: string) => json({ etag: 'e1', diff: lines })
+
 describe('SettingsPage projects', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('adds a project and writes it with an empty repo list', async () => {
-    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '+  lab:\n+    repos: []\n' }) : undefined))
+    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? diffOf('+  lab:\n+    repos: []\n') : undefined))
     const user = userEvent.setup()
     render(<SettingsPage scope="repo:api" />)
     await user.type(await screen.findByPlaceholderText('add a project'), 'lab{Enter}')
-    expect(await screen.findByText('1 change')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    await screen.findByRole('region', { name: 'Review changes' })
-    expect(seen.find((s) => s.path === '/v1/config/preview')?.body?.ops).toEqual([{ path: ['projects', 'lab', 'repos'], value: [] }])
+    expect(await screen.findByText('1 unsaved change')).toBeInTheDocument()
+    expect(await previewed(seen)).toEqual([{ path: ['projects', 'lab', 'repos'], value: [] }])
   })
 
   it('refuses a project name that is not a plain key', async () => {
@@ -81,8 +90,8 @@ describe('SettingsPage projects', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('letters, digits')
   })
 
-  it('shows which project each repo is in, and moves one with a single reviewed change', async () => {
-    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '-    repos: [api, web]\n+    repos: [web]\n' }) : undefined))
+  it('shows which project each repo is in, and moves one with a single staged change', async () => {
+    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? diffOf('-    repos: [api, web]\n+    repos: [web]\n') : undefined))
     const user = userEvent.setup()
     render(<SettingsPage scope="project:site" />)
     const picker = await screen.findByRole('group', { name: 'Repos' })
@@ -90,26 +99,22 @@ describe('SettingsPage projects', () => {
     expect(within(picker).getByText('in no project')).toBeInTheDocument()
     await user.click(within(picker).getByRole('checkbox', { name: 'api' }))
     expect(within(picker).getByRole('checkbox', { name: 'api' })).toBeChecked()
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    await screen.findByRole('region', { name: 'Review changes' })
-    expect(seen.find((s) => s.path === '/v1/config/preview')?.body?.ops).toEqual([
+    expect(await previewed(seen)).toEqual([
       { path: ['projects', 'shop', 'repos'], value: ['web'] },
       { path: ['projects', 'site', 'repos'], value: ['api'] },
     ])
   })
 
   it('deletes a project only after confirming, and says its repos become unassigned', async () => {
-    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '-  shop: ...\n' }) : undefined))
+    const seen = daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? diffOf('-  shop: ...\n') : undefined))
     const user = userEvent.setup()
     render(<SettingsPage scope="project:shop" />)
     await user.click(await screen.findByRole('button', { name: 'Delete project…' }))
     const ask = screen.getByRole('group', { name: 'Delete project shop' })
     expect(ask).toHaveTextContent('api, web) become Unassigned')
-    expect(screen.getByText('No changes')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull()
     await user.click(within(ask).getByRole('button', { name: 'Delete shop' }))
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    await screen.findByRole('region', { name: 'Review changes' })
-    expect(seen.find((s) => s.path === '/v1/config/preview')?.body?.ops).toEqual([{ path: ['projects', 'shop'], unset: true }])
+    expect(await previewed(seen)).toEqual([{ path: ['projects', 'shop'], unset: true }])
   })
 
   it('cannot add or delete in a session that may not save', async () => {
@@ -121,129 +126,160 @@ describe('SettingsPage projects', () => {
   })
 })
 
-describe('SettingsPage', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('lays fields in a two-column grid and keeps one primary button', async () => {
-    daemon(withProjects(), (_m, p) => (p === '/v1/config/preview' ? json({ etag: 'e1', diff: '+  x: 1\n' }) : undefined))
-    const user = userEvent.setup()
-    const { container } = render(<SettingsPage scope="project:shop" />)
-    await screen.findByRole('group', { name: /Repos/ })
-    expect(container.querySelector('.field-grid')).not.toBeNull()
-    expect(container.querySelector('.repo-picker')).toHaveClass('field-wide')
-    expect(container.querySelectorAll('.ui-btn-primary')).toHaveLength(1)
-    await user.click(within(container.querySelector('.repo-picker') as HTMLElement).getByRole('checkbox', { name: 'docs' }))
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    await screen.findByRole('button', { name: 'Save and reload' })
-    expect(container.querySelectorAll('.ui-btn-primary')).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Review changes' })).not.toHaveClass('ui-btn-primary')
+describe('SettingsPage sections', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    window.localStorage.clear()
+    document.documentElement.removeAttribute('data-theme')
   })
 
-  it('explains the Power tag in text, not only in a tooltip', async () => {
+  it('lists Budget, Agents, Forge, Merging, Appearance and Keyboard in one column', async () => {
     daemon(doc())
-    render(<SettingsPage scope="repo:api" />)
-    await screen.findByLabelText('Push')
-    expect(screen.getByText(/Raising this gives agents more power/)).toBeInTheDocument()
+    render(<SettingsPage />)
+    await screen.findByText('Daily cap')
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(['Budget', 'Agents', 'Forge', 'Merging', 'Appearance', 'Keyboard'])
+    expect(screen.getByText('$20.00')).toBeInTheDocument()
+    expect(screen.getByText('Parallel lanes')).toBeInTheDocument()
+    // The model shows without its provider prefix, the full id in the title.
+    expect(screen.getByText('claude-sonnet-5')).toHaveAttribute('title', 'anthropic/claude-sonnet-5')
+    expect(await screen.findByText(/Polled \d+s ago · every 60s/)).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Merging for api' })).toHaveTextContent('By a person')
   })
 
-  it('shows an inherited value greyed until it is overridden', async () => {
+  it('writes nothing before Save: staging previews only, Discard drops it', async () => {
+    const seen = daemon(doc(), (_m, p) => (p === '/v1/config/preview' ? diffOf('-    budget: 20\n+    budget: 25\n') : undefined))
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'More daily cap' }))
+    expect(screen.getByText('$25.00')).toBeInTheDocument()
+    expect(screen.getByText('Not saved · was $20.00')).toBeInTheDocument()
+    expect(await previewed(seen)).toEqual([{ path: ['daemon', 'budget'], value: 25 }])
+    const diff = await screen.findByRole('region', { name: 'Diff of config.yaml' })
+    expect(diff).toHaveTextContent('budget: 25')
+    expect(seen.filter((s) => s.method === 'PUT')).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Discard' }))
+    expect(screen.queryByText(/Not saved/)).toBeNull()
+    expect(screen.getByText('$20.00')).toBeInTheDocument()
+    expect(seen.filter((s) => s.method === 'PUT')).toEqual([])
+  })
+
+  it('stepping back to the saved value stages nothing', async () => {
     daemon(doc())
     const user = userEvent.setup()
-    render(<SettingsPage scope="repo:api" />)
-    const gate = await screen.findByLabelText('Gate')
-    expect(gate).toBeDisabled()
-    expect(gate).toHaveValue('make check')
-    expect(screen.getByText(/inherited: make check/)).toBeInTheDocument()
-    await user.click(screen.getByLabelText('Override Gate'))
-    expect(screen.getByLabelText('Gate')).toBeEnabled()
-    await user.clear(screen.getByLabelText('Gate'))
-    await user.type(screen.getByLabelText('Gate'), 'go test ./...')
-    expect(screen.getByText('1 change')).toBeInTheDocument()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'More parallel lanes' }))
+    expect(screen.getByText('1 unsaved change')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Less parallel lanes' }))
+    expect(screen.queryByText(/unsaved change/)).toBeNull()
   })
 
-  it('previews, then saves what was previewed, with the etag it read', async () => {
+  it('saves what was previewed with the etag it read, after Save', async () => {
     const seen = daemon(doc(), (m, p) => {
-      if (p === '/v1/config/preview') return json({ etag: 'e1', diff: '-    gate: a\n+    gate: b\n' })
+      if (p === '/v1/config/preview') return diffOf('-    max_runs: 4\n+    max_runs: 5\n')
       if (p === '/v1/config' && m === 'PUT') return json({ etag: 'e2', diff: '', reloaded: true })
       return undefined
     })
     const user = userEvent.setup()
-    render(<SettingsPage scope="repo:api" />)
-    await user.click(await screen.findByLabelText('Override Gate'))
-    await user.type(screen.getByLabelText('Gate'), 'x')
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    const review = await screen.findByRole('region', { name: 'Review changes' })
-    expect(within(review).getByLabelText('Diff of config.yaml')).toHaveTextContent('+ gate: b')
-    await user.click(within(review).getByRole('button', { name: 'Save and reload' }))
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'More parallel lanes' }))
+    const save = await screen.findByRole('button', { name: 'Save' })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
     expect(await screen.findByText(/Saved and reloaded/)).toBeInTheDocument()
-    const put = seen.find((s) => s.method === 'PUT')
-    expect(put?.body).toMatchObject({ etag: 'e1', ops: [{ path: ['repos', 'api', 'gate'], value: 'make checkx' }] })
+    expect(seen.find((s) => s.method === 'PUT')?.body).toMatchObject({ etag: 'e1', ops: [{ path: ['daemon', 'max_runs'], value: 5 }], confirm: [] })
   })
 
-  it('asks for the word before saving a change that gives agents more power', async () => {
+  it('marks a risky line with why, and confirms in the modal before it saves', async () => {
     const seen = daemon(doc(), (m, p) => {
       if (p === '/v1/config/preview') {
-        return json({ etag: 'e1', diff: '+    autonomy:\n+      push: agent\n', risky: [{ path: 'repos.api.autonomy.push', from: 'human', to: 'agent', why: 'lets agent act without the person' }] })
+        return json({ etag: 'e1', diff: '+    autonomy:\n+      merge: agent\n', risky: [{ path: 'repos.api.autonomy.merge', from: 'human', to: 'agent', why: 'lets an agent merge without the person' }] })
       }
       if (m === 'PUT') return json({ etag: 'e2', diff: '', reloaded: true })
       return undefined
     })
     const user = userEvent.setup()
-    render(<SettingsPage scope="repo:api" />)
-    await user.click(await screen.findByLabelText('Override Push'))
-    await user.selectOptions(screen.getByLabelText('Push'), 'agent')
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    const review = await screen.findByRole('region', { name: 'Review changes' })
-    expect(within(review).getByText(/give agents more power/)).toBeInTheDocument()
-    const save = within(review).getByRole('button', { name: 'Save and reload' })
-    expect(save).toBeDisabled()
-    await user.type(within(review).getByRole('textbox'), 'confirm')
-    expect(save).toBeEnabled()
-    await user.click(save)
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    expect(screen.getByText('Not saved · was By a person')).toBeInTheDocument()
+    const diff = await screen.findByRole('region', { name: 'Diff of config.yaml' })
+    await waitFor(() => expect(within(diff).getByText('Risky')).toBeInTheDocument())
+    expect(within(diff).getByText('lets an agent merge without the person.')).toBeInTheDocument()
+    expect(screen.getByText('1 risky')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save…' }))
+    const modal = await screen.findByRole('alertdialog')
+    expect(modal).toHaveTextContent('repos.api.autonomy.merge')
+    expect(seen.filter((s) => s.method === 'PUT')).toEqual([])
+    await user.click(within(modal).getByRole('button', { name: 'Cancel' }))
+    expect(seen.filter((s) => s.method === 'PUT')).toEqual([])
+    await user.click(screen.getByRole('button', { name: 'Save…' }))
+    await user.click(within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Save and reload' }))
     await screen.findByText(/Saved and reloaded/)
-    expect(seen.find((s) => s.method === 'PUT')?.body?.confirm).toEqual(['repos.api.autonomy.push'])
+    expect(seen.find((s) => s.method === 'PUT')?.body?.confirm).toEqual(['repos.api.autonomy.merge'])
   })
 
-  it('shows validation problems beside the field and does not offer to save', async () => {
+  it('shows validation problems and offers no save', async () => {
     daemon(doc(), (_m, p) =>
-      p === '/v1/config/preview'
-        ? json({ error: 'invalid', problems: ['repos.api.autonomy.push: "robot" is not human, shepherd or agent'] }, 422)
-        : undefined,
+      p === '/v1/config/preview' ? json({ error: 'invalid', problems: ['repos.api.autonomy.merge: "robot" is not human or agent'] }, 422) : undefined,
     )
     const user = userEvent.setup()
-    render(<SettingsPage scope="repo:api" />)
-    await user.click(await screen.findByLabelText('Override Push'))
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    const alerts = await screen.findAllByRole('alert')
-    expect(alerts.some((a) => /robot/.test(a.textContent ?? ''))).toBe(true)
-    expect(screen.getByRole('button', { name: 'Save and reload' })).toBeDisabled()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('robot')
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('says the file changed on disk, and offers to reload it', async () => {
     daemon(doc(), (m, p) => {
-      if (p === '/v1/config/preview') return json({ etag: 'e1', diff: '+x\n' })
+      if (p === '/v1/config/preview') return diffOf('+x\n')
       if (m === 'PUT') return json({ error: 'config.yaml changed on disk' }, 409)
       return undefined
     })
     const user = userEvent.setup()
-    render(<SettingsPage scope="repo:api" />)
-    await user.click(await screen.findByLabelText('Override Gate'))
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    await user.click(await screen.findByRole('button', { name: 'Save and reload' }))
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'More parallel lanes' }))
+    const save = await screen.findByRole('button', { name: 'Save' })
+    await waitFor(() => expect(save).toBeEnabled())
+    await user.click(save)
     expect(await screen.findByText(/changed on disk since it was read/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Reload it' })).toBeInTheDocument()
   })
 
-  it('tells a session that may not save, and offers no save', async () => {
-    daemon(doc({ can_write: false, why: 'sign in again with shepherd web --allow-settings' }), (_m, p) =>
-      p === '/v1/config/preview' ? json({ etag: 'e1', diff: '+x\n' }) : undefined,
-    )
+  it('tells a session that may not save, and offers no Save', async () => {
+    daemon(doc({ can_write: false, why: 'sign in again with shepherd web --allow-settings' }), (_m, p) => (p === '/v1/config/preview' ? diffOf('+x\n') : undefined))
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    expect(await screen.findByText(/--allow-settings/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More parallel lanes' }))
+    await screen.findByRole('region', { name: 'Unsaved changes' })
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Save…' })).toBeNull()
+  })
+
+  it('applies the theme at once, outside Save, and remembers it in this browser', async () => {
+    const seen = daemon(doc())
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'Dark' }))
+    expect(document.documentElement).toHaveAttribute('data-theme', 'dark')
+    expect(window.localStorage.getItem(THEME_KEY)).toBe('dark')
+    expect(screen.queryByRole('region', { name: 'Unsaved changes' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'System' }))
+    expect(document.documentElement).not.toHaveAttribute('data-theme')
+    expect(seen.filter((s) => s.method !== 'GET')).toEqual([])
+  })
+
+  it('keeps the field editor under All settings: an inherited value greyed until overridden', async () => {
+    daemon(doc())
     const user = userEvent.setup()
     render(<SettingsPage scope="repo:api" />)
-    expect(await screen.findByText(/--allow-settings/)).toBeInTheDocument()
+    const gate = await screen.findByLabelText('Gate')
+    expect(gate).toBeDisabled()
+    expect(screen.getByText(/inherited: make check/)).toBeInTheDocument()
+    expect(screen.getByText(/Raising this gives agents more power/)).toBeInTheDocument()
     await user.click(screen.getByLabelText('Override Gate'))
-    await user.click(screen.getByRole('button', { name: 'Review changes' }))
-    await screen.findByRole('region', { name: 'Review changes' })
-    expect(screen.queryByRole('button', { name: 'Save and reload' })).toBeNull()
+    await user.clear(screen.getByLabelText('Gate'))
+    await user.type(screen.getByLabelText('Gate'), 'go test ./...')
+    expect(screen.getByText('1 unsaved change')).toBeInTheDocument()
   })
 })

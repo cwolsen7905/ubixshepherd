@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ApiError, config as configApi } from '../api/client'
-import type { ConfigDoc, ConfigField, ConfigPreview, ConfigRefusal, ConfigRisk } from '../api/types'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ApiError, config as configApi, daemonInfo } from '../api/client'
+import type { ConfigDoc, ConfigField, ConfigPreview, ConfigRefusal, ConfigRisk, StatusDetail } from '../api/types'
+import { since, usd } from '../format'
+import { useNow } from '../hooks'
 import {
-  deletedProjects, dotted, fieldState, listText, mapText, moveRepo, NEW_PROJECT, opsOf, ownerOf, parseList, parseMap, pickScope, PROJECT_NAME,
+  deletedProjects, dotted, fieldState, getAt, listText, mapText, moveRepo, NEW_PROJECT, opsOf, ownerOf, parseList, parseMap, pickScope, PROJECT_NAME,
   problemsFor, projectRepos, removeProject, revert, scopes, setValue, show, unsetValue, type Draft, type Scope,
 } from '../model/settings'
 import { go, href } from '../router'
 import { Button, Chip } from '../ui'
-import '../styles/settings.css'
-
-/** The word a person types to confirm a change that gives agents more power. */
-export const CONFIRM_WORD = 'confirm'
+import { Confirm } from '../ui/Confirm'
+import { Kbd } from '../ui/Kbd'
+import { StatusGlyph } from '../ui/StatusGlyph'
+import './Settings.css'
 
 const RISK_HINT = 'Raising this gives agents more power; saving asks you to confirm.'
 const RESTART_HINT = 'Applies when the daemon next starts.'
@@ -203,60 +205,130 @@ function DeleteProject({ name, repos, onDelete }: { name: string; repos: string[
   )
 }
 
-function Review({
-  preview, risky, typed, onTyped, onSave, onClose, saving, canWrite, problems,
-}: {
-  preview: ConfigPreview
-  risky: ConfigRisk[]
-  typed: string
-  onTyped: (s: string) => void
-  onSave: () => void
-  onClose: () => void
-  saving: boolean
-  canWrite: boolean
-  problems: string[]
-}) {
-  const confirmed = risky.length === 0 || typed.trim().toLowerCase() === CONFIRM_WORD
-  const lines = preview.diff.split('\n')
+// ---- The view: sections of staged rows, then the diff bar. ----
+
+export type Theme = 'system' | 'light' | 'dark'
+export const THEME_KEY = 'sh-theme'
+const THEMES: [Theme, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]
+
+export function readTheme(): Theme {
+  try {
+    const v = window.localStorage.getItem(THEME_KEY)
+    return v === 'light' || v === 'dark' ? v : 'system'
+  } catch {
+    return 'system'
+  }
+}
+
+/** System leaves the choice to the OS (no attribute); light and dark force it. This browser only. */
+export function applyTheme(t: Theme) {
+  if (t === 'system') document.documentElement.removeAttribute('data-theme')
+  else document.documentElement.setAttribute('data-theme', t)
+}
+// The page that sets a theme is not the page that first shows one: apply the remembered choice as this module loads.
+if (typeof document !== 'undefined') applyTheme(readTheme())
+
+const AGENTS = ['claude', 'copilot', 'cursor', 'opencode']
+
+const KEYS: [string, string[]][] = [
+  ['Search or act', ['⌘', 'K']], ['Next waiting item', [']']], ['Move down', ['j']], ['Move up', ['k']],
+  ['Open', ['Enter']], ['Pick option', ['1–9']], ['Send, then next', ['⌘', 'Enter']], ['Close', ['Esc']], ['Keys', ['?']],
+]
+
+/** The model as the sub-line shows it: no provider prefix. */
+const bareModel = (m: string) => m.slice(m.indexOf('/') + 1)
+
+function SettingRow({ label, desc, was, children, name }: { label: ReactNode; desc?: ReactNode; was?: string; children: ReactNode; name?: string }) {
   return (
-    <section className="review" aria-label="Review changes">
-      <h2>Review changes</h2>
-      {preview.diff ? (
-        <pre className="diff" aria-label="Diff of config.yaml">
-          {lines.map((l, i) => <span key={i} className={l.startsWith('+') ? 'diff-add' : l.startsWith('-') ? 'diff-del' : l.startsWith('@@') ? 'diff-gap' : undefined}>{l + '\n'}</span>)}
-        </pre>
-      ) : (
-        <p className="faint">These changes leave the file as it is.</p>
-      )}
-      {problems.length > 0 && (
-        <div className="banner tone-bad" role="alert">
-          <strong>Not saved: the result is not a valid config.</strong>
-          <ul>{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+    <div className={`sh-setting${was !== undefined ? ' is-edited' : ''}`} data-component="SettingRow" data-setting={name}>
+      <div>
+        <div className="sh-setting-label">{label}</div>
+        {desc && <div className="sh-setting-desc">{desc}</div>}
+        {was !== undefined && <div className="sh-setting-was">Not saved · was {was}</div>}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Stepper({ label, value, step, min, format, onChange }: { label: string; value: number; step: number; min: number; format: (n: number) => string; onChange: (n: number) => void }) {
+  const round = (n: number) => Math.round(n * 100) / 100
+  return (
+    <span className="sh-stepper" data-component="Stepper">
+      <button type="button" aria-label={`Less ${label}`} disabled={value <= min} onClick={() => onChange(Math.max(min, round(value - step)))}>−</button>
+      <span className="sh-stepper-value">{format(value)}</span>
+      <button type="button" aria-label={`More ${label}`} onClick={() => onChange(round(value + step))}>+</button>
+    </span>
+  )
+}
+
+function Segmented<T extends string>({ label, value, options, onPick }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void }) {
+  return (
+    <span className="sh-segmented" role="group" aria-label={label} data-component="Segmented">
+      {options.map(([v, text]) => (
+        <button key={v} type="button" aria-pressed={v === value} onClick={() => onPick(v)}>{text}</button>
+      ))}
+    </span>
+  )
+}
+
+/** The diff's lines, each with the risk it carries: a risky key marks its first added line. */
+function diffLines(diff: string, risky: ConfigRisk[]) {
+  const claimed = new Set<number>()
+  return diff.split('\n').filter((l, i, all) => l !== '' || i < all.length - 1).map((text, i) => {
+    const sign = text.startsWith('+') ? '+' : text.startsWith('-') ? '-' : text.startsWith('@@') ? '@' : ' '
+    let risk: ConfigRisk | undefined
+    if (sign === '+') {
+      risk = risky.find((r, j) => !claimed.has(j) && text.includes(`${r.path.split('.').pop()}:`))
+      if (risk) claimed.add(risky.indexOf(risk))
+    }
+    return { i, sign, text: sign === '@' ? text : sign === ' ' ? text : text.slice(1), risk }
+  })
+}
+
+function StagedBar({ preview, risky, problems, count, canWrite, why, busy, onDiscard, onSave }: {
+  preview: ConfigPreview | null; risky: ConfigRisk[]; problems: string[]; count: number; canWrite: boolean; why?: string; busy: boolean
+  onDiscard: () => void; onSave: () => void
+}) {
+  const lines = preview ? diffLines(preview.diff, risky) : []
+  return (
+    <section className="sh-staged" aria-label="Unsaved changes" data-component="StagedBar">
+      <div className="sh-staged-inner">
+        <div className="sh-staged-head">
+          <strong>{count} unsaved change{count === 1 ? '' : 's'}</strong>
+          {risky.length > 0 && <span className="sh-risk-tag">{risky.length} risky</span>}
+          <span className="sh-setting-desc">Nothing changes until you save.</span>
+          <span className="sh-staged-actions">
+            <Button variant="ghost" onClick={onDiscard}>Discard</Button>
+            {canWrite && (
+              <Button variant="attention" onClick={onSave} disabled={busy || !preview || !preview.diff || problems.length > 0}>
+                {busy ? 'Saving…' : risky.length > 0 ? 'Save…' : 'Save'}
+              </Button>
+            )}
+          </span>
         </div>
-      )}
-      {risky.length > 0 && (
-        <div className="banner tone-warn" role="group" aria-label="Changes that need confirming">
-          <strong>These changes give agents more power.</strong>
-          <ul>
-            {risky.map((r) => (
-              <li key={r.path}><code>{r.path}</code>: {r.from || '(empty)'} → {r.to || '(empty)'}. {r.why}.</li>
-            ))}
-          </ul>
-          <label>
-            Type <code>{CONFIRM_WORD}</code> to allow it{' '}
-            <input type="text" value={typed} onChange={(e) => onTyped(e.target.value)} autoComplete="off" />
-          </label>
-        </div>
-      )}
-      <div className="actions">
-        {canWrite ? (
-          <Button variant="primary" onClick={onSave} disabled={saving || !preview.diff || problems.length > 0 || !confirmed}>
-            {saving ? 'Saving…' : 'Save and reload'}
-          </Button>
-        ) : (
-          <span className="faint">This session cannot save; the diff is what a save would write.</span>
+        {!canWrite && <p className="sh-setting-desc">{why ?? 'This session cannot save settings.'} The diff is what a save would write.</p>}
+        {problems.length > 0 && (
+          <div className="sh-staged-problems" role="alert">
+            <strong>Not saved: the result is not a valid config.</strong>
+            <ul>{problems.map((p) => <li key={p}>{p}</li>)}</ul>
+          </div>
         )}
-        <Button onClick={onClose}>Keep editing</Button>
+        <div className="sh-diff" role="region" aria-label="Diff of config.yaml">
+          <div className="sh-diff-file">config.yaml</div>
+          {!preview && problems.length === 0 && <div className="sh-diff-line"><span /><span className="sh-setting-desc">Working out the diff…</span></div>}
+          {preview && !preview.diff && problems.length === 0 && <div className="sh-diff-line"><span /><span className="sh-setting-desc">These changes leave the file as it is.</span></div>}
+          {lines.map((l) => (
+            <div key={l.i}>
+              <div className={`sh-diff-line${l.sign === '+' ? ' is-add' : l.sign === '-' ? ' is-del' : ''}`}>
+                <span>{l.sign === '@' ? '' : l.sign === ' ' ? '' : l.sign}</span>
+                <span className={l.sign === '@' ? 'sh-diff-gap' : undefined}>{l.text}</span>
+                {l.risk && <span className="sh-risk-flag">Risky</span>}
+              </div>
+              {l.risk && <div className="sh-diff-why">{l.risk.why}.</div>}
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   )
@@ -269,7 +341,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   const [preview, setPreview] = useState<ConfigPreview | null>(null)
   const [problems, setProblems] = useState<string[]>([])
   const [risky, setRisky] = useState<ConfigRisk[]>([])
-  const [typed, setTyped] = useState('')
+  const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
   const [stale, setStale] = useState(false)
@@ -278,7 +350,10 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   const [addedProjects, setAddedProjects] = useState<string[]>([])
   const [newProject, setNewProject] = useState('')
   const [projectProblem, setProjectProblem] = useState<string | null>(null)
+  const [theme, setTheme] = useState<Theme>(readTheme)
+  const [forge, setForge] = useState<StatusDetail['forge'] | 'unknown' | undefined>(undefined)
   const projectBox = useRef<HTMLInputElement>(null)
+  const now = useNow()
 
   const load = useCallback(() => {
     configApi.get().then(
@@ -291,11 +366,45 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     )
   }, [])
   useEffect(() => load(), [load])
+  useEffect(() => {
+    daemonInfo.status().then((s) => setForge(s.detail?.forge ?? 'unknown'), () => setForge('unknown'))
+  }, [])
   // "New project" on the Projects page lands here with the add box ready.
   const loaded = doc !== null
   useEffect(() => {
     if (scopeId === NEW_PROJECT && loaded) projectBox.current?.focus()
   }, [scopeId, loaded])
+
+  const ops = useMemo(() => opsOf(draft), [draft])
+  // The diff follows the staged edits. A preview writes nothing.
+  useEffect(() => {
+    if (!doc || ops.length === 0) return
+    let live = true
+    const t = setTimeout(() => {
+      configApi.preview({ etag: doc.etag, ops }).then(
+        (p) => {
+          if (!live) return
+          setPreview(p)
+          setRisky(p.risky ?? [])
+          setProblems([])
+        },
+        (e: unknown) => {
+          if (!live) return
+          const r = refusal(e)
+          if (e instanceof ApiError && e.status === 409) setStale(true)
+          else if (e instanceof ApiError && e.status === 422 && r?.problems) {
+            setProblems(r.problems)
+            setPreview({ etag: doc.etag, diff: '' })
+            setRisky([])
+          } else setNotice({ tone: 'bad', text: message(e) })
+        },
+      )
+    }, 200)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [doc, ops])
 
   const gone = useMemo(() => deletedProjects(draft), [draft])
   const all = useMemo(
@@ -304,77 +413,68 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   )
   const scope = pickScope(all, scopeId)
 
-  if (loadError && !doc) return <div className="page settings-page"><p className="banner tone-bad" role="alert">Settings did not load: {loadError}</p></div>
-  if (!doc || !scope) return <div className="page settings-page"><p className="faint">Loading settings…</p></div>
+  if (loadError && !doc) return <div className="sh-settings"><p className="banner tone-bad" role="alert">Settings did not load: {loadError}</p></div>
+  if (!doc || !scope) return <div className="sh-settings"><p className="sh-setting-desc">Loading settings…</p></div>
 
   const readOnly = !doc.can_write
-  const ops = opsOf(draft)
-  const change = () => ({ etag: doc.etag, ops })
 
   const onDraft = (d: Draft) => {
     setDraft(d)
     setPreview(null)
     setProblems([])
     setRisky([])
-    setTyped('')
     setNotice(null)
   }
 
-  const onRefused = (e: unknown, previewing: boolean) => {
-    const r = refusal(e)
-    if (e instanceof ApiError && e.status === 409) {
-      setStale(true)
-      setPreview(null)
-      return
-    }
-    if (e instanceof ApiError && e.status === 422 && r?.problems) {
-      setProblems(r.problems)
-      // The diff is of an invalid file: show what was tried as errors only.
-      setPreview({ etag: doc.etag, diff: previewing ? '' : (preview?.diff ?? '') })
-      return
-    }
-    if (e instanceof ApiError && e.status === 428 && r?.risky) {
-      setRisky(r.risky)
-      return
-    }
-    setNotice({ tone: 'bad', text: message(e) })
+  // What is saved for a path, and what it reads as with the staged edits.
+  const saved = (path: string[]): unknown => (path[0] === 'repos' && path.length > 2 ? getAt(doc.repos[path[1] ?? '']?.effective, path.slice(2)) : getAt(doc.effective, path))
+  const staged = (path: string[]): unknown => {
+    const op = ops.find((o) => dotted(o.path) === dotted(path))
+    return op ? (op.unset ? saved(path) : op.value) : saved(path)
+  }
+  const stage = (path: string[], value: unknown) => onDraft(value === saved(path) ? revert(draft, path) : setValue(draft, path, value))
+  const was = (path: string[], fmt: (v: unknown) => string = String): string | undefined => {
+    const op = ops.find((o) => dotted(o.path) === dotted(path))
+    return op ? fmt(saved(path)) : undefined
   }
 
-  const review = async () => {
-    setBusy(true)
-    setProblems([])
-    setNotice(null)
-    try {
-      const p = await configApi.preview(change())
-      setPreview(p)
-      setRisky(p.risky ?? [])
-    } catch (e) {
-      onRefused(e, true)
-      if (!(e instanceof ApiError && e.status === 422)) setPreview(null)
-      else setPreview({ etag: doc.etag, diff: '' })
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const save = async () => {
+  const attempt = async (confirm: string[]) => {
     setBusy(true)
     try {
-      const out = await configApi.save({ ...change(), confirm: risky.map((r) => r.path) })
+      const out = await configApi.save({ etag: doc.etag, ops, confirm })
       setDraft({})
       setPreview(null)
       setRisky([])
-      setTyped('')
       setAdded([])
       setAddedProjects([])
+      setAsking(false)
       setNotice(out.reloaded ? { tone: 'ok', text: 'Saved and reloaded. Running agents keep what they started with.' } : { tone: 'bad', text: `Saved, but the daemon did not reload it: ${out.reload_error ?? 'unknown error'}` })
       load()
     } catch (e) {
-      onRefused(e, false)
+      setAsking(false)
+      const r = refusal(e)
+      if (e instanceof ApiError && e.status === 409) {
+        setStale(true)
+        setPreview(null)
+      } else if (e instanceof ApiError && e.status === 422 && r?.problems) setProblems(r.problems)
+      else if (e instanceof ApiError && e.status === 428 && r?.risky) setRisky(r.risky)
+      else setNotice({ tone: 'bad', text: message(e) })
     } finally {
       setBusy(false)
     }
   }
+  const save = () => (risky.length > 0 ? setAsking(true) : attempt([]))
+
+  const money = (n: number) => usd(n) || '$0.00'
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const budgetPath = ['daemon', 'budget']
+  const capPath = ['keep_going', 'cap']
+  const runsPath = ['daemon', 'max_runs']
+  const polled = forge && forge !== 'unknown' && forge.last_poll ? since(forge.last_poll, now) : ''
+  const pollEvery = String(getAt(doc.effective, ['daemon', 'poll']) ?? '')
+  const models = (getAt(doc.defaults.effective, ['agent', 'model']) ?? {}) as Record<string, unknown>
+  const projectOf = new Map<string, string>()
+  for (const [p, v] of Object.entries(doc.projects)) for (const r of asList(v.effective.repos)) projectOf.set(r, p)
 
   const isProject = scope.id.startsWith('project:')
   const projectName = isProject ? scope.id.slice('project:'.length) : ''
@@ -387,7 +487,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     const items = all.filter((s) => (prefix ? s.id.startsWith(prefix) : !s.id.includes(':')))
     return items.length === 0 ? null : (
       <>
-        {heading && <h2>{heading}</h2>}
+        {heading && <h3>{heading}</h3>}
         <ul>
           {items.map((s) => (
             <li key={s.id}>
@@ -400,57 +500,13 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   }
 
   return (
-    <div className="page page-wide settings-page">
-      <div className="settings-layout">
-        <nav className="settings-nav" aria-label="Settings">
-          {nav('', '')}
-          {nav('Repos', 'repo:')}
-          {!readOnly && (
-            <form className="add-repo" onSubmit={(e) => {
-              e.preventDefault()
-              const n = newRepo.trim()
-              if (!n) return
-              setAdded((a) => (a.includes(n) ? a : [...a, n]))
-              setNewRepo('')
-              go(href.settings(`repo:${n}`))
-            }}>
-              <label className="visually-hidden" htmlFor="new-repo">Repo name</label>
-              <input id="new-repo" value={newRepo} placeholder="add a repo" onChange={(e) => setNewRepo(e.target.value)} />
-              <Button type="submit" size="small">Add</Button>
-            </form>
-          )}
-          {nav('Projects', 'project:')}
-          {!readOnly && (
-            <form className="add-repo" onSubmit={(e) => {
-              e.preventDefault()
-              const n = newProject.trim()
-              if (!n) return
-              if (!PROJECT_NAME.test(n)) {
-                setProjectProblem('A project name uses letters, digits, dots, dashes and underscores.')
-                return
-              }
-              setProjectProblem(null)
-              setNewProject('')
-              if (!(n in doc.projects) && !addedProjects.includes(n)) {
-                setAddedProjects((a) => [...a, n])
-                // An entry with its list of repos, so the project is written even if empty.
-                onDraft(setValue(draft, ['projects', n, 'repos'], []))
-              }
-              go(href.settings(`project:${n}`))
-            }}>
-              <label className="visually-hidden" htmlFor="new-project">Project name</label>
-              <input id="new-project" ref={projectBox} value={newProject} placeholder="add a project" aria-invalid={projectProblem !== null}
-                onChange={(e) => setNewProject(e.target.value)} />
-              <Button type="submit" size="small">Add</Button>
-            </form>
-          )}
-          {projectProblem && <p className="field-problem" role="alert">{projectProblem}</p>}
-        </nav>
-        <div className="settings-main">
-          <h1>{scope.section.label}{scope.id.includes(':') ? `: ${scope.label}` : ''}</h1>
-          <p className="faint">
-            Editing <code>{doc.path}</code>{doc.missing ? ' (not written yet)' : ''}. Comments and the order of the file are kept; a backup of the previous file is kept beside it.
-          </p>
+    <div className="sh-settings" data-component="Settings">
+      <header className="sh-settings-head">
+        <h1>Settings</h1>
+        <span className="sh-setting-desc">Editing <code>{doc.path}</code>{doc.missing ? ' (not written yet)' : ''}</span>
+      </header>
+      <div className="sh-settings-body">
+        <div className="sh-section">
           {readOnly && <p className="banner tone-warn" role="status">{doc.why ?? 'This session cannot save settings.'} You can still change fields and review the diff.</p>}
           {doc.invalid && doc.invalid.length > 0 && (
             <div className="banner tone-bad" role="alert">
@@ -461,49 +517,184 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
           {stale && (
             <p className="banner tone-bad" role="alert">
               config.yaml changed on disk since it was read. Nothing was saved.{' '}
-              <Button size="small" onClick={load}>Reload it</Button>, then review your changes again.
+              <Button size="small" onClick={load}>Reload it</Button>, then stage your changes again.
             </p>
           )}
           {notice && <p className={`banner tone-${notice.tone === 'ok' ? 'ok' : 'bad'}`} role="status">{notice.text}</p>}
-          {scope.section.fields.length === 0 && <p className="faint">Nothing to set here.</p>}
-          {[...groups].map(([g, fields]) => (
-            <fieldset key={g} className="group">
-              {g && <legend>{g}</legend>}
-              <div className="field-grid">
-              {fields.map((f) =>
-                isProject && f.key.join('.') === 'repos' ? (
-                  <RepoPicker key="repos" project={projectName} doc={doc} draft={draft} added={addedProjects} repos={Object.keys(doc.repos).concat(added)} onDraft={onDraft} />
-                ) : (
-                  <Field key={f.key.join('.')} scope={scope} field={f} draft={draft} onDraft={onDraft} problems={problems} />
-                ),
-              )}
+
+          <h2>Budget</h2>
+          <SettingRow name="budget" label="Daily cap" desc="Past it Shepherd holds the runs it would start on its own. 0 is no cap." was={was(budgetPath, (v) => money(num(v)))}>
+            <Stepper label="daily cap" value={num(staged(budgetPath))} step={5} min={0} format={money} onChange={(n) => stage(budgetPath, n)} />
+          </SettingRow>
+          <SettingRow name="keep_going" label="Keep going" desc="What it may spend once turned on; at the cap it turns itself off. Turn it on from the sidebar." was={was(capPath, (v) => money(num(v)))}>
+            <Stepper label="keep going cap" value={num(staged(capPath))} step={1} min={0} format={money} onChange={(n) => stage(capPath, n)} />
+          </SettingRow>
+          <SettingRow name="max_runs" label="Parallel lanes" desc="How many agents may run at once on this machine." was={was(runsPath)}>
+            <Stepper label="parallel lanes" value={num(staged(runsPath))} step={1} min={1} format={String} onChange={(n) => stage(runsPath, n)} />
+          </SettingRow>
+
+          <h2>Agents</h2>
+          {AGENTS.map((a) => {
+            const m = models[a]
+            return (
+              <div key={a} className="sh-setting" data-component="SettingRow" data-setting={`agent-${a}`}>
+                <div>
+                  <div className="sh-setting-label">
+                    <b>{a}</b>{' '}
+                    {typeof m === 'string' && m ? <code className="sh-setting-model" title={m}>{bareModel(m)}</code> : null}
+                  </div>
+                  <div className="sh-setting-desc">{typeof m === 'string' && m ? 'Model set in the defaults' : 'Uses its CLI’s own default model'}</div>
+                </div>
+                <a className="sh-btn" href={href.settings('defaults')} aria-label={`Configure ${a}`}>Configure</a>
               </div>
-            </fieldset>
-          ))}
-          {isProject && !readOnly && (
-            <DeleteProject
-              key={projectName}
-              name={projectName}
-              repos={projectRepos(doc, draft, addedProjects).get(projectName) ?? []}
-              onDelete={() => {
-                onDraft(removeProject(doc, draft, projectName))
-                setAddedProjects((a) => a.filter((n) => n !== projectName))
-                go(href.settings())
-              }}
-            />
-          )}
-          <div className="actions sticky">
-            <span className="faint">{ops.length === 0 ? 'No changes' : `${ops.length} change${ops.length === 1 ? '' : 's'}`}</span>
-            {/* One primary per view: Save and reload takes it once the review is open. */}
-            <Button variant={preview ? 'secondary' : 'primary'} disabled={ops.length === 0 || busy} onClick={review}>Review changes</Button>
-            <Button variant="ghost" disabled={ops.length === 0} onClick={() => onDraft({})}>Discard</Button>
+            )
+          })}
+
+          <h2>Forge</h2>
+          <SettingRow name="forge" label="Forge watcher" desc={
+            forge === undefined ? 'Reading the poll status…' : forge === 'unknown' ? 'Poll status is not available.' : forge.error ? (
+              <><StatusGlyph glyph="✗" tone="bad" label="Broken" /> {forge.error}</>
+            ) : (
+              <><StatusGlyph glyph={polled ? '●' : '○'} tone={polled ? 'ok' : 'idle'} label={polled ? 'Polling' : 'Not polled yet'} /> {polled ? `Polled ${polled} ago` : 'Not polled yet'} · every {pollEvery || 'unset'}</>
+            )
+          }>
+            <a className="sh-btn" href={href.settings('daemon')}>Configure</a>
+          </SettingRow>
+
+          <h2>Merging</h2>
+          {Object.keys(doc.repos).sort().map((r) => {
+            const path = ['repos', r, 'autonomy', 'merge']
+            const v = String(staged(path) ?? 'human')
+            const person = v !== 'agent'
+            return (
+              <SettingRow
+                key={r}
+                name={`merge-${r}`}
+                label={<><code>{r}</code> {projectOf.has(r) && <span className="sh-setting-desc">in {projectOf.get(r)}</span>}</>}
+                desc={person ? 'A person approves each merge request.' : 'An agent arms merge when the pipeline passes; the forge still gates it.'}
+                was={was(path, (x) => (x === 'agent' ? 'Rule: agent' : 'By a person'))}
+              >
+                <Segmented label={`Merging for ${r}`} value={person ? 'human' : 'agent'} options={[['human', 'By a person'], ['agent', 'Rule: agent']]} onPick={(x) => stage(path, x)} />
+              </SettingRow>
+            )
+          })}
+
+          <h2>Appearance</h2>
+          <SettingRow name="theme" label="Theme" desc="This browser only. Applies now, outside Save.">
+            <Segmented label="Theme" value={theme} options={THEMES} onPick={(t) => {
+              setTheme(t)
+              applyTheme(t)
+              try {
+                window.localStorage.setItem(THEME_KEY, t)
+              } catch {
+                /* a browser that will not remember keeps the choice for this page only */
+              }
+            }} />
+          </SettingRow>
+
+          <h2>Keyboard</h2>
+          <div className="sh-keyref">
+            {KEYS.map(([what, keys]) => (
+              <div key={what}><span>{what}</span><span><Kbd keys={keys} /></span></div>
+            ))}
           </div>
-          {preview && (
-            <Review preview={preview} risky={risky} typed={typed} onTyped={setTyped} onSave={save} onClose={() => setPreview(null)}
-              saving={busy} canWrite={doc.can_write} problems={problems} />
-          )}
+
+          <details className="sh-advanced" open={scopeId !== undefined}>
+            <summary>All settings</summary>
+            <div className="sh-advanced-layout">
+              <nav className="settings-nav" aria-label="Settings">
+                {nav('', '')}
+                {nav('Repos', 'repo:')}
+                {!readOnly && (
+                  <form className="add-repo" onSubmit={(e) => {
+                    e.preventDefault()
+                    const n = newRepo.trim()
+                    if (!n) return
+                    setAdded((a) => (a.includes(n) ? a : [...a, n]))
+                    setNewRepo('')
+                    go(href.settings(`repo:${n}`))
+                  }}>
+                    <label className="visually-hidden" htmlFor="new-repo">Repo name</label>
+                    <input id="new-repo" value={newRepo} placeholder="add a repo" onChange={(e) => setNewRepo(e.target.value)} />
+                    <Button type="submit" size="small">Add</Button>
+                  </form>
+                )}
+                {nav('Projects', 'project:')}
+                {!readOnly && (
+                  <form className="add-repo" onSubmit={(e) => {
+                    e.preventDefault()
+                    const n = newProject.trim()
+                    if (!n) return
+                    if (!PROJECT_NAME.test(n)) {
+                      setProjectProblem('A project name uses letters, digits, dots, dashes and underscores.')
+                      return
+                    }
+                    setProjectProblem(null)
+                    setNewProject('')
+                    if (!(n in doc.projects) && !addedProjects.includes(n)) {
+                      setAddedProjects((a) => [...a, n])
+                      // An entry with its list of repos, so the project is written even if empty.
+                      onDraft(setValue(draft, ['projects', n, 'repos'], []))
+                    }
+                    go(href.settings(`project:${n}`))
+                  }}>
+                    <label className="visually-hidden" htmlFor="new-project">Project name</label>
+                    <input id="new-project" ref={projectBox} value={newProject} placeholder="add a project" aria-invalid={projectProblem !== null}
+                      onChange={(e) => setNewProject(e.target.value)} />
+                    <Button type="submit" size="small">Add</Button>
+                  </form>
+                )}
+                {projectProblem && <p className="field-problem" role="alert">{projectProblem}</p>}
+              </nav>
+              <div className="settings-main">
+                <h3>{scope.section.label}{scope.id.includes(':') ? `: ${scope.label}` : ''}</h3>
+                {scope.section.fields.length === 0 && <p className="sh-setting-desc">Nothing to set here.</p>}
+                {[...groups].map(([g, fields]) => (
+                  <fieldset key={g} className="group">
+                    {g && <legend>{g}</legend>}
+                    <div className="field-grid">
+                      {fields.map((f) =>
+                        isProject && f.key.join('.') === 'repos' ? (
+                          <RepoPicker key="repos" project={projectName} doc={doc} draft={draft} added={addedProjects} repos={Object.keys(doc.repos).concat(added)} onDraft={onDraft} />
+                        ) : (
+                          <Field key={f.key.join('.')} scope={scope} field={f} draft={draft} onDraft={onDraft} problems={problems} />
+                        ),
+                      )}
+                    </div>
+                  </fieldset>
+                ))}
+                {isProject && !readOnly && (
+                  <DeleteProject
+                    key={projectName}
+                    name={projectName}
+                    repos={projectRepos(doc, draft, addedProjects).get(projectName) ?? []}
+                    onDelete={() => {
+                      onDraft(removeProject(doc, draft, projectName))
+                      setAddedProjects((a) => a.filter((n) => n !== projectName))
+                      go(href.settings())
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </details>
         </div>
       </div>
+      {ops.length > 0 && (
+        <StagedBar preview={preview} risky={risky} problems={problems} count={ops.length} canWrite={doc.can_write} why={doc.why} busy={busy}
+          onDiscard={() => onDraft({})} onSave={save} />
+      )}
+      <Confirm
+        open={asking}
+        title="Save changes that give agents more power?"
+        confirmLabel="Save and reload"
+        tone="warn"
+        onCancel={() => setAsking(false)}
+        onConfirm={() => attempt(risky.map((r) => r.path))}
+        items={risky.map((r) => (
+          <><code>{r.path}</code>: {r.from || '(empty)'} → {r.to || '(empty)'}. {r.why}.</>
+        ))}
+      />
     </div>
   )
 }
