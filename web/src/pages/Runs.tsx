@@ -2,14 +2,14 @@ import { useMemo } from 'react'
 import { history } from '../api/client'
 import type { RunHistory, RunRecord } from '../api/types'
 import { costNote, runCost, usd } from '../format'
-import { DEFAULT_RANGE, mergeHistories, rangeStart } from '../model/history'
+import { DEFAULT_RANGE, mergeHistories, RANGES, RANGE_PHRASE, rangeStart } from '../model/history'
 import { go, href, type Range } from '../router'
 import { useHistory } from '../state/history'
-import { Chip, EmptyState } from '../ui'
+import { Button, Chip, EmptyState } from '../ui'
 import { RunsTable } from '../ui/RunsTable'
 import './Runs.css'
 
-const RANGE_LABELS: Record<Range, string> = { today: 'Today', week: 'Week' }
+const RANGE_CHIPS: Record<Range, string> = { today: 'Today', week: 'Week' }
 
 function filterAgents(agents: string[], current: string): string[] {
   return current && !agents.includes(current) ? [current, ...agents] : agents
@@ -24,6 +24,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
     return mergeHistories(await Promise.all(ids.map((id) => history.runs(id, since, agent, lane))))
   })
   const agents = useMemo(() => filterAgents(data?.agents ?? [], agent), [data?.agents, agent])
+  const label = RANGES.find((r) => r.id === range)?.label ?? ''
   const lanes = data?.lanes ?? []
   const laneKnown = lane === 0 || lanes.some((l) => l.id === lane)
   const cost = data ? runCost({ cost_usd: data.cost_usd, credits: data.credits, estimated_usd: data.estimated_usd }) || usd(0) : ''
@@ -36,8 +37,12 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
 
   const header = data ? (
     <>
-      <strong title={costNote({ estimated_usd: data.estimated_usd }) || undefined}>{cost}</strong> spent {range === 'today' ? 'today' : 'in the last 7 days'}
-      <span className="faint"> across {data.count} {data.count === 1 ? 'run' : 'runs'}</span>
+      <strong title={costNote({ estimated_usd: data.estimated_usd }) || undefined}>{cost}</strong> spent {RANGE_PHRASE[range]}
+      <span className="faint">
+        {' '}
+        across {data.count} {data.count === 1 ? 'run' : 'runs'}
+        {(agent || lane > 0) && ' matching the filters'}
+      </span>
     </>
   ) : (
     <span className="faint">{error ? 'Could not load runs.' : 'Loading…'}</span>
@@ -50,13 +55,20 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
         <p className="page-sub runs-total" aria-live="polite">
           {header}
         </p>
+        <div className="page-actions">
+          {(agent || lane > 0) && (
+            <Button variant="ghost" size="small" onClick={() => go(href.runs({ range }))}>
+              Clear filters
+            </Button>
+          )}
+        </div>
       </header>
 
       <nav className="runs-filters" aria-label="Filter runs">
         <span className="runs-filter-group" role="group" aria-label="Range">
-          {(Object.keys(RANGE_LABELS) as Range[]).map((r) => (
+          {RANGES.map(({ id: r }) => (
             <Chip key={r} kind="filter" selected={range === r} onClick={() => go(nav({ range: r }))}>
-              {RANGE_LABELS[r]}
+              {RANGE_CHIPS[r]}
             </Chip>
           ))}
         </span>
@@ -89,11 +101,11 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
 
       {error && <p className="tone-bad">Could not load runs: {error}</p>}
       {data && data.runs.length === 0 && (
-        <EmptyState title={`No run ${range === 'today' ? 'today' : 'in the last 7 days'}.`} />
+        <EmptyState title={`${agent || lane > 0 ? 'No run matches these filters' : 'No run started'} in ${label.toLowerCase()}.`} />
       )}
       {data && data.runs.length > 0 && <RunsTable runs={data.runs as RunRecord[]} variant="list" />}
       {data && data.count > data.runs.length && (
-        <p className="faint">Showing the newest {data.runs.length} of {data.count} runs.</p>
+        <p className="faint">Showing the newest {data.runs.length} of {data.count} runs; the total covers all of them.</p>
       )}
       {loading && data && <p className="visually-hidden">Updating…</p>}
     </div>

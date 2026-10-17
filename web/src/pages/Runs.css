@@ -17,24 +17,11 @@
   gap: var(--sh-s2);
 }
 
-/* List variant of RunsTable. */
+/* List variant of RunsTable; the base table, .sh-cell-meta and .sh-cell-trunc are shared. Moving
+   these into components.css is the cleanup lane's job. */
 .sh-runs--list { table-layout: fixed; }
 
-.sh-runs--list th,
-.sh-runs--list td {
-  padding: var(--sh-s3) var(--sh-s4);
-  vertical-align: top;
-}
-
-.sh-runs--list thead th {
-  border-bottom: 1px solid var(--sh-rule);
-  font-weight: 600;
-  color: var(--sh-muted);
-}
-
-.sh-runs--list tbody tr {
-  border-bottom: 1px solid var(--sh-rule);
-}
+.sh-runs--list td { vertical-align: top; }
 
 .sh-runs-glyph { width: 2rem; }
 .sh-runs-run { width: 5rem; white-space: nowrap; }
@@ -44,21 +31,19 @@
   width: auto;
 }
 
-.sh-runs-lane-name,
 .sh-runs-result,
-.sh-runs-lane-meta,
-.sh-runs-result-meta {
+.sh-runs-lane .sh-cell-meta,
+.sh-runs-result .sh-cell-meta {
   display: block;
 }
 
-.sh-runs-lane-name,
-.sh-runs-result > span:first-child {
+.sh-runs-lane .sh-cell-trunc {
+  display: block;
   color: var(--sh-ink);
 }
 
-.sh-runs-lane-meta,
-.sh-runs-result-meta {
-  font-size: var(--sh-t-meta);
+.sh-runs-result > span:first-child {
+  color: var(--sh-ink);
 }
 
 .sh-runs-result {

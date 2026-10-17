@@ -62,12 +62,23 @@ describe('the Runs page', () => {
     expect(table).toHaveAttribute('data-variant', 'list')
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
-    const laneName = rows[0]?.querySelector('.sh-runs-lane-name') as HTMLElement
+    const laneName = rows[0]?.querySelector('.sh-cell-trunc') as HTMLElement
     expect(laneName).toHaveTextContent('acme-api / feat/login')
-    const laneMeta = rows[0]?.querySelector('.sh-runs-lane-meta') as HTMLElement
-    expect(laneMeta).toHaveTextContent('claude · · started')
+    const laneMeta = rows[0]?.querySelector('.sh-cell-meta') as HTMLElement
+    expect(laneMeta).toHaveTextContent('claude · started')
     const result = rows[0]?.querySelector('.sh-runs-result') as HTMLElement
     expect(result).toHaveTextContent('failed')
+  })
+
+  it('shows the model without its provider prefix, and no empty separator when there is none', async () => {
+    await show({}, makeHistory([
+      makeRun({ id: 12, model: 'anthropic/claude-sonnet' }),
+      makeRun({ id: 11 }),
+    ]))
+    const table = await screen.findByRole('table')
+    const rows = within(table).getAllByRole('row').slice(1)
+    expect(rows[0]?.querySelector('.sh-cell-meta')?.textContent).toMatch(/^claude · claude-sonnet · started /)
+    expect(rows[1]?.querySelector('.sh-cell-meta')?.textContent).toMatch(/^claude · started /)
   })
 
   it('has chips for range, agent and lane', async () => {
@@ -87,6 +98,6 @@ describe('the Runs page', () => {
 
   it('says what is empty with the kit empty state', async () => {
     await show({}, makeHistory([]))
-    expect(await screen.findByText('No run today.')).toBeInTheDocument()
+    expect(await screen.findByText('No run started in today.')).toBeInTheDocument()
   })
 })

@@ -33,12 +33,12 @@ describe('RunsTable', () => {
     expect(table).toHaveAttribute('data-variant', 'list')
     const rows = within(table).getAllByRole('row').slice(1)
     expect(rows).toHaveLength(2)
-    expect(screen.getByRole('link', { name: /Run 12/ })).toHaveAttribute('href', '#/runs/12/log')
+    expect(screen.getByRole('link', { name: '12' })).toHaveAttribute('href', '#/runs/12/log')
     expect(screen.getByTitle('Run 12 failed')).toBeInTheDocument()
     expect(rows[0]?.querySelector('.sh-runs-lane')).toHaveTextContent(/claude-sonnet/)
     expect(rows[0]?.querySelector('.sh-runs-result')).toHaveTextContent(/failed/)
     expect(screen.getByText('(exit 2)')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /Run 11/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '11' })).toBeInTheDocument()
   })
 
   it('says so with no runs', () => {

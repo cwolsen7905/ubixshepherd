@@ -1,3 +1,5 @@
+import { openRow } from '../components/BacklogOpen'
+import { taskLine, taskText } from '../timeline/task'
 import { StatusGlyph } from './StatusGlyph'
 import type { RunView } from '../api/types'
 import { costNote, duration, runCost, since } from '../format'
@@ -6,6 +8,9 @@ import { href } from '../router'
 
 /** Run fields both variants need. */
 interface RunRow extends Pick<RunView, 'id' | 'state' | 'started' | 'ended' | 'agent' | 'model' | 'repo' | 'lane'> {
+  lane_id?: number
+  commits?: number
+  task?: string
   parent?: number
   exit_code?: number
   outside?: string[]
@@ -67,18 +72,25 @@ export function RunsTable({ runs, variant = 'full' }: { runs: RunRow[]; variant?
         </thead>
         <tbody>
           {runs.map((r) => (
-            <tr key={r.id}>
+            <tr key={r.id} {...openRow({ kind: 'run', id: r.id })}>
               <td className="sh-runs-glyph">
                 <StatusGlyph glyph={glyphFor(r.state)} tone={glyphTone(r.state)} label={r.state} />
               </td>
               <td className="sh-runs-run">
-                <a href={href.log(r.id)} title={runTitle(r.state, r.id)}>Run {r.id}</a>
+                <a href={href.log(r.id)} title={runTitle(r.state, r.id)}>{r.id}</a>
               </td>
               <td className="sh-runs-lane">
-                <span className="sh-runs-lane-name">{r.repo} / {r.lane}</span>
-                <span className="sh-runs-lane-meta faint">
-                  {r.agent} · {shortModel(r.model)} · started {since(r.started, now)} ago
+                <span className="sh-cell-trunc">
+                  {r.lane_id ? (
+                    <a href={href.lane(r.lane_id)} title="Open the lane">{r.repo} / {r.lane}</a>
+                  ) : (
+                    <>{r.repo} / {r.lane}</>
+                  )}
                 </span>
+                <span className="sh-cell-meta">
+                  {[r.agent, shortModel(r.model)].filter(Boolean).join(' · ')} · started {since(r.started, now)} ago
+                </span>
+                {r.task ? <span className="sh-cell-meta sh-cell-trunc" title={taskText(r.task)}>{taskLine(r.task)}</span> : null}
               </td>
               <td className="sh-runs-result">
                 <span>{r.state}</span>
@@ -88,7 +100,10 @@ export function RunsTable({ runs, variant = 'full' }: { runs: RunRow[]; variant?
                 {r.outside && r.outside.length > 0 && (
                   <span className="tone-bad" title={r.outside.join(', ')}> outside scope</span>
                 )}
-                <span className="sh-runs-result-meta faint">{duration(r.started, r.ended, now)}</span>
+                <span className="sh-cell-meta">
+                  {duration(r.started, r.ended, now)}
+                  {r.commits !== undefined && ` · ${r.commits} ${r.commits === 1 ? 'commit' : 'commits'}`}
+                </span>
               </td>
               <td className="sh-runs-cost num" title={costNote(r) ?? undefined}>{runCost(r)}</td>
             </tr>
