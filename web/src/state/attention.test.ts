@@ -1,6 +1,6 @@
 import type { Waiting, WaitingItem } from '../api/types'
 import { lane, run } from '../test/fixtures'
-import { inboxTitle, statusCounts, topicWaits, type StatusInput } from './attention'
+import { attentionTitle, inboxTitle, statusCounts, topicWaits, type StatusInput } from './attention'
 
 const seen = { until: '2026-10-08T09:00:00Z', keys: new Set<string>() }
 const waiting = (...items: WaitingItem[]): Waiting => ({
@@ -45,6 +45,9 @@ describe('statusCounts', () => {
     const lanes = [lane({ id: 1, name: 'a' })]
     const c = statusCounts(input({ lanes, waiting: waiting(decision, req(4), blocked({ lane_id: 1, lane: 'a' })) }))
     expect(c).toEqual({ running: 0, waiting: 1, broken: 1, routing: 1 })
+    // The window title and favicon read the same number as the strip.
+    const w = waiting(decision, req(4), blocked({ lane_id: 1, lane: 'a' }))
+    expect(attentionTitle(w)).toBe(`${c.waiting} waiting on you`)
   })
 })
 

@@ -313,9 +313,9 @@ describe('Live', () => {
         count: 3, counts: { decisions: 1, mrs: 0, ship: 0, next: 0, requests: 1, questions: 1 }, version: 'v',
         items: [item(1), { kind: 'request', action: 'route', request_id: 4, title: 'r' }, { kind: 'question', action: 'reply', question_id: 2, title: 'q' }],
       }
-      expect(attentionCount(w)).toBe(3)
+      expect(attentionCount(w)).toBe(2)
       expect(inboxCount(w)).toBe(2)
-      expect(attentionTitle(w)).toBe('3 waiting on you')
+      expect(attentionTitle(w)).toBe('2 waiting on you')
       expect(withAttention({ needs: 0, broken: 0, review: 0, working: 0, done: 0 }, w).needs).toBe(3)
       expect(backlogWithAttention({ needs: 9, broken: 0, idle: 0, working: 0, review: 0 }, w).needs).toBe(3)
       // Until the list has loaded the models' own rules stand.

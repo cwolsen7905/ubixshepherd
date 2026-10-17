@@ -213,7 +213,7 @@ describe('useAttentionChrome', () => {
   it('sets the title and the icon from the attention list', () => {
     document.head.innerHTML = '<link rel="icon" href="/x.svg">'
     const { rerender } = renderHook(({ w }) => useAttentionChrome(w), { initialProps: { w: waiting as Waiting | null } })
-    expect(document.title).toBe('4 waiting on you · Shepherd')
+    expect(document.title).toBe('3 waiting on you · Shepherd')
     expect(document.querySelector('link[rel="icon"]')).toHaveAttribute('href', faviconHref(true))
     act(() => rerender({ w: { ...waiting, count: 0, items: [] } }))
     expect(document.title).toBe('Shepherd')
