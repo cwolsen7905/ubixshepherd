@@ -144,6 +144,17 @@ describe('laneStateAction', () => {
     expect(laneStateAction({ ...base, next: [item] })?.kind).toBe('next')
   })
 
+  it('offers no next up item a lane has already taken, even one waiting for review', () => {
+    const taken = nextItem({ lane_id: 9 })
+    const waiting = [{ action: 'review', next_id: taken.id, lane_id: 9 }] as never
+    expect(laneStateAction({ ...base, next: [taken], waiting })).toBeUndefined()
+  })
+
+  it('shows no failure action for a dismissed latest run with a diagnosis', () => {
+    const dismissed = run({ state: 'succeeded', dismissed: true, diagnosis: { kind: 'x', summary: 'y' } } as never)
+    expect(laneStateAction({ ...base, runs: [dismissed], latest: dismissed })?.kind).not.toBe('failure')
+  })
+
   it('shows no primary on a closed lane', () => {
     expect(laneStateAction({ ...base, lane: lane({ state: 'closed' }), decisions: [decision()] })).toBeUndefined()
   })

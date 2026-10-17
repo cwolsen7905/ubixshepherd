@@ -86,7 +86,6 @@ export function laneStateAction({ lane, runs, latest, review, decisions, request
   const waits = new Set(waiting.flatMap((w) => {
     if (w.action === 'answer' && w.decision_id) return [`decision:${w.decision_id}`]
     if (w.action === 'route' && w.request_id) return [`request:${w.request_id}`]
-    if (w.action === 'review' && w.next_id && w.lane_id === lane.id) return [`lane-next:${w.next_id}`]
     return []
   }))
   const decision = decisions.find((d) => waits.has(`decision:${d.id}`)) ?? decisions[0]
@@ -98,10 +97,12 @@ export function laneStateAction({ lane, runs, latest, review, decisions, request
   // Only the latest run: an older failure a newer run has passed is history, not the state.
   const failed = latest && endedBadly(latest) && !latest.dismissed ? latest : undefined
   if (failed) return { kind: 'open', run: failed }
-  if (latest?.diagnosis) return { kind: 'failure', run: latest }
+  if (latest?.diagnosis && !latest.dismissed) return { kind: 'failure', run: latest }
   if (defaultLaneDetailTab(lane, runs) === 'changes') return { kind: 'approve' }
   if (review?.verdict === 'finished') return { kind: 'close', review }
-  const item = next.find((n) => waiting.some((w) => w.action === 'review' && w.next_id === n.id)) ?? next[0]
+  // Only an item no lane has taken: one assigned to a lane is that lane's, not an offer.
+  const free = next.filter((n) => !n.lane_id)
+  const item = free.find((n) => waiting.some((w) => w.action === 'review' && w.next_id === n.id)) ?? free[0]
   if (item) return { kind: 'next', item }
   return undefined
 }
