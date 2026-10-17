@@ -133,14 +133,19 @@ describe('TopicBar', () => {
       }
     })
 
-    it('keeps the selected topic among the visible chips', async () => {
+    it('keeps the order stable and puts a selected overflow topic in the last visible slot', async () => {
       const w = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(120)
-      const c = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(420)
+      const c = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(520)
       try {
         const list = [1, 2, 3, 4, 5].map((id) => t({ id, title: `topic ${id}` }))
-        render(<TopicBar active={5} onFilter={() => {}} load={loader(list)} />)
+        const { rerender } = render(<TopicBar active={null} onFilter={() => {}} load={loader(list)} />)
         await screen.findByRole('button', { name: /^\+\d+$/ })
-        expect(screen.getByRole('button', { name: 'topic 5' }).className).not.toContain('is-over')
+        const visible = () => [...document.querySelectorAll('.topic-chip-t:not(.is-over)')].map((e) => e.textContent)
+        expect(visible()).toEqual(['topic 1', 'topic 2'])
+        rerender(<TopicBar active={5} onFilter={() => {}} load={loader(list)} />)
+        expect(visible()).toEqual(['topic 1', 'topic 5'])
+        rerender(<TopicBar active={2} onFilter={() => {}} load={loader(list)} />)
+        expect(visible()).toEqual(['topic 1', 'topic 2'])
       } finally {
         w.mockRestore()
         c.mockRestore()

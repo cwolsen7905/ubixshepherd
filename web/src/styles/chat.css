@@ -207,3 +207,13 @@
 
 /* The narrow shell lets the head scroll sideways; the chips keep to it and overflow behind +N instead. */
 .shell[data-mode="sheet"] .page.chat .chat-head .topic-bar { flex: 1 1 0; min-width: 0; }
+
+/* The waiting items past the fit are reachable behind +N. */
+.pending-more { position: relative; flex: none; }
+.chat-main .pending-more-btn { font-weight: 600; text-decoration: underline; }
+.pending-more-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 7; display: flex; flex-direction: column; gap: 2px;
+  min-width: 16rem; max-width: min(26rem, 80vw); padding: 4px; background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.pending-more-item { padding: 4px 8px; font: inherit; font-size: var(--t-sm); color: var(--ink); text-align: left; background: none; border: 0; border-radius: var(--radius); cursor: pointer; }
+.pending-more-item:hover { background: var(--hover); }

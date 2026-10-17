@@ -90,8 +90,8 @@ export function TopicBar({
   const { active: shown, idle } = splitTopics(list, now, active)
   const chips = showIdle ? [...shown, ...idle] : shown
 
-  // The selected topic leads, so it is never the one that overflows.
-  const ordered = [...chips.filter((t) => t.id === active), ...chips.filter((t) => t.id !== active)]
+  // The order is stable; a selected topic that would overflow takes the last visible slot instead.
+  const ordered = chips
   const orderKey = ordered.map((t) => `${t.id}:${t.title}:${t.waits}`).join('|')
 
   // Measure every chip (the ones past the fit stay in the DOM, invisible) and see how many fit one line.
@@ -115,7 +115,13 @@ export function TopicBar({
   }, [orderKey, showIdle, idle.length])
 
   const shownN = fit === null ? ordered.length : Math.min(fit, ordered.length)
-  const over = ordered.slice(shownN)
+  const visible = new Set(Array.from({ length: shownN }, (_, i) => i))
+  const pick = ordered.findIndex((t) => t.id === active)
+  if (pick >= shownN) {
+    visible.delete(shownN - 1)
+    visible.add(pick)
+  }
+  const over = ordered.filter((_, i) => !visible.has(i))
   const menuOpen = menu && over.length > 0
   useEffect(() => {
     if (!menu) return
@@ -142,8 +148,8 @@ export function TopicBar({
             {ordered.map((t, i) => (
               <button
                 key={t.id} type="button"
-                className={`topic-chip topic-chip-t ${topicHueClass(t.id)}${t.waits > 0 ? ' needs-you' : ''}${i >= shownN ? ' is-over' : ''}`}
-                aria-pressed={active === t.id} title={t.title} tabIndex={i >= shownN ? -1 : undefined} aria-hidden={i >= shownN ? true : undefined}
+                className={`topic-chip topic-chip-t ${topicHueClass(t.id)}${t.waits > 0 ? ' needs-you' : ''}${visible.has(i) ? '' : ' is-over'}`}
+                aria-pressed={active === t.id} title={t.title} tabIndex={visible.has(i) ? undefined : -1} aria-hidden={visible.has(i) ? undefined : true}
                 onClick={() => onFilter(active === t.id ? null : t.id)}
               >
                 <span className="topic-chip-title">{chipLabel(t.title)}</span>

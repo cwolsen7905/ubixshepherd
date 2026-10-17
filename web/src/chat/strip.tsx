@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WaitingItem } from '../api/types'
 import { useKeys } from '../hooks'
 import { neighbour, openKey, openTarget, requestStep, waitingKey } from '../model/waitingStep'
@@ -55,6 +55,7 @@ export function PendingStrip() {
     [items],
   )
   const box = useRef<HTMLUListElement>(null)
+  const [menu, setMenu] = useState(false)
   const [fit, setFit] = useState<number | null>(null)
   // Every chip is measured (the ones past the fit stay in the DOM, invisible); as many as fit show.
   useLayoutEffect(() => {
@@ -71,6 +72,18 @@ export function PendingStrip() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [items])
+  useEffect(() => {
+    if (!menu) return
+    const off = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !(e.target as Element).closest('.pending-more')) setMenu(false)
+    }
+    document.addEventListener('keydown', off)
+    document.addEventListener('mousedown', off)
+    return () => {
+      document.removeEventListener('keydown', off)
+      document.removeEventListener('mousedown', off)
+    }
+  }, [menu])
   useKeys({ ']': () => step('down'), '[': () => step('up') }, [step])
   if (items.length === 0) return null
   return (
@@ -92,6 +105,22 @@ export function PendingStrip() {
           )
         })}
       </ul>
+      {fit !== null && fit < items.length && (
+        <span className="pending-more">
+          <button type="button" className="pending-chip pending-more-btn" aria-expanded={menu} aria-haspopup="true" title={`${items.length - fit} more waiting`} onClick={() => setMenu(!menu)}>
+            +{items.length - fit}
+          </button>
+          {menu && (
+            <div className="pending-more-menu" role="group" aria-label="More waiting items">
+              {items.slice(fit).map((it) => (
+                <button key={waitingKey(it)} type="button" className="pending-more-item" title={it.title} onClick={() => { setMenu(false); showWaiting(it) }}>
+                  <span className="faint">{LABEL[it.kind] ?? it.kind}</span> {shortTitle(it.title, 40)}
+                </button>
+              ))}
+            </div>
+          )}
+        </span>
+      )}
       <span className="faint pending-keys">
         <kbd>]</kbd> next
       </span>
