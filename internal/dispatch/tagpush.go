@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -19,7 +20,9 @@ import (
 // creates a tag. Each refusal and failure is told to the feed; the reservation stays
 // reserved so a later ship retries. It returns what it said, for Ship.
 func (r *Runner) pushTags(ctx context.Context, lane store.Lane, repo store.Repo, prof config.Profile) []string {
-	if prof.Autonomy.Push != config.Shepherd || prof.Autonomy.Tag != config.Agent || prof.Tags != config.TagsReserved {
+	if !crook.Decide(ctx, crook.Request{Action: crook.ActionTagPush, Actor: crook.ActorDaemon, Facts: crook.Facts{
+		Repo: repo.Name, Push: prof.Autonomy.Push, Tag: prof.Autonomy.Tag, TagsReserved: prof.Tags == config.TagsReserved,
+	}}).OK() {
 		return nil
 	}
 	live, err := r.Store.Reservations(ctx, repo.ID)

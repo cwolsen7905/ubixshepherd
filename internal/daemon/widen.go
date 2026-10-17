@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -16,8 +17,7 @@ import (
 // so the desk does it only in a turn they started and cites the answered decision, one
 // raised by a run of this lane. The Fold judges the overlap with other open lanes.
 func (s *Server) widenLane(w http.ResponseWriter, r *http.Request) {
-	if p := principalOf(r.Context()); p.Role == RoleDesk && !p.Human {
-		writeError(w, http.StatusForbidden, errors.New("the front desk may widen a lane's scope only in a turn the person started; bring the request to them"))
+	if !s.personsOnly(w, r, crook.ActionWidenScope) {
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

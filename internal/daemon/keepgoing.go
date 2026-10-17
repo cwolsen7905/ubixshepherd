@@ -11,6 +11,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -477,8 +478,6 @@ func (k *KeepGoing) run(quit <-chan struct{}) {
 	}
 }
 
-var errKeepGoingOn = errors.New("keep-going is turned on by the person: not by an agent, and by the front desk only in a turn the person started; off is always allowed")
-
 // pickWorkspace finds the workspace a request names, or the only one, answering the
 // request itself when it cannot.
 func (s *Server) pickWorkspace(w http.ResponseWriter, r *http.Request, wsID int64) (store.Workspace, bool) {
@@ -545,8 +544,7 @@ func (s *Server) keepGoing(w http.ResponseWriter, r *http.Request) {
 	case RoleDesk:
 		by = store.KeepByDesk
 	}
-	if req.On && (p.Role == RoleWorker || (p.Role == RoleDesk && !p.Human)) {
-		writeError(w, http.StatusForbidden, errKeepGoingOn)
+	if req.On && !s.personsOnly(w, r, crook.ActionKeepGoingOn) {
 		return
 	}
 	var err error

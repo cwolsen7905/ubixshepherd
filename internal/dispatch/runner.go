@@ -18,6 +18,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -35,6 +36,17 @@ var ErrHeld = errors.New("held")
 type refusal struct {
 	msg  string
 	held bool
+	// rule is the Crook rule behind the refusal, "" for one Crook did not make.
+	rule string
+}
+
+// ruleOf is the id of the Crook rule that made err, or "".
+func ruleOf(err error) string {
+	var r refusal
+	if errors.As(err, &r) {
+		return r.rule
+	}
+	return ""
 }
 
 func (r refusal) Error() string { return r.msg }
@@ -384,28 +396,28 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 			return store.Run{}, held("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
 		}
 	}
+	// The budget and the caps are Crook's limits. The budget is read only for a run
+	// Shepherd starts on its own, and the repo's count only when it can matter.
+	facts := crook.Facts{Runs: &crook.RunCounts{Running: len(running), Max: cfg.Daemon.MaxRuns, Repo: repo.Name}}
+	actor := crook.ActorPerson
 	if req.Auto {
-		if why := r.overBudget(ctx, cfg); why != "" {
-			return store.Run{}, held("%s", why)
-		}
+		actor = crook.ActorDaemon
+		facts.Budget, facts.BudgetDaily = r.budgetHold(ctx, cfg, "")
 	}
-	if max := cfg.Daemon.MaxRuns; len(running) >= max {
-		return store.Run{}, held("%d agents are already running, the limit on this machine (daemon.max_runs)", max)
-	}
-	if max := cfg.Profile(repo.Name).MaxRuns; max > 0 {
-		in := 0
+	if max := cfg.Profile(repo.Name).MaxRuns; max > 0 && facts.Budget == "" {
+		facts.Runs.RepoMax = max
 		for _, other := range running {
 			ol, err := r.Store.Lane(ctx, other.LaneID)
 			if err != nil {
 				return store.Run{}, err
 			}
 			if ol.RepoID == repo.ID {
-				in++
+				facts.Runs.InRepo++
 			}
 		}
-		if in >= max {
-			return store.Run{}, held("%d agents are already running in %s, its limit (max_runs)", in, repo.Name)
-		}
+	}
+	if v := crook.Decide(ctx, crook.Request{Action: crook.ActionRunStart, Actor: actor, Facts: facts}); !v.OK() {
+		return store.Run{}, refusal{msg: v.Reason, held: true, rule: v.Rule}
 	}
 
 	// The lane's conversation: continue its last session with this agent unless asked
@@ -570,7 +582,9 @@ func powers(prof config.Profile, remote string) Powers {
 	if f, err := forge.For(remote); err == nil {
 		gitlab = f.Name() == "gitlab"
 	}
-	return Powers{Push: prof.Autonomy.Push, Merge: prof.Autonomy.Merge == config.Agent && gitlab, GitLab: gitlab, Forbid: prof.Forbid}
+	merge := crook.Decide(context.Background(), crook.Request{Action: crook.ActionMergeArm, Actor: crook.ActorWorker,
+		Facts: crook.Facts{Merge: prof.Autonomy.Merge, GitLab: gitlab}})
+	return Powers{Push: prof.Autonomy.Push, Merge: merge.OK(), GitLab: gitlab, Forbid: prof.Forbid}
 }
 
 // watch copies the agent's output to the log line by line, redacted, then records the
