@@ -40,6 +40,8 @@
 .sh-spend-row { display: flex; justify-content: space-between; gap: var(--sh-s6); padding: var(--sh-s3) 0; border-bottom: 1px solid var(--sh-rule); font-variant-numeric: tabular-nums; }
 .sh-spend-row:last-child { border-bottom: 0; }
 .sh-spend-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-spend-faint { color: var(--sh-faint); }
+.sh-spend-runs-n { flex: none; margin-left: auto; font-size: var(--sh-t-meta); }
 .sh-spend-amount { flex: none; color: var(--sh-muted); }
 .sh-spend-none { margin: var(--sh-s2) 0 0; color: var(--sh-faint); }
 
@@ -52,3 +54,62 @@
 .sh-spend-run .sh-row:hover { text-decoration: none; }
 .sh-spend-cost { font-size: var(--sh-t-meta); font-weight: 600; white-space: nowrap; color: var(--sh-muted); font-variant-numeric: tabular-nums; }
 .sh-spend-cost.is-ok { color: var(--sh-ok); }
+
+/* The range control. */
+.sh-usage-range { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s4) var(--sh-s8); margin-bottom: var(--sh-s8); }
+.sh-usage-day { display: inline-flex; align-items: center; gap: var(--sh-s3); color: var(--sh-faint); font-size: var(--sh-t-small); }
+.sh-usage-day input { border: 1px solid var(--sh-control); border-radius: var(--sh-r); background: var(--sh-raised); color: var(--sh-ink); font: var(--sh-t-small) var(--sh-font); padding: var(--sh-s2) var(--sh-s4); }
+
+/* The four summary cards. */
+.sh-usage-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr)); gap: var(--sh-s8); margin: 0 0 var(--sh-s9); }
+.sh-usage-stat { margin: 0; }
+.sh-usage-stat dt { color: var(--sh-muted); font-size: var(--sh-t-meta); }
+.sh-usage-stat dd { margin: var(--sh-s2) 0 0; display: flex; flex-direction: column; gap: var(--sh-s2); min-width: 0; }
+.sh-usage-stat strong { font-size: var(--sh-t-doc); font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sh-usage-stat dd span { color: var(--sh-faint); font-size: var(--sh-t-meta); }
+
+/* Tokens and context. */
+.sh-usage-tokens { margin-bottom: var(--sh-s9); }
+.sh-usage-tokens > summary { cursor: pointer; list-style: none; }
+.sh-usage-tokens > summary::-webkit-details-marker { display: none; }
+.sh-usage-tokens > summary .sh-group-h::before { content: '▾'; color: var(--sh-faint); }
+.sh-usage-tokens:not([open]) > summary .sh-group-h::before { content: '▸'; }
+.sh-usage-group { margin-bottom: var(--sh-s8); }
+.sh-usage-scroll { overflow-x: auto; }
+.sh-usage-table { font-variant-numeric: tabular-nums; }
+.sh-usage-table th.num { text-align: right; }
+.sh-usage-table th[aria-sort] { color: var(--sh-ink); }
+.sh-usage-name { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-usage-faint { color: var(--sh-faint); }
+.sh-usage-warn { color: var(--sh-ink); font-weight: 600; }
+.sh-sort { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; white-space: nowrap; }
+.sh-sort:hover { color: var(--sh-ink); }
+
+/* The peak-context chart: a bar from zero, a dashed line at 200k, a tick at the model's window. */
+.ctx-chart { margin: 0; --label-w: minmax(10rem, 18rem); --value-w: 15rem; }
+.ctx-key { display: flex; flex-wrap: wrap; gap: var(--sh-s3) var(--sh-s8); margin-bottom: var(--sh-s6); font-size: var(--sh-t-meta); color: var(--sh-muted); }
+.ctx-swatch { display: inline-block; vertical-align: middle; margin-right: var(--sh-s2); }
+.ctx-swatch-bar { width: 1.25rem; height: 0.5rem; background: var(--sh-lichen); border-radius: 0 2px 2px 0; }
+.ctx-swatch-line { width: 0; height: 0.875rem; border-left: 2px dashed var(--sh-ink); }
+.ctx-swatch-tick { width: 0; height: 0.875rem; border-left: 2px solid var(--sh-muted); }
+.ctx-section h3 { margin: var(--sh-s6) 0 var(--sh-s2); font-size: var(--sh-t-small); font-weight: 600; color: var(--sh-muted); }
+.ctx-section ul { list-style: none; margin: 0; padding: 0; }
+.ctx-row, .ctx-axis { display: grid; grid-template-columns: var(--label-w) minmax(8rem, 1fr) var(--value-w); column-gap: var(--sh-s6); align-items: center; }
+.ctx-row { min-height: 1.75rem; font-size: var(--sh-t-small); }
+.ctx-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-plot { position: relative; height: 1.75rem; border-left: 1px solid var(--sh-rule); }
+.ctx-bar { position: absolute; left: 0; top: 0.5rem; height: 0.75rem; background: var(--sh-lichen); border-radius: 0 var(--sh-r) var(--sh-r) 0; }
+.ctx-200k { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--sh-ink); opacity: 0.7; }
+.ctx-window { position: absolute; top: 0.25rem; bottom: 0.25rem; border-left: 2px solid var(--sh-muted); }
+.ctx-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ctx-over { color: var(--sh-ink); font-weight: 600; }
+.ctx-axis { margin-top: var(--sh-s2); font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.ctx-axis-scale { position: relative; height: 1.25rem; }
+.ctx-axis-scale > span { position: absolute; transform: translateX(-50%); }
+.ctx-axis-scale > span:first-child { transform: none; }
+@media (max-width: 760px) {
+  .ctx-chart { --label-w: 7rem; --value-w: auto; }
+  .ctx-row, .ctx-axis { grid-template-columns: var(--label-w) minmax(4rem, 1fr); }
+  .ctx-value { grid-column: 1 / -1; padding-bottom: var(--sh-s2); }
+  .ctx-axis > :last-child { display: none; }
+}

@@ -32,7 +32,7 @@ export function ContextChart({ sections }: { sections: ChartSection[] }) {
               return (
                 <li key={r.key} className="ctx-row" title={detail}>
                   <span className="ctx-label">
-                    {r.prefix && <span className="faint">{r.prefix} /</span>} {r.label}
+                    {r.prefix && <span className="sh-usage-faint">{r.prefix} /</span>} {r.label}
                   </span>
                   <span className="ctx-plot" aria-hidden="true">
                     <span className="ctx-bar" style={{ width: pct(r.peak, max) }} />
@@ -41,8 +41,8 @@ export function ContextChart({ sections }: { sections: ChartSection[] }) {
                   </span>
                   <span className="ctx-value">
                     <strong>{tokens(r.peak)}</strong>
-                    {r.window > 0 && <span className="faint"> of {tokens(r.window)}</span>}
-                    {r.over === undefined ? null : over ? <span className="ctx-over"> · {r.over} over 200k</span> : <span className="faint"> · none over 200k</span>}
+                    {r.window > 0 && <span className="sh-usage-faint"> of {tokens(r.window)}</span>}
+                    {r.over === undefined ? null : over ? <span className="ctx-over"> · {r.over} over 200k</span> : <span className="sh-usage-faint"> · none over 200k</span>}
                   </span>
                 </li>
               )

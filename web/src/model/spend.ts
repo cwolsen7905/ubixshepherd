@@ -4,7 +4,7 @@
 // By project cards; the project list only lends the budget caps. The chart reads one day
 // of usage per bar: the endpoint answers a single day when from and to name it.
 
-import type { ProjectSummary, RunRecord, SpendToday, UsageStats } from '../api/types'
+import type { ProjectSummary, RunRecord, SpendToday, UsageGroup, UsageStats } from '../api/types'
 import { usd } from '../format'
 
 /** The chart's window: the last 14 days, today included, oldest first. */
@@ -21,6 +21,24 @@ export function chartDays(now: number): string[] {
   const out: string[] = []
   for (let back = CHART_DAYS - 1; back >= 0; back--) {
     const d = new Date(now)
+    d.setDate(d.getDate() - back)
+    out.push(localDay(d))
+  }
+  return out
+}
+
+/** The most days the chart draws for a long range. */
+export const MAX_CHART_DAYS = 60
+
+/** The chart's days for a range: its own days, at least CHART_DAYS and at most MAX_CHART_DAYS, ending on its last day, oldest first. */
+export function rangeChartDays(from: string, to: string): string[] {
+  const end = new Date(`${to}T12:00:00`)
+  const start = new Date(`${from}T12:00:00`)
+  const span = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1
+  const n = Math.min(MAX_CHART_DAYS, Math.max(CHART_DAYS, Number.isFinite(span) ? span : CHART_DAYS))
+  const out: string[] = []
+  for (let back = n - 1; back >= 0; back--) {
+    const d = new Date(end)
     d.setDate(d.getDate() - back)
     out.push(localDay(d))
   }
@@ -55,6 +73,11 @@ export interface CardRow {
   label: string
   title?: string
   usd: number
+  /** The agent or agents that ran the model, for a faint word after the label. */
+  agent?: string
+  /** Agent runs and front desk turns the row counts; absent when the card does not say. */
+  runs?: number
+  turns?: number
 }
 
 /** The card rows, biggest spend first: ties keep the daemon's order. */
@@ -81,15 +104,26 @@ export function shortModel(model: string): string {
 /** By model: the 14 days' usage grouped by model, biggest spend first. The label is the
  * short id; the title is the full id for the hover. */
 export function modelRows(stats: UsageStats | null): CardRow[] {
-  const by = new Map<string, number>()
-  for (const g of [...(stats?.by_model ?? []), ...(stats?.desk_by_model ?? [])]) {
+  const by = new Map<string, { usd: number; runs: number; turns: number; agents: Set<string> }>()
+  const add = (g: UsageGroup, desk: boolean) => {
     const model = g.model || g.key
-    by.set(model, (by.get(model) ?? 0) + g.cost_usd)
+    const cur = by.get(model) ?? { usd: 0, runs: 0, turns: 0, agents: new Set<string>() }
+    cur.usd += g.cost_usd
+    const n = typeof g.count === 'number' && Number.isFinite(g.count) ? g.count : 0
+    if (desk) cur.turns += n
+    else cur.runs += n
+    if (g.agent) cur.agents.add(g.agent)
+    by.set(model, cur)
   }
+  for (const g of stats?.by_model ?? []) add(g, false)
+  for (const g of stats?.desk_by_model ?? []) add(g, true)
   return cardRows(
-    [...by].map(([model, dollars]) => {
+    [...by].map(([model, v]) => {
       const short = shortModel(model)
-      return { key: model, label: short, title: model === short ? undefined : model, usd: dollars }
+      return {
+        key: model, label: short, title: model === short ? undefined : model, usd: v.usd, runs: v.runs, turns: v.turns,
+        ...(v.agents.size ? { agent: [...v.agents].join(', ') } : {}),
+      }
     }),
   )
 }
@@ -146,6 +180,17 @@ export function chartModel(days: string[], totals: Record<string, number>, cap: 
 /** A run's spend, in dollars. */
 export function runSpend(r: RunRecord): number {
   return r.cost_usd ?? 0
+}
+
+/** The runs that started within a range's local days, first and last inclusive. */
+export function runsInRange(runs: RunRecord[], from: string, to: string): RunRecord[] {
+  const start = new Date(`${from}T00:00:00`).getTime()
+  const end = new Date(`${to}T00:00:00`)
+  end.setDate(end.getDate() + 1)
+  return runs.filter((r) => {
+    const t = Date.parse(r.started)
+    return t >= start && t < end.getTime()
+  })
 }
 
 /** The most expensive runs, most expensive first, cut to `limit`. */
