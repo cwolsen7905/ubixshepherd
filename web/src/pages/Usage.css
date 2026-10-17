@@ -40,6 +40,8 @@
 .sh-spend-row { display: flex; justify-content: space-between; gap: var(--sh-s6); padding: var(--sh-s3) 0; border-bottom: 1px solid var(--sh-rule); font-variant-numeric: tabular-nums; }
 .sh-spend-row:last-child { border-bottom: 0; }
 .sh-spend-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-spend-faint { color: var(--sh-faint); }
+.sh-spend-runs-n { flex: none; margin-left: auto; font-size: var(--sh-t-meta); }
 .sh-spend-amount { flex: none; color: var(--sh-muted); }
 .sh-spend-none { margin: var(--sh-s2) 0 0; color: var(--sh-faint); }
 

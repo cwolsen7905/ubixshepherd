@@ -81,7 +81,8 @@ describe('the usage spend model', () => {
     expect(shortModel('openrouter/moonshotai/kimi-k2')).toBe('kimi-k2')
     expect(shortModel('sonnet')).toBe('sonnet')
     const models = modelRows(stats)
-    expect(models[0]).toMatchObject({ label: 'sonnet', usd: 10 })
+    expect(models[0]).toMatchObject({ label: 'sonnet', usd: 10, agent: 'claude' })
+    expect(models.find((r) => r.label === 'kimi-k2')).toMatchObject({ agent: 'opencode', runs: 0 })
     expect(models.find((r) => r.key === 'openrouter/moonshotai/kimi-k2')).toMatchObject({
       label: 'kimi-k2', title: 'openrouter/moonshotai/kimi-k2', usd: 3,
     })
@@ -175,8 +176,11 @@ describe('the Usage page', () => {
 
   it('shows the cards, the 14-day chart, the holds and the expensive runs', async () => {
     await mount()
-    expect(await screen.findByText('claude')).toBeInTheDocument()
-    expect(screen.getByRole('region', { name: 'By model' })).toHaveTextContent('sonnet')
+    expect((await screen.findAllByText('claude')).length).toBeGreaterThan(0)
+    const byModel = screen.getByRole('region', { name: 'By model' })
+    expect(byModel).toHaveTextContent('sonnet')
+    expect(byModel).toHaveTextContent('claude')
+    expect(byModel).toHaveTextContent('1 run')
     expect(screen.getByRole('region', { name: 'Spend, last 14 days' })).toBeInTheDocument()
     expect(await screen.findByText('copilot')).toBeInTheDocument()
   })

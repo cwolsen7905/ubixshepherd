@@ -73,6 +73,10 @@ export interface CardRow {
   label: string
   title?: string
   usd: number
+  /** The agent or agents that ran the model, for a faint word after the label. */
+  agent?: string
+  /** How many runs and turns the row counts; absent when the card does not say. */
+  runs?: number
 }
 
 /** The card rows, biggest spend first: ties keep the daemon's order. */
@@ -99,15 +103,22 @@ export function shortModel(model: string): string {
 /** By model: the 14 days' usage grouped by model, biggest spend first. The label is the
  * short id; the title is the full id for the hover. */
 export function modelRows(stats: UsageStats | null): CardRow[] {
-  const by = new Map<string, number>()
+  const by = new Map<string, { usd: number; runs: number; agents: Set<string> }>()
   for (const g of [...(stats?.by_model ?? []), ...(stats?.desk_by_model ?? [])]) {
     const model = g.model || g.key
-    by.set(model, (by.get(model) ?? 0) + g.cost_usd)
+    const cur = by.get(model) ?? { usd: 0, runs: 0, agents: new Set<string>() }
+    cur.usd += g.cost_usd
+    cur.runs += typeof g.count === 'number' && Number.isFinite(g.count) ? g.count : 0
+    if (g.agent) cur.agents.add(g.agent)
+    by.set(model, cur)
   }
   return cardRows(
-    [...by].map(([model, dollars]) => {
+    [...by].map(([model, v]) => {
       const short = shortModel(model)
-      return { key: model, label: short, title: model === short ? undefined : model, usd: dollars }
+      return {
+        key: model, label: short, title: model === short ? undefined : model, usd: v.usd, runs: v.runs,
+        ...(v.agents.size ? { agent: [...v.agents].join(', ') } : {}),
+      }
     }),
   )
 }

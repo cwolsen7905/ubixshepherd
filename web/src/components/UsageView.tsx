@@ -41,7 +41,11 @@ export function SpendCard({ title, rows, empty }: { title: string; rows: CardRow
         <ul className="sh-spend-rows">
           {rows.map((r) => (
             <li key={r.key} className="sh-spend-row" title={r.title}>
-              <span className="sh-spend-name">{r.label}</span>
+              <span className="sh-spend-name">
+                {r.label}
+                {r.agent && <span className="sh-spend-faint"> {r.agent}</span>}
+              </span>
+              {r.runs !== undefined && <span className="sh-spend-faint sh-spend-runs-n">{r.runs} {r.runs === 1 ? 'run' : 'runs'}</span>}
               <span className="sh-spend-amount">{usd(r.usd) || '$0.00'}</span>
             </li>
           ))}
