@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { usd } from '../format'
 import { budgetUse, heroSub, type CardRow } from '../model/spend'
 import { href } from '../router'
-import { EmptyState, GroupHeader, ListRow, Meter, Skeleton, StatusGlyph } from '../ui'
+import { EmptyState, GroupHeader, ListRow, Meter, Skeleton, StatusGlyph, type GlyphTone } from '../ui'
 
 /** The big spend figure: today's dollars, "of $X today", "near budget" past 80% of the cap. */
 export function SpendHero({ usdToday, budget, sub, offline }: { usdToday: number; budget: number; sub: { of: string; note: string }; offline: boolean }) {
@@ -125,6 +125,14 @@ export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: numbe
   )
 }
 
+const RUN_MARK: Record<string, { glyph: string; tone: GlyphTone }> = {
+  running: { glyph: '●', tone: 'live' },
+  succeeded: { glyph: '✓', tone: 'ok' },
+  failed: { glyph: '✗', tone: 'bad' },
+  interrupted: { glyph: '↯', tone: 'bad' },
+  stopped: { glyph: '○', tone: 'idle' },
+}
+
 /** The most expensive runs of the window, most expensive first. */
 export function CostliestList({ runs }: {
   runs: { id: number; lane_id: number; repo: string; lane: string; agent: string; model?: string; state: string; commits: number; cost_usd?: number; credits?: number; cost_estimated?: boolean; started: string; ended?: string; task: string }[]
@@ -139,8 +147,8 @@ export function CostliestList({ runs }: {
           {runs.map((r) => (
             <li key={r.id} className="sh-spend-run">
               <ListRow
-                glyph={r.state === 'running' ? '●' : r.state === 'succeeded' ? '✓' : r.state === 'failed' ? '✗' : '↯'}
-                tone={r.state === 'running' ? 'live' : r.state === 'succeeded' ? 'ok' : r.state === 'failed' ? 'bad' : 'held'}
+                glyph={RUN_MARK[r.state]?.glyph ?? '○'}
+                tone={RUN_MARK[r.state]?.tone ?? 'idle'}
                 glyphLabel={r.state}
                 title={<>run {r.id} · {r.repo} / {r.lane}</>}
                 sub={`${r.agent}${r.model ? ` · ${r.model}` : ''} · ${r.state} · ${r.commits} ${r.commits === 1 ? 'commit' : 'commits'}`}

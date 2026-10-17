@@ -1,7 +1,8 @@
+import { readFileSync } from 'node:fs'
 import { act, render, screen, within } from '@testing-library/react'
 import type { RunHistory, SpendToday, Status, UsageStats } from '../api/types'
 import { agentRows, budgetUse, chartDays, chartModel, costliestRuns, heroSub, modelRows, projectOfRepo, projectRows, shortModel, usageWindow } from '../model/spend'
-import { dayNum, dayShort } from '../components/UsageView'
+import { CostliestList, SpendHero, dayNum, dayShort } from '../components/UsageView'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { spend, status } from '../test/fixtures'
@@ -53,7 +54,9 @@ describe('the usage spend model', () => {
 
   it('says near budget past 80% of the cap and over at it', () => {
     const at = (usd: number): SpendToday => ({ day: '2026-10-10', usd, budget: 20, credit_usd: 0, by_source: {} })
-    expect(budgetUse(at(4.1))).toEqual({ fraction: 0.205, percent: 21, near: false, over: false })
+    const low = budgetUse(at(4.1))
+    expect(low?.fraction).toBeCloseTo(0.205, 10)
+    expect(low).toMatchObject({ percent: 21, near: false, over: false })
     expect(budgetUse(at(16))).toMatchObject({ near: true, over: false })
     expect(budgetUse(at(20))).toMatchObject({ near: false, over: true })
     expect(budgetUse({ ...at(4.1), budget: 0 })).toBeNull()
@@ -105,6 +108,26 @@ describe('the usage spend model', () => {
   it('shortens a chart day to "Oct 3", and to its number alone when narrow', () => {
     expect(dayShort('2026-10-03')).toBe('Oct 3')
     expect(dayNum('2026-10-03')).toBe('3')
+  })
+})
+
+describe('the usage parts', () => {
+  const run = (id: number, state: string) => ({ id, lane_id: 1, repo: 'r', lane: 'l', agent: 'claude', state, commits: 0, started: '2026-10-10T10:00:00Z', task: '' })
+
+  it('draws each run state with a glyph from the status vocabulary and its word', () => {
+    const { container } = render(<CostliestList runs={['running', 'succeeded', 'failed', 'interrupted', 'stopped'].map((s, i) => run(i + 1, s))} />)
+    const glyphs = [...container.querySelectorAll('.sh-glyph [aria-hidden="true"]')].map((g) => g.textContent)
+    expect(glyphs).toEqual(['●', '✓', '✗', '↯', '○'])
+    expect(container).toHaveTextContent('interrupted')
+  })
+
+  it('shows the budget note lantern near the cap and broken at it', () => {
+    const { container, rerender } = render(<SpendHero usdToday={16} budget={20} sub={{ of: 'of $20.00 today', note: 'near budget' }} offline={false} />)
+    expect(container.querySelector('.sh-spend-note .is-near')).not.toBeNull()
+    expect(container.querySelector('.sh-spend-note .is-over')).toBeNull()
+    rerender(<SpendHero usdToday={21} budget={20} sub={{ of: 'of $20.00 today', note: 'over budget' }} offline={false} />)
+    expect(container.querySelector('.sh-spend-note .is-over')).not.toBeNull()
+    expect(readFileSync('src/pages/Usage.css', 'utf8')).toMatch(/\.sh-spend-note \.is-over \{ color: var\(--sh-broken\)/)
   })
 })
 

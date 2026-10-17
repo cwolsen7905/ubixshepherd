@@ -10,6 +10,7 @@
 .sh-spend-figure { margin: 0; font-size: var(--sh-t-doc); font-weight: 600; font-variant-numeric: tabular-nums; }
 .sh-spend-of { margin: var(--sh-s1) 0 var(--sh-s4); color: var(--sh-muted); }
 .sh-spend-note { color: var(--sh-lantern-ink); font-weight: 600; }
+.sh-spend-note .is-over { color: var(--sh-broken); }
 .sh-spend-hero .sh-meter { max-width: 32rem; }
 .sh-spend-stale { margin: var(--sh-s2) 0 0; color: var(--sh-faint); font-size: var(--sh-t-meta); }
 .sh-spend-reset { margin: 0 0 var(--sh-s8); color: var(--sh-faint); font-size: var(--sh-t-meta); }
