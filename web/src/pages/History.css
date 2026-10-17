@@ -1,0 +1,4 @@
+.history-search { display: flex; flex-wrap: wrap; gap: var(--s-3); margin: 0 0 var(--s-3); }
+.history-search input[type="search"] { flex: 1 1 16rem; min-width: 0; }
+.history-kinds { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-4); }
+.history-list { list-style: none; margin: 0; padding: 0; }

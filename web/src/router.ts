@@ -28,6 +28,9 @@ type Page =
   | { page: 'timeline'; range?: TimelineRange; agent?: string }
   | { page: 'next'; focus?: number }
   | { page: 'artifacts'; repo?: number; lane?: number; run?: number; topic?: number }
+  | { page: 'history'; kind?: string; project?: string; q?: string }
+  | { page: 'files'; repo?: number; lane?: number; ref?: string }
+  | { page: 'rules' }
   | { page: 'projects' }
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
@@ -151,6 +154,28 @@ function parsePage(hash: string): Page {
       ...(topic ? { topic } : {}),
     }
   }
+  if (path === '/history') {
+    return {
+      page: 'history',
+      ...(q.get('kind') ? { kind: q.get('kind') as string } : {}),
+      ...(q.get('project') ? { project: q.get('project') as string } : {}),
+      ...(q.get('q') ? { q: q.get('q') as string } : {}),
+    }
+  }
+  if (path === '/files') {
+    const n = (k: string) => {
+      const v = Number(q.get(k))
+      return Number.isSafeInteger(v) && v > 0 ? v : 0
+    }
+    const [repo, lane] = [n('repo'), n('lane')]
+    return {
+      page: 'files',
+      ...(repo ? { repo } : {}),
+      ...(lane ? { lane } : {}),
+      ...(q.get('ref') ? { ref: q.get('ref') as string } : {}),
+    }
+  }
+  if (path === '/rules') return { page: 'rules' }
   if (path === '/chat') return { page: 'chat' }
   if (path === '/status') return { page: 'status' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
@@ -194,6 +219,20 @@ export const href = {
     for (const k of ['repo', 'lane', 'run', 'topic'] as const) if (o[k]) q.set(k, String(o[k]))
     return q.size ? `#/artifacts?${q}` : '#/artifacts'
   },
+  history: (o: { kind?: string; project?: string; q?: string } = {}) => {
+    const q = new URLSearchParams()
+    for (const k of ['kind', 'project', 'q'] as const) if (o[k]) q.set(k, o[k] as string)
+    return q.size ? `#/history?${q}` : '#/history'
+  },
+  /** A repo's files: `lane` is the lane whose worktree is read, `ref` a branch, tag or sha instead. */
+  files: (o: { repo?: number; lane?: number; ref?: string } = {}) => {
+    const q = new URLSearchParams()
+    if (o.repo) q.set('repo', String(o.repo))
+    if (o.lane) q.set('lane', String(o.lane))
+    if (o.ref) q.set('ref', o.ref)
+    return q.size ? `#/files?${q}` : '#/files'
+  },
+  rules: () => '#/rules',
   projects: () => '#/projects',
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,
   unassigned: () => '#/unassigned',

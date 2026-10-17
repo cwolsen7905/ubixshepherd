@@ -1,3 +1,4 @@
+import { NAV } from './shell/nav'
 import { canonical, formatOpen, href, parse, parseOpen, withOpen } from './router'
 
 describe('router', () => {
@@ -104,5 +105,28 @@ describe('open=', () => {
     const full = { kind: 'lane', id: 4, tab: 'changes', full: true }
     expect(parse(withOpen('#/board', full))).toEqual({ page: 'board', open: full })
     expect(parse(withOpen('#/board', { kind: 'mr', id: 4, full: true }))).toEqual({ page: 'board', open: { kind: 'mr', id: 4, full: true } })
+  })
+})
+
+describe('the view table', () => {
+  const VIEWS = ['Conversation', 'Inbox', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Usage', 'Settings', 'Status']
+
+  it('lists every view in the nav, in the design order, each reaching its own route', () => {
+    const items = NAV.flatMap((g) => g.items)
+    expect(items.map((i) => i.label)).toEqual(VIEWS)
+    for (const i of items) {
+      const r = parse(i.to())
+      expect(r.page).not.toBe('missing')
+      expect(items.filter((o) => o.current(r)).map((o) => o.label)).toEqual([i.label])
+    }
+  })
+
+  it('parses and round-trips the new routes', () => {
+    expect(parse(href.history())).toEqual({ page: 'history' })
+    expect(parse(href.history({ kind: 'run', project: 'a b', q: 'login' }))).toEqual({ page: 'history', kind: 'run', project: 'a b', q: 'login' })
+    expect(parse(href.files())).toEqual({ page: 'files' })
+    expect(parse(href.files({ repo: 2, lane: 5, ref: 'dev' }))).toEqual({ page: 'files', repo: 2, lane: 5, ref: 'dev' })
+    expect(parse('#/files?lane=x')).toEqual({ page: 'files' })
+    expect(parse(href.rules())).toEqual({ page: 'rules' })
   })
 })
