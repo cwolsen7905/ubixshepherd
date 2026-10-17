@@ -137,14 +137,17 @@ func (it WaitingItem) lineItem() string {
 	return label + ": " + text
 }
 
-// plainText removes what markdown would read: backticks, asterisks, underscores that
-// frame words, brackets and a link's target, and folds whitespace, so a cut item can never
-// leave a span open.
+// plainText removes what markdown would read: backticks, asterisks, brackets, a link's
+// target and an autolink's angle brackets, and folds whitespace, so a cut item can never
+// leave a span open. Comparison signs stay.
 func plainText(s string) string {
 	s = mdLink.ReplaceAllString(s, "$1")
-	s = strings.NewReplacer("`", "", "*", "", "[", "", "]", "", "<", "", ">", "").Replace(s)
+	s = mdAutolink.ReplaceAllString(s, "$1")
+	s = strings.NewReplacer("`", "", "*", "", "[", "", "]", "").Replace(s)
 	return strings.Join(strings.Fields(s), " ")
 }
+
+var mdAutolink = regexp.MustCompile(`<(https?://[^>\s]*)>`)
 
 var mdLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
 

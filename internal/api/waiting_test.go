@@ -68,4 +68,7 @@ func TestShortenAtWord(t *testing.T) {
 	if got := plainText("a `b` **c** [d](http://e) [f"); got != "a b c d f" {
 		t.Errorf("plainText = %q", got)
 	}
+	if got := plainText("retry while n < 3 and m > 1, see <https://x.example/y>"); got != "retry while n < 3 and m > 1, see https://x.example/y" {
+		t.Errorf("plainText kept no comparison signs: %q", got)
+	}
 }

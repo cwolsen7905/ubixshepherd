@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { Markdown } from './md'
+import { Markdown, unmatchedTicks } from './md'
 
 describe('chat Markdown', () => {
   it('renders a fenced block with a Copy code button, and keeps the chat class names', () => {
@@ -17,5 +17,11 @@ describe('chat Markdown', () => {
     expect(ok.container.querySelectorAll('code')).toHaveLength(0)
     const fine = render(<Markdown text={'Run `make check` then `make build`.\n\n```\na `b\n```'} />)
     expect([...fine.container.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['make check', 'make build', 'a `b'])
+  })
+
+  it('leaves ~~~ fences alone, and a ``` line inside one does not close it', () => {
+    const fenced = '~~~\na `b\n```\nc `d\n~~~'
+    expect(unmatchedTicks(fenced)).toBe(fenced)
+    expect(unmatchedTicks(fenced + '\nthen `e')).toBe(fenced + '\nthen \u02cbe')
   })
 })

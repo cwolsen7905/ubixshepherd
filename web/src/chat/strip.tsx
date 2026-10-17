@@ -63,7 +63,7 @@ export function PendingStrip() {
     if (!el) return
     const measure = () => {
       const widths = Array.from(el.querySelectorAll('button'), (c) => c.offsetWidth)
-      const n = el.clientWidth === 0 ? widths.length : fitCount(widths, el.clientWidth - 2, 0)
+      const n = el.clientWidth === 0 ? widths.length : fitCount(widths, el.clientWidth - 2)
       setFit((f) => (f === n ? f : n))
     }
     measure()

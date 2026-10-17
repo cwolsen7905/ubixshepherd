@@ -90,7 +90,8 @@ export function TopicBar({
   const { active: shown, idle } = splitTopics(list, now, active)
   const chips = showIdle ? [...shown, ...idle] : shown
 
-  // The order is stable; a selected topic that would overflow takes the last visible slot instead.
+  // The order is stable. A selected topic that would overflow takes the last visible slot, or is the
+  // only chip shown when none fits; it is never dropped.
   const ordered = chips
   const orderKey = ordered.map((t) => `${t.id}:${t.title}:${t.waits}`).join('|')
 
@@ -118,7 +119,7 @@ export function TopicBar({
   const visible = new Set(Array.from({ length: shownN }, (_, i) => i))
   const pick = ordered.findIndex((t) => t.id === active)
   if (pick >= shownN) {
-    visible.delete(shownN - 1)
+    if (shownN > 0) visible.delete(shownN - 1)
     visible.add(pick)
   }
   const over = ordered.filter((_, i) => !visible.has(i))

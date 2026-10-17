@@ -25,18 +25,21 @@ export { blocks }
  * A line with an odd number of backticks has one that closes nothing (a cut-off span). Paired
  * greedily it would open a span at the wrong place and turn the text after it into code, so
  * the whole line's backticks are shown as text: a modifier-letter grave, which looks the same.
- * Fenced blocks are left alone.
+ * Fenced blocks (``` or ~~~) are left alone.
  */
 export function unmatchedTicks(text: string): string {
-  let fenced = false
+  let fence: string | null = null
   return text
     .split('\n')
     .map((line) => {
-      if (/^\s*```/.test(line)) {
-        fenced = !fenced
+      const m = /^\s*(```|~~~)/.exec(line)
+      if (m) {
+        // Only the marker that opened a fence closes it.
+        if (fence === null) fence = m[1] ?? null
+        else if (fence === m[1]) fence = null
         return line
       }
-      if (fenced) return line
+      if (fence !== null) return line
       return (line.match(/`/g)?.length ?? 0) % 2 === 1 ? line.replaceAll('`', '\u02cb') : line
     })
     .join('\n')
