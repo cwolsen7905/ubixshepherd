@@ -242,10 +242,9 @@ const bareModel = (m: string) => m.slice(m.indexOf('/') + 1)
 /** An agent's sub-line: today's lanes and spend, or when its quota hold lifts. */
 function AgentLine({ agent, model, today, hold, now }: { agent: string; model: string; today?: { lanes: number; usd: number }; hold?: { until: string }; now: number }) {
   if (hold) return <div className="sh-setting-desc tone-warn" data-agent={agent}>Out of quota until {clockTime(hold.until, now)}</div>
-  if (today) {
-    return <div className="sh-setting-desc" data-agent={agent}>{today.lanes} {today.lanes === 1 ? 'lane' : 'lanes'} · {usd(today.usd) || '$0.00'} today</div>
-  }
-  return <div className="sh-setting-desc" data-agent={agent}>{model ? '0 lanes · $0.00 today' : 'Uses its CLI’s own default model'}</div>
+  if (!today && !model) return <div className="sh-setting-desc" data-agent={agent}>Uses its CLI’s own default model</div>
+  const { lanes, usd: spent } = today ?? { lanes: 0, usd: 0 }
+  return <div className="sh-setting-desc" data-agent={agent}>{lanes} {lanes === 1 ? 'lane' : 'lanes'} · {usd(spent) || '$0.00'} today</div>
 }
 
 function SettingRow({ label, desc, was, children, name }: { label: ReactNode; desc?: ReactNode; was?: string; children: ReactNode; name?: string }) {
@@ -286,12 +285,26 @@ function Segmented<T extends string>({ label, value, options, onPick }: { label:
 function Menu<T extends string>({ label, value, options, onPick }: { label: string; value: T; options: [T, string][]; onPick: (v: T) => void }) {
   const [open, setOpen] = useState(false)
   const root = useRef<HTMLSpanElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   useEffect(() => {
     if (!open) return
+    root.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus()
     const away = (e: MouseEvent) => {
       if (root.current && !root.current.contains(e.target as Node)) setOpen(false)
     }
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        trigger.current?.focus()
+        return
+      }
+      const items = [...(root.current?.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]') ?? [])]
+      const at = items.indexOf(document.activeElement as HTMLButtonElement)
+      const to = e.key === 'ArrowDown' ? (at + 1) % items.length : e.key === 'ArrowUp' ? (at - 1 + items.length) % items.length : e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : -1
+      if (to < 0 || items.length === 0) return
+      e.preventDefault()
+      items[to]?.focus()
+    }
     document.addEventListener('mousedown', away)
     document.addEventListener('keydown', key)
     return () => {
@@ -301,20 +314,23 @@ function Menu<T extends string>({ label, value, options, onPick }: { label: stri
   }, [open])
   const current = options.find(([v]) => v === value)?.[1] ?? value
   return (
-    <span ref={root} className="sh-menu" data-component="MenuButton">
-      <button type="button" className="sh-btn" aria-haspopup="menu" aria-expanded={open} aria-label={`${label}: ${current}`} onClick={() => setOpen((o) => !o)}>
+    <span ref={root} className="sh-menu" data-component="MenuButton" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false) }}>
+      <button ref={trigger} type="button" className="sh-btn" aria-haspopup="menu" aria-expanded={open} aria-label={`${label}: ${current}`} onClick={() => setOpen((o) => !o)}>
         {current} <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <span className="sh-menu-list" role="menu" aria-label={label}>
           {options.map(([v, text]) => (
-            <button key={v} type="button" role="menuitemradio" aria-checked={v === value} onClick={() => { setOpen(false); if (v !== value) onPick(v) }}>{text}</button>
+            <button key={v} type="button" role="menuitemradio" aria-checked={v === value} onClick={() => { setOpen(false); trigger.current?.focus(); if (v !== value) onPick(v) }}>{text}</button>
           ))}
         </span>
       )}
     </span>
   )
 }
+
+/** How often the page reads today's agent figures and quota holds again. */
+const AGENT_REFRESH_MS = 30_000
 
 /** What each agent did today: lanes it ran in and what it spent, from today's runs. */
 function useAgentToday(workspaces: number[]) {
@@ -323,8 +339,9 @@ function useAgentToday(workspaces: number[]) {
   useEffect(() => {
     if (!key) return
     let live = true
-    const since = rangeStart('today', Date.now()).toISOString()
-    Promise.all(key.split(',').map((id) => history.runs(Number(id), since, '', 0))).then(
+    const load = () => {
+      const since = rangeStart('today', Date.now()).toISOString()
+    void Promise.all(key.split(',').map((id) => history.runs(Number(id), since, '', 0))).then(
       (parts) => {
         if (!live) return
         const m = new Map<string, { lanes: Set<number>; usd: number }>()
@@ -338,8 +355,12 @@ function useAgentToday(workspaces: number[]) {
       },
       () => undefined,
     )
+    }
+    load()
+    const t = window.setInterval(load, AGENT_REFRESH_MS)
     return () => {
       live = false
+      window.clearInterval(t)
     }
   }, [key])
   return rows
@@ -471,14 +492,18 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   }, [])
   useEffect(() => load(), [load])
   useEffect(() => {
-    daemonInfo.status().then(
-      (s) => {
-        setForge(s.detail?.forge ?? 'unknown')
-        setWorkspaces(s.workspaces ?? [])
-        setHolds(s.detail?.quota_holds ?? [])
-      },
-      () => setForge('unknown'),
-    )
+    const read = () =>
+      daemonInfo.status().then(
+        (s) => {
+          setForge(s.detail?.forge ?? 'unknown')
+          setWorkspaces((w) => (JSON.stringify(w) === JSON.stringify(s.workspaces ?? []) ? w : (s.workspaces ?? [])))
+          setHolds(s.detail?.quota_holds ?? [])
+        },
+        () => setForge((f) => f ?? 'unknown'),
+      )
+    void read()
+    const t = window.setInterval(() => void read(), AGENT_REFRESH_MS)
+    return () => window.clearInterval(t)
   }, [])
   // "New project" on the Projects page lands here with the add box ready.
   const loaded = doc !== null
