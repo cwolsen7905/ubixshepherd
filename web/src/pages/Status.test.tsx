@@ -46,9 +46,10 @@ describe('StatusPage', () => {
     publishChat(null)
   })
 
-  it('shows the daemon detail at full width', async () => {
+  it('shows the daemon detail at full width with a way back', async () => {
     view(liveWith())
     expect(screen.getByRole('heading', { name: 'Status' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /^←/ })).toBeInTheDocument()
     expect(await screen.findByText('v0.9.0')).toBeInTheDocument()
     expect(document.body.textContent).toContain('linux/amd64')
     expect(document.body.textContent).toContain('/c.yaml')
