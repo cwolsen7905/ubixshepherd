@@ -132,18 +132,19 @@ export function CostliestList({ runs, now }: {
       ) : (
         <ul className="sh-spend-runlist">
           {runs.map((r) => (
-            <li key={r.id}>
+            <li key={r.id} className="sh-spend-run">
               <ListRow
                 glyph={r.state === 'running' ? '●' : r.state === 'succeeded' ? '✓' : r.state === 'failed' ? '✗' : '↯'}
                 tone={r.state === 'running' ? 'live' : r.state === 'succeeded' ? 'ok' : r.state === 'failed' ? 'bad' : 'held'}
                 glyphLabel={r.state}
                 title={<>run {r.id} · {r.repo} / {r.lane}</>}
                 sub={`${r.agent}${r.model ? ` · ${r.model}` : ''} · ${r.state} · ${r.commits} ${r.commits === 1 ? 'commit' : 'commits'}`}
-                right={usd(r.cost_usd ?? 0) || '$0.00'}
-                rightTone={r.cost_usd !== undefined && r.cost_usd > 0 ? 'ok' : 'muted'}
                 href={href.log(r.id)}
                 titleAttr={`run ${r.id}: ${r.task || r.state}`}
               />
+              <span className={`sh-spend-cost${r.cost_usd !== undefined && r.cost_usd > 0 ? ' is-ok' : ''}`}>
+                {usd(r.cost_usd ?? 0) || '$0.00'}
+              </span>
             </li>
           ))}
         </ul>
