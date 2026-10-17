@@ -83,8 +83,8 @@ describe('ChatPage', () => {
     expect(screen.getByText('need').tagName).toBe('STRONG')
     // a healthy stream says nothing in the chat: the rail's dot is the one place it shows
     expect(screen.queryByText('Live')).not.toBeInTheDocument()
-    expect(document.querySelector('.chat-stream')).toBeEmptyDOMElement()
-    expect(document.querySelector('.chat-stream')).toHaveAttribute('role', 'status')
+    expect(document.querySelector('.sh-conv-stream')).toBeEmptyDOMElement()
+    expect(document.querySelector('.sh-conv-stream')).toHaveAttribute('role', 'status')
     expect(screen.queryByText(/reconnecting/i)).not.toBeInTheDocument()
     expect(screen.getByRole('log')).toHaveAttribute('aria-live', 'polite')
   })
@@ -118,9 +118,9 @@ describe('ChatPage', () => {
       const turned = history.map((e) => ({ ...e, turn: 1 }))
       await show(fakeDeskApi({ history: async () => ({ events: turned, more: false }) }))
       const reply = await screen.findByRole('button', { name: 'Reply here' })
-      expect(reply.closest('.msg-assistant')).toHaveTextContent('Two lanes need you.')
+      expect(reply.closest('.sh-msg--desk')).toHaveTextContent('Two lanes need you.')
       expect(screen.getAllByRole('button', { name: 'Skip' })).toHaveLength(1)
-      expect(screen.getByText('what is up?').closest('.msg-user')?.querySelector('.question-actions')).toBeNull()
+      expect(screen.getByText('what is up?').closest('.sh-msg--you')?.querySelector('.sh-question')).toBeNull()
     } finally {
       vi.unstubAllGlobals()
     }
@@ -150,7 +150,7 @@ describe('ChatPage', () => {
       })
       expect(FakeSource.all[1]?.url).toBe('/stream?ws=0&after=8')
       act(() => FakeSource.get(1).open())
-      await waitFor(() => expect(document.querySelector('.chat-stream')).toBeEmptyDOMElement())
+      await waitFor(() => expect(document.querySelector('.sh-conv-stream')).toBeEmptyDOMElement())
       expect(currentLink()?.connection).toBe('live')
     } finally {
       vi.useRealTimers()
@@ -233,7 +233,7 @@ describe('ChatPage', () => {
     const api = () => fakeDeskApi({ history: async () => ({ events: history, more: false }) })
     await show(api(), liveWith(undefined, answer))
     const card = (await screen.findByText(decision().question)).closest('section') as HTMLElement
-    await user.click(within(card).getByRole('link', { name: 'open' }))
+    await user.click(within(card).getByRole('link', { name: 'Open the full decision' }))
     expect(window.location.hash).toContain('open=decision%3A5')
   })
 
@@ -291,7 +291,7 @@ describe('ChatPage', () => {
     const user = userEvent.setup()
     await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }), liveWith())
     const card = (await screen.findByText(decision().question)).closest('section') as HTMLElement
-    await user.click(within(card).getByRole('link', { name: 'open' }))
+    await user.click(within(card).getByRole('link', { name: 'Open the full decision' }))
     expect(window.location.hash).toContain('open=decision%3A5')
   })
 
@@ -616,5 +616,48 @@ describe('topic pill', () => {
     await show(fakeDeskApi({ turn }))
     await user.type(screen.getByLabelText('Message to the front desk'), 'from here{Enter}')
     await waitFor(() => expect(turn).toHaveBeenCalledWith(0, 'from here', 3))
+  })
+})
+
+describe('the thread parts (VIEW-001)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    window.location.hash = '#/chat'
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    window.location.hash = ''
+  })
+
+  it('opens a desk message with "Needs you:" and keeps "Show work" closed until opened', async () => {
+    const user = userEvent.setup()
+    const events = [
+      deskEvent({ seq: 1, kind: 'user', text: 'what now?', turn: 1 }),
+      deskEvent({ seq: 2, kind: 'tool', text: 'decision_list {"state":"open"}', turn: 1 }),
+      deskEvent({ seq: 3, kind: 'assistant', text: 'Needs you:\n1. Answer decision 5. [Answer](#/?open=decision%3A5)\n\n- All else is quiet.', turn: 1 }),
+    ]
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }) }))
+    expect(await screen.findByText('Needs you:')).toHaveClass('sh-desk-needs')
+    const fold = screen.getByText('Show work (1 tool call)').closest('details') as HTMLDetailsElement
+    expect(fold.open).toBe(false)
+    await user.click(screen.getByText('Show work (1 tool call)'))
+    expect(fold.open).toBe(true)
+    expect(within(fold).getByText(/decision_list/)).toBeInTheDocument()
+  })
+
+  it('folds topics that do not fit behind "+n more", a popover that filters', async () => {
+    const topic = (id: number, title: string, waits = 0) => ({
+      id, title, status: 'open' as const, source: 'desk', created: '', updated: '', activity: new Date().toISOString(), waits, links: [],
+    })
+    vi.spyOn(client.topics, 'list').mockResolvedValue({ topics: [topic(1, 'release', 1), topic(2, 'docs'), topic(3, 'cache')] })
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(120)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300)
+    const user = userEvent.setup()
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
+    const more = await screen.findByRole('button', { name: /more/ })
+    await user.click(more)
+    const pop = screen.getByRole('group', { name: 'More topics' })
+    await user.click(within(pop).getAllByRole('button', { name: /cache|docs/ })[0] as HTMLElement)
+    expect(window.location.hash).toMatch(/topic=[23]/)
   })
 })

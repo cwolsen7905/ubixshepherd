@@ -63,24 +63,25 @@ describe('DecisionCard', () => {
   it('renders the question as markdown under its summary, inert', () => {
     show(decision({ question: PLAN + '\n\n<script>window.x=1</script>' }))
     expect(screen.getByRole('heading', { name: 'Add the decision card to the chat thread' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { level: 2 })).toBeInTheDocument()
+    expect(screen.getByText('Steps')).toBeInTheDocument()
     expect(screen.getByText('web/src/components/DecisionCard.tsx').tagName).toBe('CODE')
     expect(screen.getByText('Chat.tsx').tagName).toBe('STRONG')
-    expect(document.querySelectorAll('.decision-md ol li')).toHaveLength(2)
+    expect(document.querySelectorAll('.sh-decision-md ol li')).toHaveLength(2)
     expect(document.querySelector('script')).toBeNull()
   })
 
   it('marks the recommendation and sets the reason apart', () => {
     show(decision({ recommendation: 'Yes', why: 'It is `security` work' }))
-    const list = document.querySelector<HTMLElement>('.options') as HTMLElement
+    const list = screen.getByRole('radiogroup', { name: /Options for/ })
     expect(within(list).getByText('recommended')).toBeInTheDocument()
-    const why = screen.getByLabelText('Why this is your call')
+    const why = document.querySelector<HTMLElement>('.sh-decision-why') as HTMLElement
+    expect(why).toHaveTextContent('Why this is yours.')
     expect(within(why).getByText('security').tagName).toBe('CODE')
   })
 
   it('shows a recommendation that is not an option as its own block', () => {
     show(decision({ recommendation: 'Do **both**, Yes first' }))
-    const rec = screen.getByLabelText('Recommendation')
+    const rec = document.querySelector<HTMLElement>('.sh-decision-rec') as HTMLElement
     expect(within(rec).getByText('both').tagName).toBe('STRONG')
     expect(screen.queryByText('recommended')).toBeNull()
   })
@@ -88,7 +89,7 @@ describe('DecisionCard', () => {
   it('clamps a long question until "Show all"', async () => {
     const user = userEvent.setup()
     show(decision({ question: 'Summary\n' + Array.from({ length: 30 }, (_, i) => `- step ${i}`).join('\n') }))
-    const body = document.querySelector('.decision-md') as HTMLElement
+    const body = document.querySelector('.sh-decision-md') as HTMLElement
     expect(body).toHaveClass('is-clamped')
     const more = screen.getByRole('button', { name: /^Show all/ })
     expect(more).toHaveAttribute('aria-expanded', 'false')
@@ -104,7 +105,7 @@ describe('DecisionCard', () => {
 
   it('has an accessible name when there is no summary line, and a section when inline', () => {
     show(decision({ question: '1. do this\n2. do that' }), 'inline')
-    expect(screen.queryByRole('heading')).toBeNull()
+    expect(screen.getByRole('heading', { name: '1. do this 2. do that' })).toBeInTheDocument()
     expect(screen.getByRole('region', { name: `Decision ${decision().id}` }).tagName).toBe('SECTION')
   })
 
@@ -127,7 +128,7 @@ describe('DecisionCard', () => {
       'Done.',
     ].join('\n')
     show(decision({ question: 'Summary\n' + longBody }))
-    const body = document.querySelector('.decision-md') as HTMLElement
+    const body = document.querySelector('.sh-decision-md') as HTMLElement
     expect(body).toHaveClass('is-clamped')
     expect(screen.getByRole('heading', { name: 'Summary' })).toBeInTheDocument()
     // All elements are in the DOM (clamped via CSS), but the "Show all" button is present
@@ -155,7 +156,7 @@ describe('the answer draft', () => {
     await user.type(screen.getByRole('textbox'), 'half written')
     first.unmount()
     const inl = render(ui('inline'))
-    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    await user.click(screen.getByRole('radio', { name: /Buffer/ }))
     inl.unmount()
     render(ui('pane'))
     expect(screen.getByRole('textbox')).toHaveValue('half written')
@@ -181,14 +182,15 @@ describe('the inline decision card', () => {
         <DecisionCard d={decision({ id: 9, options: ['Stream', 'Buffer'], recommendation: 'Buffer' })} variant="inline" focused />
       </LiveProvider>,
     )
-    const buttons = screen.getAllByRole('button', { name: /Stream|Buffer/ })
+    const buttons = screen.getAllByRole('radio', { name: /Stream|Buffer/ })
     const [stream, buffer] = buttons
     if (!stream || !buffer) throw new Error('expected both chips')
-    expect(stream).toHaveAttribute('aria-pressed', 'false')
-    expect(buffer).toHaveAttribute('aria-pressed', 'false')
+    expect(stream).toHaveAttribute('aria-checked', 'false')
+    expect(buffer).toHaveAttribute('aria-checked', 'false')
+    expect(screen.queryByRole('button', { name: /Send/ })).toBeNull()
     await user.click(stream)
-    expect(stream).toHaveAttribute('aria-pressed', 'true')
-    expect(buffer).toHaveAttribute('aria-pressed', 'false')
+    expect(stream).toHaveAttribute('aria-checked', 'true')
+    expect(buffer).toHaveAttribute('aria-checked', 'false')
 
     const send = screen.getByRole('button', { name: /Send/ })
     await user.click(send)
@@ -204,7 +206,7 @@ describe('the inline decision card', () => {
         <DecisionCard d={decision({ id: 10, options: ['Stream', 'Buffer'] })} variant="inline" focused />
       </LiveProvider>,
     )
-    await user.click(screen.getByRole('button', { name: /Stream/ }))
+    await user.click(screen.getByRole('radio', { name: /Stream/ }))
     await user.keyboard('{Meta>}{Enter}{/Meta}')
     expect(answer).not.toHaveBeenCalled()
   })
@@ -214,15 +216,15 @@ describe('the inline decision card', () => {
     expect(screen.getByText('Add the decision card to the chat thread')).toBeInTheDocument()
     expect(screen.queryByText('Steps')).toBeNull()
     expect(screen.queryByText('Why this is yours')).toBeNull()
-    expect(screen.getByRole('button', { name: /Stream/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'open' }).getAttribute('href')).toContain('open=decision')
+    expect(screen.getByRole('radio', { name: /Stream/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open the full decision' }).getAttribute('href')).toContain('open=decision')
   })
 
   it('links every artifact, one link each', () => {
     const d = { ...decision(), artifacts: [{ id: 7, path: 'a.md', title: 'a' }, { id: 8, path: 'b.md', title: 'b' }] } as DecisionView
     show(d, 'inline')
-    expect(screen.getByRole('link', { name: 'artifact 7' }).getAttribute('href')).toContain('open=artifact')
-    expect(screen.getByRole('link', { name: 'artifact 8' }).getAttribute('href')).toContain('open=artifact')
+    expect(screen.getByRole('link', { name: 'a.md' }).getAttribute('href')).toContain('open=artifact')
+    expect(screen.getByRole('link', { name: 'b.md' }).getAttribute('href')).toContain('open=artifact')
   })
 
   it('says answering happens in the inspector when an inline decision has no options', () => {
@@ -234,7 +236,7 @@ describe('the inline decision card', () => {
   it('links the artifact when the decision has artifacts', () => {
     const d = { ...decision(), artifacts: [{ id: 7, path: 'docs/plan.md', title: 'plan' }] } as DecisionView
     show(d, 'inline')
-    const link = screen.getByRole('link', { name: 'artifact 7' })
+    const link = screen.getByRole('link', { name: 'docs/plan.md' })
     expect(link.getAttribute('href')).toContain('open=artifact')
   })
 })
@@ -243,12 +245,12 @@ describe('the decision in the inspector', () => {
   it('the pane variant has no glyph rail, shows the whole long body and marks the recommended option', () => {
     const long = ['Plan headline', ...Array(30).fill('a line of the plan')].join('\n')
     show(decision({ question: long, options: ['Stream', 'Buffer'], recommendation: 'Buffer' }), 'pane')
-    const card = screen.getByRole('region')
-    expect(card).toHaveClass('decision-pane')
+    const card = screen.getByRole('article', { name: 'Decision 5' })
+    expect(card).toHaveClass('sh-decision')
     expect(card.querySelector('.glyph')).toBeNull()
     expect(card.querySelector('.is-clamped')).toBeNull()
     expect(screen.queryByRole('button', { name: /Show all/ })).toBeNull()
-    expect(within(screen.getByRole('button', { name: /Buffer/ })).getByText('recommended')).toBeInTheDocument()
+    expect(within(screen.getByRole('radio', { name: /Buffer/ })).getByText('recommended')).toBeInTheDocument()
   })
 
   it('shows the body and the why, and sends with Cmd+Enter', async () => {
@@ -261,12 +263,12 @@ describe('the decision in the inspector', () => {
         <DecisionCard d={decision({ question: PLAN, why: 'Because it is yours.', options: ['Stream', 'Buffer'] })} variant="pane" focused onSent={onSent} />
       </LiveProvider>,
     )
-    expect(screen.getByText('Why this is yours:')).toBeInTheDocument()
+    expect(screen.getByText('Why this is yours.')).toBeInTheDocument()
     expect(screen.getByText('Steps')).toBeInTheDocument()
     const send = screen.getByRole('button', { name: 'Send answer' })
     expect(send).toHaveClass('ui-btn-attention')
     expect(screen.getByText(/⌘↵|Ctrl\+Enter/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    await user.click(screen.getByRole('radio', { name: /Buffer/ }))
     await user.keyboard('{Meta>}{Enter}{/Meta}')
     expect(answer).toHaveBeenCalledWith(expect.any(Number), 'Buffer')
     expect(await screen.findByText(/Answered/)).toBeInTheDocument()
@@ -283,7 +285,7 @@ describe('the decision in the inspector', () => {
         <DecisionCard d={decision({ options: ['Stream', 'Buffer'] })} variant="pane" focused />
       </LiveProvider>,
     )
-    await user.click(screen.getByRole('button', { name: /Buffer/ }))
+    await user.click(screen.getByRole('radio', { name: /Buffer/ }))
     await user.click(screen.getByLabelText('composer'))
     await user.keyboard('{Meta>}{Enter}{/Meta}')
     expect(answer).not.toHaveBeenCalled()

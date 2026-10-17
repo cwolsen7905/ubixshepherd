@@ -231,12 +231,24 @@ const runs = () => BUSY ? busyNow().runs.slice(-200).reverse() : [
   run(20, 6, 'docs/install-guide', 'acme-docs', 'succeeded', 75, { agent: 'copilot', prompt: 'Write an install guide for Linux and macOS.' }),
 ]
 
-const decisions = () => NODEC ? [] : BUSY ? busyNow().decisions : [
-  {
-    id: 5, run_id: 17, question: 'The CSV export can stream rows or buffer the whole file first. Which should it do?',
-    options: ['Stream', 'Buffer'], recommendation: 'Stream',
-    why: 'Orders tables reach a million rows; buffering would hold them all in memory.',
-    body: `The export needs to handle three concerns: **memory usage**, **quoting rules**, and **backpressure**.
+const PLAN_MD = `# Export orders as CSV
+
+## Approach
+
+Rows stream from the API into a Blob as they arrive, so memory stays flat however large the table is.
+
+## Steps
+
+- Add a streaming writer in \`web/orders/export.ts\`.
+- Quote fields with commas, quotes and newlines.
+- Add tests for an empty table and for a million rows.
+
+| Concern | Choice |
+|---|---|
+| Memory | O(chunk) |
+| Backpressure | pause the reader when the Blob is slow |
+`
+const CSV_BODY = `The export needs to handle three concerns: **memory usage**, **quoting rules**, and **backpressure**.
 
 ### Current state
 
@@ -275,7 +287,13 @@ Paginated   O(page)   stepwise  high
 
 - [ ] Existing tests for \`export.ts\` expect a synchronous result.
 - [ ] The gateway must support chunked responses (confirmed: it does).
-- [ ] Large exports may time out the browser tab — add a progress indicator.`,
+- [ ] Large exports may time out the browser tab — add a progress indicator.`
+const decisions = () => NODEC ? [] : BUSY ? busyNow().decisions : [
+  {
+    id: 5, run_id: 17, question: 'The CSV export can stream rows or buffer the whole file first. Which should it do?\n' + CSV_BODY,
+    options: ['Stream', 'Buffer'], recommendation: 'Stream',
+    artifacts: [{ id: 1, path: 'docs/plans/export-csv.md', title: 'CSV export plan' }],
+    why: 'Orders tables reach a million rows; buffering would hold them all in memory.',
     state: 'open', agent: 'claude', lane: 'feat/export-csv', repo: 'acme-web', created: ago(8) },
   {
     id: 4, run_id: 15, question: 'Should session tokens live server side or in a signed cookie?',
@@ -315,16 +333,22 @@ const deskAll = () => [
   [1, 'user', 'What is waiting on me?', 1, 'human', 42],
   [2, 'turn_start', '', 1, 'human', 42],
   [3, 'tool', 'decision_list {"state":"open"}', 1, undefined, 42],
-  [4, 'assistant', 'One decision, and one stuck lane.\n\n- **feat/export-csv** asks whether the export should stream or buffer. I would stream: the orders table is large.\n- **fix/cache-invalidation** failed its pipeline; the agent has been continued once.\n\nNothing else needs you.', 1, undefined, 41],
+  [4, 'assistant', NODEC
+    ? 'Nothing needs you.\n\n- **fix/cache-invalidation** failed its pipeline; the agent has been continued once.\n- Run 17 is working on **feat/export-csv**.'
+    : 'Needs you:\n1. Choose whether the CSV export streams or buffers. [Answer decision 5](#/?open=decision%3A5)\n2. Look at the failed pipeline on **fix/cache-invalidation**. [Open the lane](#/lanes/2)\n\n- The agent for **fix/cache-invalidation** has been continued once.\n- Run 17 is working on **feat/export-csv**.\n\nI would stream: the orders table is large.', 1, undefined, 41],
   [5, 'turn_end', 'done', 1, undefined, 41],
   [6, 'user', 'Stream it. And how is the login MR doing?', 6, 'human', 4],
   [7, 'turn_start', '', 6, 'human', 4],
   [8, 'tool', 'lane_show {"lane":"feat/login-sessions"}', 6, undefined, 4],
-  [9, 'assistant', 'I cannot answer the decision for you: answer it from the backlog or the Decisions page and the agent carries on.\n\n!41 for **feat/login-sessions** passed its pipeline 35 minutes ago and waits for a merge. Merging is yours: Shepherd never merges.', 6, undefined, 3],
+  [9, 'assistant', NODEC
+    ? 'Nothing needs you.\n\n- !41 for **feat/login-sessions** passed its pipeline 35 minutes ago.\n- acme-api merges by a person, so it waits for your approval.'
+    : 'Needs you:\n1. Answer decision 5; the agent carries on once you do. [Answer decision 5](#/?open=decision%3A5)\n2. Approve !41 for **feat/login-sessions**: acme-api is merged by a person. [Review !41](#/lanes/1)\n\n- !41 passed its pipeline 35 minutes ago.\n- acme-docs: Merged by rule docs-only after its pipeline passed.', 6, undefined, 3],
   [10, 'turn_end', 'done', 6, undefined, 3],
   [11, 'system', 'run 16 passed: fix/cache-invalidation (1 commit)', 11, 'system', 1],
   [12, 'turn_start', '', 11, 'system', 1],
-  [13, 'assistant', 'Run 16 finished and passed its gate. The pipeline for !42 is running again.', 11, undefined, 0.5],
+  [13, 'assistant', NODEC
+    ? 'Nothing needs you.\n\n- Run 16 passed its gate.\n- The pipeline for !42 is running again.'
+    : 'Needs you:\n1. Decision 5 still waits for you. [Answer decision 5](#/?open=decision%3A5)\n\n- Run 16 passed its gate.\n- The pipeline for !42 is running again.', 11, undefined, 0.5],
   [14, 'turn_end', 'done', 11, undefined, 0.5],
 ].map(([seq, kind, text, turn, origin, m]) => ({
   seq, workspace_id: 1, kind, ...(text ? { text } : {}), turn, ...(origin ? { origin } : {}), created: ago(m),
@@ -566,6 +590,13 @@ http.createServer((req, res) => {
       credits: all.reduce((n, r) => n + (r.credits ?? 0), 0), agents: [...new Set(all.map((r) => r.agent))].sort(),
       lanes: [...new Map(all.map((r) => [r.lane_id, { id: r.lane_id, repo: r.repo, name: r.lane }])).values()],
     })
+  }
+
+  // GET /v1/artifacts/{id} and its content: the plan decision 5 links to.
+  if ((m = p.match(/^\/v1\/artifacts\/1(\/content)?$/))) {
+    track(m[1] ? '/v1/artifacts/{id}/content' : '/v1/artifacts/{id}')
+    if (m[1]) { res.writeHead(200, { 'content-type': 'text/markdown' }); return res.end(PLAN_MD) }
+    return json(res, { id: 1, workspace_id: 1, repo_id: 2, lane_id: 4, run_id: 17, path: 'docs/plans/export-csv.md', kind: 'markdown', source: 'run', intent: 'keep', intent_by: 'person', state: 'live', size: 4198, created: ago(30), updated: ago(9), versions: [] })
   }
 
   // GET /v1/waiting: everything that waits on the person, with a version that moves.

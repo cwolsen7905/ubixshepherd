@@ -1,0 +1,26 @@
+/* The swapped layout (WEB-012): a main-body item in the main column, the thread in the side. */
+
+.sh-shell:has(.sh-swap-main) { position: relative; height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
+.sh-shell:has(.sh-swap-main) .sh-main-col { min-height: 0; height: 100%; overflow: hidden; }
+.sh-shell:has(.sh-swap-main) .main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.main > .inspector-frame.is-swap { display: flex; flex: 1 1 auto; min-height: 0; }
+.inspector-frame.is-swap .inspector-page.sh-swap-main { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; padding: 0; outline: none; }
+.inspector-frame.is-split.is-swap .inspector-page.sh-swap-main { min-width: 40ch; }
+
+.sh-swap-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 20px; border-bottom: 1px solid var(--sh-rule); min-height: 45px; font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.sh-swap-back { border: 0; background: none; padding: 0; min-height: 44px; font: 600 var(--sh-t-small) var(--sh-font); color: var(--sh-muted); cursor: pointer; white-space: nowrap; }
+.sh-swap-back:hover { color: var(--sh-ink); }
+.sh-swap-crumb { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-swap-right { margin-left: auto; display: flex; gap: 12px; align-items: center; white-space: nowrap; }
+.sh-swap-next { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; display: inline-flex; align-items: center; }
+.sh-swap-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 18px 20px 28px; container-type: inline-size; }
+/* The shared column: 72ch at least, growing with the main column to 52rem. */
+.sh-swap-col { max-width: var(--sh-column); margin: 0 auto; }
+.sh-swap-col .sh-decision { max-width: none; }
+.sh-swap-col .inspector-body { padding: 0; }
+
+.inspector-split.sh-swap-side { position: static; flex: 0 0 var(--sh-side-w, clamp(var(--sh-inspector-min), 38vw, var(--sh-inspector-max))); display: flex; flex-direction: column; min-height: 0; max-height: none; height: auto; overflow: hidden; align-self: stretch; background: var(--sh-field); }
+.sh-swap-side > .sh-conv { flex: 1 1 auto; min-height: 0; }
+.sh-shell[data-mode="sheet"] .sh-swap-bar { padding-inline: 12px; }
+.sh-shell[data-mode="sheet"] .sh-swap-scroll { padding-inline: 12px; }
+.sh-shell[data-mode="sheet"] .sh-swap-hint, .sh-shell[data-mode="sheet"] .sh-swap-next .sh-kbd { display: none; }

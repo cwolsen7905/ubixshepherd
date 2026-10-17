@@ -17,10 +17,12 @@ describe('PendingStrip overflow', () => {
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300)
     window.location.hash = '#/chat'
     render(<PendingStrip />)
+    expect(screen.getByRole('navigation', { name: 'Waiting on you' })).toHaveAttribute('data-component', 'PendingBar')
+    expect(screen.getByText('5 waiting on you')).toBeInTheDocument()
     const more = await screen.findByRole('button', { name: /^\+\d+$/ })
     // 298 px less room for +N leaves two 100 px chips; three overflow.
     expect(more).toHaveTextContent('+3')
-    const over = document.querySelectorAll('.pending-chip.is-over')
+    const over = document.querySelectorAll('.sh-pending-item.is-over')
     expect(over).toHaveLength(3)
     for (const c of over) expect(c).toHaveAttribute('tabindex', '-1')
 

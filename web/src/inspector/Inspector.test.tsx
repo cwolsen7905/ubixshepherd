@@ -3,7 +3,9 @@ import userEvent from '@testing-library/user-event'
 import type { ReactElement, ReactNode } from 'react'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
-import { lane, spend, status } from '../test/fixtures'
+import { decision, FakeSource, fakeDeskApi, lane, spend, status } from '../test/fixtures'
+import { DeskThread } from '../state/desk'
+import { act, waitFor } from '@testing-library/react'
 import { InspectorFrame } from './Inspector'
 import { modeFor } from './useMode'
 
@@ -31,7 +33,7 @@ describe('modeFor', () => {
 
 describe('InspectorFrame', () => {
   beforeEach(() => {
-    window.location.hash = '#/?open=run:5'
+    window.location.hash = '#/board?open=run:5'
   })
 
   it('shows nothing extra when nothing is open', () => {
@@ -54,13 +56,13 @@ describe('InspectorFrame', () => {
     expect(screen.getByRole('button', { name: 'Close inspector' })).toHaveTextContent('Close Esc')
   })
 
-  it('links a run to its log and a decision to the Decisions page', () => {
+  it('links a run to its log and a decision to the Conversation, where it fills the main column', () => {
     const { unmount } = render(<InspectorFrame open={{ kind: 'run', id: 5 }} mode="split">page</InspectorFrame>)
     const head = within(document.querySelector('.inspector-head') as HTMLElement)
     expect(head.getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/runs/5/log')
     unmount()
     render(<InspectorFrame open={{ kind: 'decision', id: 5 }} mode="split">page</InspectorFrame>)
-    expect(within(document.querySelector('.inspector-head') as HTMLElement).getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/decisions?d=5')
+    expect(within(document.querySelector('.inspector-head') as HTMLElement).getByRole('link', { name: 'Open as page' })).toHaveAttribute('href', '#/?open=decision%3A5')
   })
 
   it('has one header: the lane pane does not repeat the lane name or Open as page', async () => {
@@ -124,7 +126,7 @@ describe('InspectorFrame', () => {
     )
     expect(screen.getByRole('heading')).toHaveFocus()
     await user.keyboard('{Escape}')
-    expect(window.location.hash).toBe('#/')
+    expect(window.location.hash).toBe('#/board')
     rerender(
       <InspectorFrame mode="split">
         <button>row</button>
@@ -223,5 +225,54 @@ describe('the context composer in the inspector', () => {
   it('is not shown for a kind it cannot speak about', () => {
     render(<InspectorFrame open={{ kind: 'constructor', id: 4 }} mode="split">page</InspectorFrame>)
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+})
+
+describe('the swapped layout (WEB-012)', () => {
+  const swapApi = { ...api, decisions: async (state?: string) => (state === 'open' ? [decision()] : []) } as unknown as Api
+  const make = (id: number) => new DeskThread(id, { api: fakeDeskApi({}), open: (u) => new FakeSource(u) })
+  async function swapped(hash: string, mode: 'split' | 'overlay' = 'split') {
+    window.location.hash = hash
+    const live = new Live(swapApi, still)
+    await act(async () => {
+      await live.refresh()
+    })
+    const view = rtlRender(
+      <LiveProvider live={live}>
+        <InspectorFrame open={{ kind: 'decision', id: 5 }} mode={mode} thread={make}>
+          <p>the thread page</p>
+        </InspectorFrame>
+      </LiveProvider>,
+    )
+    return view
+  }
+
+  it('puts the decision in the main column and the filtered thread with its composer in the side', async () => {
+    await swapped('#/?open=decision%3A5')
+    expect(screen.queryByText('the thread page')).toBeNull()
+    const main = document.querySelector('.sh-swap-main') as HTMLElement
+    expect(within(main).getByRole('heading', { level: 1, name: 'Should we use authentication?' })).toBeInTheDocument()
+    expect(within(main).getByRole('button', { name: '← Conversation' })).toBeInTheDocument()
+    const side = await screen.findByRole('complementary', { name: 'The conversation about this decision' })
+    await waitFor(() => expect(within(side).getByRole('textbox', { name: 'Message to the front desk' })).toBeInTheDocument())
+  })
+
+  it('swaps back on Esc', async () => {
+    await swapped('#/?open=decision%3A5')
+    await userEvent.keyboard('{Escape}')
+    expect(window.location.hash).toBe('#/')
+  })
+
+  it('is not swapped for an item answered in a panel, or off the Conversation', async () => {
+    window.location.hash = '#/?open=mr:1'
+    rtlRender(<InspectorFrame open={{ kind: 'mr', id: 1 }} mode="split">the thread page</InspectorFrame>, { wrapper: Wrap })
+    expect(screen.getByText('the thread page')).toBeInTheDocument()
+    expect(document.querySelector('.sh-swap-main')).toBeNull()
+  })
+
+  it('has no thread beside the decision below the split width', async () => {
+    await swapped('#/?open=decision%3A5', 'overlay')
+    expect(document.querySelector('.sh-swap-side')).toBeNull()
+    expect(screen.getByRole('radiogroup', { name: /Options for/ })).toBeInTheDocument()
   })
 })

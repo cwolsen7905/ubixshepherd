@@ -4,7 +4,7 @@ import { useKeys } from '../hooks'
 import { neighbour, openKey, openTarget, requestStep, waitingKey } from '../model/waitingStep'
 import { go, parse, withOpen } from '../router'
 import { cutAtWord, fitCount } from '../components/TopicBar'
-import { UnseenDot } from '../components/UnseenDot'
+import { Kbd } from '../ui'
 import { useSnapshot } from '../state/context'
 import { isUnseen, useSeen } from '../state/seen'
 
@@ -38,11 +38,11 @@ export function advanceFrom(items: readonly WaitingItem[], answered: string) {
 }
 
 /**
- * Above the composer: how many things wait on the person, each as a chip, with `]` and `[`
- * to step to the next and previous one. Stepping opens the item in the inspector and leaves
- * the thread where it is.
+ * Above the composer (`.sh-pending`, joined to it): how many things wait on the person, each as
+ * a link, with `]` and `[` to step to the next and previous one. Stepping opens the item and
+ * leaves the thread where it is. `keys` off leaves the keys to a page that has its own `]`.
  */
-export function PendingStrip() {
+export function PendingStrip({ keys = true }: { keys?: boolean }) {
   const list = useSnapshot().waiting?.items
   const seen = useSeen()
   const items = useMemo(() => list ?? [], [list])
@@ -57,7 +57,7 @@ export function PendingStrip() {
   const box = useRef<HTMLUListElement>(null)
   const [menu, setMenu] = useState(false)
   const [fit, setFit] = useState<number | null>(null)
-  // Every chip is measured (the ones past the fit stay in the DOM, invisible); as many as fit show.
+  // Every item is measured (the ones past the fit stay in the DOM, invisible); as many as fit show.
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
@@ -75,7 +75,7 @@ export function PendingStrip() {
   useEffect(() => {
     if (!menu) return
     const off = (e: Event) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !(e.target as Element).closest('.pending-more')) setMenu(false)
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !(e.target as Element).closest('.sh-pending-more')) setMenu(false)
     }
     document.addEventListener('keydown', off)
     document.addEventListener('mousedown', off)
@@ -84,46 +84,50 @@ export function PendingStrip() {
       document.removeEventListener('mousedown', off)
     }
   }, [menu])
-  useKeys({ ']': () => step('down'), '[': () => step('up') }, [step])
+  useKeys(keys ? { ']': () => step('down'), '[': () => step('up') } : {}, [step, keys])
   if (items.length === 0) return null
   return (
-    <nav className="pending-strip" aria-label="Waiting on you">
-      <span className="pending-count tone-warn">{items.length} waiting on you</span>
-      <ul ref={box}>
+    <nav className="sh-pending" data-component="PendingBar" aria-label="Waiting on you">
+      <b>{items.length} waiting on you</b>
+      <ul ref={box} className="sh-pending-list">
         {items.map((it, i) => {
           const key = waitingKey(it)
+          const over = fit !== null && i >= fit
           return (
             <li key={key}>
               <button
-                type="button" className={`pending-chip${fit !== null && i >= fit ? ' is-over' : ''}`} aria-current={key === at ? 'true' : undefined}
-                title={`${LABEL[it.kind] ?? it.kind}: ${it.title}`} tabIndex={fit !== null && i >= fit ? -1 : undefined} onClick={() => showWaiting(it)}
+                type="button" className={`sh-pending-item${over ? ' is-over' : ''}`} aria-current={key === at ? 'true' : undefined}
+                title={`${LABEL[it.kind] ?? it.kind}: ${it.title}`} tabIndex={over ? -1 : undefined} onClick={() => showWaiting(it)}
               >
-                {isUnseen(seen, it) ? <UnseenDot /> : null}
-                <span className="faint">{LABEL[it.kind] ?? it.kind}</span> {shortTitle(it.title)}
+                {isUnseen(seen, it) ? <span className="sh-unseen" role="img" aria-label="unseen" /> : null}
+                {LABEL[it.kind] ?? it.kind}: {shortTitle(it.title)}
               </button>
             </li>
           )
         })}
       </ul>
       {fit !== null && fit < items.length && (
-        <span className="pending-more">
-          <button type="button" className="pending-chip pending-more-btn" aria-expanded={menu} aria-haspopup="true" title={`${items.length - fit} more waiting`} onClick={() => setMenu(!menu)}>
+        <span className="sh-pending-more">
+          <button type="button" className="sh-pending-item sh-pending-more-btn" aria-expanded={menu} aria-haspopup="true" title={`${items.length - fit} more waiting`} onClick={() => setMenu(!menu)}>
             +{items.length - fit}
           </button>
           {menu && (
-            <div className="pending-more-menu" role="group" aria-label="More waiting items">
+            <div className="sh-tmore-pop sh-tmore-pop--up" role="group" aria-label="More waiting items">
               {items.slice(fit).map((it) => (
-                <button key={waitingKey(it)} type="button" className="pending-more-item" title={it.title} onClick={() => { setMenu(false); showWaiting(it) }}>
-                  <span className="faint">{LABEL[it.kind] ?? it.kind}</span> {shortTitle(it.title, 40)}
+                <button key={waitingKey(it)} type="button" className="sh-tmore-item" title={it.title} onClick={() => { setMenu(false); showWaiting(it) }}>
+                  <span>{LABEL[it.kind] ?? it.kind}: {shortTitle(it.title, 40)}</span>
                 </button>
               ))}
             </div>
           )}
         </span>
       )}
-      <span className="faint pending-keys">
-        <kbd>]</kbd> next
-      </span>
+      {keys && (
+        <span className="sh-pending-next">
+          <Kbd keys="]" />
+          next
+        </span>
+      )}
     </nav>
   )
 }

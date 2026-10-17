@@ -1,0 +1,50 @@
+/* DecisionOptions, DecisionCard and DecisionView: the design's classes live in components.css
+   (.sh-card, .sh-option, .sh-aside, .sh-actions); this is what they leave open. */
+
+.sh-option { gap: 0; }
+.sh-option-main { display: inline-flex; align-items: baseline; min-width: 0; }
+.sh-option-text { min-width: 0; overflow-wrap: anywhere; text-align: left; }
+.sh-option.is-picked { border-color: var(--sh-lichen); background: var(--sh-lichen-wash); }
+.sh-option.is-recommended.is-picked { border-color: var(--sh-lichen); }
+.sh-option--row { align-items: baseline; text-align: left; gap: 8px; }
+.sh-option--row .sh-option-main { flex: 1; }
+.sh-option--row .sh-option-text { font-weight: 600; }
+.sh-option-rec { font-size: var(--sh-t-tag); border: 1px solid var(--sh-lantern); color: var(--sh-lantern-ink); border-radius: 9px; padding: 0 7px; white-space: nowrap; }
+.sh-option:focus-visible { outline: 2px solid var(--sh-lichen); outline-offset: 1px; }
+
+/* DecisionCard */
+.sh-card h3 { font-weight: 600; text-wrap: pretty; }
+.sh-card-meta { flex-wrap: wrap; align-items: center; }
+.sh-card-meta a { color: var(--sh-lichen); }
+.sh-card-quick { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.sh-card-hint { font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.sh-card-own { display: grid; gap: 8px; margin-top: 10px; }
+.sh-card-send { width: 100%; }
+.sh-card-error, .sh-decision-error { margin: 8px 0 0; font-size: var(--sh-t-small); color: var(--sh-broken); }
+.sh-card-done { margin: 10px 0 0; font-size: var(--sh-t-small); color: var(--sh-muted); }
+.sh-card-done b { color: var(--sh-ink); }
+.sh-card-more a, .sh-card-more .sh-link { font-weight: 600; }
+
+/* DecisionView */
+.sh-decision { max-width: var(--sh-measure); min-width: 0; margin: 0 auto; }
+.sh-decision-kind { font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.sh-decision-q { font-size: var(--sh-t-doc); line-height: 1.3; margin: 4px 0 12px; text-wrap: pretty; }
+.sh-decision-why { margin: 0 0 12px; font-size: var(--sh-t-small); }
+.sh-decision-rec { margin: 0 0 12px; }
+.sh-decision-context { text-wrap: pretty; overflow-wrap: anywhere; }
+.sh-decision-context > :first-child { margin-top: 0; }
+.sh-decision-h { font-size: var(--sh-t-body); margin: 16px 0 6px; }
+.sh-decision .sh-option-list { margin: 0; }
+.sh-decision-plan { margin-top: 16px; border: 1px solid var(--sh-rule); border-radius: var(--sh-r); background: var(--sh-raised); }
+.sh-decision-plan-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; padding: 8px 12px; border: 0; background: none; font: inherit; color: var(--sh-ink); cursor: pointer; text-align: left; }
+.sh-decision-plan-head code { font: var(--sh-t-meta) var(--sh-mono); }
+.sh-decision-chev { color: var(--sh-faint); width: 10px; }
+.sh-decision-plan-meta { margin-left: auto; font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.sh-decision-plan-body { border-top: 1px solid var(--sh-rule); padding: 12px 16px; overflow-x: auto; }
+.sh-decision-own { display: block; margin-top: 14px; resize: vertical; line-height: 1.5; }
+.sh-decision-actions { margin-top: 10px; flex-wrap: wrap; }
+.sh-decision-done { margin-top: 14px; border: 1px solid var(--sh-lichen); background: var(--sh-lichen-wash); border-radius: var(--sh-r); padding: 8px 12px; font-size: var(--sh-t-body); display: flex; gap: 6px 12px; flex-wrap: wrap; align-items: baseline; }
+.sh-decision-done-links { margin-left: auto; display: flex; gap: 14px; font-weight: 600; }
+.sh-decision--mobile .sh-decision-q { font-size: var(--sh-t-inspect); }
+.sh-decision-md.is-clamped { max-height: 18em; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent); mask-image: linear-gradient(to bottom, black 70%, transparent); }
+.sh-decision-more { display: inline-block; margin-top: 4px; }

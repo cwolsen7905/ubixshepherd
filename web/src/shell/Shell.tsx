@@ -12,6 +12,7 @@ import { attentionCount, type StatusCounts as Counts } from '../state/attention'
 import { pageTitle } from './title'
 import { useShellMode } from './useMedia'
 import type { NavKey } from './nav'
+import { swapAction } from './swap'
 
 /** The divider and the swap to a page are for windows at least this wide. */
 export const DIVIDER_MIN = 768
@@ -60,7 +61,7 @@ export function Shell({
   side?: ReactNode
   /** A side panel the page draws itself is showing beside the main column. */
   sideBeside?: boolean
-  /** Release of a drag past 60% of the window: swap the layouts. Later steps wire it. */
+  /** Release of a drag past 60% of the window: swap the layouts. Without one, the open item's own swap (see swap.ts) runs. */
   onSwap?: () => void
   swapLabel?: string
 }) {
@@ -96,6 +97,8 @@ export function Shell({
     return () => document.removeEventListener('keydown', onKey)
   }, [compact, open])
 
+  // A drag of the divider past 60% swaps the layouts: the page's own say, else the open item's.
+  const swap = swapAction(route)
   const title = pageTitle(route, lanes)
   const waitingCount = attentionCount(waiting)
   const style = { '--sh-side-w': `${w.width}px` } as CSSProperties
@@ -156,8 +159,8 @@ export function Shell({
           onResize={w.resize}
           onCommit={w.commit}
           onReset={w.reset}
-          onSwap={onSwap}
-          swapLabel={swapLabel}
+          onSwap={onSwap ?? swap?.run}
+          swapLabel={swapLabel ?? swap?.label}
           right={bar}
         />
       )}

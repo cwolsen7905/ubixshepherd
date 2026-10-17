@@ -1,0 +1,120 @@
+/* The Conversation: the head with its topic chips, the thread, the pending bar joined to the
+   composer. The thread's rows (Thread) and the cards (DecisionCard) have their own files; the
+   design's classes (.sh-head, .sh-scroll, .sh-pending, .sh-composer) are in components.css. */
+
+.page.chat.sh-conv {
+  container-type: inline-size;
+  display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0;
+  width: 100%; max-width: none; margin: 0; padding: 0;
+}
+.main:has(.sh-conv:not(.sh-conv--side)) { padding: 0; }
+
+/* Head: the title, the chips in the shared column, the desk's state. */
+.sh-conv-head { flex: none; flex-wrap: wrap; row-gap: 6px; padding-inline: max(20px, calc((100cqi - var(--sh-column)) / 2)); }
+.sh-conv-head h1, .sh-conv-title { flex: none; }
+.sh-conv-title { font-size: var(--sh-t-view); margin: 0 8px 0 0; }
+.sh-conv-topic { color: var(--sh-muted); font-size: var(--sh-t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.sh-conv-head .sh-head-right { margin-left: auto; }
+.sh-conv-tools { display: flex; gap: 6px; align-items: center; flex: none; }
+.sh-conv-more { position: relative; }
+.sh-conv-menu, .sh-tmore-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; display: flex; flex-direction: column; gap: 4px;
+  min-width: 12rem; max-width: min(22rem, 80vw); padding: 6px; background: var(--sh-raised);
+  border: 1px solid var(--sh-rule); border-radius: var(--sh-r-lg); box-shadow: var(--sh-shadow-pop);
+}
+.sh-conv-confirm { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; font-size: var(--sh-t-small); }
+.sh-conv-ws { display: inline-flex; gap: 6px; align-items: center; font-size: var(--sh-t-meta); }
+.sh-conv-ws-label { color: var(--sh-faint); }
+.sh-conv-ws select { font: inherit; color: var(--sh-ink); background: var(--sh-raised); border: 1px solid var(--sh-control); border-radius: var(--sh-r); padding: 2px 6px; }
+
+/* Topic chips. The ones that do not fit wait behind "+n more". */
+.sh-topics { position: relative; flex: 1 1 0; min-width: 0; }
+.sh-topics-row { position: relative; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+.sh-topics-row > *, .sh-chiprow-item { flex: none; }
+.sh-chiprow-item.is-over { position: absolute; visibility: hidden; pointer-events: none; }
+.sh-topics-row .sh-chip { display: inline-flex; align-items: center; gap: 6px; }
+.sh-topics-more { position: relative; flex: none; }
+.sh-tmore-pop { width: 16rem; top: calc(100% + 6px); left: 0; right: auto; gap: 0; }
+.sh-tmore-pop--up { top: auto; bottom: calc(100% + 6px); }
+.sh-tmore-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%; padding: 5px 10px; border: 0; border-radius: var(--sh-r); background: none; font: var(--sh-t-small) var(--sh-font); color: var(--sh-ink); text-align: left; cursor: pointer; }
+.sh-tmore-item:hover { background: var(--sh-sunk); }
+.sh-tmore-end { display: inline-flex; gap: 6px; align-items: center; }
+.sh-topics-manage { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 30; max-height: 60vh; overflow: auto; background: var(--sh-raised); border: 1px solid var(--sh-rule); border-radius: var(--sh-r-lg); box-shadow: var(--sh-shadow-pop); padding: 10px; }
+.sh-topic-tag { margin-left: 4px; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; padding-block: 0; }
+
+/* The thread's notes and the "Since you were away" card. */
+.sh-conv-note { margin: 0; font-size: var(--sh-t-small); color: var(--sh-muted); }
+.sh-conv-empty { margin: 0; color: var(--sh-faint); }
+.sh-conv-problem, .sh-conv-notice { margin: 0; padding: 6px max(20px, calc((100cqi - var(--sh-column)) / 2)); font-size: var(--sh-t-small); }
+.sh-conv-problem { color: var(--sh-broken); }
+.sh-conv-notice { color: var(--sh-faint); }
+.sh-away { border: 1px solid var(--sh-rule); background: var(--sh-raised); border-radius: var(--sh-r); padding: 10px 14px; }
+.sh-away-head { display: flex; gap: 4px 10px; align-items: baseline; flex-wrap: wrap; }
+.sh-away-head b { font-size: var(--sh-t-body); }
+.sh-away-when { font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.sh-away-mark { margin-left: auto; border: 0; background: none; padding: 0; font: 600 var(--sh-t-meta) var(--sh-font); color: var(--sh-muted); cursor: pointer; }
+.sh-away-mark:hover { color: var(--sh-ink); }
+.sh-away ul { margin: 6px 0 0; padding-left: 18px; font-size: var(--sh-t-body); display: grid; gap: 2px; }
+.sh-away-open, .sh-replyref, .sh-updates-toggle, .sh-link { font: inherit; background: none; border-top: 0; border-left: 0; border-right: 0; padding: 0; }
+.sh-away-open { font-weight: 600; }
+.sh-replyref { display: block; margin-bottom: 2px; font-size: var(--sh-t-meta); }
+.sh-when { color: var(--sh-faint); }
+.sh-mono { font-family: var(--sh-mono); }
+.sh-woke > summary { font-size: var(--sh-t-small); color: var(--sh-muted); cursor: pointer; }
+.sh-woke p { margin: 4px 0 0; font-size: var(--sh-t-small); color: var(--sh-muted); white-space: pre-wrap; }
+
+/* "3 updates": a run of events folded to one row. */
+.sh-updates-toggle { display: flex; gap: 8px; align-items: baseline; border: 0; color: var(--sh-muted); font-size: var(--sh-t-small); cursor: pointer; }
+.sh-updates-glyphs { display: inline-flex; gap: 2px; }
+.sh-updates-body { display: grid; gap: 6px; margin-top: 6px; }
+
+/* A desk question that waits: Reply here, Skip. */
+.sh-question { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.sh-question-flag { font-size: var(--sh-t-meta); font-weight: 600; color: var(--sh-lantern-ink); }
+.sh-question-reply { display: grid; gap: 6px; flex: 1 1 100%; }
+.sh-question-reply textarea { border: 1px solid var(--sh-control); border-radius: var(--sh-r); background: var(--sh-raised); color: var(--sh-ink); font: inherit; padding: 6px 8px; resize: vertical; }
+.sh-question-reply .sh-btn { justify-self: start; }
+.sh-question-problem { margin: 0; color: var(--sh-broken); font-size: var(--sh-t-small); }
+
+/* The pending bar, the stream line and the composer share the column. */
+.sh-conv-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.sh-conv-body > .sh-scroll { flex: 1 1 auto; min-height: 0; }
+.sh-conv .sh-pending, .sh-conv-composer {
+  box-sizing: border-box; flex: none; width: calc(100% - 40px); max-width: var(--sh-column); margin-inline: auto;
+}
+.sh-conv-composer { margin-bottom: 16px; position: relative; }
+.sh-conv-composer .sh-composer { margin: 0; }
+.sh-conv-composer textarea { flex: 1; min-height: 40px; border: 0; background: transparent; resize: none; font: inherit; color: var(--sh-ink); outline: none; }
+.sh-pending ~ .sh-conv-composer .sh-composer { border-radius: 0 0 var(--sh-r-lg) var(--sh-r-lg); }
+.sh-conv-stream { margin: 0 auto 6px; font-size: var(--sh-t-meta); color: var(--sh-faint); }
+.sh-conv-stream:empty { height: 0; margin: 0; overflow: hidden; }
+.sh-conv-stream.is-down { color: var(--sh-broken); }
+.sh-thread-node:has(> .sh-conv-jump) { position: sticky; bottom: 4px; justify-self: end; z-index: 2; pointer-events: none; }
+.sh-conv-jump { pointer-events: auto; box-shadow: var(--sh-shadow-pop); }
+
+/* Pending bar: the items are links, as far as they fit, then "+n". */
+.sh-pending-list { display: flex; gap: 12px; margin: 0; padding: 0; list-style: none; flex: 1 1 0; min-width: 0; position: relative; overflow: hidden; }
+.sh-pending-list li { flex: none; }
+.sh-pending-item { border: 0; background: none; padding: 0; font: inherit; color: var(--sh-ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--sh-lantern); white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.sh-pending-item[aria-current="true"] { font-weight: 600; }
+.sh-pending-item.is-over { position: absolute; visibility: hidden; pointer-events: none; }
+.sh-pending-more { position: relative; flex: none; }
+.sh-pending-more-btn { font-weight: 600; }
+.sh-pending-next { display: inline-flex; align-items: center; color: var(--sh-faint); font-size: var(--sh-t-meta); }
+
+/* 390px: the chips scroll on one row. */
+.sh-shell[data-mode="sheet"] .sh-conv-head { padding-inline: 12px; }
+.sh-shell[data-mode="sheet"] .sh-conv-head .sh-topics { order: 2; flex: 1 1 100%; }
+.sh-shell[data-mode="sheet"] .sh-conv-head .sh-head-right { order: 0; margin-left: 0; margin-right: auto; }
+.sh-shell[data-mode="sheet"] .sh-conv-tools { order: 1; }
+.sh-shell[data-mode="sheet"] .sh-conv-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.sh-shell[data-mode="sheet"] .sh-topics-row { overflow-x: auto; scrollbar-width: none; }
+.sh-shell[data-mode="sheet"] .sh-topics-row::-webkit-scrollbar { display: none; }
+.sh-shell[data-mode="sheet"] .sh-scroll--thread { padding-inline: 12px; }
+.sh-shell[data-mode="sheet"] .sh-conv .sh-pending, .sh-shell[data-mode="sheet"] .sh-conv-composer { width: calc(100% - 24px); }
+
+/* Beside a decision: the thread as wide as its panel. */
+.sh-conv--side { background: var(--sh-field); }
+.sh-conv--side .sh-conv-head { padding-inline: 16px; }
+.sh-conv--side .sh-pending, .sh-conv--side .sh-conv-composer { width: calc(100% - 32px); max-width: none; }
+.sh-conv--side .sh-conv-composer { margin-bottom: 12px; }
