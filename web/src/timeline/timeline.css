@@ -106,7 +106,6 @@
 .tl-glyph { font: 700 var(--sh-t-small) var(--sh-font); paint-order: stroke; stroke: var(--sh-raised); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
 .tl-ask .tl-glyph { fill: var(--sh-lantern); }
 .tl-ask.is-request .tl-glyph { fill: var(--sh-lantern-ink); }
-.tl-tail-in { fill: var(--tl-on); font: 700 var(--sh-t-small) var(--sh-font); pointer-events: none; }
 .tl-fail-glyph { fill: var(--sh-broken); }
 .tl-ok-glyph { fill: var(--sh-ok); }
 .tl-glow-stop { stop-color: var(--sh-lantern); }

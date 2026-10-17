@@ -146,10 +146,10 @@ const Bar = memo(function Bar({
         />
       )}
       {tail && (
-        // Past the plot's right edge the glyph would be clipped: it moves onto the bar's end, in the bar's label ink.
+        // Past the plot's right edge a glyph would be clipped: it is drawn at the edge instead, in its own colour on its halo.
         <text
-          className={tailIn ? 'tl-tail-in' : `tl-glyph ${tail.cls}`}
-          x={tailIn ? end - notch - 2 : end + 3}
+          className={`tl-glyph ${tail.cls}`}
+          x={tailIn ? plotW - 2 : end + 3}
           y={g.rowH / 2}
           textAnchor={tailIn ? 'end' : 'start'}
           dominantBaseline="central"
