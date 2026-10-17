@@ -30,6 +30,14 @@ export function ResetNote(): ReactNode {
   return <p className="sh-spend-reset">Resets at midnight, local time.</p>
 }
 
+/** A row's counts in words: "3 runs · 2 turns", leaving out what is zero or missing. */
+export function counts(r: CardRow): string {
+  const parts: string[] = []
+  if (r.runs) parts.push(`${r.runs} ${r.runs === 1 ? 'run' : 'runs'}`)
+  if (r.turns) parts.push(`${r.turns} ${r.turns === 1 ? 'turn' : 'turns'}`)
+  return parts.join(' · ')
+}
+
 /** One breakdown card: By project, By agent or By model. */
 export function SpendCard({ title, rows, empty }: { title: string; rows: CardRow[]; empty: string }) {
   return (
@@ -45,7 +53,7 @@ export function SpendCard({ title, rows, empty }: { title: string; rows: CardRow
                 {r.label}
                 {r.agent && <span className="sh-spend-faint"> {r.agent}</span>}
               </span>
-              {r.runs !== undefined && <span className="sh-spend-faint sh-spend-runs-n">{r.runs} {r.runs === 1 ? 'run' : 'runs'}</span>}
+              {counts(r) && <span className="sh-spend-faint sh-spend-runs-n">{counts(r)}</span>}
               <span className="sh-spend-amount">{usd(r.usd) || '$0.00'}</span>
             </li>
           ))}

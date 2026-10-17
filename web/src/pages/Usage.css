@@ -81,7 +81,7 @@
 .sh-usage-table th[aria-sort] { color: var(--sh-ink); }
 .sh-usage-name { max-width: 28rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sh-usage-faint { color: var(--sh-faint); }
-.sh-usage-warn { color: var(--sh-lantern-ink); font-weight: 600; }
+.sh-usage-warn { color: var(--sh-ink); font-weight: 600; }
 .sh-sort { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; white-space: nowrap; }
 .sh-sort:hover { color: var(--sh-ink); }
 
@@ -102,7 +102,7 @@
 .ctx-200k { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--sh-ink); opacity: 0.7; }
 .ctx-window { position: absolute; top: 0.25rem; bottom: 0.25rem; border-left: 2px solid var(--sh-muted); }
 .ctx-value { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.ctx-over { color: var(--sh-lantern-ink); }
+.ctx-over { color: var(--sh-ink); font-weight: 600; }
 .ctx-axis { margin-top: var(--sh-s2); font-size: var(--sh-t-meta); color: var(--sh-faint); }
 .ctx-axis-scale { position: relative; height: 1.25rem; }
 .ctx-axis-scale > span { position: absolute; transform: translateX(-50%); }

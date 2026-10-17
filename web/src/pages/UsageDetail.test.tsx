@@ -1,8 +1,9 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { UsageGroup, UsageStats, UsageTotals } from '../api/types'
-import { runsInRange } from '../model/spend'
+import { modelRows, runsInRange } from '../model/spend'
 import { summaryCards } from '../model/usageSummary'
+import { counts } from '../components/UsageView'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { spend, status } from '../test/fixtures'
@@ -170,6 +171,19 @@ describe('the Usage page: tokens and context', () => {
     const runs = [at(1, new Date(2026, 9, 3, 23, 59).toISOString()), at(2, new Date(2026, 9, 4, 0, 0).toISOString()),
       at(3, new Date(2026, 9, 7, 23, 59).toISOString()), at(4, new Date(2026, 9, 8, 0, 0).toISOString())]
     expect(runsInRange(runs, '2026-10-04', '2026-10-07').map((r) => r.id)).toEqual([2, 3])
+  })
+
+  it('counts agent runs and desk turns apart on the By model card', () => {
+    const rows = modelRows({
+      ...stats,
+      by_model: [group('claude opus-4', { agent: 'claude', model: 'opus-4', count: 3, cost_usd: 1 })],
+      desk_by_model: [group('claude opus-4', { agent: 'claude', model: 'opus-4', count: 2, cost_usd: 2 })],
+    })
+    expect(rows[0]).toMatchObject({ runs: 3, turns: 2, usd: 3 })
+    expect(counts(rows[0] as never)).toBe('3 runs · 2 turns')
+    expect(counts({ runs: 1, turns: 0 } as never)).toBe('1 run')
+    expect(counts({ runs: 0, turns: 1 } as never)).toBe('1 turn')
+    expect(counts({} as never)).toBe('')
   })
 
   it('has summary cards that survive empty totals', () => {

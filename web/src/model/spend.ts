@@ -4,7 +4,7 @@
 // By project cards; the project list only lends the budget caps. The chart reads one day
 // of usage per bar: the endpoint answers a single day when from and to name it.
 
-import type { ProjectSummary, RunRecord, SpendToday, UsageStats } from '../api/types'
+import type { ProjectSummary, RunRecord, SpendToday, UsageGroup, UsageStats } from '../api/types'
 import { usd } from '../format'
 
 /** The chart's window: the last 14 days, today included, oldest first. */
@@ -75,8 +75,9 @@ export interface CardRow {
   usd: number
   /** The agent or agents that ran the model, for a faint word after the label. */
   agent?: string
-  /** How many runs and turns the row counts; absent when the card does not say. */
+  /** Agent runs and front desk turns the row counts; absent when the card does not say. */
   runs?: number
+  turns?: number
 }
 
 /** The card rows, biggest spend first: ties keep the daemon's order. */
@@ -103,20 +104,24 @@ export function shortModel(model: string): string {
 /** By model: the 14 days' usage grouped by model, biggest spend first. The label is the
  * short id; the title is the full id for the hover. */
 export function modelRows(stats: UsageStats | null): CardRow[] {
-  const by = new Map<string, { usd: number; runs: number; agents: Set<string> }>()
-  for (const g of [...(stats?.by_model ?? []), ...(stats?.desk_by_model ?? [])]) {
+  const by = new Map<string, { usd: number; runs: number; turns: number; agents: Set<string> }>()
+  const add = (g: UsageGroup, desk: boolean) => {
     const model = g.model || g.key
-    const cur = by.get(model) ?? { usd: 0, runs: 0, agents: new Set<string>() }
+    const cur = by.get(model) ?? { usd: 0, runs: 0, turns: 0, agents: new Set<string>() }
     cur.usd += g.cost_usd
-    cur.runs += typeof g.count === 'number' && Number.isFinite(g.count) ? g.count : 0
+    const n = typeof g.count === 'number' && Number.isFinite(g.count) ? g.count : 0
+    if (desk) cur.turns += n
+    else cur.runs += n
     if (g.agent) cur.agents.add(g.agent)
     by.set(model, cur)
   }
+  for (const g of stats?.by_model ?? []) add(g, false)
+  for (const g of stats?.desk_by_model ?? []) add(g, true)
   return cardRows(
     [...by].map(([model, v]) => {
       const short = shortModel(model)
       return {
-        key: model, label: short, title: model === short ? undefined : model, usd: v.usd, runs: v.runs,
+        key: model, label: short, title: model === short ? undefined : model, usd: v.usd, runs: v.runs, turns: v.turns,
         ...(v.agents.size ? { agent: [...v.agents].join(', ') } : {}),
       }
     }),
