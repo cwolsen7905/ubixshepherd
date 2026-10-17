@@ -4,7 +4,7 @@ import type { FeedEntry } from '../model/feed'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { TopicBar } from '../components/TopicBar'
 import { TopicPill } from '../components/TopicPill'
-import { DecisionCard, splitQuestion } from '../components/DecisionCard'
+import { DecisionCard } from '../components/DecisionCard'
 import { EventGlyph, Glyph } from '../components/Glyph'
 import { since } from '../format'
 import { MARKS } from '../model/marks'
@@ -22,7 +22,6 @@ import { QuestionActions } from './questions'
 import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
 import { PendingStrip } from './strip'
 import { Markdown } from './md'
-import { clipHead } from './md'
 import { backlogItems, threadId } from '../model/backlog'
 import { takeStep, STEP_EVENT, stepAnchor } from '../model/waitingStep'
 import { isUnseen, useSeen } from '../state/seen'
@@ -374,13 +373,11 @@ function ChatThread({
     return questionsByMessage(items.flatMap((it) => (it.type === 'desk' ? [it.e] : [])), questions)
   }, [items, questions])
 
-  // Where an idle lane went quiet in the thread, for the header counter's arrows; a row not loaded has none.
-  const backlog = useMemo(() => {
+  // Where each lane last shows in the loaded thread: the header counter's arrows use it to land an
+  // MR or ship item; a lane with no loaded row has none.
+  const laneAnchors = useMemo(() => {
     const shownFeed = new Set(items.flatMap((it) => (it.type === 'feed' ? [it.f.id] : [])))
-    // A decision's long markdown stays in its card: the rail names it by its headline.
-    return backlogItems({ ...live, shown: shownFeed }).map((b) =>
-      b.decision ? { ...b, detail: b.detail.replace(b.decision.question.replace(/\s+/g, ' ').trim(), splitQuestion(b.decision.question).head || clipHead(b.decision.question)) } : b,
-    )
+    return new Map(backlogItems({ ...live, shown: shownFeed }).flatMap((b) => (b.laneId !== undefined && b.anchor ? [[b.laneId, b.anchor] as [number, string]] : [])))
   }, [items, live])
   const [flash, setFlash] = useState('')
   // A jump to a row folded into an "N updates" row asks that fold to open, then scrolls.
@@ -429,7 +426,7 @@ function ChatThread({
     const anchor = stepAnchor(it, {
       askedRows: new Map(items.flatMap((r) => (r.type === 'feed' && r.f.event === 'decision_asked' && r.f.id ? [[r.f.ref ?? 0, r.f.id] as [number, number]] : []))),
       unplaced: new Set(unplaced.map((x) => x.id)),
-      laneAnchor: (id) => backlog.find((b) => b.laneId === id)?.anchor,
+      laneAnchor: (id) => laneAnchors.get(id),
     })
     if (anchor && (document.getElementById(threadId(anchor)) || inFold(anchor))) {
       setStepNote(null)
