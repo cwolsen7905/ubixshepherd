@@ -21,11 +21,15 @@ function scrollToBottom(target: RefObject<HTMLElement | null>, lastY: { current:
   lastY.current = Math.max(0, el.scrollHeight - window.innerHeight)
 }
 
-/** The nearest ancestor that scrolls on its own, else null for the page (the window). */
+/**
+ * The nearest ancestor that scrolls on its own, else null for the page (the window). An
+ * ancestor counts only while its content overflows it: a wrapper that is auto but grows
+ * with its content leaves the scrolling to whatever is outside it.
+ */
 function ownScroller(el: HTMLElement | null): HTMLElement | null {
   for (let p = el?.parentElement; p; p = p.parentElement) {
     const y = window.getComputedStyle(p).overflowY
-    if (y === 'auto' || y === 'scroll') return p
+    if ((y === 'auto' || y === 'scroll') && p.scrollHeight > p.clientHeight) return p
   }
   return null
 }
@@ -57,8 +61,11 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
   }, [pin, toBottom])
 
   useEffect(() => {
-    const box = ownScroller(target.current)
-    const onScroll = () => {
+    // The scroller is found again on each event: a wrapper starts to scroll once the thread outgrows it.
+    const onScroll = (e: Event) => {
+      const box = ownScroller(target.current)
+      const from = e.target
+      if (box ? from !== box : from instanceof Element) return
       const y = box ? box.scrollTop : window.scrollY
       const atEnd = box ? box.clientHeight + y >= box.scrollHeight - NEAR_BOTTOM : window.innerHeight + y >= document.documentElement.scrollHeight - NEAR_BOTTOM
       if (atEnd) pin(true)
@@ -71,15 +78,16 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
     const onResize = () => {
       if (pinned.current) toBottom()
     }
-    lastY.current = box ? box.scrollTop : window.scrollY
-    const scrollTarget: EventTarget = box ?? window
-    scrollTarget.addEventListener('scroll', onScroll, { passive: true })
+    const first = ownScroller(target.current)
+    lastY.current = first ? first.scrollTop : window.scrollY
+    // Scroll does not bubble: listen in the capture phase to hear whichever element scrolls.
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true })
     window.addEventListener('wheel', onWheel, { passive: true })
     window.addEventListener('resize', onResize)
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onResize)
     if (target.current) ro?.observe(target.current)
     return () => {
-      scrollTarget.removeEventListener('scroll', onScroll)
+      window.removeEventListener('scroll', onScroll, { capture: true })
       window.removeEventListener('wheel', onWheel)
       window.removeEventListener('resize', onResize)
       ro?.disconnect()
