@@ -21,9 +21,59 @@ export function safeHref(raw: string): string | null {
 /** A small markdown subset: paragraphs, headings, fenced code, lists, tables, blockquotes, horizontal rules and task lists. */
 export { blocks }
 
+/** A line that starts a block of its own, so a code span cannot run from the line before into it. */
+const BLOCK_START = /^\s*([-*+] |\d+[.)] |#{1,6} |>|\||```|~~~)/
+
+/**
+ * Backticks within one paragraph (consecutive lines, no blank line or block marker between).
+ * An odd number means one closes nothing (a cut-off span): paired greedily it would open a
+ * span at the wrong place and turn the text after it into code, so all of them are shown as
+ * text, as a modifier-letter grave that looks the same. An even number pairs up, and a pair
+ * that spans lines has its line breaks made spaces, because the renderer reads a span within
+ * one line (as CommonMark does with a span's line endings).
+ */
+function paragraphTicks(lines: string[]): string[] {
+  const text = lines.join('\n')
+  const n = text.match(/`/g)?.length ?? 0
+  if (n === 0) return lines
+  if (n % 2 === 1) return text.replaceAll('`', '\u02cb').split('\n')
+  return text.replace(/`[^`]*`/g, (span) => span.replaceAll('\n', ' ')).split('\n')
+}
+
+/** Makes a message's backticks safe for the renderer; see `paragraphTicks`. Fenced blocks (``` or ~~~) are left alone. */
+export function unmatchedTicks(text: string): string {
+  let fence: string | null = null
+  const out: string[] = []
+  let para: string[] = []
+  const flush = () => {
+    out.push(...paragraphTicks(para))
+    para = []
+  }
+  for (const line of text.split('\n')) {
+    const m = /^\s*(```|~~~)/.exec(line)
+    if (m) {
+      flush()
+      // Only the marker that opened a fence closes it.
+      if (fence === null) fence = m[1] ?? null
+      else if (fence === m[1]) fence = null
+      out.push(line)
+    } else if (fence !== null) {
+      out.push(line)
+    } else if (line.trim() === '') {
+      flush()
+      out.push(line)
+    } else {
+      if (BLOCK_START.test(line)) flush()
+      para.push(line)
+    }
+  }
+  flush()
+  return out.join('\n')
+}
+
 /** The one renderer (code blocks get a copy button), with the chat page's class names. */
 export function Markdown({ text }: { text: string }) {
-  return <ConversationMarkdown text={text} classes="md" />
+  return <ConversationMarkdown text={unmatchedTicks(text)} classes="md" />
 }
 
 /** The line above the composer while the chat stream is not live; nothing says so when it is. */

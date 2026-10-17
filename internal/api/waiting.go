@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -102,13 +103,65 @@ func (w Waiting) Line() string {
 	}
 	parts := make([]string, 0, len(w.Items))
 	for _, it := range w.Items {
-		p := it.Label()
-		if it.Detail != "" {
-			p += ": " + it.Detail
-		}
-		parts = append(parts, p)
+		parts = append(parts, it.lineItem())
 	}
 	return fmt.Sprintf("[Waiting on you (%d)] %s", w.Count, strings.Join(parts, "; "))
+}
+
+// lineMax is how long one item's text may be in the desk's line.
+const lineMax = 80
+
+// lineItem is one item for the line: its label, then its text. The text is Detail, or
+// Title when there is no Detail, with any leading copy of the label removed (a question's
+// title often starts "question 27:", sometimes twice), markdown stripped and cut at a word.
+func (it WaitingItem) lineItem() string {
+	label := it.Label()
+	text := it.Detail
+	if text == "" {
+		text = it.Title
+	}
+	text = plainText(text)
+	base, _, _ := strings.Cut(label, " (")
+	for stripped := true; stripped; {
+		stripped = false
+		for _, k := range []string{label, base} {
+			if rest, ok := strings.CutPrefix(text, k+":"); ok {
+				text, stripped = strings.TrimSpace(rest), true
+			}
+		}
+	}
+	text = shorten(text, lineMax)
+	if text == "" {
+		return label
+	}
+	return label + ": " + text
+}
+
+// plainText removes what markdown would read: backticks, asterisks, brackets, a link's
+// target and an autolink's angle brackets, and folds whitespace, so a cut item can never
+// leave a span open. Comparison signs stay.
+func plainText(s string) string {
+	s = mdLink.ReplaceAllString(s, "$1")
+	s = mdAutolink.ReplaceAllString(s, "$1")
+	s = strings.NewReplacer("`", "", "*", "", "[", "", "]", "").Replace(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+var mdAutolink = regexp.MustCompile(`<(https?://[^>\s]*)>`)
+
+var mdLink = regexp.MustCompile(`\[([^\]]*)\]\([^)]*\)`)
+
+// shorten cuts s to at most max runes at a word boundary, ending "…" when it cut.
+func shorten(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	cut := string(r[:max-1])
+	if i := strings.LastIndexByte(cut, ' '); i > 0 && r[max-1] != ' ' {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(cut, " ,;:.-") + "…"
 }
 
 // Label names the item the way the person and the desk refer to it.

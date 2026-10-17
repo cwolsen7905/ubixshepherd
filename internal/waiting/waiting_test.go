@@ -151,7 +151,7 @@ func TestCollectGathersWhatWaitsOnThePerson(t *testing.T) {
 	}
 
 	line := w.Line()
-	for _, want := range []string{"[Waiting on you (6)] ", "decision 1 (app:held): decision 1: Which option?", "MR !175 (app:held)", "next-up item 1"} {
+	for _, want := range []string{"[Waiting on you (6)] ", "decision 1 (app:held): Which option?", "MR !175 (app:held)", "next-up item 1"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("line lacks %q: %s", want, line)
 		}

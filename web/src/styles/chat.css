@@ -170,3 +170,50 @@
 .away-needs { color: var(--lantern-ink); font-weight: 600; }
 .away-dismiss { margin-left: var(--s-2); }
 .notify-toggle { font-size: 13px; }
+
+/* One column, as in the mockup: the head, the thread, the waiting strip and the composer share
+   it. With no inspector open it is centred at a reading width; with one open the page is
+   narrower than the cap and the column fills it. The thread's own scrollbar stays at the edge. */
+.shell .page.chat { --chat-col: 820px; box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; margin-inline: 0; }
+.chat-layout, .chat-main { min-width: 0; max-width: 100%; }
+.page.chat > .chat-head, .page.chat > .chat-problem, .chat-main > :not(.thread), .thread-body {
+  box-sizing: border-box; width: 100%; max-width: var(--chat-col); margin-inline: auto;
+}
+.thread-body { padding-inline: 2px; }
+.chat-head { flex-wrap: nowrap; }
+.chat-head .topic-bar { flex: 1 1 0; }
+.chat-head h1, .chat-head .chat-state, .chat-head .chat-tools { flex: none; }
+
+/* Topic chips stay on one line inside the column: the ones that do not fit wait behind "+N". */
+.chat-head .topic-bar-strip { position: relative; flex: 0 1 auto; overflow: hidden; gap: 8px; }
+.chat-head .topic-chip-t, .chat-head .topic-chip-all { max-width: none; }
+.chat-head .topic-chip.is-over { position: absolute; visibility: hidden; pointer-events: none; }
+.topic-more { position: relative; flex: none; }
+.chat-head .topic-chip-more { font-weight: 600; }
+.topic-more-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 7; display: flex; flex-direction: column; gap: 2px;
+  min-width: 12rem; max-width: min(22rem, 80vw); padding: 4px; background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.topic-more-item { display: flex; justify-content: space-between; gap: 10px; padding: 4px 8px; font: inherit; font-size: var(--t-sm); color: var(--ink); text-align: left; background: none; border: 0; border-radius: var(--radius); cursor: pointer; }
+.topic-more-item:hover { background: var(--hover); }
+
+/* The waiting strip: the count, the items that fit, then "] next". */
+.chat-main .pending-strip { box-sizing: border-box; min-width: 0; }
+.chat-main .pending-strip ul { position: relative; overflow: hidden; gap: 8px; }
+.chat-main .pending-chip { max-width: none; flex: none; }
+.chat-main .pending-chip.is-over { position: absolute; visibility: hidden; pointer-events: none; }
+.chat-main .pending-keys { margin-left: auto; }
+.pending-chip { white-space: nowrap; }
+
+/* The narrow shell lets the head scroll sideways; the chips keep to it and overflow behind +N instead. */
+.shell[data-mode="sheet"] .page.chat .chat-head .topic-bar { flex: 1 1 0; min-width: 0; }
+
+/* The waiting items past the fit are reachable behind +N. */
+.pending-more { position: relative; flex: none; }
+.chat-main .pending-more-btn { font-weight: 600; text-decoration: underline; }
+.pending-more-menu {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 7; display: flex; flex-direction: column; gap: 2px;
+  min-width: 16rem; max-width: min(26rem, 80vw); padding: 4px; background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius);
+}
+.pending-more-item { padding: 4px 8px; font: inherit; font-size: var(--t-sm); color: var(--ink); text-align: left; background: none; border: 0; border-radius: var(--radius); cursor: pointer; }
+.pending-more-item:hover { background: var(--hover); }

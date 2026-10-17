@@ -1,6 +1,6 @@
 import type { WaitingItem } from '../api/types'
 import { neighbour, waitingKey } from '../model/waitingStep'
-import { advanceFrom } from './strip'
+import { advanceFrom, shortTitle } from './strip'
 
 const dec = (id: number): WaitingItem => ({ kind: 'decision', action: 'answer', decision_id: id, title: `d${id}` })
 const items = [dec(1), dec(2), dec(3)]
@@ -30,5 +30,13 @@ describe('advanceFrom', () => {
     expect(decodeURIComponent(window.location.hash)).toContain('open=decision:2')
     advanceFrom([dec(1)], waitingKey(dec(1)))
     expect(window.location.hash).not.toContain('open=')
+  })
+})
+
+describe('shortTitle', () => {
+  it('cuts at a whole word with an ellipsis, and leaves a short title alone', () => {
+    expect(shortTitle('Kelpie step 4 (triage, dry run) depends only on step 1')).toBe('Kelpie step 4 (triage…')
+    expect(shortTitle('Kelpie step 4 (triage, dry run) depends only on step 1').length).toBeLessThanOrEqual(24)
+    expect(shortTitle('Approve !41')).toBe('Approve !41')
   })
 })

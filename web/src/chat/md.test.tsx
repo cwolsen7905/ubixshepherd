@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { Markdown } from './md'
+import { Markdown, unmatchedTicks } from './md'
 
 describe('chat Markdown', () => {
   it('renders a fenced block with a Copy code button, and keeps the chat class names', () => {
@@ -7,5 +7,33 @@ describe('chat Markdown', () => {
     expect(screen.getAllByRole('button', { name: 'Copy code' })).toHaveLength(1)
     expect(container.querySelector('.md .cv-code pre code')?.textContent).toBe('shepherd status')
     expect(container.querySelector('.md ul li')?.textContent).toBe('one')
+  })
+
+  it('treats a lone backtick as text, so the rest of the message is not code', () => {
+    const { container } = render(<Markdown text={'It said (`kelpie:triage` on the thre…; then `kelpie:respond` and more, to `be sure'} />)
+    expect(container.querySelectorAll('code')).toHaveLength(0)
+    expect(container.textContent).toContain('and more, to')
+    const ok = render(<Markdown text={'Run `make check` then `make build`, a lone ` here'} />)
+    expect(ok.container.querySelectorAll('code')).toHaveLength(0)
+    const fine = render(<Markdown text={'Run `make check` then `make build`.\n\n```\na `b\n```'} />)
+    expect([...fine.container.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['make check', 'make build', 'a `b'])
+  })
+
+  it('leaves ~~~ fences alone, and a ``` line inside one does not close it', () => {
+    const fenced = '~~~\na `b\n```\nc `d\n~~~'
+    expect(unmatchedTicks(fenced)).toBe(fenced)
+    expect(unmatchedTicks(fenced + '\nthen `e')).toBe(fenced + '\nthen \u02cbe')
+  })
+
+  it('reads a code span that opens on one line and closes on a later one as code', () => {
+    const { container } = render(<Markdown text={'Run `make\ncheck` first, then `make build`.\n\n- item `a\n- item b`'} />)
+    expect([...container.querySelectorAll('code')].map((c) => c.textContent)).toEqual(['make check', 'make build'])
+    // A span does not run into the next list item: those two backticks are lone, so plain text.
+    expect(container.querySelector('ul')?.textContent).toContain('item')
+  })
+
+  it('does not let a lone backtick in a paragraph spoil its other lines', () => {
+    expect(unmatchedTicks('one `two\nthree')).toBe('one \u02cbtwo\nthree')
+    expect(unmatchedTicks('`a\nb`\nc')).toBe('`a b`\nc')
   })
 })
