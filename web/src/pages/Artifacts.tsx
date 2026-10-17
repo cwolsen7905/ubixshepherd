@@ -42,6 +42,21 @@ export function withView(hash: string, id: number): string {
   return q.size ? `#${path}?${q}` : `#${path}`
 }
 
+/** The intent in the address's `intent=`, or `all`. Like `view=`, a parameter of this page alone. */
+export function intentOf(hash: string): Intent | 'all' {
+  const v = new URLSearchParams(hash.split('?')[1] ?? '').get('intent')
+  return INTENTS.some((i) => i.value === v) ? (v as Intent) : 'all'
+}
+
+/** `hash` with `intent=` set, or removed for `all`. Other parameters are kept. */
+export function withIntent(hash: string, intent: Intent | 'all'): string {
+  const [path = '/artifacts', query = ''] = hash.replace(/^#/, '').split('?')
+  const q = new URLSearchParams(query)
+  if (intent !== 'all') q.set('intent', intent)
+  else q.delete('intent')
+  return q.size ? `#${path}?${q}` : `#${path}`
+}
+
 // Set when the person opened a file from this list, so the back arrow can step Back (the
 // list then comes up as it was) instead of pushing another entry.
 let fromList = false
@@ -58,18 +73,25 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
   const feedLast = snap.feed.at(-1)?.id ?? 0
   const [list, setList] = useState<{ key: string; rows?: StoredArtifact[]; error?: string } | null>(null)
   const [topicList, setTopicList] = useState<{ id: number; title: string }[]>([])
-  const [intent, setIntent] = useState<Intent | 'all'>('all')
   const key = `${lane}:${run}:${topic}:${feedLast}`
   const hash = useSyncExternalStore(subscribe, () => window.location.hash)
   const viewing = viewedId(hash)
+  const intent = intentOf(hash)
   const scrolled = useRef(0)
 
   useLayoutEffect(() => {
     if (viewing && !fromList) window.scrollTo(0, 0)
     if (!viewing && scrolled.current) window.scrollTo(0, scrolled.current)
+    if (!viewing) scrolled.current = 0
     if (!viewing) fromList = false
   }, [viewing])
   useEffect(() => () => void (fromList = false), [])
+
+  const open = (id: number) => {
+    scrolled.current = window.scrollY
+    fromList = true
+    go(withView(hash, id))
+  }
 
   const stepBack = () => {
     fromList = false
@@ -121,7 +143,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
 
   const lanesForRepo = useMemo(() => snap.lanes.filter((l) => !repo || l.repo_id === repo).sort((a, b) => a.name.localeCompare(b.name)), [snap.lanes, repo])
 
-  const nav = (o: Filters) => href.artifacts({ repo, lane, run, topic, ...o })
+  const nav = (o: Filters) => withIntent(href.artifacts({ repo, lane, run, topic, ...o }), intent)
   const here = list?.key === key ? list : null
   // The repo filter has no query of its own: the lane's repo decides.
   const allRows = (here?.rows ?? []).filter((a) => !repo || a.repo_id === repo)
@@ -152,7 +174,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
       <header className="sh-head">
         <h1>Artifacts</h1>
         {filtered && (
-          <a className="sh-head-right sh-link" href={href.artifacts()} onClick={(e) => { e.preventDefault(); setIntent('all'); go(href.artifacts()) }}>
+          <a className="sh-head-right sh-link" href={href.artifacts()} onClick={(e) => { e.preventDefault(); go(href.artifacts()) }}>
             Clear filters
           </a>
         )}
@@ -205,7 +227,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
             <select
               className="sh-input"
               value={intent}
-              onChange={(e) => setIntent(e.target.value as Intent | 'all')}
+              onChange={(e) => go(withIntent(hash, e.target.value as Intent | 'all'))}
             >
               {INTENTS.map((i) => (
                 <option key={i.value} value={i.value}>{i.label}</option>
@@ -249,17 +271,16 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
                     key={a.id}
                     className="artifact-row"
                     tabIndex={0}
-                    onClick={() => {
-                      scrolled.current = window.scrollY
-                      fromList = true
-                      go(withView(hash, a.id))
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey || e.shiftKey) return
+                      open(a.id)
                     }}
                     onKeyDown={(e) => {
+                      // A link inside the row handles its own keys.
+                      if (e.target !== e.currentTarget) return
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        scrolled.current = window.scrollY
-                        fromList = true
-                        go(withView(hash, a.id))
+                        open(a.id)
                       }
                     }}
                   >

@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -89,6 +89,37 @@ describe('ArtifactsPage', () => {
     expect(screen.getByLabelText('Intent')).toHaveValue('all')
     expect(screen.getByText('docs/a.md')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Clear filters' })).toBeNull()
+  })
+
+  it('keeps the intent filter in the address and reads it back', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    expect(await screen.findByText('docs/a.md')).toBeInTheDocument()
+    await userEvent.selectOptions(screen.getByLabelText('Intent'), 'undecided')
+    expect(window.location.hash).toBe('#/artifacts?intent=undecided')
+  })
+
+  it('applies an intent from the address on load', async () => {
+    window.location.hash = '#/artifacts?intent=undecided'
+    await show({}, [])
+    expect(await screen.findByText('docs/b.md')).toBeInTheDocument()
+    expect(screen.queryByText('docs/a.md')).toBeNull()
+    expect(screen.getByLabelText('Intent')).toHaveValue('undecided')
+  })
+
+  it('leaves Enter on a lane link to the link and ignores a modified click on a row', async () => {
+    window.location.hash = '#/artifacts'
+    await show({}, [])
+    await screen.findByText('docs/a.md')
+    const lane = screen.getAllByRole('link').find((l) => l.getAttribute('href')?.startsWith('#/lanes'))
+    expect(lane).toBeDefined()
+    lane!.focus()
+    await userEvent.keyboard('{Enter}')
+    expect(window.location.hash).not.toContain('view=')
+    window.location.hash = '#/artifacts'
+    const cell = screen.getAllByRole('cell', { name: /none|\d+/ })[0]!
+    await act(async () => { fireEvent.click(cell, { metaKey: true }) })
+    expect(window.location.hash).not.toContain('view=')
   })
 
   it('opens a deep link to a file full width, in place of the list, with its image from the lane', async () => {
