@@ -1,13 +1,20 @@
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ApiError, laneApprove, laneChanges } from '../api/client'
+import type { LaneApproval, LaneDiff, LaneView } from '../api/types'
 import { LaneArtifactsPanel } from '../artifacts'
+import { advanceFrom } from '../chat/strip'
 import { Changes } from '../components/Changes'
-import { LaneApprove } from '../components/LaneApprove'
 import { laneSource } from '../conversation/api'
 import { Conversation } from '../conversation/Conversation'
+import { since, shortSha } from '../format'
 import { useNow } from '../hooks'
+import { draftKey, prefillDraft } from '../model/chatDraft'
+import { deskWorkspace } from '../model/next'
+import { waitingKey } from '../model/waitingStep'
 import { go, href, withOpen, type Open } from '../router'
-import { useSnapshot } from '../state/context'
-import { Tabs } from '../ui'
+import { useLive, useSnapshot } from '../state/context'
+import { Button, EmptyState, Kbd, Tabs } from '../ui'
+import '../pages/Inbox.css'
 import { LaneRuns } from './lane'
 import { tabLabel, useLaneCounts } from './laneCounts'
 
@@ -17,6 +24,161 @@ export type MrTab = (typeof MR_TABS)[number]
 /** The tab in an `open=mr:4/changes` address; anything else is the approval. */
 export function mrTab(tab: string | undefined): MrTab {
   return (MR_TABS as readonly string[]).includes(tab ?? '') ? (tab as MrTab) : 'approval'
+}
+
+/** The least time between two reads the feed triggers: a read asks the forge several things and runs git. */
+const MIN_REREAD = 10_000
+
+const PIPELINE_WORDS: Record<string, string> = { success: 'passed', failed: 'failed', canceled: 'was canceled', running: 'is running', pending: 'is pending' }
+
+/** The words the person reads before approving: pipeline, the exact head, and what changed. */
+function approvalSentence(a: LaneApproval, lane: LaneView, now: number): string {
+  const sha = shortSha(a.sha)
+  const words = a.pipeline_status ? (PIPELINE_WORDS[a.pipeline_status] ?? a.pipeline_status) : ''
+  const when = lane.pipeline_finished ? ` ${since(lane.pipeline_finished, now)} ago` : ''
+  const wait = a.require_approval === 'manual' ? ' and waits at the require-approval job' : ''
+  const pipe = a.pipeline ? `Pipeline ${a.pipeline}${words ? ` ${words}` : ''}${when}${wait}. ` : ''
+  return `${pipe}You are approving head ${sha}; a newer push asks again.`
+}
+
+/**
+ * The Approval tab: the question, what the pipeline said, the commits, whether anything has
+ * reviewed it, and the person's own Approve. The daemon refuses the approval to every token but
+ * a browser session, and refuses a head that moved since this was read. Approving removes the
+ * item from the Inbox and opens the next one.
+ */
+function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refreshKey: number; now: number; onReview: () => void }) {
+  const snap = useSnapshot()
+  const live = useLive()
+  const [view, setView] = useState<LaneApproval | null>(null)
+  const [diff, setDiff] = useState<LaneDiff | null>(null)
+  const [readError, setReadError] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [approved, setApproved] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+  const last = useRef(0)
+  const read = useCallback(async () => {
+    last.current = Date.now()
+    laneChanges.diff(lane.id).then(
+      (d) => mounted.current && setDiff(d),
+      () => undefined,
+    )
+    try {
+      const v = await laneApprove.read(lane.id)
+      if (!mounted.current) return
+      setView(v)
+      setReadError(false)
+    } catch {
+      if (mounted.current) setReadError(true)
+    }
+  }, [lane.id])
+  useEffect(() => {
+    if (last.current === 0 || Date.now() - last.current >= MIN_REREAD) void read()
+  }, [read, refreshKey])
+
+  if (!view) return readError ? <EmptyState title="Merge request state unavailable" /> : null
+  if (!view.supported) {
+    return (
+      <EmptyState title="Merge request not supported">
+        {view.reason}
+        {view.mr_url && (
+          <>
+            {' '}
+            <a href={view.mr_url} target="_blank" rel="noreferrer">Open the merge request</a>
+          </>
+        )}
+      </EmptyState>
+    )
+  }
+  if (!view.mr) return <EmptyState title="No merge request yet" />
+
+  const mr = view.mr
+  const sha = view.sha ?? ''
+  const open = view.mr_state === 'opened' || view.mr_state === 'open'
+  const files = diff ? [...diff.committed, ...diff.uncommitted, ...diff.untracked] : []
+  const outside = files.filter((f) => !f.in_scope).map((f) => f.path)
+  const fileCount = files.length + (diff?.files_more ?? 0)
+
+  const approve = async () => {
+    setBusy(true)
+    setFailure(null)
+    const key = waitingKey({ kind: 'mr', action: 'approve', lane_id: lane.id, mr, title: '' })
+    const items = snap.waiting?.items ?? []
+    try {
+      await laneApprove.approve(lane.id, sha)
+      if (!mounted.current) return
+      setConfirming(false)
+      setApproved(true)
+      advanceFrom(items, key)
+      void live.readWaiting()
+    } catch (e) {
+      if (!mounted.current) return
+      setFailure(e instanceof ApiError || e instanceof Error ? e.message : String(e))
+      setConfirming(false)
+      await read()
+    } finally {
+      if (mounted.current) setBusy(false)
+    }
+  }
+
+  // Nothing reviews a merge request on its own yet: the link asks the front desk, in the person's words.
+  const requestReview = () => {
+    prefillDraft(window.localStorage, draftKey(deskWorkspace(snap.status?.workspaces ?? [])), `Review merge request !${mr} on ${lane.branch} and tell me what needs a person.`)
+    go(href.chat())
+  }
+
+  return (
+    <section className="mr-approval" aria-label="Merge request approval" data-component="MrApproval">
+      <h2 className="mr-approval-h">{view.approved ? `Merge request !${mr} is approved` : `Approve merge request !${mr}?`}</h2>
+      <p>{approvalSentence(view, lane, now)}</p>
+      {diff && (
+        <>
+          <h4 className="mr-approval-sub">
+            {diff.commits_total} {diff.commits_total === 1 ? 'commit' : 'commits'}, {fileCount} {fileCount === 1 ? 'file' : 'files'}
+            {outside.length > 0 && `, ${outside.length} outside scope`}
+          </h4>
+          <ul className="mr-commits">
+            {diff.commits.map((c) => <li key={c.sha}>{c.subject}</li>)}
+          </ul>
+        </>
+      )}
+      <div className="mr-review" data-component="AiReviewRow">
+        <span className="mr-review-k">AI review</span>
+        <b>unreviewed</b>
+        <span className="faint">needs a person</span>
+        <button type="button" className="sh-link mr-review-ask" onClick={requestReview}>Request AI review</button>
+      </div>
+      {outside.length > 0 && (
+        <div className="sh-aside">
+          <b>Outside scope:</b> {outside.join(', ')}. Review them in Changes before you approve.
+        </div>
+      )}
+      {failure && <p className="tone-bad" role="alert">Not approved: {failure}</p>}
+      {approved && <p role="status">Approved.</p>}
+      {open && confirming && (
+        <p className="mr-confirm" role="group" aria-label="Confirm approval">
+          Approve !{mr} at <code>{shortSha(sha)}</code>? This is your sign-off on the forge for exactly this head. If the require-approval job has failed, it is retried so the pipeline can pass.
+          <Button variant="attention" disabled={busy} onClick={() => void approve()}>Approve at {shortSha(sha)}</Button>
+          <button type="button" className="sh-link mr-review-ask" disabled={busy} onClick={() => setConfirming(false)}>Not yet</button>
+        </p>
+      )}
+      <div className="mr-actions">
+        {open && !view.approved && !confirming && (
+          <Button variant="attention" disabled={busy || !sha} onClick={() => setConfirming(true)}>Approve !{mr}</Button>
+        )}
+        <button type="button" className="sh-link" onClick={onReview}>Review changes</button>
+        <span className="faint mr-next"><Kbd keys="]" />skip to next</span>
+      </div>
+    </section>
+  )
 }
 
 /**
@@ -47,7 +209,7 @@ export function MrInspector({ open }: { open: Open }) {
   }
 
   const items = [
-    { id: 'approval', label: 'Approval', content: <LaneApprove laneId={lane.id} refreshKey={feedLast} /> },
+    { id: 'approval', label: 'Approval', content: <MrApproval lane={lane} refreshKey={feedLast} now={now} onReview={() => select('changes')} /> },
     {
       id: 'changes',
       label: tabLabel('Changes', counts.changes),
