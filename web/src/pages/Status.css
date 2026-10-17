@@ -1,0 +1,29 @@
+/* The Status page: the daemon's detail as a grid of cards, wide. The card content comes
+   from DaemonDetail (shared with no other view); these rules lay its groups out as the
+   design's status cards, with 12.5/600 uppercase muted titles. */
+.sh-status-page { max-width: 80rem; }
+.sh-status-page .sh-status-grid { margin-top: var(--sh-s4); }
+.sh-status-page .daemon-offline { margin: 0 0 var(--sh-s4); }
+.sh-status-page .daemon-group {
+  border: 1px solid var(--sh-rule);
+  background: var(--sh-raised);
+  border-radius: var(--sh-r);
+  padding: var(--sh-s6) var(--sh-s8);
+  align-self: start;
+}
+.sh-status-page .daemon-group h3 {
+  font-size: var(--sh-t-meta);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sh-muted);
+  margin: 0 0 var(--sh-s3);
+}
+.sh-status-page .daemon-group dl { margin: 0; font-size: var(--sh-t-small); }
+.sh-status-page .daemon-group dl > div {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  gap: var(--sh-s2) var(--sh-s6);
+}
+.sh-status-page .daemon-group dt { color: var(--sh-muted); }
+.sh-status-page .daemon-group dd { margin: 0; overflow-wrap: anywhere; }

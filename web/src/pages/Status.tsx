@@ -3,7 +3,7 @@ import { DaemonDetail, loadDaemon, useDaemonDetail, type Loaded } from '../compo
 import { useNow } from '../hooks'
 import { useChatLink } from '../shell/chatLink'
 import { useSnapshot } from '../state/context'
-import '../styles/pages/status.css'
+import './Status.css'
 
 /** The full status of the daemon, this browser and the chat stream: what the rail's popover only summarises. */
 export function StatusPage({ load = loadDaemon, now: nowProp }: { load?: () => Promise<Loaded>; now?: number } = {}) {
@@ -12,12 +12,12 @@ export function StatusPage({ load = loadDaemon, now: nowProp }: { load?: () => P
   const ticking = useNow(10_000)
   const { data, failed } = useDaemonDetail(true, load)
   return (
-    <div className="page status">
+    <div className="page sh-status-page">
       <BackLink />
       <header className="page-head">
         <h1>Status</h1>
       </header>
-      <div className="status-body daemon-detail">
+      <div className="sh-status-grid">
         <DaemonDetail
           down={snap.error !== null}
           error={snap.error}
