@@ -214,6 +214,10 @@ describe('the Timeline page', () => {
 })
 
 describe('the Timeline view’s parts (VIEW-008)', () => {
+  afterEach(() => {
+    window.location.hash = ''
+  })
+
   it('offers Today, Last 24 hours and Last 7 days as one segmented control', async () => {
     const { container } = await show({ range: 'week' })
     const seg = container.querySelector('nav.sh-segmented') as HTMLElement
@@ -235,6 +239,7 @@ describe('the Timeline view’s parts (VIEW-008)', () => {
     const glyphs = (sel: string) => [...container.querySelectorAll(sel)].map((e) => e.textContent)
     expect(glyphs('a.tl-ask.is-open .tl-glyph')).toContain('?')
     expect(glyphs('a.tl-ask.is-request .tl-glyph')).toEqual(['!'])
+    expect(glyphs('a.tl-merge .tl-glyph')).not.toHaveLength(0)
     expect(glyphs('a.tl-merge .tl-glyph').every((g) => g === '◆')).toBe(true)
     expect(glyphs('a.tl-run .tl-fail-glyph')).toContain('✗')
     expect(container.querySelectorAll('.tl-group-head').length).toBeGreaterThan(1)
@@ -251,7 +256,6 @@ describe('the Timeline view’s parts (VIEW-008)', () => {
     expect(bar.getAttribute('href')).toMatch(/open=run%3A\d+/)
     window.location.hash = bar.getAttribute('href') as string
     await waitFor(() => expect(container.querySelector('a.tl-run[aria-current="true"]')).not.toBeNull())
-    window.location.hash = ''
   })
 })
 

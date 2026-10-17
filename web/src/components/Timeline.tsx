@@ -88,7 +88,7 @@ function geometry(rem: number): Geometry {
   return { rowH, barH, barY: Math.round((rowH - barH) / 2), rem }
 }
 
-/** The event mark at a finished bar's end: ⌀ out of quota, ✗ failed, ✓ passed (not on a bar too thin to carry it). */
+/** The event mark at a finished bar's end: ⌀ out of quota and ✗ failed on a bar of any width (a failure is always shown), ✓ passed only on a bar wide enough to be labelled. */
 function endGlyph(mark: BarMark): { ch: string; cls: string } | null {
   const r = mark.run
   if (mark.running) return null
@@ -100,8 +100,8 @@ function endGlyph(mark: BarMark): { ch: string; cls: string } | null {
 // --- Marks ------------------------------------------------------------------------
 
 const Bar = memo(function Bar({
-  mark, lane, repo, g, now, dim, onTip,
-}: { mark: BarMark; lane: string; repo: string; g: Geometry; now: number; dim: boolean; onTip: OnTip }) {
+  mark, lane, repo, g, now, dim, plotW, onTip,
+}: { mark: BarMark; lane: string; repo: string; g: Geometry; now: number; dim: boolean; plotW: number; onTip: OnTip }) {
   useHashOpen()
   const r = mark.run
   const cls = agentClass(r.agent)
@@ -112,6 +112,7 @@ const Bar = memo(function Bar({
   const end = mark.x + mark.w
   const notch = Math.round(g.barH * 0.5)
   const tail = endGlyph(mark)
+  const tailIn = !!tail && end + 3 + g.rem > plotW
   const classes = [
     'tl-run', `tl-agent-${cls}`, mark.running && 'is-running', mark.failed && 'is-failed', mark.continuing && 'is-continuing', dim && 'is-dim',
   ].filter(Boolean).join(' ')
@@ -145,7 +146,17 @@ const Bar = memo(function Bar({
         />
       )}
       {tail && (
-        <text className={`tl-glyph ${tail.cls}`} x={end + 3} y={g.rowH / 2} dominantBaseline="central" aria-hidden="true">{tail.ch}</text>
+        // Past the plot's right edge the glyph would be clipped: it moves onto the bar's end, in the bar's label ink.
+        <text
+          className={tailIn ? 'tl-tail-in' : `tl-glyph ${tail.cls}`}
+          x={tailIn ? end - notch - 2 : end + 3}
+          y={g.rowH / 2}
+          textAnchor={tailIn ? 'end' : 'start'}
+          dominantBaseline="central"
+          aria-hidden="true"
+        >
+          {tail.ch}
+        </text>
       )}
       {/* A bigger target than the bar, so a thin one is still easy to reach. */}
       <rect className="tl-hit" x={mark.x} y={0} width={Math.max(mark.w, 6)} height={g.rowH} />
@@ -236,7 +247,7 @@ const Row = memo(function Row({
         <line className="tl-rail" x1={0} x2={width} y1={g.rowH / 2} y2={g.rowH / 2} />
         {track.bars.map((b) =>
           b.kind === 'bar' ? (
-            <Bar key={b.key} mark={b} lane={track.name} repo={track.repo} g={g} now={b.running ? now : 0} dim={!!agent && b.run.agent !== agent} onTip={onTip} />
+            <Bar key={b.key} mark={b} lane={track.name} repo={track.repo} g={g} now={b.running ? now : 0} dim={!!agent && b.run.agent !== agent} plotW={width} onTip={onTip} />
           ) : (
             <Density key={b.key} mark={b} lane={track.name} laneId={track.id} g={g} dim={!!agent && !b.runs.some((r) => r.agent === agent)} onTip={onTip} />
           ),
