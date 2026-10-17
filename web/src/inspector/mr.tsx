@@ -82,7 +82,14 @@ function MrApproval({ lane, refreshKey, now, onReview }: { lane: LaneView; refre
     }
   }, [lane.id])
   useEffect(() => {
-    if (last.current === 0 || Date.now() - last.current >= MIN_REREAD) void read()
+    // A feed change inside the window reads once when it ends, so the last state is not lost.
+    const wait = last.current === 0 ? 0 : MIN_REREAD - (Date.now() - last.current)
+    if (wait <= 0) {
+      void read()
+      return
+    }
+    const t = window.setTimeout(() => void read(), wait)
+    return () => window.clearTimeout(t)
   }, [read, refreshKey])
 
   if (!view) return readError ? <EmptyState title="Merge request state unavailable" /> : null
