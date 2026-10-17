@@ -215,3 +215,15 @@ func TestFailedProjectsReadKeepsKnownProjects(t *testing.T) {
 		t.Errorf("an empty list should clear: %+v", m.projects)
 	}
 }
+
+func TestDockViewSearchTakesTypedKeys(t *testing.T) {
+	m, _ := projectModel()
+	typeLine(t, m, "/dock")
+	for _, k := range []string{"/", "p", "1"} {
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+		drive(t, m, cmd)
+	}
+	if m.pager.query != "p1" || m.dockGroup || len(m.collapsed) != 0 {
+		t.Errorf("query %q, grouped %v, collapsed %v", m.pager.query, m.dockGroup, m.collapsed)
+	}
+}

@@ -614,7 +614,7 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return tea.Batch(append(cmds, m.quit())...)
 		}
 		if m.pager != nil {
-			if m.dockView {
+			if m.dockView && !m.pager.searching {
 				if cmd, ok := m.dockKey(msg); ok {
 					return tea.Batch(append(cmds, cmd)...)
 				}
