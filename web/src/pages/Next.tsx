@@ -5,7 +5,7 @@ import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { prefillDraft, draftKey } from '../model/chatDraft'
 import {
-  NEXT_MARKER, NEXT_MARKS, NEXT_SECTION_NAMES, canMove, canStart, closedCount, deskWorkspace, lastPlanId, matrixGroups,
+  NEXT_MARKER, NEXT_MARKS, canMove, canStart, closedCount, deskWorkspace, lastPlanId, matrixGroups,
   nextSections, planLabel, stateActions, startText,
 } from '../model/next'
 import { go, href, useFocusTarget, useRoute } from '../router'
@@ -71,6 +71,17 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
   const proposed = useMemo(() => items.filter((it) => it.proposed && it.stored_state === 'planned'), [items])
   const queue = useMemo(() => sections.map((s) => ({ ...s, items: s.items.filter((it) => !proposed.includes(it)) })), [sections, proposed])
   const queueItems = useMemo(() => queue.flatMap((s) => s.items), [queue])
+  const isClosed = (it: NextItem) => it.stored_state === 'done' || it.stored_state === 'dropped'
+  const openQueue = queueItems.filter((it) => !isClosed(it))
+  const closedQueue = queueItems.filter(isClosed)
+  const counts = useMemo(
+    () => ({
+      open: items.filter((it) => !isClosed(it) && it.state !== 'started').length,
+      started: items.filter((it) => it.state === 'started').length,
+      rejected: items.filter((it) => it.stored_state === 'dropped').length,
+    }),
+    [items],
+  )
   const hiddenClosed = closed ? 0 : closedCount(items)
   const repos = useMemo(() => [...new Set(snap.lanes.map((l) => l.repo))].sort(), [snap.lanes])
   const workspace = deskWorkspace(snap.status?.workspaces ?? [])
@@ -145,7 +156,13 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     <div className={`next-view${selectedItem ? ' has-detail' : ''}`}>
       <header className="next-head">
         <h1>Next up</h1>
+        <span className="next-head-chips">
+          <Chip>Open {counts.open}</Chip>
+          <Chip>Started {counts.started}</Chip>
+          <Chip>Rejected {counts.rejected}</Chip>
+        </span>
         <span className="next-head-right">
+          <span className="sh-faint next-head-hint">Starts when a slot frees, while Keep going is on</span>
           <label className="next-composer-check">
             <input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} /> Show done and dropped
             {hiddenClosed > 0 && <span className="sh-faint"> ({hiddenClosed})</span>}
@@ -166,8 +183,6 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
             </p>
           )}
 
-          <AddForm repos={repos} busy={busy === 'add'} onAdd={async (b) => { await act('add', () => api.add(b)) }} />
-
           {list !== null && items.length === 0 && matrix.length === 0 && (
             <EmptyState title="Nothing is planned">
               Add an item above, or run <code>shepherd next seed</code>.
@@ -175,22 +190,21 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
           )}
 
           {proposed.length > 0 && (
-            <section className="next-section" aria-label="Waiting on you">
-              <GroupHeader variant="section" label="Waiting on you" hint={proposed.length} warn />
+            <section className="next-section" aria-label="Waiting for your approval">
+              <GroupHeader variant="section" label={<><span className="sh-glyph sh-glyph--warn" aria-hidden="true">≡</span> Waiting for your approval</>} hint="agents propose, you queue" warn />
               <ol className="sh-rows">{proposed.map(renderRow(proposed))}</ol>
             </section>
           )}
 
-          {queue.some((s) => s.items.length > 0) && (
-            <section className="next-section" aria-label="Queue">
-              <GroupHeader variant="section" label="Queue" hint={queue.reduce((n, s) => n + s.items.length, 0)} />
-              {queue.map((s) =>
-                s.items.length === 0 ? null : (
-                  <div key={s.state}>
-                    <GroupHeader variant="section" label={NEXT_SECTION_NAMES[s.state]} hint={s.items.length} />
-                    <ol className="sh-rows">{s.items.map(renderRow(queueItems))}</ol>
-                  </div>
-                ),
+          {queueItems.length > 0 && (
+            <section className="next-section" aria-label="Queued">
+              <GroupHeader variant="section" label="Queued" hint="in order; drag to reorder" />
+              <ol className="sh-rows">{openQueue.map(renderRow(queueItems))}</ol>
+              {closedQueue.length > 0 && (
+                <>
+                  <GroupHeader variant="section" label="Done and dropped" hint={closedQueue.length} />
+                  <ol className="sh-rows">{closedQueue.map(renderRow(queueItems))}</ol>
+                </>
               )}
             </section>
           )}
@@ -210,6 +224,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
               ))}
             </section>
           )}
+          <AddForm repos={repos} busy={busy === 'add'} onAdd={async (b) => { await act('add', () => api.add(b)) }} />
         </div>
 
         {selectedItem && (
@@ -247,29 +262,36 @@ function AddForm({ repos, busy, onAdd }: { repos: string[]; busy: boolean; onAdd
   }
   return (
     <form className="sh-composer next-composer" onSubmit={(e) => void submit(e)} aria-label="Add an item">
-      <label className="next-composer-title">
-        <span className="visually-hidden">Title</span>
-        <input className="sh-input" type="text" value={title} placeholder="Add an item: what should be done" onChange={(e) => setTitle(e.target.value)} />
-      </label>
-      <label>
-        <span className="visually-hidden">Repo</span>
-        <input className="sh-input" type="text" list="next-repos" value={repo} placeholder="repo (optional)" onChange={(e) => setRepo(e.target.value)} />
-        <datalist id="next-repos">
-          {repos.map((r) => (
-            <option key={r} value={r} />
-          ))}
-        </datalist>
-      </label>
-      <label>
-        <span className="visually-hidden">Plan doc</span>
-        <input className="sh-input" type="text" value={plan} placeholder="docs/plan.md (optional)" onChange={(e) => setPlan(e.target.value)} />
-      </label>
-      <label className="next-composer-check">
-        <input type="checkbox" checked={approve} onChange={(e) => setApprove(e.target.checked)} /> Approved
-      </label>
-      <Button type="submit" variant="primary" disabled={busy || !title.trim()}>
-        {busy ? 'Adding…' : 'Add'}
-      </Button>
+      <div className="next-composer-main">
+        <label className="next-composer-title">
+          <span className="visually-hidden">Title</span>
+          <input className="sh-input" type="text" value={title} placeholder="Add to next up: describe the work and the project" onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <Button type="submit" variant="primary" disabled={busy || !title.trim()}>
+          {busy ? 'Adding…' : 'Add'}
+        </Button>
+      </div>
+      <details className="next-composer-more">
+        <summary>Repo, plan doc and approval</summary>
+        <div className="next-composer-fields">
+          <label>
+            <span className="visually-hidden">Repo</span>
+            <input className="sh-input" type="text" list="next-repos" value={repo} placeholder="repo (optional)" onChange={(e) => setRepo(e.target.value)} />
+            <datalist id="next-repos">
+              {repos.map((r) => (
+                <option key={r} value={r} />
+              ))}
+            </datalist>
+          </label>
+          <label>
+            <span className="visually-hidden">Plan doc</span>
+            <input className="sh-input" type="text" value={plan} placeholder="docs/plan.md (optional)" onChange={(e) => setPlan(e.target.value)} />
+          </label>
+          <label className="next-composer-check">
+            <input type="checkbox" checked={approve} onChange={(e) => setApprove(e.target.checked)} /> Approved
+          </label>
+        </div>
+      </details>
     </form>
   )
 }
@@ -346,8 +368,8 @@ function NextRow({
       onKeyDown={handleKeyDown}
       aria-current={isNext || focused ? 'true' : undefined}
     >
-      <span className="next-row-handle" aria-hidden={!movable} aria-label={movable ? `Drag to reorder ${it.title}` : undefined} title={movable ? 'Drag to reorder' : undefined}>
-        {movable ? '≡' : ''}
+      <span className="next-row-num" aria-hidden="true">
+        {movable && !it.proposed ? flatIdx + 1 : ''}
       </span>
       <span className="sh-glyph" title={mark.label} aria-label={mark.label}>
         {isNext ? NEXT_MARKER.glyph : mark.glyph}

@@ -131,13 +131,23 @@ describe('NextPage', () => {
     expect(within(chat).getByText('chat')).toBeInTheDocument()
     expect(within(chat).queryByText('proposed')).toBeNull()
     const queue = screen.getByRole('region', { name: /Queue/ })
-    expect(within(queue).getByText('Approved')).toBeInTheDocument()
-    expect(within(queue).getByText('Deferred')).toBeInTheDocument()
+    expect(within(queue).getByText('First approved')).toBeInTheDocument()
+    expect(within(queue).getByText('deferred')).toBeInTheDocument()
     expect(screen.queryByText('Shipped')).toBeNull()
     await userEvent.click(screen.getByRole('checkbox', { name: /Show done and dropped/ }))
     expect(await screen.findByText('Shipped')).toBeInTheDocument()
     const queue2 = screen.getByRole('region', { name: /Queue/ })
-    expect(within(queue2).getByText('Done')).toBeInTheDocument()
+    expect(within(queue2).getByText('Done and dropped')).toBeInTheDocument()
+  })
+
+  it('heads the page with counts and the hint, and numbers the queue', async () => {
+    show()
+    const first = (await screen.findByText('First approved')).closest('li') as HTMLElement
+    expect(within(first).getByText('1')).toBeInTheDocument()
+    expect(screen.getByText(/^Open \d+$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Started \d+$/)).toBeInTheDocument()
+    expect(screen.getByText(/^Rejected \d+$/)).toBeInTheDocument()
+    expect(screen.getByText('Starts when a slot frees, while Keep going is on')).toBeInTheDocument()
   })
 
   it('selects a row and opens the detail panel', async () => {
@@ -180,11 +190,11 @@ describe('NextPage', () => {
   it('adds an item as planned, or approved when asked', async () => {
     const { api } = show()
     await screen.findByText('First approved')
-    await userEvent.type(screen.getByPlaceholderText(/Add an item/), 'Write the thing')
+    await userEvent.type(screen.getByPlaceholderText(/Add to next up/), 'Write the thing')
     await userEvent.type(screen.getByPlaceholderText('repo (optional)'), 'acme-web')
     await userEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => expect(api.add).toHaveBeenCalledWith({ title: 'Write the thing', repo: 'acme-web', state: 'planned' }))
-    await userEvent.type(screen.getByPlaceholderText(/Add an item/), 'Now this')
+    await userEvent.type(screen.getByPlaceholderText(/Add to next up/), 'Now this')
     await userEvent.click(screen.getByRole('checkbox', { name: 'Approved' }))
     await userEvent.click(screen.getByRole('button', { name: 'Add' }))
     await waitFor(() => expect(api.add).toHaveBeenLastCalledWith({ title: 'Now this', repo: 'acme-web', state: 'approved' }))
@@ -242,7 +252,7 @@ describe('NextPage', () => {
       </LiveProvider>,
     )
     await screen.findByText('First approved')
-    const waiting = screen.getByRole('region', { name: /Waiting on you/ })
+    const waiting = screen.getByRole('region', { name: /Waiting for your approval/ })
     expect(within(waiting).getByText('Idea')).toBeInTheDocument()
     expect(within(waiting).queryByText('First approved')).toBeNull()
     const queue = screen.getByRole('region', { name: /Queue/ })

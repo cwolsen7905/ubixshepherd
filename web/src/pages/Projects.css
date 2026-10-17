@@ -12,7 +12,7 @@
 .sh-projects-table .sh-project-spend { white-space: nowrap; }
 .sh-project-needs { color: var(--sh-lantern-ink); font-weight: 600; }
 .sh-project-repos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sh-s1); font-size: var(--sh-t-small); color: var(--sh-muted); }
-.sh-project-repos .sh-project-rule { color: var(--sh-faint); }
+.sh-project-repos .sh-project-rule { color: var(--sh-faint); margin-left: var(--sh-s3); }
 .sh-project-note { margin: var(--sh-s6) 0 0; max-width: var(--sh-measure); font-size: var(--sh-t-small); color: var(--sh-muted); }
 /* Rules the dropped page stylesheets used to carry for markup still in use here:
    the header's repo list and spend, and the Work matrix's section (components/Work). */
