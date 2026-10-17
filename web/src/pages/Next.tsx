@@ -80,14 +80,16 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
     return queueItems.filter((it) => it.stored_state === selectedItem.stored_state)
   }, [queueItems, selectedItem])
 
-  const act = async (id: number | 'add', run: () => Promise<unknown>) => {
+  const act = async (id: number | 'add', run: () => Promise<unknown>): Promise<boolean> => {
     setBusy(id)
     setProblem('')
     try {
       await run()
       reload()
+      return true
     } catch (e) {
       setProblem(reason(e))
+      return false
     } finally {
       setBusy(null)
     }
@@ -126,7 +128,8 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
       onSelect={() => setSelected(it.id)}
       onMove={async (draggedId, dir, steps) => {
         for (let i = 0; i < steps; i++) {
-          await act(draggedId, () => api.update(draggedId, { move: dir }))
+          const ok = await act(draggedId, () => api.update(draggedId, { move: dir }))
+          if (!ok) break
         }
       }}
     />
@@ -157,7 +160,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
             </p>
           )}
 
-          <AddForm repos={repos} busy={busy === 'add'} onAdd={(b) => act('add', () => api.add(b))} />
+          <AddForm repos={repos} busy={busy === 'add'} onAdd={async (b) => { await act('add', () => api.add(b)) }} />
 
           {list !== null && items.length === 0 && matrix.length === 0 && (
             <EmptyState title="Nothing is planned">

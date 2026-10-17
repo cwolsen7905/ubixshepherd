@@ -328,4 +328,44 @@ describe('NextPage', () => {
     fireEvent.drop(second, { dataTransfer })
     expect(api.update).toHaveBeenCalledWith(1, { move: 'down' })
   })
+
+  it('drag reorder stops on the first failed move', async () => {
+    const list: NextList = {
+      next_up: 1,
+      items: [
+        nextItem({ id: 1, title: 'A', rank: 1 }),
+        nextItem({ id: 2, title: 'B', rank: 2 }),
+        nextItem({ id: 3, title: 'C', rank: 3 }),
+      ] as NextItem[],
+    }
+    let calls = 0
+    const api = {
+      add: vi.fn(),
+      update: vi.fn(async () => {
+        calls++
+        if (calls === 1) throw new ApiError(403, 'cannot move')
+        return {}
+      }),
+    }
+    render(
+      <LiveProvider live={live()}>
+        <NextPage load={async () => list} api={api} />
+      </LiveProvider>,
+    )
+    const a = (await screen.findByText('A')).closest('li') as HTMLElement
+    const c = screen.getByText('C').closest('li') as HTMLElement
+    const store: Record<string, string> = {}
+    const dataTransfer = {
+      setData: (type: string, value: string) => { store[type] = value },
+      getData: (type: string) => store[type] ?? '',
+      effectAllowed: '',
+      dropEffect: '',
+    }
+    fireEvent.dragStart(a, { dataTransfer })
+    fireEvent.dragOver(c, { dataTransfer })
+    fireEvent.drop(c, { dataTransfer })
+    expect(api.update).toHaveBeenCalledTimes(1)
+    expect(api.update).toHaveBeenCalledWith(1, { move: 'down' })
+    expect(await screen.findByText('cannot move')).toBeInTheDocument()
+  })
 })
