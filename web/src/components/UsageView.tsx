@@ -82,6 +82,13 @@ export function dayShort(day: string): string {
   return `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m[2]) - 1]} ${Number(m[3])}`
 }
 
+/** A 14-day day as its number alone: "3". The narrow chart names only this; the bar's
+ * hover and its screen-reader words keep the full day. */
+export function dayNum(day: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day)
+  return m ? String(Number(m[3])) : day
+}
+
 export function clockShort(iso: string, now: number): string {
   const t = new Date(iso)
   if (isNaN(t.getTime())) return iso
@@ -110,7 +117,7 @@ export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: numbe
         </div>
         <div className="sh-chart-days" aria-hidden="true">
           {bars.map((b) => (
-            <span key={b.day}>{dayShort(b.day)}</span>
+            <span key={b.day}><span className="sh-chart-day-full">{dayShort(b.day)}</span><span className="sh-chart-day-num">{dayNum(b.day)}</span></span>
           ))}
         </div>
       </div>

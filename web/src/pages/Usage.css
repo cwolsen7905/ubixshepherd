@@ -24,9 +24,11 @@
 .sh-chart-cap { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--sh-muted); }
 .sh-chart-days { display: flex; gap: var(--sh-s4); padding: var(--sh-s2) var(--sh-s2) 0; color: var(--sh-faint); font-size: var(--sh-t-meta); }
 .sh-chart-days > span { flex: 1 1 0; min-width: 0; max-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Narrow: fourteen day names do not fit, so every second one is named. */
+.sh-chart-day-num { display: none; }
+/* Narrow: fourteen "Oct 3" names do not fit, so each day is named by its number. */
 @media (max-width: 760px) {
-  .sh-chart-days > span:nth-child(even) { visibility: hidden; }
+  .sh-chart-day-full { display: none; }
+  .sh-chart-day-num { display: inline; }
 }
 
 /* The breakdown cards: By project, By agent, By model. */
