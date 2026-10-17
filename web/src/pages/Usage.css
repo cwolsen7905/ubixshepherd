@@ -1,0 +1,43 @@
+/* The usage view: the spend hero, the 14-day chart, the breakdown cards, the holds and
+   the most expensive runs. Only --sh-* tokens and .sh-* classes; the page's own classes
+   are .sh-spend-*, .sh-chart-* and .usage-page. */
+
+.usage-page .page-head { min-height: 45px; align-items: center; }
+.usage-page .page-head h1 { font-weight: 600; }
+
+/* The hero: the big spend figure, "of $X today" under it, the meter. */
+.sh-spend-hero { margin-bottom: var(--sh-s4); }
+.sh-spend-figure { margin: 0; font-size: var(--sh-t-doc); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sh-spend-of { margin: var(--sh-s1) 0 var(--sh-s4); color: var(--sh-muted); }
+.sh-spend-note { color: var(--sh-lantern-ink); font-weight: 600; }
+.sh-spend-hero .sh-meter { max-width: 32rem; }
+.sh-spend-stale { margin: var(--sh-s2) 0 0; color: var(--sh-faint); font-size: var(--sh-t-meta); }
+.sh-spend-reset { margin: 0 0 var(--sh-s8); color: var(--sh-faint); font-size: var(--sh-t-meta); }
+.sh-spend-error { color: var(--sh-broken); }
+
+/* The 14-day chart: bars from zero on a shared scale, a dashed line at the daily cap. */
+.sh-spend-chart { margin-bottom: var(--sh-s9); }
+.sh-chart-plot { position: relative; display: flex; align-items: flex-end; gap: var(--sh-s4); height: 8rem; padding: 0 var(--sh-s2); border-bottom: 1px solid var(--sh-rule); border-left: 1px solid var(--sh-rule); }
+.sh-chart-bar { flex: 1 1 0; min-width: 0; max-width: 4rem; border-radius: var(--sh-r) var(--sh-r) 0 0; background: var(--sh-lichen); }
+.sh-chart-bar.is-near { background: var(--sh-lantern); }
+.sh-chart-bar.is-over { background: var(--sh-broken); }
+.sh-chart-cap { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--sh-muted); }
+.sh-chart-days { display: flex; gap: var(--sh-s4); padding: var(--sh-s2) var(--sh-s2) 0; color: var(--sh-faint); font-size: var(--sh-t-meta); }
+.sh-chart-days > span { flex: 1 1 0; min-width: 0; max-width: 4rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The breakdown cards: By project, By agent, By model. */
+.sh-spend-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: var(--sh-s8); margin-bottom: var(--sh-s9); }
+.sh-spend-card { border: 1px solid var(--sh-rule); border-radius: var(--sh-r-lg); background: var(--sh-raised); padding: var(--sh-s6) var(--sh-s8); }
+.sh-spend-card .sh-group-h { margin-top: 0; }
+.sh-spend-rows { list-style: none; margin: 0; padding: 0; }
+.sh-spend-row { display: flex; justify-content: space-between; gap: var(--sh-s6); padding: var(--sh-s3) 0; border-bottom: 1px solid var(--sh-rule); font-variant-numeric: tabular-nums; }
+.sh-spend-row:last-child { border-bottom: 0; }
+.sh-spend-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-spend-amount { flex: none; color: var(--sh-muted); }
+.sh-spend-none { margin: var(--sh-s2) 0 0; color: var(--sh-faint); }
+
+/* The most expensive runs. */
+.sh-spend-runs { margin-bottom: var(--sh-s9); }
+.sh-spend-runlist { list-style: none; margin: 0; padding: 0; }
+.sh-spend-runlist .sh-row { color: var(--sh-ink); text-decoration: none; }
+.sh-spend-runlist .sh-row:hover { text-decoration: none; }
