@@ -38,6 +38,9 @@ case "$MODE" in refused) echo "shepherd: push refused for lane work"; echo "  ch
 case "$MODE" in forbidden) echo "shepherd: push refused for lane work"; echo "  commit abc123's message contains \"x\", which this repo does not allow"; exit 1 ;; esac
 case "$MODE" in turns) echo '{"type":"result","subtype":"error_max_turns","is_error":true}'; exit 1 ;; esac
 case "$MODE" in boom) echo "compiling"; echo "panic: runtime error: index out of range password=hunter2hunter2"; exit 2 ;; esac
+case "$MODE" in dirty) mkdir -p src; echo dirt > src/dirty.txt; exit 0 ;; esac
+case "$MODE" in dirtyslow) sleep 1; mkdir -p src; echo dirt > src/dirty.txt; exit 0 ;; esac
+case "$MODE" in dirtythen) mkdir -p src; echo dirt > src/dirty.txt; if printf '%s' "$prompt" | grep -q "Commit your work"; then git add src/dirty.txt && git commit -q -m "agent work"; fi; exit 0 ;; esac
 mkdir -p src && echo "work $SHEPHERD_RUN" >> src/work.txt
 git add src/work.txt && git commit -q -m "agent work"
 if [ "$MODE" = stray ]; then echo x > stray.txt && git add stray.txt && git commit -q -m stray; fi

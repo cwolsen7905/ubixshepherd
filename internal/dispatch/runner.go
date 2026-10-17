@@ -672,6 +672,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	run.Ended = &now
 	why := "" // set when Shepherd, not the agent's exit code, made the run fail
 	noChange := false
+	unfinished := ""
 	procErr := ""
 	code := p.cmd.ProcessState.ExitCode()
 	run.ExitCode = &code
@@ -720,10 +721,25 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			}
 		}
 	}
-	if ad.NoChangeFails && run.State == store.RunSucceeded && r.changedNothing(ctx, run, lane) {
-		why = fmt.Sprintf("%s exited 0 but changed nothing: no commit, no file change and nothing asked or reported; see the run log", ad.Name)
-		run.State, run.Error = store.RunFailed, why
-		noChange = true
+	// An exit 0 that did not finish is incomplete (RUN-019): continued once in its
+	// session, and failed if the continuation ends the same way.
+	var nudge string
+	if run.State == store.RunSucceeded {
+		if nudge = r.notFinished(ctx, run, lane, ad); nudge != "" {
+			noChange = !r.hasChanges(ctx, lane)
+			switch {
+			case r.afterIncomplete(ctx, run):
+				why = "ended twice without finishing"
+				nudge = ""
+			case run.Session == "":
+				why = "ended without finishing, and its run has no session to continue"
+				nudge = ""
+			default:
+				why = continuedNote
+			}
+			run.State, run.Error = store.RunFailed, why
+			unfinished = why
+		}
 	}
 	if ad.SessionCost {
 		r.sessionCost(ctx, &run)
@@ -757,7 +773,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	}
 	var diag store.Diagnosis
 	if d, ok := classifyEnd(endInfo{Run: run, Agent: ad.Name, Stopped: stopped, Idled: idled && !stopped, Closing: run.State == store.RunInterrupted,
-		Idle: p.idle, Err: procErr, NoChange: noChange, Limit: limit, QuotaUntil: quotaUntil, Tail: strings.Join(ring, "\n")}); ok {
+		Idle: p.idle, Err: procErr, NoChange: noChange, Unfinished: unfinished, Limit: limit, QuotaUntil: quotaUntil, Tail: strings.Join(ring, "\n")}); ok {
 		diag = r.diagnose(ctx, run, d)
 	}
 	r.Log.Info("run ended", "run", run.ID, "state", run.State, "exit", code, "commits", run.Commits, "outside", len(run.Outside))
@@ -792,6 +808,11 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		// The daemon is stopping: answers and requests wait for its next start, and a
 		// push (after a gate run of up to GateTimeout) is the person's or the next run's.
 		return
+	}
+	if nudge != "" {
+		if r.continueIncomplete(ctx, run, nudge) {
+			return
+		}
 	}
 	r.deliverAnswers(ctx, run.ID)
 	r.Route(ctx)
@@ -976,37 +997,116 @@ func (r *Runner) idleWatch(id int64, p *proc) {
 	}
 }
 
+const (
+	carryOnPrompt = "You stopped before finishing. Carry on, or say why there is nothing to do."
+	commitPrompt  = "Commit your work (or explain why not), push, and stop."
+	// continuedNote starts the error of a run that was continued because it ended
+	// without finishing: its continuation tells that from any other parent.
+	continuedNote = "ended without finishing; continued once"
+)
+
+// notFinished says what to tell a run that exited 0 without finishing, or "" if it did
+// finish. It did not if it asked nothing and either left changes uncommitted or (for an
+// agent that can end a turn without the work) changed nothing and
+// reported nothing.
+func (r *Runner) notFinished(ctx context.Context, run store.Run, lane store.Lane, ad Adapter) string {
+	if r.asked(ctx, run) {
+		return ""
+	}
+	if r.hasChanges(ctx, lane) {
+		return commitPrompt
+	}
+	if run.Commits > 0 {
+		return ""
+	}
+	if ad.NoChangeFails && r.changedNothing(ctx, run, lane) {
+		return carryOnPrompt
+	}
+	return ""
+}
+
+// hasChanges says the lane has uncommitted work in its scope. Untracked files count (a
+// new file is work), but only inside the scope, so build output elsewhere does not. The
+// scope goes to git as pathspecs, so odd file names need no unquoting here. A
+// git failure counts as changes: the run is not taken for finished on an unreadable tree.
+func (r *Runner) hasChanges(ctx context.Context, lane store.Lane) bool {
+	args := []string{"status", "--porcelain", "-uall"}
+	if len(lane.Scope) > 0 {
+		args = append(args, "--")
+		for _, g := range lane.Scope {
+			args = append(args, ":(glob)"+g)
+		}
+	}
+	out, err := git.Run(ctx, lane.Worktree, args...)
+	if err != nil {
+		r.Log.Warn("read the lane's status", "lane", lane.Name, "err", err)
+		return true
+	}
+	// Git has already limited the listing to the scope.
+	return strings.TrimSpace(out) != ""
+}
+
+// asked says the run put a question or a request to the person or another lane.
+func (r *Runner) asked(ctx context.Context, run store.Run) bool {
+	ds, err := r.Store.Decisions(ctx, "")
+	if err != nil {
+		return true
+	}
+	for _, d := range ds {
+		if d.RunID == run.ID {
+			return true
+		}
+	}
+	rs, err := r.Store.Requests(ctx)
+	if err != nil {
+		return true
+	}
+	for _, q := range rs {
+		if q.FromRun == run.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// afterIncomplete says the run is the continuation of one that ended without finishing.
+func (r *Runner) afterIncomplete(ctx context.Context, run store.Run) bool {
+	if run.Parent == 0 {
+		return false
+	}
+	p, err := r.Store.Run(ctx, run.Parent)
+	return err == nil && strings.HasPrefix(p.Error, continuedNote)
+}
+
+// continueIncomplete starts the one continuation of an incomplete run, and reports
+// whether it did. When it cannot, the run says so and stays failed.
+func (r *Runner) continueIncomplete(ctx context.Context, run store.Run, nudge string) bool {
+	next, err := r.Start(ctx, StartRequest{Continue: run.ID, Prompt: nudge, Auto: true})
+	if err != nil {
+		run.Error = redact.String(fmt.Sprintf("ended without finishing, and could not be continued: %v", err))
+		if uerr := r.Store.UpdateRun(ctx, run); uerr != nil {
+			r.Log.Error("record run outcome", "run", run.ID, "err", uerr)
+		}
+		r.feed(ctx, store.FeedRunFailed, run.ID, "run %d: %s", run.ID, run.Error)
+		return false
+	}
+	r.feed(ctx, store.FeedRunStarted, next.ID, "run %d ended without finishing; continued once as run %d", run.ID, next.ID)
+	return true
+}
+
 // changedNothing says a run left its lane as it found it: HEAD where it was, a clean
 // worktree, and nothing the run asked or reported through Shepherd's tools.
 func (r *Runner) changedNothing(ctx context.Context, run store.Run, lane store.Lane) bool {
 	if run.EndSHA == "" || run.EndSHA != run.StartSHA {
 		return false
 	}
-	if out, err := git.Run(ctx, lane.Worktree, "status", "--porcelain"); err != nil || strings.TrimSpace(out) != "" {
+	if r.hasChanges(ctx, lane) {
 		return false
 	}
 	if ev, err := r.Store.Events(ctx, run.ID); err != nil || len(ev) > 0 {
 		return false
 	}
-	if ds, err := r.Store.Decisions(ctx, ""); err != nil {
-		return false
-	} else {
-		for _, d := range ds {
-			if d.RunID == run.ID {
-				return false
-			}
-		}
-	}
-	if rs, err := r.Store.Requests(ctx); err != nil {
-		return false
-	} else {
-		for _, q := range rs {
-			if q.FromRun == run.ID {
-				return false
-			}
-		}
-	}
-	return true
+	return !r.asked(ctx, run)
 }
 
 // Active is how many agents are running now: what a restart would interrupt.
