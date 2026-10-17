@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import type { ConfigDoc, ProjectDetail, ProjectList, ProjectWork } from '../api/types'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
@@ -100,6 +100,14 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('link', { name: 'shop' })).toHaveAttribute('href', '#/projects/shop')
   })
 
+  it('shows zero waiting as faint words, never as a badge', async () => {
+    daemon({ projects: [project({ waiting: 0, lanes: 1 }), unassigned()] })
+    await show(<ProjectsPage />)
+    const shop = screen.getByRole('link', { name: 'shop' }).closest('section') as HTMLElement
+    expect(within(shop).getByText('0 waiting on you')).toHaveClass('sh-faint')
+    expect(shop.querySelector('[data-component="Count"]')).toBeNull()
+  })
+
   it('has a New project button that goes to Settings', async () => {
     daemon({ projects: [project(), unassigned()] })
     await show(<ProjectsPage />)
@@ -140,6 +148,37 @@ describe('ProjectPage', () => {
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
     // Read-only: nothing here can approve or edit.
     expect(screen.queryByRole('button')).toBeNull()
+  })
+
+  it('shows a waiting decision by its short title, rendered, not its whole body', async () => {
+    const long = decision({ id: 5, question: '**Stream or buffer?**\n\nThe export can stream rows or buffer the whole file. See `docs/plan.md` for the cost.' })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [long] })
+    await show(<ProjectPage name="shop" />)
+    const title = await screen.findByText('Stream or buffer?')
+    expect(title.tagName).toBe('STRONG')
+    expect(document.body.textContent).not.toContain('**')
+    expect(document.body.textContent).not.toContain('See ')
+  })
+
+  it('cuts a headingless one-line decision to its first sentence, or a word boundary', async () => {
+    const sentence = decision({ id: 5, question: 'Should the export stream rows? It can also buffer the whole file first and then write it out in one go to disk.' })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [sentence] })
+    await show(<ProjectPage name="shop" />)
+    expect(await screen.findByText('Should the export stream rows?')).toBeInTheDocument()
+    cleanup()
+    const run = decision({ id: 6, question: 'word '.repeat(60).trim() })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [run] })
+    await show(<ProjectPage name="shop" />)
+    const t = (await screen.findAllByText(/^word( word)+…$/))[0]
+    expect((t?.textContent ?? '').length).toBeLessThanOrEqual(101)
+  })
+
+  it('leaves no stray markers when the cut lands inside bold or code', async () => {
+    const q = decision({ id: 7, question: `${'x '.repeat(45)}**bold words that run on and on and on` })
+    daemon({ projects: [] }, { ...detail, pending_decisions: [q] })
+    await show(<ProjectPage name="shop" />)
+    const t = (await screen.findAllByText(/^(x )+bold( \w+)*…$/))[0]
+    expect(t?.textContent).not.toContain('*')
   })
 
   it('links lane, decision and run rows to their inspector addresses', async () => {

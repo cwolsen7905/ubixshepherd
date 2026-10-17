@@ -2,14 +2,17 @@
    from DaemonDetail (shared with no other view); these rules lay its groups out as the
    design's status cards, with 12.5/600 uppercase muted titles. */
 .sh-status-page { max-width: 80rem; }
-.sh-status-page .sh-status-grid { margin-top: var(--sh-s4); }
+.sh-status-page .sh-status-grid { margin-top: var(--sh-s4); align-items: stretch; }
+.sh-status-page .back { margin: 0 0 var(--sh-s4); }
 .sh-status-page .daemon-offline { grid-column: 1 / -1; margin: 0 0 var(--sh-s4); }
-.sh-status-page .daemon-group {
+.sh-status-page .sh-status-grid > .daemon-group {
   border: 1px solid var(--sh-rule);
   background: var(--sh-raised);
   border-radius: var(--sh-r);
   padding: var(--sh-s6) var(--sh-s8);
-  align-self: start;
+  align-self: stretch;
+  margin: 0;
+  min-width: 0;
 }
 .sh-status-page .daemon-group h3 {
   font-size: var(--sh-t-meta);

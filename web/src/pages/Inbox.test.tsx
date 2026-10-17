@@ -196,6 +196,29 @@ describe('InboxPage', () => {
     expect(screen.queryByText(/Merged by rule/)).toBeNull()
     lanes.mockRestore()
   })
+
+  it('reads Done today as soon as the workspace list arrives, not after the throttle', async () => {
+    const lanes = vi.spyOn(history, 'lanes').mockResolvedValue([
+      { id: 9, branch: 'fix/x', repo: 'acme', mr: 40, outcome: 'merged', closed: new Date().toISOString() } as never,
+    ])
+    const api = {
+      status: async () => status(), lanes: async () => [], runs: async () => [], decisions: async () => [], requests: async () => [], spend: async () => spend(),
+      feedLatest: async () => ({ items: [], events: [], last: 0 }), feed: async (after: number) => ({ items: [], events: [], last: after }), next: async () => [],
+    } as unknown as Api
+    const live = new Live(api, still, async () => waiting)
+    // The page mounts before the first status read, so its first Done today read has no workspace to ask.
+    render(
+      <LiveProvider live={live}>
+        <InboxPage />
+      </LiveProvider>,
+    )
+    expect(lanes).not.toHaveBeenCalled()
+    await act(async () => {
+      await live.refresh()
+    })
+    expect(await screen.findByText('!40 fix/x')).toBeInTheDocument()
+    lanes.mockRestore()
+  })
 })
 
 let liveOf: Live | undefined

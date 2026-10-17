@@ -1,10 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useRef } from 'react'
 import { parse } from '../router'
 import { Shell } from '../shell/Shell'
 import { useSideWidth } from '../shell/useSideWidth'
-import { Divider } from './Divider'
+import { Divider, openFull } from './Divider'
 import { clampSide, defaultSide, isSnap, readSide, sideLimits, writeSide } from './sideWidth'
 
 const REM = 16
@@ -223,5 +223,34 @@ describe('Shell divider', () => {
     await user.dblClick(screen.getByRole('separator'))
     expect(Number.parseFloat(shell.style.getPropertyValue('--sh-side-w'))).toBe(start)
     expect(window.localStorage.getItem('shepherd.sidewidth.board')).toBeNull()
+  })
+})
+
+describe('Divider on a full-width item', () => {
+  afterEach(() => {
+    window.location.hash = ''
+  })
+
+  it('reads full width from the address, encoded or not', () => {
+    expect(openFull('#/artifacts?open=artifact:1/full')).toBe(true)
+    expect(openFull('#/artifacts?open=artifact%3A1%2Ffull')).toBe(true)
+    expect(openFull('#/artifacts?open=artifact:1')).toBe(false)
+    expect(openFull('#/artifacts?open=lane:4/full&x=1')).toBe(true)
+  })
+
+  it('is absent when the item opens full width, and returns when it leaves it', async () => {
+    window.location.hash = '#/artifacts?open=artifact:1'
+    setup(500)
+    expect(screen.getByRole('separator')).toBeInTheDocument()
+    await act(async () => {
+      window.location.hash = '#/artifacts?open=artifact%3A1%2Ffull'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(screen.queryByRole('separator')).toBeNull()
+    await act(async () => {
+      window.location.hash = '#/artifacts?open=artifact:1'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(screen.getByRole('separator')).toBeInTheDocument()
   })
 })

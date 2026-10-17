@@ -1,6 +1,22 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type PointerEvent } from 'react'
 import { BIG_STEP, clampSide, isSnap, STEP, type Limits } from './sideWidth'
 import { cx } from './cx'
+
+const onHash = (fn: () => void) => {
+  window.addEventListener('hashchange', fn)
+  return () => window.removeEventListener('hashchange', fn)
+}
+
+/** Whether the address has an item open full width (`open=kind:id/full`), however the slash is encoded. */
+export function openFull(hash: string): boolean {
+  let h = hash
+  try {
+    h = decodeURIComponent(hash)
+  } catch {
+    // A malformed escape: match the hash as written.
+  }
+  return /[?&]open=[^&]*\/full(?:&|$)/.test(h)
+}
 
 /**
  * The divider between the main column and the side panel (`.sh-divider`): an 11px hit area with
@@ -32,6 +48,7 @@ export function Divider({
   /** Space to the right of the side panel (a scrollbar). */
   right?: number
 }) {
+  const full = useSyncExternalStore(onHash, () => openFull(window.location.hash))
   const [drag, setDrag] = useState<{ x: number; snap: boolean } | null>(null)
   const start = useRef(width)
   const cleanup = useRef<(() => void) | null>(null)
@@ -85,6 +102,9 @@ export function Divider({
     onResize(next)
     onCommit(next)
   }
+
+  // An item open full width has no side panel to size: its rule would run through the page.
+  if (full) return null
 
   const l = limits()
   return (

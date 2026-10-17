@@ -92,6 +92,13 @@ describe('NextPage', () => {
       expect(screen.getByText('Idea').closest('li')).not.toHaveClass('is-focus-target')
     })
 
+    it('selects the focused item so its detail shows beside the list', async () => {
+      window.location.hash = '#/next?item=2'
+      show()
+      await screen.findByText('Second approved')
+      expect(await screen.findByRole('complementary', { name: /Details for Second approved/ })).toBeInTheDocument()
+    })
+
     it('does not scroll or mark anything without a focus', async () => {
       show()
       await screen.findByText('Second approved')
@@ -277,7 +284,7 @@ describe('NextPage', () => {
         nextItem({ id: 1, title: 'Blocked item', rank: 1 }),
       ] as NextItem[],
     }
-    ;(list.items[0] as any).blocked_on = [{ id: 7, title: 'Earlier thing', state: 'approved' }]
+    ;(list.items[0] as { blocked_on?: unknown }).blocked_on = [{ id: 7, title: 'Earlier thing', state: 'approved' }]
     render(
       <LiveProvider live={live()}>
         <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />

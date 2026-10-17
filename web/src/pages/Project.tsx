@@ -1,6 +1,8 @@
 import { BudgetMeter } from '../components/BudgetMeter'
 import { mrBadge, MrBadge } from '../components/MrBadge'
 import { GateBadge } from '../components/GateBadge'
+import { splitQuestion } from '../components/DecisionCard'
+import { inline } from '../conversation/Markdown'
 import { Work } from '../components/Work'
 import { age as ageOf, duration, runCost, since, usd } from '../format'
 import { useKeys, useNow } from '../hooks'
@@ -45,6 +47,32 @@ function BriefText({ brief, heading, stale, draft }: { brief: ProjectBrief; head
       <pre className="sh-brief-text">{brief.text}</pre>
     </div>
   )
+}
+
+const TITLE_MAX = 100
+
+/** The short title of a decision: its heading line, or the first line when it has none. */
+function questionTitle(q: string): string {
+  const { head, body } = splitQuestion(q)
+  const line = head || body.split('\n')[0] || q
+  if (line.length <= TITLE_MAX) return line
+  // No heading: the first sentence if it is short enough, else a cut at a word.
+  const sentence = /^.{1,100}?[.?!](?=\s)/.exec(line)?.[0]
+  if (sentence) return sentence
+  return dropOpenMarkers(line.slice(0, TITLE_MAX).replace(/\s+\S*$/, '')) + '…'
+}
+
+/** A cut can leave a markdown marker unclosed: drop the last of any marker that now appears an odd number of times. */
+function dropOpenMarkers(text: string): string {
+  let out = text
+  for (const m of ['**', '`', '*', '_']) {
+    const n = out.split(m).length - 1
+    if (n % 2 === 1) {
+      const at = out.lastIndexOf(m)
+      out = out.slice(0, at) + out.slice(at + m.length)
+    }
+  }
+  return out
 }
 
 /** A lane row: the lane over its repo and gate, the merge request at the right. A link to
@@ -151,7 +179,8 @@ export function ProjectPage({ name }: { name: string | null }) {
               glyph="?"
               tone="warn"
               glyphLabel="decision"
-              title={d.question}
+              title={inline(questionTitle(d.question))}
+              titleAttr={d.question}
               sub={`${d.lane} · ${d.agent}`}
               age={since(d.created, now)}
               selected={isOpenNow(open)}

@@ -54,6 +54,9 @@ export interface Sort {
   desc: boolean
 }
 
+/** A total's field, 0 when the daemon left it out. */
+const num = (v: number | undefined): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
 export const DEFAULT_SORT: Sort = { key: 'cost_usd', desc: true }
 
 /** The first click on a column sorts names ascending and numbers biggest first; a second flips it. */
@@ -68,7 +71,7 @@ export function sortGroups(groups: readonly UsageGroup[], s: Sort): UsageGroup[]
   return groups
     .map((g, i) => ({ g, i }))
     .sort((a, b) => {
-      const d = s.key === 'name' ? a.g.key.localeCompare(b.g.key) : a.g[s.key] - b.g[s.key]
+      const d = s.key === 'name' ? a.g.key.localeCompare(b.g.key) : num(a.g[s.key]) - num(b.g[s.key])
       return d * dir || a.i - b.i
     })
     .map((x) => x.g)
@@ -76,7 +79,7 @@ export function sortGroups(groups: readonly UsageGroup[], s: Sort): UsageGroup[]
 
 /** Whether a group has a measured peak to chart: Copilot and Cursor runs carry cost only. */
 export function hasPeak(t: UsageTotals): boolean {
-  return t.measured > 0 && t.peak_context > 0
+  return num(t.measured) > 0 && num(t.peak_context) > 0
 }
 
 export interface ChartRow {
@@ -86,7 +89,8 @@ export interface ChartRow {
   prefix?: string
   peak: number
   window: number
-  over: number
+  /** Runs or turns over 200k; absent when the total did not say. */
+  over?: number
   measured: number
 }
 
@@ -105,15 +109,15 @@ export function chartSections(
   const rows = (gs: readonly UsageGroup[], lane = false): ChartRow[] =>
     gs
       .filter(hasPeak)
-      .sort((a, b) => b.peak_context - a.peak_context)
+      .sort((a, b) => num(b.peak_context) - num(a.peak_context))
       .map((g) => ({
         key: g.key,
         label: lane ? (g.lane ?? g.key) : g.key,
         ...(lane && g.repo ? { prefix: g.repo } : {}),
         peak: g.peak_context,
         window: g.context_window ?? 0,
-        over: g.over_200k,
-        measured: g.measured,
+        ...(typeof g.over_200k === 'number' && Number.isFinite(g.over_200k) ? { over: g.over_200k } : {}),
+        measured: num(g.measured),
       }))
   return [
     { title: 'Agent runs, by agent and model', rows: rows(models) },

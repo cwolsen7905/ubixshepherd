@@ -57,3 +57,18 @@ describe('chart', () => {
     expect(chartMax(s)).toBeCloseTo(440_000)
   })
 })
+
+describe('a total without peak, over or compactions', () => {
+  const bare = { key: 'x', count: 1, measured: 1, input_tokens: 0, cache_read_tokens: 0, cache_creation_tokens: 0, output_tokens: 0, cost_usd: 1 } as unknown as UsageGroup
+
+  it('sorts without NaN and charts nothing for it', () => {
+    const sorted = sortGroups([bare, group('y', { peak_context: 5 })], { key: 'peak_context', desc: true })
+    expect(sorted.map((g) => g.key)).toEqual(['y', 'x'])
+    expect(chartSections([bare], [bare], [bare])).toEqual([])
+  })
+
+  it('leaves over out of a chart row that has a peak but no over_200k', () => {
+    const s = chartSections([{ ...bare, peak_context: 120_000 } as UsageGroup], [], [])
+    expect(s[0]?.rows[0]).not.toHaveProperty('over')
+  })
+})

@@ -42,12 +42,12 @@ export function restoreScroll(y: number) {
 
 /**
  * Takes the person back to the page they came from, with its address (filters, range) and scroll position, labelled for it. Opened
- * directly, it goes to the board.
+ * directly, it goes to the board, or to the `fallback` address when given.
  */
-export function BackLink() {
+export function BackLink({ fallback = href.board() }: { fallback?: string } = {}) {
   const came = cameFrom()
-  const target = came ? came.hash : href.board()
-  const label = routeName(came ? parse(came.hash) : { page: 'board' })
+  const target = came ? came.hash : fallback
+  const label = routeName(came ? parse(came.hash) : parse(fallback))
   return (
     <p className="back">
       <a

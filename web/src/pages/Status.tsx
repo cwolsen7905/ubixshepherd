@@ -1,6 +1,7 @@
 import { BackLink } from '../components/BackLink'
 import { DaemonDetail, loadDaemon, useDaemonDetail, type Loaded } from '../components/DaemonStatus'
 import { useNow } from '../hooks'
+import { href } from '../router'
 import { useChatLink } from '../shell/chatLink'
 import { useSnapshot } from '../state/context'
 import './Status.css'
@@ -13,7 +14,7 @@ export function StatusPage({ load = loadDaemon, now: nowProp }: { load?: () => P
   const { data, failed } = useDaemonDetail(true, load)
   return (
     <div className="page sh-status-page">
-      <BackLink />
+      <BackLink fallback={href.settings()} />
       <header className="page-head">
         <h1>Status</h1>
       </header>
