@@ -9,7 +9,7 @@ import { DEFAULT_RANGE, mergeHistories, RANGES, RANGE_PHRASE, rangeStart } from 
 import { go, href, type Range } from '../router'
 import { useHistory } from '../state/history'
 import { taskLine, taskText } from '../timeline/task'
-import { Button, EmptyState } from '../ui'
+import { Button, Chip, EmptyState } from '../ui'
 import '../styles/pages/runs.css'
 
 /** A run's state as the feed event that reports it, for its glyph. */
@@ -68,29 +68,25 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
 
       <div className="filters runs-filters">
         <RangeFilter range={range} href={(r) => nav({ range: r })} />
-        <label>
+        <span className="filter-group">
           <span className="faint">Agent</span>
-          <select value={agent} onChange={(e) => go(nav({ agent: e.target.value || undefined }))}>
-            <option value="">All agents</option>
+          <span className="chip-options">
+            <Chip kind="filter" selected={agent === ''} onClick={() => go(nav({ agent: undefined }))}>All</Chip>
             {agentChoices.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
+              <Chip key={a} kind="filter" selected={agent === a} onClick={() => go(nav({ agent: a }))}>{a}</Chip>
             ))}
-          </select>
-        </label>
-        <label>
+          </span>
+        </span>
+        <span className="filter-group">
           <span className="faint">Lane</span>
-          <select value={lane} onChange={(e) => go(nav({ lane: Number(e.target.value) || undefined }))}>
-            <option value={0}>All lanes</option>
-            {!laneKnown && <option value={lane}>lane {lane}</option>}
+          <span className="chip-options">
+            <Chip kind="filter" selected={lane === 0} onClick={() => go(nav({ lane: undefined }))}>All</Chip>
+            {!laneKnown && <Chip kind="filter" selected>lane {lane}</Chip>}
             {lanes.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.repo} / {l.name}
-              </option>
+              <Chip key={l.id} kind="filter" selected={lane === l.id} onClick={() => go(nav({ lane: l.id }))}>{l.repo} / {l.name}</Chip>
             ))}
-          </select>
-        </label>
+          </span>
+        </span>
       </div>
 
       {error && <p className="tone-bad">Could not load runs: {error}</p>}

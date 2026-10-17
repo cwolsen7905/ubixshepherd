@@ -13,7 +13,7 @@ import { useProjectList } from '../state/projects'
 import { projectHref } from './Projects'
 import '../styles/projects.css'
 import '../styles/pages/board.css'
-import { Button, Chip, EmptyState } from '../ui'
+import { Button, Chip, EmptyState, Popover } from '../ui'
 import { GROUP_MARKS } from '../model/groups'
 import { Glyph } from '../components/Glyph'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
@@ -182,7 +182,9 @@ export function BoardPage({
                         const review = finishedLanes.get(it.lane.id)
                         return review && <FinishedMark review={review} lastRun={it.run?.state} />
                       })()}
-                      <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
+                      <Popover label="…">
+                        <LaneCloseButton lane={it.lane} running={it.run?.state === 'running'} />
+                      </Popover>
                     </p>
                   )}
                   {dr && (canDismiss(it) || (dismissed?.show && dr.dismissed)) && (

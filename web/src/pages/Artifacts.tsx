@@ -7,7 +7,7 @@ import { since } from '../format'
 import { useNow } from '../hooks'
 import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
-import { EmptyState, Skeleton } from '../ui'
+import { Chip, EmptyState, Skeleton } from '../ui'
 import '../styles/pages/artifacts.css'
 
 type Filters = { repo?: number; lane?: number; run?: number; topic?: number }
@@ -134,37 +134,37 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
       </header>
 
       <div className="filters">
-        <label>
+        <span className="filter-group">
           <span className="faint">Repo</span>
-          <select value={repo} onChange={(e) => go(nav({ repo: Number(e.target.value) || undefined, lane: undefined }))}>
-            <option value={0}>All repos</option>
+          <span className="chip-options">
+            <Chip kind="filter" selected={repo === 0} onClick={() => go(nav({ repo: undefined, lane: undefined }))}>All</Chip>
             {repos.map(([id, name]) => (
-              <option key={id} value={id}>{name}</option>
+              <Chip key={id} kind="filter" selected={repo === id} onClick={() => go(nav({ repo: id, lane: undefined }))}>{name}</Chip>
             ))}
-          </select>
-        </label>
-        <label>
+          </span>
+        </span>
+        <span className="filter-group">
           <span className="faint">Lane</span>
-          <select value={lane} onChange={(e) => go(nav({ lane: Number(e.target.value) || undefined }))}>
-            <option value={0}>All lanes</option>
-            {lane > 0 && !laneById.has(lane) && <option value={lane}>lane {lane}</option>}
+          <span className="chip-options">
+            <Chip kind="filter" selected={lane === 0} onClick={() => go(nav({ lane: undefined }))}>All</Chip>
+            {lane > 0 && !laneById.has(lane) && <Chip kind="filter" selected>lane {lane}</Chip>}
             {snap.lanes
               .filter((l) => !repo || l.repo_id === repo)
               .map((l) => (
-                <option key={l.id} value={l.id}>{l.repo} / {l.name}</option>
+                <Chip key={l.id} kind="filter" selected={lane === l.id} onClick={() => go(nav({ lane: l.id }))}>{l.repo} / {l.name}</Chip>
               ))}
-          </select>
-        </label>
-        <label>
+          </span>
+        </span>
+        <span className="filter-group">
           <span className="faint">Topic</span>
-          <select value={topic} onChange={(e) => go(nav({ topic: Number(e.target.value) || undefined }))}>
-            <option value={0}>All topics</option>
-            {topic > 0 && !topicList.some((t) => t.id === topic) && <option value={topic}>topic {topic}</option>}
+          <span className="chip-options">
+            <Chip kind="filter" selected={topic === 0} onClick={() => go(nav({ topic: undefined }))}>All</Chip>
+            {topic > 0 && !topicList.some((t) => t.id === topic) && <Chip kind="filter" selected>topic {topic}</Chip>}
             {topicList.map((t) => (
-              <option key={t.id} value={t.id}>{t.title}</option>
+              <Chip key={t.id} kind="filter" selected={topic === t.id} onClick={() => go(nav({ topic: t.id }))}>{t.title}</Chip>
             ))}
-          </select>
-        </label>
+          </span>
+        </span>
         {run > 0 && (
           <span className="faint">
             Run {run}{' '}

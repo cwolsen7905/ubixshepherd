@@ -11,11 +11,14 @@
   display: flex; align-items: center; gap: var(--s-3);
   min-height: 3.2143rem; margin: 0;
 }
-.board > .page-head h1 { font-weight: 700; }
+.board > .page-head h1 { font-weight: 600; }
 .board > .page-head .page-sub { margin: 0; font-size: var(--t-sm); }
 .board > .page-head > .page-actions { margin: 0 var(--pad) 0 auto; }
 
-/* One primary per view: a lane's close button is a plain button here, and what waits on
-   the person is carried by the lantern band. */
-.board .lane-close-row .ui-btn-primary { background: var(--raised); border-color: var(--control); color: var(--ink); }
-.board .lane-close-row .ui-btn-primary:hover:not(:disabled) { background: var(--hover); border-color: var(--muted); filter: none; }
+/* One primary per view: the lane's close button lives in an overflow menu, while the
+   finished mark stays inline. */
+.board .lane-close-row { display: flex; flex-wrap: wrap; gap: var(--s-2); align-items: center; }
+.board .lane-close-row .ui-popover-anchor > .ui-btn {
+  border-color: transparent; background: none; color: var(--muted); min-height: var(--control-h-sm); padding: 0 var(--s-1);
+}
+.board .lane-close-row .ui-popover-anchor > .ui-btn:hover:not(:disabled) { color: var(--ink); background: var(--hover); }

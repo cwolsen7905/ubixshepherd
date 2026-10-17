@@ -9,10 +9,11 @@ import {
   NEXT_MARKER, NEXT_MARKS, NEXT_SECTION_NAMES, canMove, canStart, closedCount, deskWorkspace, lastPlanId, matrixGroups,
   nextSections, planLabel, stateActions, startText,
 } from '../model/next'
-import { go, href, useFocusTarget, useRoute } from '../router'
+import { go, href, useFocusTarget, useRoute, type Open } from '../router'
 import { useSnapshot } from '../state/context'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
-import { Button, Chip, EmptyState } from '../ui'
+import { Button, Chip, EmptyState, Popover } from '../ui'
+import { isOpenNow, openInInspector } from '../components/BacklogOpen'
 import '../styles/pages/next.css'
 
 export interface NextApi {
@@ -269,11 +270,30 @@ function NextRow({
   const mark = NEXT_MARKS[it.state]
   const movable = it.stored_state === 'approved' || it.stored_state === 'planned' || it.stored_state === 'deferred'
   const laneName = it.lane_name ?? it.lane
+  const open: Open | undefined = it.lane_id ? { kind: 'lane', id: it.lane_id } : undefined
+  const openProps = open
+    ? {
+        tabIndex: 0,
+        onClick: (e: React.MouseEvent) => {
+          const t = e.target as HTMLElement
+          if (t.closest('a, button, input, select')) return
+          openInInspector(open)
+        },
+        onKeyDown: (e: React.KeyboardEvent) => {
+          const t = e.target as HTMLElement
+          if (e.key === 'Enter' && !t.closest('a, button, input, select')) {
+            e.preventDefault()
+            openInInspector(open)
+          }
+        },
+      }
+    : {}
   return (
     <li
-      className={`next-row state-${it.state}${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}`}
+      {...openProps}
+      className={`next-row state-${it.state}${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}${open && isOpenNow(open) ? ' row-open' : ''}`}
       data-next-id={it.id}
-      aria-current={isNext || focused ? 'true' : undefined}
+      aria-current={open && isOpenNow(open) ? 'true' : isNext || focused ? 'true' : undefined}
     >
       <span className="next-glyph">
         {isNext ? (
@@ -327,14 +347,14 @@ function NextRow({
       </div>
       <div className="next-actions" role="group" aria-label={`Actions for ${it.title}`}>
         {canStart(it) && (
-          <Button variant="secondary" size="small" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
+          <Button variant="primary" size="small" disabled={busy} onClick={onStart} title="Put a request to open a lane in the chat draft">
             Start
           </Button>
         )}
         {stateActions(it).map((a) => (
           <Button
             key={a.state}
-            variant={a.state === 'approved' && it.proposed ? 'attention' : 'ghost'}
+            variant={a.state === 'approved' && it.proposed ? 'attention' : 'secondary'}
             size="small"
             disabled={busy}
             onClick={() => onUpdate({ state: a.state })}
@@ -353,21 +373,15 @@ function NextRow({
           </>
         )}
         {!it.lane_id && movable && lanes.length > 0 && (
-          <label className="next-link">
-            <span className="visually-hidden">Link {it.title} to a lane</span>
-            <select
-              value=""
-              disabled={busy}
-              onChange={(e) => e.target.value && onUpdate({ lane_id: Number(e.target.value) })}
-            >
-              <option value="">Link to lane…</option>
+          <Popover label="Link…">
+            <span className="ui-popover-list">
               {lanes.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
+                <button key={l.id} type="button" className="ui-btn" disabled={busy} onClick={() => onUpdate({ lane_id: l.id })}>
+                  {l.repo}/{l.name}
+                </button>
               ))}
-            </select>
-          </label>
+            </span>
+          </Popover>
         )}
       </div>
     </li>

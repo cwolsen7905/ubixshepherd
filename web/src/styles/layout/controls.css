@@ -45,3 +45,10 @@ a.badge:hover { text-decoration: underline; }
 .option[aria-pressed="true"]:focus-visible {
   box-shadow: inset 3px 0 0 var(--lantern), 0 0 0 3px color-mix(in srgb, var(--focus) 30%, transparent);
 }
+
+/* A filter group of chip options, replacing a native <select>. */
+.filters .chip-options { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1); min-height: var(--control-h-sm); }
+
+/* A list of ui-btn choices inside a Popover, used as a styled select. */
+.ui-popover-list { display: grid; gap: var(--s-1); }
+.ui-popover-list .ui-btn { width: 100%; text-align: left; }

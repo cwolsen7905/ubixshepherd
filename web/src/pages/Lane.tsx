@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api, config, history } from '../api/client'
 import type { LaneRecord, LaneView, RequestView, RunView } from '../api/types'
-import { BackLink } from '../components/BackLink'
 import { Changes } from '../components/Changes'
 import { LaneApprove } from '../components/LaneApprove'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
@@ -144,10 +143,7 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
   if (!lane) {
     const known = snap.ready && data
     return (
-      <>
-        <p className="empty">{known ? <>No open lane {id}, and no runs to show for it.</> : 'Loading…'}</p>
-        {known && <BackLink />}
-      </>
+      <p className="empty">{known ? <>No open lane {id}, and no runs to show for it.</> : 'Loading…'}</p>
     )
   }
 
@@ -156,7 +152,6 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
 
   return (
     <div className="page lane">
-      <BackLink />
       <header className="page-head lane-head">
         <h1>
           {group && <Glyph glyph={GROUP_MARKS[group].glyph} tone={GROUP_MARKS[group].tone} label={GROUP_NAMES[group]} />}

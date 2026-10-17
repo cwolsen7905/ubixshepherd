@@ -139,7 +139,8 @@ describe('NextPage', () => {
     const second = screen.getByText('Second approved').closest('li') as HTMLElement
     await userEvent.click(within(second).getByRole('button', { name: /up$/ }))
     expect(api.update).toHaveBeenCalledWith(2, { move: 'up' })
-    await userEvent.selectOptions(within(second).getByRole('combobox'), 'feat/export-csv')
+    await userEvent.click(within(second).getByRole('button', { name: 'Link…' }))
+    await userEvent.click(within(second).getByRole('button', { name: /acme-api\/feat\/export-csv/ }))
     expect(api.update).toHaveBeenCalledWith(2, { lane_id: 4 })
   })
 

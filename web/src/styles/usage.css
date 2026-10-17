@@ -17,7 +17,7 @@
 
 .usage-group { margin: 0 0 var(--s-5) var(--gutter); }
 .usage-group h2 { margin: 0 0 var(--s-2); font-size: var(--t-sm); font-weight: 600; color: var(--muted); }
-.usage-page .page-head h1 { font-weight: 700; }
+.usage-page .page-head h1 { font-weight: 600; }
 .usage-page .page-head { min-height: 45px; align-items: center; }
 .usage-table tbody tr { height: 35px; }
 .usage-table tbody td { padding: 7px 10px; }
