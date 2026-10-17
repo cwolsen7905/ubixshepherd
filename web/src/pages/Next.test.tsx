@@ -56,10 +56,12 @@ const matrixList: NextList = {
   }),
 }
 
-function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }, load = vi.fn(async (all: boolean): Promise<NextList> => (all ? everything : { ...everything, items: everything.items.slice(0, 5) }))) {
+const keepOff = async () => ({ on: false, spent_usd: 0, cap_usd: 0, runs_now: 0, max_runs: 0 })
+
+function show(api = { add: vi.fn(async () => ({})), update: vi.fn(async () => ({})) }, load = vi.fn(async (all: boolean): Promise<NextList> => (all ? everything : { ...everything, items: everything.items.slice(0, 5) })), keepGoing = keepOff) {
   render(
     <LiveProvider live={live()}>
-      <NextPage load={load} api={api} />
+      <NextPage load={load} api={api} keepGoing={keepGoing} />
     </LiveProvider>,
   )
   return { api, load }
@@ -147,7 +149,13 @@ describe('NextPage', () => {
     expect(screen.getByText(/^Open \d+$/)).toBeInTheDocument()
     expect(screen.getByText(/^Started \d+$/)).toBeInTheDocument()
     expect(screen.getByText(/^Dropped \d+$/)).toBeInTheDocument()
-    expect(screen.getByText('Starts when a slot frees, while Keep going is on')).toBeInTheDocument()
+    expect(await screen.findByText('Keep going is off: you start items')).toBeInTheDocument()
+  })
+
+  it('says Keep going is on without promising automatic starts', async () => {
+    show(undefined, undefined, async () => ({ ...(await keepOff()), on: true }))
+    expect(await screen.findByText('Keep going is on: the desk can act on approved items')).toBeInTheDocument()
+    expect(screen.queryByText(/slot frees/)).toBeNull()
   })
 
   it('selects a row and opens the detail panel', async () => {

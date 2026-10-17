@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { ApiError, nextUp } from '../api/client'
+import { ApiError, get, nextUp } from '../api/client'
 import type { MatrixRow, NextAddBody, NextItem as ApiNextItem, NextUpdateBody } from '../api/types'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
@@ -12,6 +12,7 @@ import { go, href, useFocusTarget, useRoute } from '../router'
 import { useSnapshot } from '../state/context'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { Button, Chip, EmptyState, GroupHeader } from '../ui'
+import { REFRESH_MS, type KeepGoingStatus } from '../components/KeepGoing'
 import { isInner, openInInspector, openLink } from '../components/BacklogOpen'
 import './Next.css'
 
@@ -21,6 +22,12 @@ export interface NextApi {
 }
 
 const realApi: NextApi = { add: nextUp.add, update: nextUp.update }
+
+const readKeepGoing = () => get<KeepGoingStatus>('/v1/keep-going')
+
+/** What the header says about Keep going today: it does not promise automatic starts. */
+export const keepGoingHint = (on: boolean) =>
+  on ? 'Keep going is on: the desk can act on approved items' : 'Keep going is off: you start items'
 
 const reason = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e))
 
@@ -43,7 +50,7 @@ function blockedOn(it: ApiNextItem): NextBlocker[] {
 }
 
 /** The next-up list: what is planned and not yet being acted on, in the person's order. */
-export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; api?: NextApi }) {
+export function NextPage({ load = loadNext, api = realApi, keepGoing = readKeepGoing }: { load?: LoadNext; api?: NextApi; keepGoing?: () => Promise<KeepGoingStatus> }) {
   const snap = useSnapshot()
   const now = useNow()
   const [closed, setClosed] = useState(false)
@@ -56,6 +63,17 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
       reload()
     }
   }, [planLast, reload])
+  const [keepOn, setKeepOn] = useState<boolean | null>(null)
+  useEffect(() => {
+    let live = true
+    const read = () => keepGoing().then((st) => live && setKeepOn(st.on), () => live && setKeepOn(null))
+    void read()
+    const t = window.setInterval(() => void read(), REFRESH_MS)
+    return () => {
+      live = false
+      window.clearInterval(t)
+    }
+  }, [keepGoing])
   const route = useRoute()
   const focus = route.page === 'next' ? route.focus : undefined
   const [busy, setBusy] = useState<number | 'add' | null>(null)
@@ -162,7 +180,7 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
           <Chip>Dropped {counts.dropped}</Chip>
         </span>
         <span className="next-head-right">
-          <span className="sh-faint next-head-hint">Starts when a slot frees, while Keep going is on</span>
+          {keepOn !== null && <span className="sh-faint next-head-hint">{keepGoingHint(keepOn)}</span>}
           <label className="next-composer-check">
             <input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} /> Show done and dropped
             {hiddenClosed > 0 && <span className="sh-faint"> ({hiddenClosed})</span>}
