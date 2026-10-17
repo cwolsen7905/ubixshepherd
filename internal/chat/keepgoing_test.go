@@ -49,3 +49,18 @@ func TestKeepGoingCommandAndEventText(t *testing.T) {
 		t.Errorf("a bad argument went through: %+v", a.keepSets)
 	}
 }
+
+// shepherd chat's brief and event text share the desk's opening rule and never ask for the
+// waiting line to be pasted.
+func TestChatSharesTheMessageFormat(t *testing.T) {
+	if !strings.Contains(DeskBrief, desk.FormatBrief) {
+		t.Error("DeskBrief lacks desk.FormatBrief")
+	}
+	m, d, a := newTestModel()
+	drive(t, m, m.pollFeed())
+	a.feed = []store.FeedItem{{ID: 1, Kind: store.FeedRunEnded, Text: "run 3 ended"}}
+	drive(t, m, m.pollFeed())
+	if len(d.got) != 1 || strings.Contains(d.got[0], "repeating this line") {
+		t.Fatalf("event text = %q", d.got)
+	}
+}

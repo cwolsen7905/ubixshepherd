@@ -522,8 +522,8 @@ func (d *Desk) next() (turn, bool) {
 
 // digest is the one message the swarm's waiting events become.
 //
-// It ends with the tagged "Waiting on you (N)" line when anything waits, so the desk can
-// repeat it at the end of its reply; waiting is "" when nothing does.
+// It ends with the tagged "Waiting on you (N)" line when anything waits, as context for
+// the desk and never to be pasted into its reply; waiting is "" when nothing does.
 func digest(items []string, dropped int, waiting string, keepGoing bool) string {
 	msg := "[Shepherd] Since your last turn:\n- " + strings.Join(items, "\n- ")
 	if dropped > 0 {
@@ -531,7 +531,7 @@ func digest(items []string, dropped int, waiting string, keepGoing bool) string 
 	}
 	msg += "\n" + EventInstruction(keepGoing)
 	if waiting != "" {
-		msg += "\n" + waiting + "\nEnd your reply by repeating this line, so the person sees what waits on them."
+		msg += "\n" + waiting + "\n" + WaitingInstruction
 	}
 	return msg
 }

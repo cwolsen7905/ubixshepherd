@@ -9,10 +9,10 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-func TestDigestEndsWithTheWaitingLine(t *testing.T) {
+func TestDigestEndsWithTheWaitingLineAsContext(t *testing.T) {
 	line := "[Waiting on you (2)] decision 4 (app:a): ask; MR !9 (app:b): approve it"
 	got := digest([]string{"run 3 ended"}, 0, line, false)
-	if !strings.Contains(got, "\n"+line+"\n") || !strings.HasSuffix(got, "repeating this line, so the person sees what waits on them.") {
+	if !strings.Contains(got, "\n"+line+"\n") || !strings.HasSuffix(got, WaitingInstruction) {
 		t.Errorf("digest: %q", got)
 	}
 	if none := digest([]string{"run 3 ended"}, 0, "", false); strings.Contains(none, "Waiting on you") {
@@ -78,5 +78,20 @@ func TestWakeDigestReadsKeepGoing(t *testing.T) {
 		if es[0].Origin != store.DeskBySystem {
 			t.Errorf("origin = %q", es[0].Origin)
 		}
+	}
+}
+
+// Both desks are told to open with the two lines and never to paste the waiting line.
+func TestBriefsShareTheOpeningRule(t *testing.T) {
+	for _, want := range []string{"Needs you:", "Nothing needs you.", "never paste or quote it", "Inbox", "mid-word"} {
+		if !strings.Contains(Brief, want) {
+			t.Errorf("Brief lacks %q", want)
+		}
+	}
+	if strings.Contains(digest([]string{"x"}, 0, "[Waiting on you (1)] a", false), "repeating this line") {
+		t.Error("digest still asks for the waiting line to be repeated")
+	}
+	if !strings.Contains(WaitingInstruction, "do not paste") {
+		t.Errorf("WaitingInstruction = %q", WaitingInstruction)
 	}
 }
