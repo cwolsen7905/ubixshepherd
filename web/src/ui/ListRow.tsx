@@ -1,4 +1,4 @@
-import type { KeyboardEvent, ReactNode } from 'react'
+import { forwardRef, type HTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
 import { cx } from './cx'
 import { StatusGlyph, type GlyphTone } from './StatusGlyph'
 
@@ -6,7 +6,7 @@ export type ListRowVariant = 'item' | 'lane' | 'file'
 
 const GRID: Record<ListRowVariant, string> = { item: 'sh-row--inbox', lane: 'sh-row--lane', file: 'sh-row--file' }
 
-export interface ListRowProps {
+export interface ListRowProps extends Omit<HTMLAttributes<HTMLElement>, 'title'> {
   /** `item`: glyph, two lines, age (Inbox, Next up). `lane`: adds the merge request column and a bold title. `file`: a mono sub-line and a tag. */
   variant?: ListRowVariant
   glyph: string
@@ -37,7 +37,7 @@ export interface ListRowProps {
  * short columns are fixed, so the primary track never collapses in a narrow centre column.
  * A selected row is lichen-washed; Enter or Space on a focused row selects it.
  */
-export function ListRow({
+export const ListRow = forwardRef<HTMLElement, ListRowProps>(function ListRow({
   variant = 'item',
   glyph,
   tone = 'idle',
@@ -53,7 +53,8 @@ export function ListRow({
   onSelect,
   href,
   titleAttr,
-}: ListRowProps) {
+  ...rest
+}, ref) {
   const cls = cx('sh-row', GRID[variant], selected && 'is-selected')
   const body = (
     <>
@@ -72,7 +73,15 @@ export function ListRow({
   )
   if (href) {
     return (
-      <a className={cls} data-component="ListRow" data-variant={variant} href={href} aria-current={selected ? 'true' : undefined}>
+      <a
+        ref={ref as React.Ref<HTMLAnchorElement>}
+        className={cls}
+        data-component="ListRow"
+        data-variant={variant}
+        href={href}
+        aria-current={selected ? 'true' : undefined}
+        {...rest}
+      >
         {body}
       </a>
     )
@@ -86,6 +95,7 @@ export function ListRow({
   }
   return (
     <div
+      ref={ref as React.Ref<HTMLDivElement>}
       className={cls}
       data-component="ListRow"
       data-variant={variant}
@@ -94,8 +104,9 @@ export function ListRow({
       aria-pressed={onSelect ? Boolean(selected) : undefined}
       onClick={onSelect}
       onKeyDown={onSelect ? onKey : undefined}
+      {...rest}
     >
       {body}
     </div>
   )
-}
+})

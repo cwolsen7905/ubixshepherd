@@ -178,6 +178,18 @@ export interface LaneClosed {
   notes?: string[]
 }
 
+export interface LaneFileNode {
+  path: string
+  name: string
+  kind: 'dir' | 'file'
+  size?: number
+  mime?: string
+  binary?: boolean
+  data?: string
+  redacted?: number
+  children?: LaneFileNode[]
+}
+
 export interface Run {
   id: number
   lane_id: number
