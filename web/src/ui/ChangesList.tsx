@@ -96,14 +96,14 @@ export function ChangesList({ read, worktree, editorUrl, run, variant = 'list' }
         const laneNote = run && g.key !== 'committed'
         return (
           <section key={g.key} aria-labelledby={`changes-${g.key}`}>
-            <h2 id={`changes-${g.key}`} className="section-h">
-              {g.title} <span className="group-count">{list.length}</span>
-              {laneNote && <span className="faint change-lane-note"> in the lane's worktree now</span>}
+            <h2 id={`changes-${g.key}`} className="sh-changes-h">
+              {g.title} <span className="sh-group-h-n">{list.length}</span>
+              {laneNote && <span className="faint"> in the lane's worktree now</span>}
             </h2>
             {list.length === 0 ? (
               <p className="faint">{g.empty}</p>
             ) : (
-              <ul className="change-files">
+              <ul className="sh-changes">
                 {list.map((f) => (
                   <FileRow key={`${g.key}:${f.path}`} file={f} group={g.key} read={read} worktree={worktree} editorUrl={editorUrl} runId={run?.id} variant={variant} />
                 ))}
@@ -148,50 +148,57 @@ function FileRow({ file, group, read, worktree, editorUrl, runId, variant }: {
 
   const link = file.status === 'deleted' ? null : editorHref(editorUrl, joinPath(worktree, file.path))
   const id = `patch-${group}-${file.path}`
+  const mark = STATUS_MARK[file.status] ?? '·'
+  const scope: 'A' | 'M' | 'D' | 'U' = file.status === 'added' || file.status === 'untracked' ? 'A'
+    : file.status === 'deleted' ? 'D'
+    : file.status === 'modified' || file.status === 'renamed' || file.status === 'copied' || file.status === 'typechange' ? 'M' : 'U'
+  const counts = file.binary ? `binary, ${file.size ?? 0} bytes`
+    : file.status === 'untracked' ? `${file.size ?? 0} bytes`
+    : `+${file.added}/-${file.removed}`
   return (
-    <li className={`change-file${file.in_scope ? '' : ' is-outside'}`}>
-      <div className="change-row">
+    <li className={`sh-change${file.in_scope ? '' : ' is-outside'}`} data-component="ChangeRow" title={file.in_scope ? undefined : `${file.path}: outside scope`}>
+      <span className={`sh-change-s--${scope}`} aria-hidden="true">{mark}</span>
+      <span className="sh-change-path" title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
         {variant === 'diff' ? (
-          <button
-            type="button"
-            className="change-toggle"
-            aria-expanded={open}
-            aria-controls={id}
-            onClick={() => setOpen((o) => !o)}
-          >
-            <abbr className={`change-status status-${file.status}`} title={file.status}>{STATUS_MARK[file.status] ?? '·'}</abbr>
-            <span className="change-path">
+          <>
+            <button
+              type="button"
+              className="sh-change-open"
+              aria-expanded={open}
+              aria-controls={id}
+              onClick={() => setOpen((o) => !o)}
+            >
               {file.old_path && <span className="faint">{file.old_path} → </span>}
               {file.path}
-            </span>
-          </button>
+            </button>
+            {!file.in_scope && <span className="sh-change-scope">outside scope</span>}
+          </>
         ) : (
-          <span className="change-path">
-            <abbr className={`change-status status-${file.status}`} title={file.status}>{STATUS_MARK[file.status] ?? '·'}</abbr>
+          <>
             {file.old_path && <span className="faint">{file.old_path} → </span>}
             {file.path}
-          </span>
+            {!file.in_scope && <span className="sh-change-scope">outside scope</span>}
+          </>
         )}
-        {!file.in_scope && <span className="tone-warn change-scope">outside scope</span>}
-        <span className="change-counts num">
-          {file.binary ? (
-            <span className="faint">binary, {file.size ?? 0} bytes</span>
-          ) : file.status === 'untracked' ? (
-            <span className="faint">{file.size ?? 0} bytes</span>
-          ) : (
-            <>
-              <span className="count-add">+{file.added}</span> <span className="count-del">-{file.removed}</span>
-            </>
-          )}
-        </span>
+      </span>
+      <span className="sh-change-n num">
+        {file.binary || file.status === 'untracked' ? (
+          <span className="faint">{counts}</span>
+        ) : (
+          <>
+            <span className="sh-add">+{file.added}</span>/<span className="sh-del">-{file.removed}</span>
+          </>
+        )}
+      </span>
+      <span className="sh-change-open-col">
         {link && (
-          <a className="change-edit" href={link} title={`Open in editor. ${DAEMON_PATH_NOTE}`} onClick={(e) => e.stopPropagation()}>
+          <a className="sh-change-open-link" href={link} title={`Open in editor. ${DAEMON_PATH_NOTE}`} onClick={(e) => e.stopPropagation()}>
             open<span className="visually-hidden"> {file.path} in editor</span>
           </a>
         )}
-      </div>
+      </span>
       {open && variant === 'diff' && (
-        <div id={id} className="change-patch">
+        <div id={id} className="sh-change-patch">
           {file.binary ? (
             <p className="faint">Binary file, {file.size ?? 0} bytes: no content shown.</p>
           ) : error ? (

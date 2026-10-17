@@ -34,7 +34,7 @@ function source(items: Item[] = dialogue, over: Partial<ConversationSource> = {}
   }
 }
 
-function liveWith(lanes = [lane()]) {
+function liveWith(lanes = [lane()], over: Partial<Api> = {}) {
   const api: Api = {
     status: async () => status(),
     lanes: async () => lanes,
@@ -50,6 +50,7 @@ function liveWith(lanes = [lane()]) {
     dismissRun: async () => { throw new Error('unused') },
     undismissRun: async () => { throw new Error('unused') },
     answer: async () => { throw new Error('unused') },
+    ...over,
   }
   return new Live(api, still)
 }
@@ -236,8 +237,9 @@ describe('following a running lane', () => {
 })
 
 describe('a failed or running latest run', () => {
-  async function showRuns(runs: ReturnType<typeof run>[]) {
-    const live = liveWith()
+  async function showRuns(runs: ReturnType<typeof run>[], over: Partial<Api> = {}) {
+    // No waiting decision here: the failure and running cases own the Overview.
+    const live = liveWith(undefined, { decisions: async () => [], ...over })
     await act(async () => {
       await live.refresh()
     })
@@ -361,7 +363,8 @@ describe('closing from the lane page', () => {
   const finishedReview = [{ branch: 'feat/login', worktree: '/tmp/acme-api', lane: 'feat/login', verdict: 'finished', why: 'every change on it is in origin/dev', in_base: true }]
 
   async function showWith(runs: ReturnType<typeof run>[], reviews: unknown[]) {
-    const live = liveWith()
+    // The closing tests own the Overview: no waiting decision steals the primary.
+    const live = liveWith(undefined, { decisions: async () => [] })
     await act(async () => {
       await live.refresh()
     })
@@ -378,9 +381,11 @@ describe('closing from the lane page', () => {
 
   it('marks a finished lane and offers to close it', async () => {
     await showWith([run({ state: 'succeeded' })], finishedReview)
+    // The Overview's action row shows the finished mark beside Close lane at the right.
     expect(await screen.findByText(/finished: ready to close/)).toBeInTheDocument()
     expect(screen.getByText(/every change on it is in origin\/dev; last run succeeded/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close lane' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Open as page' })).toBeInTheDocument()
   })
 
   it('shows no marker for a lane the review does not call finished', async () => {

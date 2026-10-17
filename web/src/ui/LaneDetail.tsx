@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { config } from '../api/client'
-import type { LaneRecord, LaneReview, LaneView, RunView } from '../api/types'
+import type { DecisionView, LaneRecord, LaneReview, LaneView, NextItem, RequestView, RunView, WaitingItem } from '../api/types'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { LaneApprove } from '../components/LaneApprove'
 import { GateBadge } from '../components/GateBadge'
@@ -8,11 +8,12 @@ import { MrBadge } from '../components/MrBadge'
 import { RunFailure } from '../components/RunFailure'
 import { editorHref } from '../editorLink'
 import { duration, runCost, shortSha, since } from '../format'
-import { boardItems, GROUP_NAMES } from '../model/board'
+import { boardItems, endedBadly, GROUP_NAMES } from '../model/board'
 import { ending } from '../model/history'
 import { GROUP_MARKS } from '../model/groups'
-import { href } from '../router'
+import { go, href, withOpen } from '../router'
 import { glyphTone, StatusGlyph } from './StatusGlyph'
+import { Button } from './Button'
 import { useLive, useSnapshot } from '../state/context'
 import { LaneArtifactsPanel } from '../artifacts'
 import type { ConversationSource } from '../conversation/types'
@@ -54,6 +55,58 @@ function useEditorUrl(): string | null {
   return url
 }
 
+/**
+ * The Overview's primary action: the one thing the lane's state asks of the person, so the
+ * side panel's first row acts instead of only describing. The waiting lists decide: an open
+ * decision of this lane, then a request to route, then the runs, then the next approved
+ * item of the repo. A target that does not exist is no button at all.
+ */
+export type LanePrimary =
+  | { kind: 'answer'; decision: DecisionView }
+  | { kind: 'route'; request: RequestView }
+  | { kind: 'open'; run: RunView }
+  | { kind: 'follow'; run: RunView }
+  | { kind: 'next'; item: NextItem }
+  | { kind: 'approve' }
+  | { kind: 'close'; review: LaneReview }
+  | { kind: 'failure'; run: RunView }
+
+export function laneStateAction({ lane, runs, latest, review, decisions, requests, next, waiting }: {
+  lane: LaneView
+  runs: RunView[]
+  latest?: RunView
+  review?: LaneReview
+  decisions: DecisionView[]
+  requests: RequestView[]
+  next: NextItem[]
+  waiting: WaitingItem[]
+}): LanePrimary | undefined {
+  if (lane.state !== 'open') return undefined
+  // The daemon's attention list names what waits; the lane's own lists give the target.
+  const waits = new Set(waiting.flatMap((w) => {
+    if (w.action === 'answer' && w.decision_id) return [`decision:${w.decision_id}`]
+    if (w.action === 'route' && w.request_id) return [`request:${w.request_id}`]
+    return []
+  }))
+  const decision = decisions.find((d) => waits.has(`decision:${d.id}`)) ?? decisions[0]
+  if (decision) return { kind: 'answer', decision }
+  const request = requests.find((r) => waits.has(`request:${r.id}`)) ?? requests[0]
+  if (request) return { kind: 'route', request }
+  const running = runs.find((r) => r.state === 'running') ?? (latest?.state === 'running' ? latest : undefined)
+  if (running) return { kind: 'follow', run: running }
+  // Only the latest run: an older failure a newer run has passed is history, not the state.
+  const failed = latest && endedBadly(latest) && !latest.dismissed ? latest : undefined
+  if (failed) return { kind: 'open', run: failed }
+  if (latest?.diagnosis && !latest.dismissed) return { kind: 'failure', run: latest }
+  if (defaultLaneDetailTab(lane, runs) === 'changes') return { kind: 'approve' }
+  if (review?.verdict === 'finished') return { kind: 'close', review }
+  // Only an item no lane has taken: one assigned to a lane is that lane's, not an offer.
+  const free = next.filter((n) => !n.lane_id)
+  const item = free.find((n) => waiting.some((w) => w.action === 'review' && w.next_id === n.id)) ?? free[0]
+  if (item) return { kind: 'next', item }
+  return undefined
+}
+
 /** The tab a lane opens on: changes when it is in the board's "to review" group, overview otherwise. */
 export function defaultLaneDetailTab(lane: LaneView, runs: RunView[] = []): LaneDetailTab {
   const seen = { until: '', keys: new Set<string>() }
@@ -86,12 +139,21 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
   const editorUrl = useEditorUrl()
   const finished = useFinishedLanes(lane.state === 'open' ? [lane] : [], feedLast)
   const review = finished.get(lane.id)
+  const snap = useSnapshot()
+  const waiting = snap.waiting?.items ?? []
 
-  const action = latest?.state === 'running' ? undefined
-    : latest?.diagnosis ? 'failure'
-    : defaultLaneDetailTab(lane, runs) === 'changes' ? 'approve'
-    : lane.state === 'open' && review?.verdict === 'finished' ? 'close'
-    : undefined
+  const action = laneStateAction({
+    lane,
+    runs,
+    latest,
+    review,
+    // The state's own: an open decision or a request to route first, then the runs, then
+    // the next approved item waiting for a lane of this repo.
+    decisions: snap.decisions.filter((d) => d.state === 'open' && d.lane === lane.name && d.repo === lane.repo),
+    requests: snap.requests.filter((r) => r.state === 'needs_routing' && r.from_lane === lane.name && r.repo === lane.repo),
+    next: snap.next.filter((n) => n.state === 'approved' && n.stored_state === 'approved' && (!n.repo || n.repo === lane.repo) && !n.lane_id),
+    waiting,
+  })
 
   const items = [
     {
@@ -103,7 +165,6 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
           runs={runs}
           latest={latest}
           action={action}
-          review={review}
           now={now}
           feedLast={feedLast}
           known={known}
@@ -164,12 +225,11 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
   )
 }
 
-function LaneOverview({ lane, runs, latest, action, review, now, feedLast, known, record, editorUrl }: {
+function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record, editorUrl }: {
   lane: LaneView
   runs: RunView[]
   latest?: RunView
-  action?: 'approve' | 'close' | 'failure'
-  review?: LaneReview
+  action?: LanePrimary
   now: number
   feedLast: number
   known: boolean
@@ -180,7 +240,7 @@ function LaneOverview({ lane, runs, latest, action, review, now, feedLast, known
   const snap = useSnapshot()
   const link = editorHref(editorUrl, lane.worktree)
   const group = useMemo(() => boardItems({ ...snap, lanes: [lane], decisions: [], requests: [] })[0]?.group, [snap, lane])
-  const decisions = snap.decisions.filter((d) => d.lane === lane.name && d.repo === lane.repo)
+  const decisions = snap.decisions.filter((d) => d.state === 'open' && d.lane === lane.name && d.repo === lane.repo)
   const pipelineUrl = pipelineLink(lane)
   const commits = runs.filter((r) => r.commits > 0)
   return (
@@ -296,24 +356,70 @@ function LaneOverview({ lane, runs, latest, action, review, now, feedLast, known
         )}
       </dl>
 
-      {action === 'failure' && latest && (
-        <div className="lane-detail-action">
-          <RunFailure run={latest} onFixed={() => void live.refresh()} />
-        </div>
-      )}
-      {action === 'approve' && lane.state === 'open' && (
-        <div className="lane-detail-action">
-          <LaneApprove laneId={lane.id} refreshKey={feedLast} />
-        </div>
-      )}
       {lane.state === 'open' && (
-        <div className="lane-detail-action">
-          {action === 'close' && review && <FinishedMark review={review} lastRun={latest?.state} detail />}
-          <LaneCloseButton lane={lane} running={runs.some((r) => r.state === 'running')} />
-        </div>
+        <>
+          <LanePrimaryAction lane={lane} runs={runs} latest={latest} action={action} />
+          {(action?.kind === 'open' || action?.kind === 'failure') && (
+            <div className="lane-detail-action">
+              <RunFailure run={action.run} onFixed={() => void live.refresh()} />
+            </div>
+          )}
+          {action?.kind === 'approve' && (
+            <div className="lane-detail-action">
+              <LaneApprove laneId={lane.id} refreshKey={feedLast} />
+            </div>
+          )}
+        </>
       )}
     </div>
   )
+}
+
+/**
+ * The Overview's action row: the state's primary action on the left, a ghost "Open as page"
+ * beside it, and Close lane at the right. A missing target is no primary at all; the row
+ * then shows only what applies.
+ */
+function LanePrimaryAction({ lane, runs, latest, action }: { lane: LaneView; runs: RunView[]; latest?: RunView; action?: LanePrimary }) {
+  if (lane.state !== 'open') return null
+  const primary = action && <PrimaryButton lane={lane} action={action} />
+  return (
+    <div className="lane-detail-action lane-detail-primary">
+      {primary}
+      <Button variant="ghost" onClick={() => go(href.lane(lane.id))}>
+        Open as page
+      </Button>
+      <span className="lane-detail-close">
+        {action?.kind === 'close' && <FinishedMark review={action.review} lastRun={latest?.state} detail />}
+        <LaneCloseButton lane={lane} running={runs.some((r) => r.state === 'running')} />
+      </span>
+    </div>
+  )
+}
+
+ /** The primary button for the lane's state, in the brief's words and tones. */
+function PrimaryButton({ lane, action }: { lane: LaneView; action: LanePrimary }) {
+  switch (action.kind) {
+    case 'answer':
+      // Read in the main body, with the topic thread beside it: the swap layout's own route.
+      return <Button variant="attention" onClick={() => go(withOpen(href.chat(), { kind: 'decision', id: action.decision.id }))}>Answer decision</Button>
+    case 'route':
+      return <Button variant="attention" onClick={() => go(href.decisions())}>Route request</Button>
+    case 'open':
+      return <Button variant="primary" onClick={() => go(href.log(action.run.id))}>Open run</Button>
+    case 'follow':
+      // The live log in the side panel, so the lane stays in view beside it.
+      return <Button variant="primary" onClick={() => go(withOpen(window.location.hash, { kind: 'run', id: action.run.id, tab: 'log' }))}>Follow run</Button>
+    case 'next':
+      return <Button variant="primary" onClick={() => go(href.next(action.item.id))}>Open next up</Button>
+    case 'approve':
+      return <Button variant="primary" onClick={() => go(withOpen(window.location.hash, { kind: 'lane', id: lane.id, tab: 'changes' }))}>Open changes</Button>
+    case 'failure':
+      return <Button variant="primary" onClick={() => go(href.log(action.run.id))}>Open run</Button>
+    case 'close':
+      // Finished already shows the mark beside the close below; no separate primary.
+      return null
+  }
 }
 
 /** The daemon gives a pipeline's id but not its URL; on GitLab it sits beside the MR's. */

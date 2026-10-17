@@ -168,6 +168,18 @@ describe('BoardPage closing', () => {
     await userEvent.click(row('docs-pass').getByRole('button', { name: '…' }))
     expect(row('docs-pass').getByRole('button', { name: 'Close lane' })).toBeDisabled()
   })
+
+  it('shows no overflow menu under a lane the review has not finished', async () => {
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', lane: lane(), run: run({ id: 10, state: 'running' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
+    // No review verdict arrives (the stub answers []), so neither the finished mark
+    // nor the '…' overflow menu renders: the row ends at the lane row.
+    expect(row.queryByRole('button', { name: '…' })).toBeNull()
+    expect(row.queryByText(/finished: ready to close/)).toBeNull()
+  })
 })
 
 describe('BoardPage rows', () => {

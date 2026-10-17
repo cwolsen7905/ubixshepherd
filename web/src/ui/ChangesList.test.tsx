@@ -23,8 +23,37 @@ describe('ChangesList', () => {
     expect(screen.getByRole('heading', { name: /Untracked/ })).toBeInTheDocument()
     expect(screen.getByText('1 outside scope')).toBeInTheDocument()
     const row = screen.getByText('other/x.go').closest('li') as HTMLElement
-    expect(within(row).getByText('outside scope')).toBeInTheDocument()
-    expect(document.querySelector('[data-component="ChangesList"]')).toHaveAttribute('data-variant', 'list')
+    // Outside scope is the lantern-ink row, the words in its title.
+    expect(row).toHaveClass('is-outside')
+    expect(row.title).toMatch(/outside scope/)
+    expect(within(row).getByText('M')).toHaveClass('sh-change-s--M')
+  })
+
+  it('shows letter colours, +n/-n and the open link on the row', () => {
+    render(<ChangesList read={read} worktree="/w" editorUrl="cursor://file/{path}" variant="list" />)
+    const row = screen.getByText('src/auth.go').closest('li') as HTMLElement
+    expect(within(row).getByText('M')).toHaveClass('sh-change-s--M')
+    expect(within(row).getByText('+3')).toHaveClass('sh-add')
+    expect(within(row).getByText('-1')).toHaveClass('sh-del')
+    expect(within(row).getByRole('link', { name: /in editor/ })).toHaveAttribute('href', expect.stringMatching(/^cursor:\/\/file\//))
+  })
+
+  it('colours a renamed, copied or typechanged file as modified, not untracked', () => {
+    const renamed = { ...read, committed: [file('new.go', { status: 'renamed', old_path: 'old.go' }), file('c.go', { status: 'copied' }), file('t.go', { status: 'typechange' })], uncommitted: [], untracked: [] }
+    render(<ChangesList read={renamed} worktree="/w" editorUrl={null} variant="list" />)
+    for (const [path, letter] of [['new.go', 'R'], ['c.go', 'C'], ['t.go', 'T']] as [string, string][]) {
+      const row = screen.getByText(path).closest('li') as HTMLElement
+      expect(within(row).getByText(letter)).toHaveClass('sh-change-s--M')
+    }
+  })
+
+  it('diff: says outside scope in visible words beside the file, not by colour alone', () => {
+    render(<ChangesList read={read} worktree="/w" editorUrl={null} variant="diff" />)
+    const row = screen.getByText('other/x.go').closest('li') as HTMLElement
+    const words = within(row).getByText('outside scope')
+    expect(words).toHaveClass('sh-change-scope')
+    expect(words).not.toHaveClass('visually-hidden')
+    expect(within(screen.getByText('src/auth.go').closest('li') as HTMLElement).queryByText('outside scope')).toBeNull()
   })
 
   it('list: rows do not expand', () => {
