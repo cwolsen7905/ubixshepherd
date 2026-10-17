@@ -1,18 +1,16 @@
-//go:build keepgoing_checks
-
 package daemon
 
 import (
 	"context"
 	"errors"
-	"sync"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// STUB (next-up #123, PLAN-008). This file holds only what the keep-going checks in
+// PLACEHOLDER (next-up #123, PLAN-008). This file holds only what the keep-going checks in
 // keepgoing_checks_test.go need to compile. It changes no behaviour: nothing here is
-// called by the daemon, and nothing starts work. The drive lane replaces it.
+// called by the daemon, and nothing starts work. It is untagged because KeepGoing holds a
+// DriveSeams field. The drive lane replaces it, SinceYouLeft included.
 
 // DriveStart is one run the drive asks for: the approved item, the lane to continue
 // (the zero Lane means open a new one for the item) and the prompt built from the item.
@@ -37,25 +35,13 @@ type DriveSeams struct {
 	LinkOf func(q store.Question) QuestionLink
 }
 
-var (
-	driveMu    sync.Mutex
-	driveSeams = map[*KeepGoing]*DriveSeams{}
-)
-
-// Drive returns the controller's seams, created empty on first use.
-func (k *KeepGoing) Drive() *DriveSeams {
-	driveMu.Lock()
-	defer driveMu.Unlock()
-	if driveSeams[k] == nil {
-		driveSeams[k] = &DriveSeams{}
-	}
-	return driveSeams[k]
-}
+// Drive returns the controller's seams.
+func (k *KeepGoing) Drive() *DriveSeams { return &k.drive }
 
 // errDriveNotImplemented is what the stubs return.
 var errDriveNotImplemented = errors.New("keep-going drive: not implemented")
 
-// SinceYouLeft is the one summary for the person coming back: items started, runs
+// SinceYouLeft is a placeholder that always errors until the drive lands. It is the one summary for the person coming back: items started, runs
 // finished, MRs opened or merged, what failed, and why and when the mode stopped.
 func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) {
 	return "", errDriveNotImplemented

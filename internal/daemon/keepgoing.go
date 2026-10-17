@@ -56,6 +56,8 @@ type KeepGoing struct {
 	// stalls is the stall alert's debounce, per workspace (keepgoing_stall.go).
 	stallMu sync.Mutex
 	stalls  map[int64]*stallState
+	// drive is the hooks the keep-going drive uses (keepgoing_drive.go).
+	drive DriveSeams
 }
 
 // KeepGoing returns the server's keep-going controller.
