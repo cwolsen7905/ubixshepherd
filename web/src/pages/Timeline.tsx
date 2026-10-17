@@ -89,7 +89,7 @@ export function TimelinePage({ range = DEFAULT_TIMELINE_RANGE, agent = '' }: { r
           </nav>
         )}
         <TimelineLegend agents={agents} agent={agent} range={range} />
-        <span className="tl-key-glyphs" aria-label="Marks on the tracks">
+        <span className="tl-key-glyphs" role="group" aria-label="Marks on the tracks">
           <span><b className="is-lantern">?</b> waiting on you</span>
           <span><b className="is-ok">◆</b> merged</span>
           <span><b className="is-broken">✗</b> failed</span>

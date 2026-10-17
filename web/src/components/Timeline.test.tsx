@@ -33,7 +33,9 @@ afterEach(() => {
 
 describe('the end mark of a failed bar', () => {
   it('stays in the broken colour and inside the plot for a thin bar ending at the right edge', () => {
-    const failed = data.runs.find((r) => r.state === 'failed') as (typeof data.runs)[number]
+    const failed = data.runs.find((r) => r.state === 'failed')
+    expect(failed).toBeDefined()
+    if (!failed) return
     const thin = { ...failed, started: BUSY_NOW - 20_000, ended: BUSY_NOW - 1_000, diagnosis: undefined }
     const edited = { ...data, runs: data.runs.map((r) => (r.id === failed.id ? thin : r)) }
     const { container } = chart({ data: edited, width: 300 })
