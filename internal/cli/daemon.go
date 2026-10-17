@@ -416,30 +416,11 @@ func processAlive(pid int) bool {
 	return err == nil && p.Signal(syscall.Signal(0)) == nil
 }
 
-// daemonDrain has a running daemon stop starting runs and wait, up to timeout, for the
-// agents going to finish; those still going then are stopped, their sessions kept, and
-// continued after the restart. It returns when the daemon has nothing running. A daemon
-// that is not running has nothing to drain.
-func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
-	c, err := connectRunning(ctx, env)
-	if err != nil {
-		return err
-	}
-	if c == nil {
-		return nil
-	}
-	d, err := c.Drain(ctx, timeout)
-	if err != nil {
-		if strings.Contains(err.Error(), "404") {
-			// A daemon from before the drain: nothing to wait for, but it can restart.
-			fmt.Fprintln(env.Stderr, "this daemon is too old to drain; restarting it as it is")
-			return nil
-		}
-		return fmt.Errorf("drain the daemon: %w (a running daemon was left as it is)", err)
-	}
-	if d.Runs > 0 {
-		fmt.Fprintf(env.Stdout, "%s; new starts are held until after the restart\n", d.Text(time.Now()))
-	}
+// waitDrained polls the daemon until it reports nothing running, d being its answer to
+// the drain. A daemon that gave the drain up is an error.
+func waitDrained(ctx context.Context, env Env, c interface {
+	Status(context.Context) (api.Status, error)
+}, d api.Draining, timeout time.Duration) error {
 	last := d.Runs
 	// The daemon stops what is left at the timeout and then needs a moment to record it.
 	limit := time.Now().Add(timeout + time.Minute)
@@ -465,6 +446,36 @@ func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
 		if time.Now().After(limit) {
 			return errors.New("the daemon did not finish draining; it was left running")
 		}
+	}
+	return nil
+}
+
+// daemonDrain has a running daemon stop starting runs and wait, up to timeout, for the
+// agents going to finish; those still going then are stopped, their sessions kept, and
+// continued after the restart. It returns when the daemon has nothing running. A daemon
+// that is not running has nothing to drain.
+func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
+	c, err := connectRunning(ctx, env)
+	if err != nil {
+		return err
+	}
+	if c == nil {
+		return nil
+	}
+	d, err := c.Drain(ctx, timeout)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") {
+			// A daemon from before the drain: nothing to wait for, but it can restart.
+			fmt.Fprintln(env.Stderr, "this daemon is too old to drain; restarting it as it is")
+			return nil
+		}
+		return fmt.Errorf("drain the daemon: %w (a running daemon was left as it is)", err)
+	}
+	if d.Runs > 0 {
+		fmt.Fprintf(env.Stdout, "%s; new starts are held until after the restart\n", d.Text(time.Now()))
+	}
+	if err := waitDrained(ctx, env, c, d, timeout); err != nil {
+		return err
 	}
 	fmt.Fprintln(env.Stdout, "drained: restarting")
 	return nil

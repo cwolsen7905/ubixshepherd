@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
@@ -156,5 +157,27 @@ func TestConnectRunningTellsNoDaemonFromAnUnansweringOne(t *testing.T) {
 	os.WriteFile(l.Runtime(), []byte(fmt.Sprintf(`{"addr":"127.0.0.1:1","pid":%d,"token":"x"}`, os.Getpid())), 0o600)
 	if c, err := connectRunning(context.Background(), env); c != nil || err == nil {
 		t.Errorf("unanswering daemon: %v %v", c, err)
+	}
+}
+
+type fakeStatus struct{ st api.Status }
+
+func (f fakeStatus) Status(context.Context) (api.Status, error) { return f.st, nil }
+
+func TestRestartDrainRefusesWhenTheDaemonGaveTheDrainUp(t *testing.T) {
+	var out bytes.Buffer
+	env := Env{Stdout: &out, Stderr: io.Discard}
+	// The daemon no longer reports a drain: its grace ran out and it took starts again.
+	err := waitDrained(context.Background(), env, fakeStatus{}, api.Draining{Runs: 1, Until: time.Now().Add(time.Minute)}, time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "gave up the drain") {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(out.String(), "drained") {
+		t.Errorf("said drained: %q", out.String())
+	}
+	// One that reports Drained lets the restart go on.
+	done := fakeStatus{api.Status{Draining: &api.Draining{Drained: true}}}
+	if err := waitDrained(context.Background(), env, done, api.Draining{Runs: 1}, time.Minute); err != nil {
+		t.Errorf("drained daemon: %v", err)
 	}
 }
