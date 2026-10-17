@@ -274,13 +274,14 @@ function Segmented<T extends string>({ label, value, options, onPick }: { label:
 
 /**
  * The diff's lines, each with the risk it carries. The YAML key path of every shown line is
- * tracked from its indentation, and an added line is risky when that path ends the risk's
- * dotted path (a hunk may start below the root, so the parents it shows are all there is).
+ * tracked from its indentation, and an added line is risky only when that path is the risk's
+ * full dotted path. A risk no shown line matches (a hunk without its parents) comes back
+ * as `unplaced`, so it is still listed rather than pinned on a guess.
  */
 function diffLines(diff: string, risky: ConfigRisk[]) {
   const claimed = new Set<number>()
   const stack: { indent: number; key: string }[] = []
-  return diff.split('\n').filter((l, i, all) => l !== '' || i < all.length - 1).map((text, i) => {
+  const lines = diff.split('\n').filter((l, i, all) => l !== '' || i < all.length - 1).map((text, i) => {
     const sign = text.startsWith('+') ? '+' : text.startsWith('-') ? '-' : text.startsWith('@@') ? '@' : ' '
     let risk: ConfigRisk | undefined
     if (sign === '@') stack.length = 0
@@ -292,7 +293,7 @@ function diffLines(diff: string, risky: ConfigRisk[]) {
         const key = (m[2] ?? '').trim()
         const path = [...stack.map((x) => x.key), key].join('.')
         if (sign === '+') {
-          const j = risky.findIndex((r, n) => !claimed.has(n) && `.${r.path}`.endsWith(`.${path}`))
+          const j = risky.findIndex((r, n) => !claimed.has(n) && r.path === path)
           if (j >= 0) {
             claimed.add(j)
             risk = risky[j]
@@ -303,13 +304,14 @@ function diffLines(diff: string, risky: ConfigRisk[]) {
     }
     return { i, sign, text: sign === '@' ? text : sign === ' ' ? text : text.slice(1), risk }
   })
+  return { lines, unplaced: risky.filter((_, n) => !claimed.has(n)) }
 }
 
 function StagedBar({ preview, risky, problems, count, canWrite, why, busy, onDiscard, onSave }: {
   preview: ConfigPreview | null; risky: ConfigRisk[]; problems: string[]; count: number; canWrite: boolean; why?: string; busy: boolean
   onDiscard: () => void; onSave: () => void
 }) {
-  const lines = preview ? diffLines(preview.diff, risky) : []
+  const { lines, unplaced } = preview ? diffLines(preview.diff, risky) : { lines: [], unplaced: [] }
   return (
     <section className="sh-staged" aria-label="Unsaved changes" data-component="StagedBar">
       <div className="sh-staged-inner">
@@ -348,6 +350,13 @@ function StagedBar({ preview, risky, problems, count, canWrite, why, busy, onDis
             </div>
           ))}
         </div>
+        {unplaced.length > 0 && (
+          <ul className="sh-diff-unplaced" aria-label="Risky changes not shown on a line">
+            {unplaced.map((r) => (
+              <li key={r.path}><span className="sh-risk-flag"><span aria-hidden="true">◆</span> Risky</span> <code>{r.path}</code>: {r.why}.</li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   )

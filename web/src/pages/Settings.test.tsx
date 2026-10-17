@@ -192,7 +192,7 @@ describe('SettingsPage sections', () => {
   it('marks a risky line with why, and confirms in the modal before it saves', async () => {
     const seen = daemon(doc(), (m, p) => {
       if (p === '/v1/config/preview') {
-        return json({ etag: 'e1', diff: '+    autonomy:\n+      merge: agent\n', risky: [{ path: 'repos.api.autonomy.merge', from: 'human', to: 'agent', why: 'lets an agent merge without the person' }] })
+        return json({ etag: 'e1', diff: '+  repos:\n+    api:\n+      autonomy:\n+        merge: agent\n', risky: [{ path: 'repos.api.autonomy.merge', from: 'human', to: 'agent', why: 'lets an agent merge without the person' }] })
       }
       if (m === 'PUT') return json({ etag: 'e2', diff: '', reloaded: true })
       return undefined
@@ -230,6 +230,20 @@ describe('SettingsPage sections', () => {
     await waitFor(() => expect(within(diff).getAllByText(/Risky/)).toHaveLength(1))
     expect(within(diff).getByText('merge: agent').closest('.sh-diff-line')).toHaveTextContent('Risky')
     expect(within(diff).getByText('merge: x').closest('.sh-diff-line')).not.toHaveTextContent('Risky')
+  })
+
+  it('lists a risk whose parents the diff does not show, and marks no line for it', async () => {
+    daemon(doc(), (_m, p) =>
+      p === '/v1/config/preview'
+        ? json({ etag: 'e1', diff: '+    merge: agent\n', risky: [{ path: 'repos.api.autonomy.merge', from: 'human', to: 'agent', why: 'lets an agent merge' }] })
+        : undefined,
+    )
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: 'Rule: agent' }))
+    const list = await screen.findByRole('list', { name: 'Risky changes not shown on a line' })
+    expect(list).toHaveTextContent('repos.api.autonomy.merge')
+    expect(within(screen.getByRole('region', { name: 'Diff of config.yaml' })).getByText('merge: agent').closest('.sh-diff-line')).not.toHaveTextContent('Risky')
   })
 
   it('shows validation problems and offers no save', async () => {

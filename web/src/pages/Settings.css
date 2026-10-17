@@ -12,8 +12,8 @@
 
 .sh-setting-label code { font-size: var(--sh-t-small); }
 .sh-setting-model { font-size: var(--sh-t-micro); color: var(--sh-muted); margin-left: var(--sh-s2); }
-.sh-setting-was { font-size: var(--sh-t-micro); font-weight: 600; color: var(--sh-lantern-ink); margin-top: 2px; }
-.sh-setting.is-edited { box-shadow: inset 2px 0 0 var(--sh-lantern); padding-left: var(--sh-s4); }
+.sh-setting-was { font-size: var(--sh-t-micro); font-weight: 600; color: var(--sh-ink); margin-top: 2px; }
+.sh-setting.is-edited { box-shadow: inset 2px 0 0 var(--sh-control); padding-left: var(--sh-s4); }
 
 .sh-stepper { display: inline-flex; border: 1px solid var(--sh-control); border-radius: var(--sh-r); overflow: hidden; font-size: var(--sh-t-small); background: var(--sh-raised); }
 .sh-stepper button { border: 0; background: transparent; color: var(--sh-muted); padding: 4px 10px; cursor: pointer; font: inherit; }
@@ -84,3 +84,4 @@
 .sh-advanced .repo-picker ul { margin: 0; padding: 0; list-style: none; }
 .sh-advanced .repo-picker li { padding-block: var(--sh-s2); }
 .sh-advanced .tag-risk .ui-chip { color: var(--sh-lantern-ink); border-color: var(--sh-lantern); background: var(--sh-lantern-wash); }
+.sh-diff-unplaced { margin: 0; padding: 0; list-style: none; font-size: var(--sh-t-meta); color: var(--sh-muted); }
