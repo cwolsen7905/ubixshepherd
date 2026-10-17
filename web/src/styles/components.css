@@ -468,6 +468,7 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-page-head-tabs .sh-tab { padding: var(--sh-s4) var(--sh-s2); white-space: nowrap; }
 .sh-page-head:not(:has(.sh-page-head-tabs)) { padding-bottom: var(--sh-s5); }
 .sh-page-head-title h1:focus, .sh-page-head-title h1:focus-visible { outline: none; }
+.inspector .sh-page-head { background: var(--sh-raised); }
 .inspector > .sh-page-head { padding-inline: var(--sh-s8); }
 .sh-page-head .tab-count { padding: 0; background: none; font-weight: inherit; color: var(--sh-muted); }
 .sh-page-head .sh-tab.is-on .tab-count { color: var(--sh-ink); }
@@ -476,6 +477,10 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 @media (max-width: 40rem) {
   .sh-page-head-beside { display: none; }
   .sh-page-head-meta, .sh-page-head-tabs { padding-left: 0; }
+  /* One line that swipes, so the sticky header does not take a third of a phone's height. */
+  .sh-page-head-meta { flex-wrap: nowrap; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+  .sh-page-head-title { margin-top: var(--sh-s3); }
+  .sh-page-head-actions { margin-top: var(--sh-s3); }
 }
 .lane-detail[data-layout="page"] { gap: 0; }
 .lane-overview-page { display: flex; flex-wrap: wrap; gap: var(--sh-s4) var(--sh-s9); align-items: flex-start; }
