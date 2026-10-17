@@ -335,7 +335,7 @@ function NextRow({
     if (!movable) return
     const fromId = Number(e.dataTransfer.getData('text/plain'))
     const from = all.findIndex((x) => x.id === fromId)
-    if (from < 0 || from === flatIdx || all[from].stored_state !== it.stored_state) return
+    if (from < 0 || from === flatIdx || all[from]?.stored_state !== it.stored_state) return
     const dir = flatIdx < from ? 'up' : 'down'
     const steps = Math.abs(flatIdx - from)
     onMove(fromId, dir, steps)
