@@ -10,8 +10,9 @@ function scrollToEnd(box: HTMLElement): number {
 }
 
 /** Moves the nearest scroller of `target` (the window when none) to its end, noting where it landed. */
-function scrollToBottom(target: RefObject<HTMLElement | null>, lastY: { current: number }) {
+function scrollToBottom(target: RefObject<HTMLElement | null>, lastY: { current: number }, scroller: { current: HTMLElement | null }) {
   const box = ownScroller(target.current)
+  scroller.current = box
   if (box) {
     lastY.current = scrollToEnd(box)
     return
@@ -46,6 +47,9 @@ function ownScroller(el: HTMLElement | null): HTMLElement | null {
 export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unknown[]) {
   const pinned = useRef(true)
   const lastY = useRef(0)
+  // The scroll container, found when the thread mounts and again whenever it is moved to the bottom
+  // (content grew or resized), never per scroll or wheel event.
+  const scroller = useRef<HTMLElement | null>(null)
   const [following, setFollowing] = useState(true)
 
   const pin = useCallback((v: boolean) => {
@@ -54,16 +58,15 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
       setFollowing(v)
     }
   }, [])
-  const toBottom = useCallback(() => scrollToBottom(target, lastY), [target])
+  const toBottom = useCallback(() => scrollToBottom(target, lastY, scroller), [target])
   const jump = useCallback(() => {
     pin(true)
     toBottom()
   }, [pin, toBottom])
 
   useEffect(() => {
-    // The scroller is found again on each event: a wrapper starts to scroll once the thread outgrows it.
     const onScroll = (e: Event) => {
-      const box = ownScroller(target.current)
+      const box = scroller.current
       const from = e.target
       if (box ? from !== box : from instanceof Element) return
       const y = box ? box.scrollTop : window.scrollY
@@ -74,15 +77,15 @@ export function useFollowBottom(target: RefObject<HTMLElement | null>, deps: unk
     }
     const onWheel = (e: WheelEvent) => {
       // A wheel over another column scrolls that column, not this thread.
-      const box = ownScroller(target.current)
+      const box = scroller.current
       if (box && !(e.target instanceof Node && box.contains(e.target))) return
       if (e.deltaY < 0) pin(false)
     }
     const onResize = () => {
       if (pinned.current) toBottom()
     }
-    const first = ownScroller(target.current)
-    lastY.current = first ? first.scrollTop : window.scrollY
+    scroller.current = ownScroller(target.current)
+    lastY.current = scroller.current ? scroller.current.scrollTop : window.scrollY
     // Scroll does not bubble: listen in the capture phase to hear whichever element scrolls.
     window.addEventListener('scroll', onScroll, { passive: true, capture: true })
     window.addEventListener('wheel', onWheel, { passive: true })
