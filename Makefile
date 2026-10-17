@@ -64,6 +64,8 @@ check: core-boundary script-check
 
 # The keep-going checks (KEEP-C-01 to C-12 in the keep-going spec) are tests behind a
 # build tag. They fail until the daemon-side drive lands, so this is not part of check.
+# The -run pattern also picks up the existing untagged keep-going and stall tests in the
+# package: they must keep passing alongside the checks.
 check-keep-going:
 	@go test -v -count=1 -tags keepgoing_checks ./internal/daemon -run 'KeepGoing|Stall|Linked|Unlinked' > .keepgoing-checks.log 2>&1; \
 	status=$$?; grep -E '^(--- |ok|FAIL|panic)' .keepgoing-checks.log; \

@@ -526,19 +526,24 @@ func TestKeepGoingLimitsHoldOnDrive(t *testing.T) {
 	})
 	t.Run("lane starts", func(t *testing.T) {
 		s, _, clk, ws, lane := keepSetup(t)
+		ctx := context.Background()
 		d := fakeDrive(t, s, clk)
-		approvedItem(t, s, "Busy lane item")
+		// An approved step on a lane that has had all its autonomous starts today.
+		it := approvedItem(t, s, "Busy lane item")
+		if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &lane.ID}); err != nil {
+			t.Fatal(err)
+		}
 		keepOn(t, s, ws, api.KeepGoingSet{})
-		day := "2026-10-11"
 		for i := 0; i < s.LiveConfig().KeepGoing.StartsPerLane(); i++ {
-			if _, err := s.Store.CountLaneStart(context.Background(), lane.ID, day); err != nil {
+			if _, err := s.Store.CountLaneStart(ctx, lane.ID, "2026-10-11"); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if dec := s.KeepGoing().Allow(context.Background(), ws.ID, KeepContinue, lane.ID); dec.OK {
-			t.Fatalf("Allow must refuse a lane out of starts: %+v", dec)
+		tick(s, clk)
+		tick(s, clk)
+		if n := d.count(); n != 0 {
+			t.Fatalf("a lane out of starts was started again: %v", d.items())
 		}
-		_ = d
 	})
 }
 
