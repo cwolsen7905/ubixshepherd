@@ -31,9 +31,23 @@
 .group-needs .row:hover { background: color-mix(in srgb, var(--lantern) 12%, var(--lantern-wash)); }
 .row:focus-visible { outline-offset: -2px; }
 .row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--lichen); }
+/* The keyboard cursor (j/k) is its own state, apart from the row the inspector holds. */
+.row[data-selected="true"] { background: var(--hover); }
 .row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row-lane { font-weight: 600; }
 .row-agent, .row-repo { color: var(--muted); }
 .row-detail { color: var(--muted); }
 .row-age { text-align: right; color: var(--faint); font-size: var(--t-xs); }
 
+
+/* Table rows that open the inspector (Runs): focusable, with the same open marker as .row. */
+tr.row-open { cursor: pointer; }
+tr.row-open:hover { background: var(--hover); }
+tr.row-open:focus-visible { outline-offset: -2px; }
+tr.row-open[aria-current="true"] { box-shadow: inset 3px 0 0 var(--lichen); background: var(--hover); }
+/* The Finished section's row: the whole row opens, the name link is the focus stop. */
+.row-finished[aria-current="true"] { box-shadow: inset 3px 0 0 var(--lichen); }
+.row-finished { cursor: pointer; }
+/* The backlog rail's row: its name link carries the open marker. */
+.backlog-row:has(a[aria-current="true"]) { box-shadow: inset 3px 0 0 var(--lichen); }
+.backlog-main a[aria-current="true"] { font-weight: 600; }

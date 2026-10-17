@@ -23,15 +23,9 @@ import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
 import { useKeys, useNow } from '../hooks'
 import { go, href } from '../router'
+import { isOpenNow, itemOpen, openClick, openHref, openRow } from '../components/BacklogOpen'
 import { useLive, useSnapshot } from '../state/context'
 
-/** Where a row leads: a decision to its answer, a lane to its page. */
-function target(it: BoardItem): string | null {
-  if (it.decision) return href.decisions(it.decision.id)
-  if (it.request) return href.decisions()
-  if (it.laneId !== undefined) return href.lane(it.laneId)
-  return null
-}
 
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -138,7 +132,7 @@ export function BoardPage({
           <ul className="rows">
             {list.map((it) => {
               const i = ++index
-              const to = target(it)
+              const op = itemOpen(it)
               const mark = GROUP_MARKS[it.group]
               const dr = it.run
               const body = (
@@ -156,19 +150,17 @@ export function BoardPage({
               )
               return (
                 <li key={it.key}>
-                  {to ? (
+                  {op || it.request ? (
                     <a
                       ref={(el) => {
                         rows.current[i] = el
                       }}
                       className="row"
-                      href={to}
-                      aria-current={i === clamped ? 'true' : undefined}
+                      href={op ? openHref(op) : href.decisions()}
+                      aria-current={op && isOpenNow(op) ? 'true' : undefined}
+                      data-selected={i === clamped ? 'true' : undefined}
                       onFocus={() => setSel(i)}
-                      onClick={(e) => {
-                        e.preventDefault()
-                        go(to)
-                      }}
+                      onClick={op ? openClick(op) : (e) => (e.preventDefault(), go(href.decisions()))}
                     >
                       {body}
                     </a>
@@ -373,7 +365,7 @@ function FinishedSection({
             const cost = runCost(l) || usd(0)
             return (
               <li key={l.id}>
-              <div className="row row-finished">
+              <div {...openRow({ kind: 'lane', id: l.id })} className="row row-finished" tabIndex={-1} data-selected={i === selected ? 'true' : undefined}>
                 <Glyph glyph="−" tone={end.tone} label="closed" />
                 <span className="row-lane">
                   <a
@@ -381,13 +373,9 @@ function FinishedSection({
                       rows.current[i] = el
                     }}
                     className="row-link"
-                    href={href.lane(l.id)}
-                    aria-current={i === selected ? 'true' : undefined}
+                    href={openHref({ kind: 'lane', id: l.id })}
                     onFocus={() => onSelect(i)}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      go(href.lane(l.id))
-                    }}
+                    onClick={openClick({ kind: 'lane', id: l.id })}
                   >
                     {l.name}
                   </a>

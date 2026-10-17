@@ -126,9 +126,9 @@ describe('the Finished section of the board', () => {
     expect(rows[2]).toHaveTextContent('spike')
     expect(rows[2]).toHaveTextContent('dropped')
     expect(rows[2]).toHaveTextContent('$0.30')
-    // The merge request links out; the lane's name opens the lane page.
+    // The merge request links out; the lane's name opens it in the inspector.
     expect(within(rows[1] as HTMLElement).getByRole('link', { name: '!34' })).toHaveAttribute('href', 'https://forge.test/acme/-/merge_requests/34')
-    expect(within(rows[1] as HTMLElement).getByRole('link', { name: 'feat/login' })).toHaveAttribute('href', '#/lanes/1')
+    expect(within(rows[1] as HTMLElement).getByRole('link', { name: 'feat/login' })).toHaveAttribute('href', '#/?open=lane%3A1')
     // Today starts at local midnight.
     const asked = seen.find((u) => u.pathname === '/v1/history/lanes')
     const midnight = new Date(NOW)

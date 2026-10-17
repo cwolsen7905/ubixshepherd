@@ -379,7 +379,8 @@ describe('words', () => {
 describe('a run’s task', () => {
   it('is the whole prompt for a snapshot run, so the Task: marker survives', () => {
     const { src } = busyDay()
-    const snap = src.runs[0]!
+    const snap = src.runs[0]
+    if (!snap) throw new Error('no run')
     const prompt = 'You are working for acme in lane x.\nTask:\nFix the thing.'
     const data = assemble({ ...src, runs: [{ ...snap, prompt }, ...src.runs.slice(1)] })
     expect(data.runs.find((r) => r.id === snap.id)?.task).toBe(prompt)
@@ -387,8 +388,10 @@ describe('a run’s task', () => {
 
   it('falls back to the history task when the snapshot prompt is empty, and to the history task alone', () => {
     const { src } = busyDay()
-    const snap = src.runs[0]!
-    const hist = src.historyRuns!.find((h) => h.id === snap.id)!
+    const snap = src.runs[0]
+    if (!snap) throw new Error('no run')
+    const hist = src.historyRuns?.find((h) => h.id === snap.id)
+    if (!hist) throw new Error('no history run')
     for (const prompt of ['', '  \n ']) {
       const data = assemble({ ...src, runs: [{ ...snap, prompt }, ...src.runs.slice(1)] })
       expect(data.runs.find((r) => r.id === snap.id)?.task).toBe(hist.task)
