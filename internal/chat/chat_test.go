@@ -103,6 +103,7 @@ type fakeAPI struct {
 	sessCalls  int
 	keep       api.KeepGoingStatus
 	projects   []api.ProjectSummary
+	projectErr error
 	keepSets   []api.KeepGoingSet
 }
 
@@ -166,7 +167,7 @@ func (f *fakeAPI) AskSession(_ context.Context, id, q string) (convo.Answer, err
 	return convo.Answer{Text: "The webhook secret is in Vault."}, nil
 }
 func (f *fakeAPI) Projects(context.Context) (api.ProjectList, error) {
-	return api.ProjectList{Projects: f.projects}, nil
+	return api.ProjectList{Projects: f.projects}, f.projectErr
 }
 func (f *fakeAPI) Setting(_ context.Context, k string) (string, error) { return f.settings[k], nil }
 func (f *fakeAPI) SettingInfo(_ context.Context, k string) (api.Setting, error) {

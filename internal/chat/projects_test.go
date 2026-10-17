@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -196,5 +197,21 @@ func TestGroupCommand(t *testing.T) {
 	typeLine(t, m, "/group nonsense now")
 	if !has(m.Lines(), KindError, "usage: /group") {
 		t.Error("want a usage line")
+	}
+}
+
+func TestFailedProjectsReadKeepsKnownProjects(t *testing.T) {
+	m, a := projectModel()
+	a.projects = nil
+	a.projectErr = errors.New("blip")
+	drive(t, m, m.pollPanel(false))
+	if len(m.projects) != 3 {
+		t.Fatalf("a failed read dropped the projects: %+v", m.projects)
+	}
+	// A read that works and finds none is real.
+	a.projectErr = nil
+	drive(t, m, m.pollPanel(false))
+	if len(m.projects) != 0 {
+		t.Errorf("an empty list should clear: %+v", m.projects)
 	}
 }

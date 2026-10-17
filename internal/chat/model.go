@@ -231,6 +231,7 @@ type panelMsg struct {
 	keepOn          bool
 	spend           api.SpendToday
 	projects        []api.ProjectSummary
+	projectsRead    bool // projects is what the daemon said, even if empty
 	sessions        []api.SessionView
 	panelUpdated    bool
 	sessionsUpdated bool
@@ -444,8 +445,8 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
-		// An older daemon without projects leaves the dock as it was.
-		pl, _ := m.api.Projects(m.ctx)
+		// A failed read (an older daemon, or a blip) keeps the projects already known.
+		pl, perr := m.api.Projects(m.ctx)
 		// An older daemon without the endpoint reads as off, the cautious text.
 		kg, _ := m.api.KeepGoing(m.ctx, m.workspace.ID)
 		var ss []api.SessionView
@@ -456,7 +457,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 			}
 		}
 		pm := panelMsg{
-			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), waiting: wt, spend: sp, projects: pl.Projects, sessions: ss,
+			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), waiting: wt, spend: sp, projects: pl.Projects, projectsRead: perr == nil, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions, keepOn: kg.On,
 		}
 		if includeSessions {
@@ -692,7 +693,9 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 				m.focusInput()
 			}
 			m.spend = msg.spend
-			m.projects = msg.projects
+			if msg.projectsRead {
+				m.projects = msg.projects
+			}
 			if m.dockView {
 				m.refreshPager()
 			}
