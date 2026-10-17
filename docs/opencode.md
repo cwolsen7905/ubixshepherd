@@ -1,13 +1,17 @@
 # OpenCode
 
 `shepherd lane run --agent opencode` starts [OpenCode](https://opencode.ai) headless in a
-lane's worktree. It exists for **small mechanical edits on a local model**: typos,
-renames, one-line fixes, where a hosted model is more than the job needs.
+lane's worktree. On a local model it does **small mechanical edits**: typos,
+renames, one-line fixes, where a hosted model is more than the job needs. On a
+hosted model through OpenRouter it does real work, tests included, as for any agent.
 
-**Do not use it to write tests in a typed codebase.** On the model it was checked with
-(a 30B coder model behind an OpenAI-compatible host) it was fine for typos, renames and
-tiny bug fixes and unusable for tests. Use Claude Code, Copilot or Cursor for anything
-that needs judgment.
+A local model must not write tests in a typed codebase. On the model it was checked
+with (a 30B coder model behind an OpenAI-compatible host) it was fine for typos,
+renames and tiny bug fixes and unusable for tests, so its brief carries the
+small-model limits. A hosted model's brief carries the standard rules instead.
+Every OpenCode run, on a local model or a hosted one, is told how to call
+Shepherd's tools and to commit as it goes in small commits, because a run that
+runs out of context loses uncommitted work.
 
 ## Setup
 

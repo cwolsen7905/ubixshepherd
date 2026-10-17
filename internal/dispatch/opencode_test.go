@@ -485,6 +485,48 @@ func TestOpenCodeHostedCostIsLabelledAnEstimate(t *testing.T) {
 	}
 }
 
+// The brief's note differs by the run's model: a local model keeps the
+// small-model limits, a hosted one gets the standard rules, and every run gets
+// the tool-calling guidance and the commit-as-you-go rule.
+func TestOpenCodeNoteIsByModel(t *testing.T) {
+	tools := []string{"one tool call at a time", "shepherd_ask_human", "shepherd_ask_shepherd", "shepherd_report", "git add", "commit as you go"}
+	for _, model := range []string{"qwen3-coder:30b", "local/qwen3-coder:30b", ""} {
+		note := openCodeNote(model)
+		if !strings.Contains(note, "small local model") || !strings.Contains(note, "Do not write tests") {
+			t.Errorf("local %q lacks the small-model limits: %q", model, note)
+		}
+		for _, want := range tools {
+			if !strings.Contains(note, want) {
+				t.Errorf("local %q lacks %q: %q", model, want, note)
+			}
+		}
+	}
+	for _, model := range []string{"openrouter/moonshotai/kimi-k2.7-code", "openrouter/meta/muse-spark-1.3-contributor", "anthropic/claude-sonnet-4-5"} {
+		note := openCodeNote(model)
+		if strings.Contains(note, "small local model") || strings.Contains(note, "Do not write tests") {
+			t.Errorf("hosted %q keeps the small-model limits: %q", model, note)
+		}
+		if !strings.Contains(note, "tests included") {
+			t.Errorf("hosted %q lacks the standard rules: %q", model, note)
+		}
+		for _, want := range tools {
+			if !strings.Contains(note, want) {
+				t.Errorf("hosted %q lacks %q: %q", model, want, note)
+			}
+		}
+	}
+	ad := adapters["opencode"]
+	if ad.NoteFor == nil {
+		t.Fatal("the opencode adapter has no NoteFor")
+	}
+	if got := ad.NoteFor(Opts{Model: "qwen3-coder:30b"}); got != openCodeLocalNote {
+		t.Errorf("NoteFor(local) = %q, want the small-model limits", got)
+	}
+	if got := ad.NoteFor(Opts{Model: "openrouter/moonshotai/kimi-k2.7-code"}); got != openCodeHostedNote {
+		t.Errorf("NoteFor(hosted) = %q, want the standard rules", got)
+	}
+}
+
 // The window in the config is the local endpoint's; a hosted model's is left unknown.
 func TestOpenCodeUsageWindowIsLocalOnly(t *testing.T) {
 	old := openCodeSettings

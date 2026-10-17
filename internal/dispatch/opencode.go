@@ -1,7 +1,7 @@
 package dispatch
 
-// The OpenCode adapter: `opencode run` headless, for small mechanical edits on a local
-// model. How it differs from the other adapters:
+// The OpenCode adapter: `opencode run` headless, on a local model or a hosted one.
+// How it differs from the other adapters:
 //
 //   - The prompt goes on standard input (`opencode run` with no message argument reads
 //     it), never on the command line and never in a file.
@@ -12,6 +12,8 @@ package dispatch
 //     home, and the variable is in the run's environment only (Adapter.Env).
 //   - The session id is in every JSON event, so it is read from the output; a run is
 //     resumed with -s.
+//   - The brief's note differs by the run's model (NoteFor): a local model keeps
+//     the small-model limits, a hosted one gets the standard rules, tests included.
 //   - The version is pinned to the major the adapter was tested with, checked each time
 //     the adapter is looked up (AdapterFor), so every run, a resumed one too, is refused
 //     with a message when the installed opencode is another major.
@@ -403,6 +405,35 @@ func openCodeOutput(line string) Output { return openCodeReader("")(line) }
 func openCodeHosted(model string) bool {
 	_, local := openCodeLocalModel(model)
 	return !local
+}
+
+// openCodeToolsNote is the guidance every OpenCode run gets, on a local model or a
+// hosted one: how to call Shepherd's tools and how to commit, including committing
+// as it goes, because a run that runs out of context loses uncommitted work.
+const openCodeToolsNote = "Make one tool call at a time through the tool interface, never write a tool call out as text. " +
+	"Shepherd's tools are named shepherd_ask_human, shepherd_ask_shepherd and shepherd_report. " +
+	"Commit with `git add` then `git commit`. On a large task, commit as you go in small commits: a run that runs out of context loses uncommitted work."
+
+// openCodeLocalNote is the small-model limits: a local model keeps to small
+// mechanical edits and does not write tests.
+const openCodeLocalNote = "You run on a small local model, so keep to small mechanical edits. " +
+	openCodeToolsNote +
+	" Do not write tests in a typed codebase: stop and say so instead."
+
+// openCodeHostedNote is the standard rules: a hosted model does real work, tests
+// included, as for any agent.
+const openCodeHostedNote = "You run on a hosted model: do the work as for any agent, tests included. " +
+	openCodeToolsNote
+
+// openCodeNote is the brief's adapter note for a run on model: the tool-calling
+// guidance and the commit-as-you-go rule for every run, with the small-model limits
+// for a local model and the standard rules for a hosted one. An empty model keeps
+// the local note, as before.
+func openCodeNote(model string) string {
+	if openCodeHosted(model) {
+		return openCodeHostedNote
+	}
+	return openCodeLocalNote
 }
 
 // openCodeReader is the adapter's Read for a run on model.
