@@ -2,6 +2,8 @@ package dispatch
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -119,5 +121,39 @@ func TestReportedNoChangeIsSucceeded(t *testing.T) {
 	f.runner.Wait()
 	if done.State != store.RunSucceeded || done.Error != "" || len(laneRuns(t, f)) != 1 {
 		t.Errorf("run = %s, error %q, %d run(s)", done.State, done.Error, len(laneRuns(t, f)))
+	}
+}
+
+// A run that ended unfinished with no session cannot be continued: it fails at once.
+func TestIncompleteWithoutSessionFailsAtOnce(t *testing.T) {
+	f := newFixture(t, "dirty")
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := f.wait(t, run.ID)
+	f.runner.Wait()
+	if done.State != store.RunFailed || !strings.Contains(done.Error, "no session to continue") {
+		t.Errorf("run = %s, error %q", done.State, done.Error)
+	}
+	if n := len(laneRuns(t, f)); n != 1 {
+		t.Errorf("%d runs, want nothing continued", n)
+	}
+}
+
+// Untracked output outside the lane's scope is not unfinished work.
+func TestOutOfScopeFilesAreNotUnfinishedWork(t *testing.T) {
+	f := newFixture(t, "quick")
+	lane, _ := f.st.Lane(context.Background(), f.lane.ID)
+	if err := os.WriteFile(filepath.Join(lane.Worktree, "build.out"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if f.runner.hasChanges(context.Background(), lane) {
+		t.Error("a file outside src/** counts as work")
+	}
+	os.MkdirAll(filepath.Join(lane.Worktree, "src"), 0o755)
+	os.WriteFile(filepath.Join(lane.Worktree, "src", "new.go"), []byte("x"), 0o644)
+	if !f.runner.hasChanges(context.Background(), lane) {
+		t.Error("a new file in scope does not count as work")
 	}
 }

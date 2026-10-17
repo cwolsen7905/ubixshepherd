@@ -114,8 +114,16 @@ func TestDiagnoseHungAndNoChange(t *testing.T) {
 
 func TestDiagnoseNoChange(t *testing.T) {
 	g := openCodeFixture(t, "wait")
-	_, d := startAndDiagnose(t, g, "opencode")
-	if d.Kind != store.DiagNoChange || !strings.Contains(d.Summary, "changed nothing") {
+	run, err := g.runner.Start(context.Background(), StartRequest{LaneID: g.lane.ID, Agent: "opencode", Prompt: "do it"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.wait(t, run.ID)
+	// The first end is continued by Shepherd, so it offers no fixes; the second is diagnosed.
+	waitFeed(t, g, "continued once as run")
+	second := g.wait(t, run.ID+1)
+	d := diagnosisOf(t, g, second.ID)
+	if d.Kind != store.DiagNoChange || !strings.Contains(d.Summary, "changed nothing") || !strings.Contains(d.Summary, "twice") {
 		t.Errorf("no change = %+v", d)
 	}
 }

@@ -78,6 +78,9 @@ func classifyEnd(in endInfo) (d store.Diagnosis, ok bool) {
 		d.Kind = store.DiagQuota
 		d.ResetAt = &in.QuotaUntil
 		d.Summary = fmt.Sprintf("%s is out of quota (%s); held until %s", in.Agent, clip(in.Limit.Text, 120), in.QuotaUntil.Local().Format("Jan 2 15:04"))
+	case in.Unfinished == continuedNote:
+		// Shepherd is continuing this run itself: its continuation's end is diagnosed.
+		return d, false
 	case in.Unfinished != "":
 		d.Kind, d.Summary = store.DiagNoChange, in.Agent+" "+in.Unfinished
 		if in.NoChange {

@@ -1022,9 +1022,29 @@ func (r *Runner) notFinished(ctx context.Context, run store.Run, lane store.Lane
 	return ""
 }
 
+// hasChanges says the lane has uncommitted work in its scope. Untracked files count (a
+// new file is work), but only inside the scope, so build output elsewhere does not. A
+// git failure counts as changes: the run is not taken for finished on an unreadable tree.
 func (r *Runner) hasChanges(ctx context.Context, lane store.Lane) bool {
-	out, err := git.Run(ctx, lane.Worktree, "status", "--porcelain")
-	return err == nil && strings.TrimSpace(out) != ""
+	out, err := git.Run(ctx, lane.Worktree, "status", "--porcelain", "-uall")
+	if err != nil {
+		r.Log.Warn("read the lane's status", "lane", lane.Name, "err", err)
+		return true
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if len(l) < 4 {
+			continue
+		}
+		path := l[3:]
+		if i := strings.LastIndex(path, " -> "); i >= 0 {
+			path = path[i+4:]
+		}
+		path = strings.Trim(path, `"`)
+		if len(lane.Scope) == 0 || scope.Any(lane.Scope, path) {
+			return true
+		}
+	}
+	return false
 }
 
 // asked says the run put a question or a request to the person or another lane.
