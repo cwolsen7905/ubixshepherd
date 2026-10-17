@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { DRAFT_EVENT, clearDraft, draftKey, readDraft, writeDraft } from '../model/chatDraft'
 import { DeskThread, type DeskSnapshot } from '../state/desk'
+import { Button } from '../ui'
 
 function Composer({
   thread, workspaceId, d, disabled, following, topicId, onSend,
@@ -94,9 +95,9 @@ function Composer({
             Interrupt
           </button>
         )}
-        <button type="submit" className="button button-primary" disabled={sending || disabled || !text.trim()}>
+        <Button type="submit" variant="primary" disabled={sending || disabled || !text.trim()}>
           {sending ? 'Sending…' : 'Send'}
-        </button>
+        </Button>
       </div>
       </div>
     </form>

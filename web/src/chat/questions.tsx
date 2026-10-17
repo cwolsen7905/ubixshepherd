@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DeskQuestion } from '../api/types'
 import { deskQuestions } from '../api/client'
 import { DeskThread } from '../state/desk'
+import { Button } from '../ui'
 
 /**
  * Reply here and Skip under a desk message that asked the person something. Reply opens an
@@ -99,9 +100,9 @@ function QuestionActions({
               if (e.key === 'Escape') setReplying(false)
             }}
           />
-          <button type="submit" className="button button-primary" disabled={busy || !text.trim()}>
+          <Button type="submit" variant="primary" disabled={busy || !text.trim()}>
             {busy ? 'Sending…' : 'Send reply'}
-          </button>
+          </Button>
           <button type="button" className="button" onClick={() => setReplying(false)} disabled={busy}>
             Cancel
           </button>

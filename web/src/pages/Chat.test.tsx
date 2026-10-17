@@ -1,12 +1,12 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
-import type { Decision, DecisionView } from '../api/types'
+import type { Decision } from '../api/types'
 import * as client from '../api/client'
 import { Live, type Api, type Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { DeskThread } from '../state/desk'
-import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, lane, request, run, spend, status } from '../test/fixtures'
+import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, request, spend, status } from '../test/fixtures'
 import type { DeskApi } from '../api/desk'
 import { ChatPage, Markdown } from './Chat'
 import { publishChat, useChatLink, type ChatLink } from '../shell/chatLink'
@@ -275,13 +275,16 @@ describe('ChatPage', () => {
     const user = userEvent.setup()
     const newConversation = vi.fn(async () => ({}))
     await show(fakeDeskApi({ newConversation }))
+    await user.click(screen.getByRole('button', { name: 'More' }))
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(newConversation).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'More' }))
     await user.click(screen.getByRole('button', { name: 'New conversation' }))
     await user.click(screen.getByRole('button', { name: 'Start new' }))
     expect(newConversation).toHaveBeenCalledWith(0)
     expect(screen.queryByRole('button', { name: 'Start new' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'More' })).toHaveFocus()
   })
 
   it('draws a new-conversation row and a run row between messages', async () => {
@@ -435,72 +438,36 @@ describe('following the bottom', () => {
   })
 })
 
-describe('backlog rail', () => {
+describe('conversation head', () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => vi.restoreAllMocks())
 
-  const quiet = [feedItem({ id: 1, kind: 'run_passed', ref: 10, text: 'run 10 passed in feat/login', created: '2026-10-08T10:04:00Z' })]
-  const lists = { lanes: async () => [lane({ id: 1 })], runs: async () => [run({ id: 10, lane_id: 1, ended: '2026-10-08T10:04:00Z' })] }
-  const withHistory = fakeDeskApi({ history: async () => ({ events: history, more: false }) })
-
-  it('lists what waits, most urgent first, with counts and links to its page', async () => {
-    await show(withHistory, liveWith(quiet, undefined, { lanes: async () => [lane({ id: 1 }), lane({ id: 2, name: 'docs/readme' })], runs: async () => [run({ id: 11, lane_id: 2, ended: '2026-10-08T10:04:00Z' })], decisions: async (st) => (st === 'open' ? [decision({ id: 3 }) as DecisionView] : []) }))
+  it('has no backlog rail: the thread is the only column', async () => {
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     await screen.findByText('what is up?')
-    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
-    expect(within(rail).getByRole('button', { name: 'Backlog 2 needs you · 1 idle' })).toBeInTheDocument()
-    const rows = within(rail).getAllByRole('listitem')
-    expect(rows[0]).toHaveTextContent('decision 3')
-    expect(rows[rows.length - 1]).toHaveTextContent('last run 11 succeeded')
-    expect(within(rows[rows.length - 1] as HTMLElement).getByRole('link', { name: 'docs/readme' })).toHaveAttribute('href', '#/?open=lane%3A2')
+    expect(screen.queryByRole('complementary', { name: 'Backlog' })).not.toBeInTheDocument()
+    expect(document.querySelector('.chat-rail, .backlog')).toBeNull()
   })
 
-  it('jumps to the thread row where an idle lane went quiet', async () => {
+  it('says the desk is idle as text, and keeps notify and new conversation in an overflow menu', async () => {
     const user = userEvent.setup()
-    const scrollIntoView = vi.fn()
-    Element.prototype.scrollIntoView = scrollIntoView
-    await show(withHistory, liveWith(quiet, undefined, { ...lists, decisions: async () => [], requests: async () => [] }))
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     await screen.findByText('what is up?')
-    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
-    await user.click(await within(rail).findByRole('button', { name: 'in thread' }))
-    expect(scrollIntoView).toHaveBeenCalledTimes(1)
-    const row = scrollIntoView.mock.contexts[0] as HTMLElement
-    expect(row.id).toBe('thread-f1')
-    expect(row).toHaveClass('is-flash')
+    expect(screen.getByText('Front desk is idle')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'New conversation' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'All topics' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More' }))
+    expect(screen.getByRole('button', { name: 'New conversation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'All topics' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('button', { name: 'New conversation' })).not.toBeInTheDocument()
   })
 
-  it('remembers it was closed', async () => {
-    const user = userEvent.setup()
-    await show(withHistory, liveWith(quiet, undefined, lists))
+  it('uses the kit primary button for Send', async () => {
+    await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     await screen.findByText('what is up?')
-    const toggle = await screen.findByRole('button', { name: /Backlog/ })
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    await user.click(toggle)
-    expect(toggle).toHaveAttribute('aria-expanded', 'false')
-    expect(localStorage.getItem('shepherd.chat.backlog')).toBe('closed')
-  })
-
-  it('says when nothing waits, and a quota hold, and no spend meter (it lives in the rail)', async () => {
-    vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
-      status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, quota_holds: [{ agent: 'claude', until: '2026-10-08T14:05:00Z' }], forge: { last_poll: '2026-10-08T10:03:00Z' } } }),
-    )
-    await show(withHistory, liveWith([], undefined, { decisions: async () => [], requests: async () => [] }))
-    await screen.findByText('what is up?')
-    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
-    expect(within(rail).getByText('nothing waiting')).toBeInTheDocument()
-    expect(within(rail).getByText(/Nothing is waiting on you/)).toBeInTheDocument()
-    expect(within(rail).queryByRole('meter')).not.toBeInTheDocument()
-    expect(await within(rail).findByText(/claude is out of quota until/)).toBeInTheDocument()
-    expect(within(rail).getByText(/Forge polled .+ ago/)).toBeInTheDocument()
-  })
-
-  it('says when the forge poll is failing, so merge badges are known to be stale', async () => {
-    vi.spyOn(client.daemonInfo, 'status').mockResolvedValue(
-      status({ detail: { os: 'linux', arch: 'amd64', now: '', config_loaded: '', running: 0, open_lanes: 0, decisions: 0, spend_usd: 0, forge: { error: 'glab: 401' } } }),
-    )
-    await show(withHistory, liveWith(quiet, undefined, lists))
-    await screen.findByText('what is up?')
-    const rail = await screen.findByRole('complementary', { name: 'Backlog' })
-    expect(await within(rail).findByText(/Forge poll failing: glab: 401/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveClass('ui-btn-primary')
+    expect(document.querySelector('.button-primary')).toBeNull()
   })
 })
 
@@ -570,7 +537,7 @@ describe('Markdown', () => {
   })
 })
 
-describe('topic bar and rail', () => {
+describe('topic bar and topic list', () => {
   beforeEach(() => {
     localStorage.clear()
     window.location.hash = '#/chat'
@@ -580,7 +547,7 @@ describe('topic bar and rail', () => {
     window.location.hash = ''
   })
 
-  it('share one filter: a chip sets it for the rail, the rail for the chip, and back clears it', async () => {
+  it('share one filter: a chip sets it for the list, the list for the chip, and back clears it', async () => {
     const user = userEvent.setup()
     const topic = (id: number, title: string) => ({
       id, title, status: 'open' as const, source: 'desk', created: '', updated: '', activity: new Date().toISOString(), waits: 0, links: [],
@@ -588,7 +555,8 @@ describe('topic bar and rail', () => {
     vi.spyOn(client.topics, 'list').mockResolvedValue({ topics: [topic(1, 'release'), topic(2, 'docs')] })
     await show(fakeDeskApi({ history: async () => ({ events: history, more: false }) }))
     const bar = await screen.findByRole('group', { name: 'Filter the thread by topic' })
-    await user.click(within(bar).getByRole('button', { name: 'All topics' }))
+    await user.click(screen.getByRole('button', { name: 'More' }))
+    await user.click(screen.getByRole('button', { name: 'All topics' }))
     const rail = within(bar).getByRole('region', { name: 'Topics' })
 
     await user.click(await within(bar).findByRole('button', { name: 'release' }))
