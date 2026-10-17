@@ -9,13 +9,10 @@ import { Changes } from '../components/Changes'
  * (the only one that shows the worktree's uncommitted work) is read then too.
  */
 export function RunChanges({ run, now }: { run: RunView; now: number }) {
-  const open = true
   const [latest, setLatest] = useState<boolean | null>(null)
-  const [editorUrl] = useState<string | null>(null)
   const laneId = run.lane_id
   const runId = run.id
   useEffect(() => {
-    if (!open) return
     let current = true
     api.runs(laneId, 1).then(
       (rs) => current && setLatest(Array.isArray(rs) && rs[0]?.id === runId),
@@ -24,15 +21,15 @@ export function RunChanges({ run, now }: { run: RunView; now: number }) {
     return () => {
       current = false
     }
-  }, [open, laneId, runId])
+  }, [laneId, runId])
   return (
     <div className="run-changes">
-      {open && latest === null && <p className="faint">Reading…</p>}
-      {open && latest !== null && (
+      {latest === null && <p className="faint">Reading…</p>}
+      {latest !== null && (
         <Changes
           laneId={laneId}
           worktree={run.worktree}
-          editorUrl={editorUrl}
+          editorUrl={null}
           refreshKey={0}
           now={now}
           run={{ id: runId, latest, outside: run.outside }}

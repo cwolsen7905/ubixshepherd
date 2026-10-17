@@ -1,16 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { Decision, RunView } from '../api/types'
+import { Conversation } from '../conversation/Conversation'
+import { laneSource } from '../conversation/api'
+import { RunFailure } from '../components/RunFailure'
+import { costNote, duration, runCost, since } from '../format'
 import { useNow } from '../hooks'
+import { endedBadly } from '../model/board'
 import { href, withOpen } from '../router'
+import { useLive } from '../state/context'
 import { RunLog } from '../ui/RunLog'
 import { storedArtifacts, intentTag, type StoredArtifact } from '../artifacts/api'
 import { RunChanges } from '../components/RunChanges'
 
-export const RUN_TABS = ['log', 'changes', 'artifacts'] as const
+export const RUN_TABS = ['conversation', 'log', 'changes', 'asked', 'artifacts'] as const
 export type RunTab = (typeof RUN_TABS)[number]
 
-const TAB_NAMES: Record<RunTab, string> = { log: 'Log', changes: 'Changes', artifacts: 'Artifacts' }
+const TAB_NAMES: Record<RunTab, string> = { conversation: 'Conversation', log: 'Log', changes: 'Changes', asked: 'Asked', artifacts: 'Artifacts' }
 
 /** A tab name from an `open=run:N/tab` address; anything unknown is the log. */
 export function runTab(tab: string | undefined): RunTab {
@@ -108,6 +114,8 @@ function RunArtifacts({ runId }: { runId: number }) {
 /** The run's three views: Log, Changes, Artifacts. */
 export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab; onTab: (t: RunTab) => void; onDone?: () => void }) {
   const now = useNow(5000)
+  const live = useLive()
+  const source = useMemo(() => laneSource(run.lane_id), [run.lane_id])
   return (
     <div className="run-pane" data-component="RunPane">
       <p className="run-title">
@@ -116,9 +124,26 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
       </p>
       <p className="run-meta faint">
         <a href={href.lane(run.lane_id)}>{run.repo} / {run.lane}</a>
-        <span>{run.agent}{run.model ? ` · ${shortModel(run.model)}` : ''}</span>
+        <span title={run.model || undefined}>{[run.agent, shortModel(run.model)].filter(Boolean).join(' · ')}</span>
         <span>{run.state}</span>
+        <span>{duration(run.started, run.ended, now)}</span>
+        {runCost(run) && <span title={costNote(run)}>{runCost(run)}</span>}
+        {run.parent ? <a href={href.log(run.parent)}>continues run {run.parent}</a> : null}
+        {run.dismissed && <span title={run.dismissed}>dismissed from the board {since(run.dismissed, now)} ago</span>}
       </p>
+      {endedBadly(run) && (
+        <p className="row-actions">
+          <button
+            type="button"
+            className="link-button"
+            title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
+            onClick={() => live.dismiss(run.id, !run.dismissed).then(onDone, () => {})}
+          >
+            {run.dismissed ? 'Undismiss' : 'Dismiss'}
+          </button>
+        </p>
+      )}
+      {run.diagnosis && <RunFailure run={run} onFixed={onDone} />}
       <div role="tablist" aria-label="Run views" className="lane-tabs">
         {RUN_TABS.map((t) => (
           <button
@@ -136,10 +161,16 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
         ))}
       </div>
       <div id="run-panel" role="tabpanel" aria-labelledby={`run-tab-${tab}`}>
+        {/* The thread and the log stay mounted while hidden, so switching tabs does not read
+            them again or lose search, follow and expanded calls. */}
+        <div hidden={tab !== 'conversation'}>
+          <Conversation source={source} run={run.id} now={now} />
+        </div>
         <div hidden={tab !== 'log'}>
           <RunLog id={run.id} state={run.state} active={tab === 'log'} variant={run.state === 'running' ? 'live' : 'finished'} onDone={onDone} />
         </div>
         {tab === 'changes' && <RunChanges run={run} now={now} />}
+        {tab === 'asked' && <Asked runId={run.id} />}
         {tab === 'artifacts' && <RunArtifacts runId={run.id} />}
       </div>
     </div>
@@ -148,7 +179,11 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
 
 /** The inspector's body for `open=run:N[/tab]` and the run page. */
 export function RunInspector({ id, tab, full }: { id: number; tab?: string; full?: boolean }) {
+  const live = useLive()
   const { run, error, reload } = useRun(id)
+  useEffect(() => {
+    if (run?.ended) live.markSeen(`run:${run.id}`)
+  }, [live, run?.id, run?.ended])
   const [picked, setPicked] = useState<RunTab>(runTab(tab))
   const [seen, setSeen] = useState(tab)
   // The address leads: Back and a pasted link change the tab.
@@ -183,22 +218,27 @@ export function RunInspector({ id, tab, full }: { id: number; tab?: string; full
   )
 }
 
-/** Kept for compatibility: old code re-exports Asked helpers here. */
+/** The decisions the run asked, each opening in the inspector. */
 export function Asked({ runId }: { runId: number }) {
   const [list, setList] = useState<Decision[] | null>(null)
   const [error, setError] = useState(false)
   useEffect(() => {
     let current = true
-    api.runEvents(runId).then(
-      (e) => {
-        if (!current) return
-        setList(Array.isArray(e.decisions) ? e.decisions : [])
-        setError(false)
-      },
-      () => current && setError(true),
-    )
+    const read = () =>
+      api.runEvents(runId).then(
+        (e) => {
+          if (!current) return
+          setList(Array.isArray(e.decisions) ? e.decisions : [])
+          setError(false)
+        },
+        () => current && setError(true),
+      )
+    void read()
+    // An answer given elsewhere shows here without reopening the tab.
+    const t = window.setInterval(() => void read(), 5000)
     return () => {
       current = false
+      window.clearInterval(t)
     }
   }, [runId])
   if (error) return <p className="tone-bad">Could not read what this run asked.</p>
