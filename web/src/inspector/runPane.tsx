@@ -20,6 +20,8 @@ const TAB_NAMES: Record<RunTab, string> = { conversation: 'Conversation', log: '
 
 /** A tab name from an `open=run:N/tab` address; anything unknown is the log. */
 export function runTab(tab: string | undefined): RunTab {
+  // Older links and bookmarks name the artifacts tab 'produced'.
+  if (tab === 'produced') return 'artifacts'
   return (RUN_TABS as readonly string[]).includes(tab ?? '') ? (tab as RunTab) : 'log'
 }
 
@@ -115,6 +117,7 @@ function RunArtifacts({ runId }: { runId: number }) {
 export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab; onTab: (t: RunTab) => void; onDone?: () => void }) {
   const now = useNow(5000)
   const live = useLive()
+  const [dismissError, setDismissError] = useState<string | null>(null)
   const source = useMemo(() => laneSource(run.lane_id), [run.lane_id])
   return (
     <div className="run-pane" data-component="RunPane">
@@ -137,10 +140,14 @@ export function RunPane({ run, tab, onTab, onDone }: { run: RunView; tab: RunTab
             type="button"
             className="link-button"
             title={run.dismissed ? undefined : 'Clear this run from the board. Its log and record stay in history.'}
-            onClick={() => live.dismiss(run.id, !run.dismissed).then(onDone, () => {})}
+            onClick={() => {
+              setDismissError(null)
+              live.dismiss(run.id, !run.dismissed).then(onDone, (e: unknown) => setDismissError(e instanceof Error ? e.message : String(e)))
+            }}
           >
             {run.dismissed ? 'Undismiss' : 'Dismiss'}
           </button>
+          {dismissError && <span className="tone-bad" role="alert"> Could not {run.dismissed ? 'undismiss' : 'dismiss'} this run: {dismissError}</span>}
         </p>
       )}
       {run.diagnosis && <RunFailure run={run} onFixed={onDone} />}

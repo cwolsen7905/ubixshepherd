@@ -4,6 +4,7 @@ import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import type { Diagnosis } from '../api/types'
 import { decision, lane, run, spend, status } from '../test/fixtures'
+import { runTab } from '../inspector/runPane'
 import { LogPage } from './Log'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
@@ -139,6 +140,19 @@ describe('the run page', () => {
     await open({ state: 'failed' }, { dismissRun })
     await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
     expect(dismissRun).toHaveBeenCalledWith(10)
+  })
+
+  it('shows why a dismiss failed', async () => {
+    const dismissRun = vi.fn(async () => { throw new Error('daemon unreachable') })
+    await open({ state: 'failed' }, { dismissRun })
+    await userEvent.click(await screen.findByRole('button', { name: 'Dismiss' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not dismiss this run: daemon unreachable')
+  })
+
+  it('maps the old produced address onto the artifacts tab', () => {
+    expect(runTab('produced')).toBe('artifacts')
+    expect(runTab('artifacts')).toBe('artifacts')
+    expect(runTab('nonsense')).toBe('log')
   })
 
   it('offers Undismiss for a dismissed run, and nothing for a run that succeeded', async () => {
