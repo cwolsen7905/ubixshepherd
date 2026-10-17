@@ -140,10 +140,12 @@ export function InboxPage({ kind }: { kind?: string }) {
   const workspaceIds = (snap.status?.workspaces ?? []).map((w) => w.id).join(',')
   const feedLast = snap.feed.at(-1)?.id ?? 0
   const lastRead = useRef(0)
+  const readIds = useRef<string | null>(null)
   useEffect(() => {
     let current = true
     const read = () => {
       lastRead.current = Date.now()
+      readIds.current = workspaceIds
       const from = startOfDay(Date.now())
       const ids = workspaceIds === '' ? [] : workspaceIds.split(',').map(Number)
       Promise.all(ids.map((id) => history.lanes(id, from.toISOString()))).then(
@@ -156,7 +158,8 @@ export function InboxPage({ kind }: { kind?: string }) {
       )
     }
     // A busy feed reads at most once in MIN_REREAD, with one trailing read when the window ends.
-    const wait = MIN_REREAD - (Date.now() - lastRead.current)
+    // A new workspace list reads at once: the first read ran before it arrived and had no repos to ask.
+    const wait = readIds.current !== workspaceIds ? 0 : MIN_REREAD - (Date.now() - lastRead.current)
     if (wait <= 0) read()
     else {
       const t = window.setTimeout(read, wait)

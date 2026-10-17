@@ -112,12 +112,13 @@ describe('ArtifactsPage', () => {
     await show({}, [])
     await screen.findByText('docs/a.md')
     const lane = screen.getAllByRole('link').find((l) => l.getAttribute('href')?.startsWith('#/lanes'))
-    expect(lane).toBeDefined()
-    lane!.focus()
+    if (!lane) throw new Error('no lane link')
+    lane.focus()
     await userEvent.keyboard('{Enter}')
     expect(window.location.hash).not.toContain('view=')
     window.location.hash = '#/artifacts'
-    const cell = screen.getAllByRole('cell', { name: /none|\d+/ })[0]!
+    const cell = screen.getAllByRole('cell', { name: /none|\d+/ })[0]
+    if (!cell) throw new Error('no cell')
     await act(async () => { fireEvent.click(cell, { metaKey: true }) })
     expect(window.location.hash).not.toContain('view=')
   })

@@ -75,6 +75,11 @@ export function NextPage({ load = loadNext, api = realApi }: { load?: LoadNext; 
   const repos = useMemo(() => [...new Set(snap.lanes.map((l) => l.repo))].sort(), [snap.lanes])
   const workspace = deskWorkspace(snap.status?.workspaces ?? [])
   const [selected, setSelected] = useState<number | null>(null)
+  const [seenFocus, setSeenFocus] = useState<number | undefined>()
+  if (focus !== seenFocus && (!focus || items.some((it) => it.id === focus))) {
+    setSeenFocus(focus)
+    if (focus) setSelected(focus)
+  }
   const selectedItem = useMemo(() => items.find((it) => it.id === selected) ?? null, [items, selected])
   const selectedPeers = useMemo(() => {
     if (!selectedItem) return []

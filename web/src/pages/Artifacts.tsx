@@ -60,6 +60,9 @@ export function withIntent(hash: string, intent: Intent | 'all'): string {
 // Set when the person opened a file from this list, so the back arrow can step Back (the
 // list then comes up as it was) instead of pushing another entry.
 let fromList = false
+const setFromList = (on: boolean) => {
+  fromList = on
+}
 
 /** Whether a file's kind makes its path read as code. */
 function isCode(a: StoredArtifact): boolean {
@@ -83,18 +86,18 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
     if (viewing && !fromList) window.scrollTo(0, 0)
     if (!viewing && scrolled.current) window.scrollTo(0, scrolled.current)
     if (!viewing) scrolled.current = 0
-    if (!viewing) fromList = false
+    if (!viewing) setFromList(false)
   }, [viewing])
-  useEffect(() => () => void (fromList = false), [])
+  useEffect(() => () => setFromList(false), [])
 
   const open = (id: number) => {
     scrolled.current = window.scrollY
-    fromList = true
+    setFromList(true)
     go(withView(hash, id))
   }
 
   const stepBack = () => {
-    fromList = false
+    setFromList(false)
     window.history.back()
   }
 
