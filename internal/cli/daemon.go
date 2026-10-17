@@ -418,12 +418,14 @@ func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Durati
 func daemonGone(ctx context.Context, env Env) bool {
 	deadline := time.Now().Add(stopWait)
 	for {
-		if _, err := os.Stat(env.Layout.Runtime()); err != nil {
+		rt, err := daemon.ReadRuntime(env.Layout.Runtime())
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			return true
+		case err == nil && !processAlive(rt.PID):
 			return true
 		}
-		if rt, err := daemon.ReadRuntime(env.Layout.Runtime()); err != nil || !processAlive(rt.PID) {
-			return true
-		}
+		// A file that cannot be read (half written, say) says nothing: look again.
 		if _, err := connect(ctx, env); err == nil {
 			return false
 		}

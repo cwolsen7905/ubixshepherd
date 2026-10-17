@@ -327,3 +327,21 @@ func TestDaemonGoneIsFalseForAnAnsweringDaemon(t *testing.T) {
 		t.Error("an answering daemon is not gone")
 	}
 }
+
+// A runtime file that cannot be read does not make the daemon gone: it is waited for until
+// the context ends, and the answer is not "gone".
+func TestDaemonGoneIsFalseForAnUnreadableRuntimeFile(t *testing.T) {
+	l := paths.Layout{Home: t.TempDir()}
+	if err := os.WriteFile(l.Runtime(), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if daemonGone(ctx, Env{Layout: l, Stdout: io.Discard, Stderr: io.Discard}) {
+		t.Error("an unreadable runtime file is not proof the daemon is gone")
+	}
+	os.Remove(l.Runtime())
+	if !daemonGone(context.Background(), Env{Layout: l, Stdout: io.Discard, Stderr: io.Discard}) {
+		t.Error("a missing runtime file means gone")
+	}
+}
