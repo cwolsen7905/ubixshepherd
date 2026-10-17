@@ -12,6 +12,7 @@ import { go, href, useFocusTarget, useRoute } from '../router'
 import { useSnapshot } from '../state/context'
 import { loadNext, useNextList, type LoadNext } from '../state/next'
 import { Button, Chip, EmptyState, GroupHeader } from '../ui'
+import { isInner, openInInspector, openLink } from '../components/BacklogOpen'
 import './Next.css'
 
 export interface NextApi {
@@ -240,7 +241,7 @@ function AddForm({ repos, busy, onAdd }: { repos: string[]; busy: boolean; onAdd
     setPlan('')
   }
   return (
-    <form className="next-composer" onSubmit={(e) => void submit(e)} aria-label="Add an item">
+    <form className="sh-composer next-composer" onSubmit={(e) => void submit(e)} aria-label="Add an item">
       <label className="next-composer-title">
         <span className="visually-hidden">Title</span>
         <input className="sh-input" type="text" value={title} placeholder="Add an item: what should be done" onChange={(e) => setTitle(e.target.value)} />
@@ -314,24 +315,29 @@ function NextRow({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !isInner(e)) {
       e.preventDefault()
-      onSelect()
+      open()
     }
+  }
+  /** Select the row for its detail panel; a row linked to a lane also opens that lane in the inspector. */
+  const open = () => {
+    onSelect()
+    if (it.lane_id) openInInspector({ kind: 'lane', id: it.lane_id })
   }
 
   return (
     <li
       ref={rowRef}
       tabIndex={0}
-      className={`next-row${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}${selected ? ' is-selected' : ''}`}
+      className={`sh-row next-row${isNext ? ' is-next' : ''}${focused ? ' is-focus-target' : ''}${selected ? ' is-selected' : ''}`}
       data-next-id={it.id}
       draggable={movable}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
-      onClick={onSelect}
+      onClick={(e) => { if (!isInner(e)) open() }}
       onKeyDown={handleKeyDown}
       aria-current={isNext || focused ? 'true' : undefined}
     >
@@ -341,8 +347,8 @@ function NextRow({
       <span className="sh-glyph" title={mark.label} aria-label={mark.label}>
         {isNext ? NEXT_MARKER.glyph : mark.glyph}
       </span>
-      <div className="next-row-main">
-        <p className="next-row-title">
+      <div className="sh-row-main">
+        <p>
           <span className="sh-faint">#{it.id}</span> {it.title}
           {isNext && <Chip kind="filter">next</Chip>}
           {it.proposed && <Chip>proposed</Chip>}
@@ -352,7 +358,7 @@ function NextRow({
           {it.stored_state === 'deferred' && it.state !== 'done' && <Chip>deferred</Chip>}
           {it.source === 'chat' && it.state === 'planned' && <Chip>chat</Chip>}
         </p>
-        <p className="next-row-sub">
+        <p className="sh-row-sub">
           {it.repo && <span>{it.repo}</span>}
           {it.plan && (
             <span title={it.plan}>
@@ -360,7 +366,7 @@ function NextRow({
             </span>
           )}
           {it.lane_id ? (
-            <a href={href.lane(it.lane_id)} onClick={(e) => e.stopPropagation()}>
+            <a {...openLink({ kind: 'lane', id: it.lane_id })}>
               lane {it.lane_name ?? it.lane}
             </a>
           ) : (
@@ -377,13 +383,15 @@ function NextRow({
           {it.source !== 'person' && <span>from {it.source}</span>}
         </p>
         {blocked.length > 0 && (
-          <p className="next-row-badge is-blocked">
-            ⊘ blocked by {blocked.map((b) => `#${b.id}`).join(', ')}
+          <p>
+            <span className="sh-tag sh-tag--blocked">⊘ blocked by {blocked.map((b) => `#${b.id}`).join(', ')}</span>
           </p>
         )}
-        {it.why && <p className="next-row-badge">{it.why}</p>}
+        {it.why && <p>
+            <span className="sh-tag">{it.why}</span>
+          </p>}
       </div>
-      <span className="next-row-age">{since(it.created, now) || 'now'}</span>
+      <span className="sh-row-sub">{since(it.created, now) || 'now'}</span>
     </li>
   )
 }
@@ -513,18 +521,18 @@ function NextDetail({
 function MatrixItem({ row }: { row: MatrixRow }) {
   const blocked = row.state === 'blocked'
   return (
-    <li className="next-row state-matrix">
+    <li className="sh-row next-row state-matrix">
       <span />
       <span className="sh-glyph" title={blocked ? 'blocked' : 'todo'} aria-label={blocked ? 'blocked' : 'todo'}>
         {blocked ? '■' : '○'}
       </span>
-      <div className="next-row-main">
-        <p className="next-row-title">
+      <div className="sh-row-main">
+        <p>
           <span className="sh-faint">{row.row_id}</span> {row.title}
           {blocked && <Chip>blocked</Chip>}
           <Chip>matrix</Chip>
         </p>
-        <p className="next-row-sub">
+        <p className="sh-row-sub">
           {row.area && <span>{row.area}</span>}
           {row.lane && <span>lane {row.lane}</span>}
           {row.mr &&
@@ -536,9 +544,11 @@ function MatrixItem({ row }: { row: MatrixRow }) {
               <span>PR {row.mr}</span>
             ))}
         </p>
-        {row.note && <p className="next-row-badge">{row.note}</p>}
+        {row.note && <p>
+            <span className="sh-tag">{row.note}</span>
+          </p>}
       </div>
-      <span className="next-row-age" />
+      <span className="sh-row-sub" />
     </li>
   )
 }

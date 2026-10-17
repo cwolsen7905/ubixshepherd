@@ -1,4 +1,4 @@
-/* Next up: proposed items, the person's queue, and a detail panel. All --sh-* tokens and .sh-* classes. */
+/* Next up: page layout only. Rows, tags, inputs and buttons are the shared .sh-* classes. */
 .next-view { display: flex; flex-direction: column; min-height: 0; }
 .next-head { display: flex; align-items: center; gap: var(--sh-s6); padding: var(--sh-s6) var(--sh-s8); border-bottom: 1px solid var(--sh-rule); min-height: 45px; }
 .next-head h1 { font-size: var(--sh-t-view); margin: 0; }
@@ -10,21 +10,13 @@
 .next-list { min-width: 0; display: grid; gap: var(--sh-s6); }
 .next-section { display: grid; gap: var(--sh-s2); }
 
-.next-row { display: grid; grid-template-columns: 1.5rem 18px minmax(0, 1fr) 3rem; gap: var(--sh-s4); align-items: baseline; padding: var(--sh-s3) var(--sh-s4); border-radius: var(--sh-r); cursor: pointer; }
-.next-row:hover { background: var(--sh-sunk); }
-.next-row.is-selected { background: var(--sh-lichen-wash); outline: 1px solid var(--sh-lichen); }
+.next-row { grid-template-columns: 1.5rem 18px minmax(0, 1fr) 3rem; }
 .next-row.is-next { box-shadow: inset 3px 0 0 var(--sh-lichen); }
 .next-row.is-dragging { opacity: .5; }
 .next-row-handle { cursor: grab; color: var(--sh-faint); text-align: center; }
 .next-row-handle:active { cursor: grabbing; }
-.next-row-main { min-width: 0; }
-.next-row-title { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s2) var(--sh-s3); font-weight: 600; overflow-wrap: anywhere; }
-.next-row-sub { font-size: var(--sh-t-meta); color: var(--sh-faint); display: flex; flex-wrap: wrap; gap: var(--sh-s1) var(--sh-s4); }
-.next-row-badge { display: inline-block; margin-top: var(--sh-s2); font-size: var(--sh-t-tag); border-radius: 9px; padding: 0 7px; border: 1px solid var(--sh-control); color: var(--sh-muted); }
-.next-row-badge.is-blocked { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
-.next-row-age { font-size: var(--sh-t-meta); color: var(--sh-faint); text-align: right; }
 
-.next-composer { border: 1px solid var(--sh-control); border-radius: var(--sh-r-lg); background: var(--sh-raised); padding: var(--sh-s5) var(--sh-s6); display: flex; flex-wrap: wrap; align-items: end; gap: var(--sh-s4); }
+.sh-composer.next-composer { flex-wrap: wrap; margin: 0; }
 .next-composer-title { flex: 1 1 18rem; }
 .next-composer-title input { width: 100%; }
 .next-composer-check { white-space: nowrap; display: flex; align-items: center; gap: var(--sh-s2); }
@@ -40,7 +32,6 @@
 .next-detail-grid dd { margin: 0; overflow-wrap: anywhere; }
 .next-detail-actions { display: flex; gap: var(--sh-s4); margin-top: var(--sh-s6); }
 
-.next-empty { padding: var(--sh-s6) var(--sh-s8); color: var(--sh-muted); }
 
 @media (max-width: 900px) {
   .next-body.has-detail { grid-template-columns: minmax(0, 1fr); }

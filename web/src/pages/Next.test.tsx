@@ -283,7 +283,9 @@ describe('NextPage', () => {
         <NextPage load={async () => list} api={{ add: vi.fn(), update: vi.fn() }} />
       </LiveProvider>,
     )
-    expect(await screen.findByText(/blocked by #7/)).toBeInTheDocument()
+    const tag = await screen.findByText(/blocked by #7/)
+    expect(tag).toHaveClass('sh-tag', 'sh-tag--blocked')
+    expect(tag).not.toHaveClass('sh-tag--warn')
   })
 
   it('says so when nothing is planned', async () => {
@@ -367,5 +369,42 @@ describe('NextPage', () => {
     expect(api.update).toHaveBeenCalledTimes(1)
     expect(api.update).toHaveBeenCalledWith(1, { move: 'down' })
     expect(await screen.findByText('cannot move')).toBeInTheDocument()
+  })
+  describe('a row linked to a lane', () => {
+    const linked: NextList = {
+      next_up: 0,
+      items: [
+        nextItem({ id: 7, title: 'Linked', state: 'approved', stored_state: 'approved', lane_id: 4, lane: 'feat/export-csv', lane_name: 'feat/export-csv' }),
+      ] as NextItem[],
+    }
+    const showLinked = async () => {
+      window.location.hash = '#/next'
+      render(
+        <LiveProvider live={live()}>
+          <NextPage load={async () => linked} api={{ add: vi.fn(), update: vi.fn() }} />
+        </LiveProvider>,
+      )
+      return (await screen.findByText('Linked')).closest('li') as HTMLElement
+    }
+
+    it('opens the lane in the inspector on click, and still selects the row', async () => {
+      await showLinked()
+      await userEvent.click(screen.getByText('Linked'))
+      expect(window.location.hash).toContain('open=lane%3A4')
+      expect(screen.getByRole('complementary', { name: /Details for Linked/ })).toBeInTheDocument()
+    })
+
+    it('opens the lane on Enter', async () => {
+      const row = await showLinked()
+      row.focus()
+      await userEvent.keyboard('{enter}')
+      expect(window.location.hash).toContain('open=lane%3A4')
+    })
+
+    it('opens the lane from its own link without a second open', async () => {
+      const row = await showLinked()
+      await userEvent.click(within(row).getByRole('link', { name: /lane feat\/export-csv/ }))
+      expect(window.location.hash).toContain('open=lane%3A4')
+    })
   })
 })

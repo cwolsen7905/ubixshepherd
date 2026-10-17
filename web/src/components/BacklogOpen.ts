@@ -25,7 +25,8 @@ export function openClick(o: Open) {
   }
 }
 
-const inner = (e: { target: EventTarget }) => e.target instanceof HTMLElement && !!e.target.closest('a, button, input, select')
+/** Did the event come from a link, button or field inside the row? Those keep their own click and keys. */
+export const isInner = (e: { target: EventTarget }) => e.target instanceof HTMLElement && !!e.target.closest('a, button, input, select')
 
 /**
  * For a table row that is not itself a link: focusable, opens on click and on Enter, and says
@@ -38,10 +39,10 @@ export function openRow(o: Open | undefined) {
     className: 'row-open',
     'aria-current': isOpenNow(o) ? ('true' as const) : undefined,
     onClick: (e: MouseEvent) => {
-      if (!inner(e)) openInInspector(o)
+      if (!isInner(e)) openInInspector(o)
     },
     onKeyDown: (e: KeyboardEvent) => {
-      if (e.key === 'Enter' && !inner(e)) {
+      if (e.key === 'Enter' && !isInner(e)) {
         e.preventDefault()
         openInInspector(o)
       }
