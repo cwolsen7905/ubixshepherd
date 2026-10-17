@@ -56,14 +56,14 @@ export class SeenStore {
     return this.rec.looked === 0 && this.rec.seen.length === 0
   }
 
-  private set(next: SeenRecord) {
+  private set(next: SeenRecord, notify = true) {
     this.rec = next
     try {
       this.storage?.setItem(KEY, JSON.stringify(next))
     } catch {
       // A full or blocked store only loses the memory; the page works without it.
     }
-    this.subs.forEach((fn) => fn())
+    if (notify) this.subs.forEach((fn) => fn())
   }
 
   mark(keys: readonly string[]) {
@@ -74,7 +74,8 @@ export class SeenStore {
   }
   /** Records that the person looked at `now`. */
   look(now: number) {
-    this.set({ ...this.rec, looked: now })
+    // Quiet: nothing on screen depends on it, so subscribers are not woken every tick.
+    this.set({ ...this.rec, looked: now }, false)
   }
   setNotify(on: boolean) {
     if (this.rec.notify !== on) this.set({ ...this.rec, notify: on })

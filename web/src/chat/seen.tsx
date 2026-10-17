@@ -68,6 +68,7 @@ export function Announcer({ items }: { items: readonly WaitingItem[] | null }) {
   const known = useRef<Set<string> | null>(null)
   const [said, setSaid] = useState('')
   const clearTimer = useRef<number | undefined>(undefined)
+  const sayTimer = useRef<number | undefined>(undefined)
   useEffect(() => {
     if (!items) return
     const keys = new Set(items.map(waitingKey))
@@ -80,14 +81,21 @@ export function Announcer({ items }: { items: readonly WaitingItem[] | null }) {
     // Deferred so the effect does not set state synchronously. A later announcement replaces
     // the clear timer; an unrelated re-run leaves it alone, so the text always goes away.
     window.clearTimeout(clearTimer.current)
-    window.setTimeout(() => setSaid(text), 0)
+    window.clearTimeout(sayTimer.current)
+    sayTimer.current = window.setTimeout(() => setSaid(text), 0)
     clearTimer.current = window.setTimeout(() => setSaid(''), 8000)
     if (mayNotify(notify) && document.visibilityState === 'hidden') {
       const waits = added.filter(notifiable)
       if (waits.length > 0) notifyWaiting(waits, () => showWaiting(waits[0] as WaitingItem))
     }
   }, [items, notify])
-  useEffect(() => () => window.clearTimeout(clearTimer.current), [])
+  useEffect(
+    () => () => {
+      window.clearTimeout(clearTimer.current)
+      window.clearTimeout(sayTimer.current)
+    },
+    [],
+  )
   return (
     <p className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
       {said}

@@ -65,3 +65,16 @@ describe('wording', () => {
     expect(notifiable({ kind: 'mr', action: 'approve', title: 'm' })).toBe(false)
   })
 })
+
+describe('look', () => {
+  it('is kept but does not wake subscribers', () => {
+    const s = new SeenStore(mem())
+    let woke = 0
+    s.subscribe(() => woke++)
+    s.look(9)
+    expect(s.getSnapshot().looked).toBe(9)
+    expect(woke).toBe(0)
+    s.mark(['a'])
+    expect(woke).toBe(1)
+  })
+})
