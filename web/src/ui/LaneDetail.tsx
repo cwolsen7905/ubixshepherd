@@ -25,6 +25,7 @@ import { laneSource } from '../conversation/api'
 import { Changes } from '../components/Changes'
 import { FileBrowser } from './FileBrowser'
 import { RunsTable } from './RunsTable'
+import { dialogShown, isEditable } from './LaneDetailEscape'
 import { Kbd } from './Kbd'
 import { Tabs } from './Tabs'
 import { tabLabel, useLaneCounts } from '../inspector/laneCounts'
@@ -237,8 +238,7 @@ export function LaneDetail({ lane, runs, now, tab, onTab, feedLast, conversation
     if (!full) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
-      const t = e.target as HTMLElement | null
-      if (t?.closest('input, textarea, select') || dialogShown()) return
+      if (isEditable(e.target) || dialogShown()) return
       go(href.board())
     }
     window.addEventListener('keydown', onKey)
@@ -352,15 +352,6 @@ function LaneTimeline({ lane, now }: { lane: LaneView; now: number }) {
       )}
     </section>
   )
-}
-
-/** Whether a dialog is on screen: open or displayed, not one that is only in the DOM (the app keeps some mounted, hidden). */
-function dialogShown(): boolean {
-  return [...document.querySelectorAll<HTMLElement>('dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"]')].some((el) => {
-    if (el.closest('[hidden], [aria-hidden="true"]')) return false
-    const style = window.getComputedStyle(el)
-    return style.display !== 'none' && style.visibility !== 'hidden'
-  })
 }
 
 function LaneOverview({ lane, runs, latest, action, now, feedLast, known, record, editorUrl, page }: {

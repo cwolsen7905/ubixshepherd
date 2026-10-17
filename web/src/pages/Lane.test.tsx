@@ -119,6 +119,19 @@ describe('the Conversation tab', () => {
       expect(window.location.hash).toBe('#/board')
     })
 
+    it('leaves the page alone while typing in a contenteditable', async () => {
+      window.location.hash = '#/lanes/1'
+      await showLane(source())
+      const box = document.createElement('div')
+      box.setAttribute('contenteditable', 'true')
+      box.setAttribute('data-test-dialog', '')
+      box.tabIndex = 0
+      document.body.append(box)
+      box.focus()
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/lanes/1')
+    })
+
     it('with an open dialog closes the dialog only, then the next Esc closes the page', async () => {
       const dlg = document.createElement('dialog')
       dlg.setAttribute('data-test-dialog', '')
