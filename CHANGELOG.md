@@ -9,7 +9,7 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
-## [0.5.0-beta.1] - unreleased
+## [0.5.0-beta.1] - 2026-10-17
 
 A beta of uBixShepherd with a redesigned web UI built from one design system, a
 keep-going mode that lets the front desk carry on with what is already approved, files
