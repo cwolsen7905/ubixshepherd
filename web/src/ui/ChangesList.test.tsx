@@ -47,6 +47,15 @@ describe('ChangesList', () => {
     }
   })
 
+  it('diff: says outside scope in visible words beside the file, not by colour alone', () => {
+    render(<ChangesList read={read} worktree="/w" editorUrl={null} variant="diff" />)
+    const row = screen.getByText('other/x.go').closest('li') as HTMLElement
+    const words = within(row).getByText('outside scope')
+    expect(words).toHaveClass('sh-change-scope')
+    expect(words).not.toHaveClass('visually-hidden')
+    expect(within(screen.getByText('src/auth.go').closest('li') as HTMLElement).queryByText('outside scope')).toBeNull()
+  })
+
   it('list: rows do not expand', () => {
     render(<ChangesList read={read} worktree="/w" editorUrl={null} variant="list" />)
     expect(screen.queryByRole('button', { name: /src\/auth\.go/ })).toBeNull()

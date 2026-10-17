@@ -160,17 +160,19 @@ function FileRow({ file, group, read, worktree, editorUrl, runId, variant }: {
       <span className={`sh-change-s--${scope}`} aria-hidden="true">{mark}</span>
       <span className="sh-change-path" title={file.old_path ? `${file.old_path} → ${file.path}` : file.path}>
         {variant === 'diff' ? (
-          <button
-            type="button"
-            className="sh-change-open"
-            aria-expanded={open}
-            aria-controls={id}
-            onClick={() => setOpen((o) => !o)}
-          >
-            {file.old_path && <span className="faint">{file.old_path} → </span>}
-            {file.path}
-            {!file.in_scope && <span className="visually-hidden">, outside scope</span>}
-          </button>
+          <>
+            <button
+              type="button"
+              className="sh-change-open"
+              aria-expanded={open}
+              aria-controls={id}
+              onClick={() => setOpen((o) => !o)}
+            >
+              {file.old_path && <span className="faint">{file.old_path} → </span>}
+              {file.path}
+            </button>
+            {!file.in_scope && <span className="sh-change-scope">outside scope</span>}
+          </>
         ) : (
           <>
             {file.old_path && <span className="faint">{file.old_path} → </span>}
