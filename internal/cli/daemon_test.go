@@ -10,13 +10,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
-	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/watch"
@@ -244,14 +245,14 @@ func TestRestartDrainRefusesWhenTheDaemonGaveTheDrainUp(t *testing.T) {
 func TestRestartStartsADaemonWhenItWasStoppedDuringTheDrain(t *testing.T) {
 	h := newHarness(t, "", false)
 	var started int
-	oldDrain, oldStop, oldStart, oldRunning := restartDrain, restartStop, restartStart, restartRunning
+	oldDrain, oldStop, oldStart, oldRunning := restartDrain, restartStop, restartStart, restartGone
 	t.Cleanup(func() {
-		restartDrain, restartStop, restartStart, restartRunning = oldDrain, oldStop, oldStart, oldRunning
+		restartDrain, restartStop, restartStart, restartGone = oldDrain, oldStop, oldStart, oldRunning
 	})
 	restartDrain = func(context.Context, Env, time.Duration) error {
 		return errors.New("drain the daemon: connection refused")
 	}
-	restartRunning = func(context.Context, Env) (*client.Client, error) { return nil, nil }
+	restartGone = func(context.Context, Env) bool { return true }
 	restartStop = func(context.Context, Env) error { return nil }
 	restartStart = func(context.Context, Env) error { started++; return nil }
 	if err := daemonRestart(context.Background(), h.env, true, time.Minute); err != nil {
@@ -266,12 +267,12 @@ func TestRestartStartsADaemonWhenItWasStoppedDuringTheDrain(t *testing.T) {
 func TestRestartLeavesARunningDaemonWhenTheDrainFails(t *testing.T) {
 	h := newHarness(t, "", false)
 	var started, stopped int
-	oldDrain, oldStop, oldStart, oldRunning := restartDrain, restartStop, restartStart, restartRunning
+	oldDrain, oldStop, oldStart, oldRunning := restartDrain, restartStop, restartStart, restartGone
 	t.Cleanup(func() {
-		restartDrain, restartStop, restartStart, restartRunning = oldDrain, oldStop, oldStart, oldRunning
+		restartDrain, restartStop, restartStart, restartGone = oldDrain, oldStop, oldStart, oldRunning
 	})
 	restartDrain = func(context.Context, Env, time.Duration) error { return errors.New("the daemon gave up the drain") }
-	restartRunning = func(context.Context, Env) (*client.Client, error) { return &client.Client{}, nil }
+	restartGone = func(context.Context, Env) bool { return false }
 	restartStop = func(context.Context, Env) error { stopped++; return nil }
 	restartStart = func(context.Context, Env) error { started++; return nil }
 	if err := daemonRestart(context.Background(), h.env, true, time.Minute); err == nil {
@@ -292,5 +293,37 @@ func TestRestartReportsANewDaemonThatWillNotStart(t *testing.T) {
 	err := daemonRestart(context.Background(), h.env, false, 0)
 	if err == nil || !strings.Contains(err.Error(), "port in use") || !strings.Contains(err.Error(), "did not start") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// A runtime file left while its process has ended (the daemon is gone, though its HTTP
+// server stopped answering first) counts as gone, without waiting out stopWait.
+func TestDaemonGoneWhenTheProcessEndedAndTheFileRemains(t *testing.T) {
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Skip("no true command")
+	}
+	l := paths.Layout{Home: t.TempDir()}
+	rt, _ := json.Marshal(api.Runtime{Addr: "127.0.0.1:1", Token: "t", PID: cmd.Process.Pid})
+	if err := os.WriteFile(l.Runtime(), rt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !daemonGone(context.Background(), Env{Layout: l, Stdout: io.Discard, Stderr: io.Discard}) {
+		t.Error("a daemon whose process ended is gone")
+	}
+}
+
+// A daemon that is alive but not answering is waited for, and one that answers is not gone.
+func TestDaemonGoneIsFalseForAnAnsweringDaemon(t *testing.T) {
+	env := fakeDaemon(t, 202, "{}")
+	rt, err := daemon.ReadRuntime(env.Layout.Runtime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt.PID = os.Getpid()
+	b, _ := json.Marshal(rt)
+	os.WriteFile(env.Layout.Runtime(), b, 0o600)
+	if daemonGone(context.Background(), env) {
+		t.Error("an answering daemon is not gone")
 	}
 }

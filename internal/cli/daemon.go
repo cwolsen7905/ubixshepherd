@@ -377,10 +377,10 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 
 // The steps of a restart; tests replace them.
 var (
-	restartDrain   = daemonDrain
-	restartStop    = daemonStop
-	restartRunning = connectRunning
-	restartStart   = func(ctx context.Context, env Env) error { _, err := startDaemon(ctx, env, false); return err }
+	restartDrain = daemonDrain
+	restartStop  = daemonStop
+	restartGone  = daemonGone
+	restartStart = func(ctx context.Context, env Env) error { _, err := startDaemon(ctx, env, false); return err }
 )
 
 // daemonRestart stops the daemon and starts it again, draining it first when asked: no
@@ -391,7 +391,7 @@ func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Durati
 			// A daemon stopped by someone else while this restart waited (a shutdown that
 			// came before "drained") is the restart's business too: no daemon is left
 			// running, so go on and start one. Any other error leaves the daemon as it is.
-			if c, cerr := restartRunning(ctx, env); cerr != nil || c != nil {
+			if !restartGone(ctx, env) {
 				return err
 			}
 			fmt.Fprintf(env.Stdout, "the daemon stopped while the restart waited for it (%v); starting a new one\n", err)
@@ -409,6 +409,33 @@ func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Durati
 		fmt.Fprintln(env.Stdout, "restarted: the new daemon is running")
 	}
 	return nil
+}
+
+// daemonGone waits up to stopWait for a daemon that is stopping to be gone: its runtime
+// file removed or its process ended. A daemon that answers is not gone. A stopping daemon
+// closes its HTTP server first and goes on ending its agents for a while, so not answering
+// is not the same as gone.
+func daemonGone(ctx context.Context, env Env) bool {
+	deadline := time.Now().Add(stopWait)
+	for {
+		if _, err := os.Stat(env.Layout.Runtime()); err != nil {
+			return true
+		}
+		if rt, err := daemon.ReadRuntime(env.Layout.Runtime()); err != nil || !processAlive(rt.PID) {
+			return true
+		}
+		if _, err := connect(ctx, env); err == nil {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // drainPoll is how often a restart looks at the drain.
