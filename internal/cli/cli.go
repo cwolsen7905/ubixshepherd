@@ -57,6 +57,13 @@ var errUsage = errors.New("usage")
 // errSilent exits 1 after the command has already said why.
 var errSilent = errors.New("silent")
 
+// errHeld says a run was not started but kept to start by itself (the daemon is
+// restarting). It exits ExitHeld, so a script can tell it from a start and from a failure.
+var errHeld = errors.New("held")
+
+// ExitHeld is the exit status of a command whose run was held, not started.
+const ExitHeld = 3
+
 func commands() []command {
 	return []command{
 		{"chat", "The one conversation: talk to Shepherd's front desk, with the swarm's events in the thread",
@@ -196,6 +203,8 @@ func Run(ctx context.Context, env Env, args []string) int {
 		case errors.Is(err, flag.ErrHelp):
 			fmt.Fprintln(env.Stdout, "usage:", c.usage)
 			return 0
+		case errors.Is(err, errHeld):
+			return ExitHeld
 		case errors.Is(err, errSilent):
 			return 1
 		case errors.Is(err, errUsage):

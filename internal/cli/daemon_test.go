@@ -3,8 +3,12 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -130,15 +134,67 @@ func TestRestartDrainWaitsForTheDaemonToBeDrained(t *testing.T) {
 
 func TestDrainWithAZeroTimeoutIsToday(t *testing.T) {
 	h := newHarness(t, "", false)
-	if err := os.WriteFile(h.env.Layout.Config(), []byte(badConfig), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// The bad config stops the restart before anything is drained or stopped.
-	if code := h.run("daemon", "restart", "--drain", "--timeout", "0"); code != 1 {
+	stopped, started := 0, 0
+	oldDrain, oldStop, oldStart := restartDrain, restartStop, restartStart
+	t.Cleanup(func() { restartDrain, restartStop, restartStart = oldDrain, oldStop, oldStart })
+	restartStop = func(context.Context, Env) error { stopped++; return nil }
+	restartStart = func(context.Context, Env) error { started++; return nil }
+	// --timeout 0 asks the daemon for nothing: it is stopped and started at once.
+	if code := h.run("daemon", "restart", "--drain", "--timeout", "0"); code != 0 {
 		t.Fatalf("restart: %d %q", code, h.err)
 	}
-	if h.run("daemon", "status"); strings.Contains(h.out.String(), "drain") {
-		t.Errorf("the daemon was drained: %q", h.out)
+	if stopped != 1 || started != 1 {
+		t.Errorf("stopped %d, started %d", stopped, started)
+	}
+	if h.srv.Runner.Draining() != nil {
+		t.Error("the daemon was asked to drain")
+	}
+	// Without --drain it is the same.
+	if code := h.run("daemon", "restart"); code != 0 || h.srv.Runner.Draining() != nil {
+		t.Errorf("plain restart: %d, draining %v", code, h.srv.Runner.Draining())
+	}
+	// With --drain the daemon is drained first.
+	if code := h.run("daemon", "restart", "--drain", "--timeout", "1m"); code != 0 || h.srv.Runner.Draining() == nil {
+		t.Errorf("drained restart: %d, draining %v", code, h.srv.Runner.Draining())
+	}
+}
+
+// fakeDaemon answers status, and the drain with the given code and body.
+func fakeDaemon(t *testing.T, drainCode int, drainBody string) Env {
+	t.Helper()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == api.PathStatus {
+			json.NewEncoder(w).Encode(api.Status{})
+			return
+		}
+		w.WriteHeader(drainCode)
+		io.WriteString(w, drainBody)
+	}))
+	t.Cleanup(ts.Close)
+	l := paths.Layout{Home: t.TempDir()}
+	rt, _ := json.Marshal(api.Runtime{Addr: strings.TrimPrefix(ts.URL, "http://"), Token: "t"})
+	os.WriteFile(l.Runtime(), rt, 0o600)
+	return Env{Stdout: io.Discard, Stderr: io.Discard, Layout: l, Cwd: l.Home}
+}
+
+func TestDrainFallbackKeysOnTheHTTPStatus(t *testing.T) {
+	ctx := context.Background()
+	// A daemon with no drain route answers 404: it is restarted as it is.
+	if err := daemonDrain(ctx, fakeDaemon(t, http.StatusNotFound, "404 page not found"), time.Minute); err != nil {
+		t.Errorf("old daemon: %v", err)
+	}
+	// Any other failure stops the restart, whatever digits its message holds.
+	err := daemonDrain(ctx, fakeDaemon(t, http.StatusInternalServerError, `{"error":"disk 404 full"}`), time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "left as it is") {
+		t.Errorf("a 500 mentioning 404: %v", err)
+	}
+}
+
+func TestHeldRunIsADistinctResult(t *testing.T) {
+	var out bytes.Buffer
+	err := started(context.Background(), Env{Stdout: &out}, nil, api.RunView{Held: "Shepherd is restarting; the run starts after the restart"}, true)
+	if !errors.Is(err, errHeld) || !strings.Contains(out.String(), "not started yet") {
+		t.Errorf("held start: %v %q", err, out.String())
 	}
 }
 

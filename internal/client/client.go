@@ -625,12 +625,20 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 		defer resp.Body.Close()
 		var e api.Error
 		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
-			return nil, fmt.Errorf("daemon: %s", e.Error)
+			return nil, &StatusError{Code: resp.StatusCode, msg: "daemon: " + e.Error}
 		}
-		return nil, fmt.Errorf("daemon: %s", resp.Status)
+		return nil, &StatusError{Code: resp.StatusCode, msg: "daemon: " + resp.Status}
 	}
 	return resp, nil
 }
+
+// StatusError is a daemon's non-2xx answer, with the HTTP status it came with.
+type StatusError struct {
+	Code int
+	msg  string
+}
+
+func (e *StatusError) Error() string { return e.msg }
 
 // unreachable is a remote daemon that did not answer through its tunnel. It matches
 // ErrNoDaemon so a caller that reconnects on that (the chat) does so over ssh as well.

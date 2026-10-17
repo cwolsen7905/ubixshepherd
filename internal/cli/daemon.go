@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,16 +96,7 @@ func runDaemon(ctx context.Context, env Env, args []string) error {
 		if *timeout < 0 {
 			return errors.New("--timeout must not be negative")
 		}
-		if *drain && *timeout > 0 {
-			if err := daemonDrain(ctx, env, *timeout); err != nil {
-				return err
-			}
-		}
-		if err := daemonStop(ctx, env); err != nil {
-			return err
-		}
-		_, err = startDaemon(ctx, env, false)
-		return err
+		return daemonRestart(ctx, env, *drain && *timeout > 0, *timeout)
 	case "reload":
 		return daemonReload(ctx, env)
 	case "check":
@@ -383,6 +375,27 @@ func waitForDaemon(ctx context.Context, env Env, limit time.Duration) (*client.C
 	}
 }
 
+// The steps of a restart; tests replace them.
+var (
+	restartDrain = daemonDrain
+	restartStop  = daemonStop
+	restartStart = func(ctx context.Context, env Env) error { _, err := startDaemon(ctx, env, false); return err }
+)
+
+// daemonRestart stops the daemon and starts it again, draining it first when asked: no
+// drain request is made otherwise, and the daemon is stopped at once.
+func daemonRestart(ctx context.Context, env Env, drain bool, timeout time.Duration) error {
+	if drain {
+		if err := restartDrain(ctx, env, timeout); err != nil {
+			return err
+		}
+	}
+	if err := restartStop(ctx, env); err != nil {
+		return err
+	}
+	return restartStart(ctx, env)
+}
+
 // drainPoll is how often a restart looks at the drain.
 const drainPoll = 500 * time.Millisecond
 
@@ -464,7 +477,8 @@ func daemonDrain(ctx context.Context, env Env, timeout time.Duration) error {
 	}
 	d, err := c.Drain(ctx, timeout)
 	if err != nil {
-		if strings.Contains(err.Error(), "404") {
+		var se *client.StatusError
+		if errors.As(err, &se) && se.Code == http.StatusNotFound {
 			// A daemon from before the drain: nothing to wait for, but it can restart.
 			fmt.Fprintln(env.Stderr, "this daemon is too old to drain; restarting it as it is")
 			return nil

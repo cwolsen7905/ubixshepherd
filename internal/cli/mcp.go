@@ -1180,7 +1180,7 @@ func callTool(ctx context.Context, env Env, t mcpTool, a map[string]any, maxOut 
 	if a == nil {
 		a = map[string]any{}
 	}
-	text, isErr := "", false
+	text, isErr, isHeld := "", false, false
 	args, err := t.args(a)
 	if err != nil {
 		text, isErr = err.Error(), true
@@ -1195,7 +1195,9 @@ func callTool(ctx context.Context, env Env, t mcpTool, a map[string]any, maxOut 
 		}
 		code := Run(ctx, cenv, args)
 		text = strings.TrimSpace(stdout.String() + "\n" + stderr.String())
-		isErr = code != 0
+		// A held run is neither a start nor a failure: it begins by itself later.
+		isHeld = code == ExitHeld
+		isErr = code != 0 && !isHeld
 	}
 	if text == "" {
 		text = "done"
@@ -1207,10 +1209,14 @@ func callTool(ctx context.Context, env Env, t mcpTool, a map[string]any, maxOut 
 	if maxOut > 0 {
 		text = capOutput(text, maxOut, t.more)
 	}
-	return map[string]any{
+	res := map[string]any{
 		"content": []map[string]any{{"type": "text", "text": text}},
 		"isError": isErr,
 	}
+	if isHeld {
+		res["held"] = true
+	}
+	return res
 }
 
 // capOutput keeps a tool's output within max characters for a caller that rereads it on
