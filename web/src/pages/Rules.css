@@ -13,10 +13,10 @@
 .rules-id code, .rules-source code { font: inherit; }
 .rules-source { text-align: right; color: var(--sh-muted); }
 .rules-allows { color: var(--sh-muted); }
-.rules-verdict--refuse { border-color: var(--sh-broken); color: var(--sh-broken); }
-.rules-verdict--hold { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
-.rules-verdict--ask { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
-.rules-verdict--proceed { border-color: var(--sh-ok); color: var(--sh-ok); }
+.rules-table .sh-tag.rules-verdict--refuse { border-color: var(--sh-broken); color: var(--sh-broken); }
+.rules-table .sh-tag.rules-verdict--ask { border-color: var(--sh-lantern); color: var(--sh-lantern-ink); }
+.rules-table .sh-tag.rules-verdict--proceed { border-color: var(--sh-lichen); color: var(--sh-lichen); }
+.rules-table .sh-tag.rules-verdict--hold { border-color: var(--sh-control); color: var(--sh-muted); }
 @media (max-width: 760px) {
   .rules-table, .rules-table tbody, .rules-table tr { display: block; }
   .rules-table tr { padding: var(--sh-s4) 0; border-top: 1px solid var(--sh-rule); }
