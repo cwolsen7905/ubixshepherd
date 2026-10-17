@@ -85,7 +85,6 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
 
   return (
     <div className="page lane">
-      <BackLink />
       <LaneDetail
         lane={lane}
         runs={data?.runs ?? []}
@@ -95,6 +94,7 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
         feedLast={feedLast}
         conversation={conversation ?? laneSource}
         full
+        back={<BackLink />}
         known={known !== undefined}
         record={record ?? undefined}
       />

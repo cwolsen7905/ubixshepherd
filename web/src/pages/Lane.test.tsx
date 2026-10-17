@@ -84,7 +84,73 @@ describe('the Conversation tab', () => {
     expect(await within(thread).findByText('Fix the login redirect.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
     expect(screen.queryByText('Fix the login redirect.')).not.toBeInTheDocument()
-    expect(screen.getByText('Branch')).toBeVisible()
+    expect(screen.getByText('Merge request')).toBeVisible()
+  })
+
+  it('has a header with the lane, its meta line and the tabs, and the Overview rail', async () => {
+    await showLane(source())
+    expect(screen.getByRole('link', { name: /Board/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Close\s*Esc/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Close lane' })).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
+    expect(screen.getByRole('complementary', { name: 'Lane facts' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Runs' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Timeline' })).toBeInTheDocument()
+  })
+
+  describe('Esc on the page', () => {
+    afterEach(() => {
+      document.querySelectorAll('[data-test-dialog]').forEach((d) => d.remove())
+    })
+
+    it('closes the page to the Board, though a hidden or closed dialog is in the DOM', async () => {
+      const hidden = document.createElement('div')
+      hidden.setAttribute('role', 'dialog')
+      hidden.setAttribute('data-test-dialog', '')
+      hidden.hidden = true
+      const closed = document.createElement('dialog')
+      closed.setAttribute('data-test-dialog', '')
+      document.body.append(hidden, closed)
+      window.location.hash = '#/lanes/1'
+      await showLane(source())
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/board')
+    })
+
+    it('leaves the page alone while typing in a contenteditable', async () => {
+      window.location.hash = '#/lanes/1'
+      await showLane(source())
+      const box = document.createElement('div')
+      box.setAttribute('contenteditable', 'true')
+      box.setAttribute('data-test-dialog', '')
+      box.tabIndex = 0
+      document.body.append(box)
+      box.focus()
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/lanes/1')
+    })
+
+    it('with an open dialog closes the dialog only, then the next Esc closes the page', async () => {
+      const dlg = document.createElement('dialog')
+      dlg.setAttribute('data-test-dialog', '')
+      dlg.setAttribute('open', '')
+      // A native dialog closes on Esc as the key's default action, after the page has seen it.
+      document.addEventListener('keydown', function close(e) {
+        if (e.key !== 'Escape') return
+        document.removeEventListener('keydown', close)
+        setTimeout(() => dlg.removeAttribute('open'), 0)
+      })
+      document.body.append(dlg)
+      window.location.hash = '#/lanes/1'
+      await showLane(source())
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/lanes/1')
+      await waitFor(() => expect(dlg).not.toHaveAttribute('open'))
+      await userEvent.keyboard('{Escape}')
+      expect(window.location.hash).toBe('#/board')
+    })
   })
 
   it('draws one thread with a divider per run, and markdown for agent text', async () => {
@@ -381,11 +447,11 @@ describe('closing from the lane page', () => {
 
   it('marks a finished lane and offers to close it', async () => {
     await showWith([run({ state: 'succeeded' })], finishedReview)
-    // The Overview's action row shows the finished mark beside Close lane at the right.
+    // The header's action row shows the finished mark beside Close lane at the right.
     expect(await screen.findByText(/finished: ready to close/)).toBeInTheDocument()
     expect(screen.getByText(/every change on it is in origin\/dev; last run succeeded/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Close lane' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Open as page' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Open beside the board' })).toBeInTheDocument()
   })
 
   it('shows no marker for a lane the review does not call finished', async () => {

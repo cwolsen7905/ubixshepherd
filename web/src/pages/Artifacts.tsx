@@ -8,6 +8,7 @@ import { useNow } from '../hooks'
 import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
 import { EmptyState, Skeleton } from '../ui'
+import { dialogShown } from '../ui/LaneDetailEscape'
 import './Artifacts.css'
 
 type Filters = { repo?: number; lane?: number; run?: number; topic?: number; intent?: Intent | 'all' }
@@ -104,7 +105,7 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
   useEffect(() => {
     if (!viewing) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('dialog[open], [role="dialog"]')) {
+      if (e.key === 'Escape' && !e.defaultPrevented && !dialogShown()) {
         if (fromList) {
           stepBack()
         } else {
