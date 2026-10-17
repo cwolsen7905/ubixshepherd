@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from 'react'
+import { useSyncExternalStore, type KeyboardEvent, type MouseEvent } from 'react'
 import { go, parse, withOpen, type Open } from '../router'
 
 /** Is `o` the item the inspector holds now? Rows mark themselves with it. */
@@ -59,4 +59,14 @@ export function itemOpen(it: { decision?: { id: number }; laneId?: number }): Op
 /** The props of an `<a>` that opens `o` in the inspector, marked when it is the open one. */
 export function openLink(o: Open) {
   return { href: openHref(o), 'aria-current': isOpenNow(o) ? ('true' as const) : undefined, onClick: openClick(o) }
+}
+
+const onHash = (fn: () => void) => {
+  window.addEventListener('hashchange', fn)
+  return () => window.removeEventListener('hashchange', fn)
+}
+
+/** Re-render the caller when the hash changes: a memoized row calls it so its open marker follows. */
+export function useHashOpen(): string {
+  return useSyncExternalStore(onHash, () => window.location.hash)
 }

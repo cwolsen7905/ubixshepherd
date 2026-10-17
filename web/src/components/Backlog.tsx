@@ -175,7 +175,7 @@ function BacklogView({
                 <li key={it.key} className={`backlog-row group-${it.group}`}>
                   <Glyph glyph={it.glyph ?? mark.glyph} tone={mark.tone} label={BACKLOG_NAMES[it.group]} />
                   <span className="backlog-main">
-                    {op ? <a href={openHref(op)} aria-current={isOpenNow(op) ? 'true' : undefined} onClick={openClick(op)}>{label}</a> : label}
+                    {op ? <a href={openHref(op)} aria-current={isOpenNow(op) ? 'true' : undefined} onClick={openClick(op)}>{label}</a> : it.request ? <a href={href.decisions()}>{label}</a> : label}
                     <span className="backlog-detail">{it.detail}</span>
                   </span>
                   <span className="backlog-side">

@@ -10,7 +10,7 @@ import {
   type TimelineLayout,
 } from '../model/timeline'
 import { href, type TimelineRange } from '../router'
-import { openLink } from './BacklogOpen'
+import { openLink, useHashOpen } from './BacklogOpen'
 import { TimelineTooltip, type Tip, type TipAt } from './TimelineTooltip'
 import '../timeline/timeline.css'
 
@@ -95,6 +95,7 @@ function geometry(rem: number): Geometry {
 const Bar = memo(function Bar({
   mark, lane, repo, g, now, dim, onTip,
 }: { mark: BarMark; lane: string; repo: string; g: Geometry; now: number; dim: boolean; onTip: OnTip }) {
+  useHashOpen()
   const r = mark.run
   const cls = agentClass(r.agent)
   const tip: Tip = { kind: 'run', run: r, lane, repo, continuing: mark.continuing }
@@ -160,6 +161,7 @@ const Density = memo(function Density({
 })
 
 const Ask = memo(function Ask({ mark, lane, g, now, onTip }: { mark: DecisionMark; lane: string; g: Geometry; now: number; onTip: OnTip }) {
+  useHashOpen()
   const cy = g.rowH / 2
   const r = 0.4 * g.rem
   const link = mark.source === 'decision' ? openLink({ kind: 'decision', id: mark.id }) : { href: href.decisions() }
@@ -190,6 +192,7 @@ const Ask = memo(function Ask({ mark, lane, g, now, onTip }: { mark: DecisionMar
 })
 
 const Merge = memo(function Merge({ mark, lane, laneId, g, onTip }: { mark: MergeMark; lane: string; laneId: number; g: Geometry; onTip: OnTip }) {
+  useHashOpen()
   const tip: Tip = { kind: 'merge', mark, lane }
   const r = 0.26 * g.rem
   return (
@@ -212,6 +215,7 @@ const Merge = memo(function Merge({ mark, lane, laneId, g, onTip }: { mark: Merg
 const Row = memo(function Row({
   track, width, g, now, agent, onTip,
 }: { track: LaneTrack; width: number; g: Geometry; now: number; agent: string; onTip: OnTip }) {
+  useHashOpen()
   return (
     <div className={`tl-row${track.waiting ? ' is-waiting' : ''}`} data-lane={track.id}>
       <a className="tl-name" {...openLink({ kind: 'lane', id: track.id })} title={track.name}>

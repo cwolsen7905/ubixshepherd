@@ -1,7 +1,8 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, waitFor, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { itemOpen, openClick, openHref, openRow } from './BacklogOpen'
+import { memo } from 'react'
+import { itemOpen, openLink, openClick, openHref, openRow, useHashOpen } from './BacklogOpen'
 
 beforeEach(() => {
   window.location.hash = '#/board'
@@ -13,6 +14,19 @@ describe('itemOpen', () => {
     expect(itemOpen({ decision: { id: 4 }, laneId: 2 })).toEqual({ kind: 'decision', id: 4 })
     expect(itemOpen({ laneId: 2 })).toEqual({ kind: 'lane', id: 2 })
     expect(itemOpen({})).toBeNull()
+  })
+})
+
+describe('a memoized row', () => {
+  const Row = memo(function Row() {
+    useHashOpen()
+    return <a {...openLink({ kind: 'lane', id: 5 })}>row</a>
+  })
+  it('follows the hash although its props never change', async () => {
+    render(<Row />)
+    expect(screen.getByRole('link')).not.toHaveAttribute('aria-current')
+    window.location.hash = '#/board?open=lane%3A5'
+    await waitFor(() => expect(screen.getByRole('link')).toHaveAttribute('aria-current', 'true'))
   })
 })
 

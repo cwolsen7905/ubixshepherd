@@ -119,7 +119,7 @@ export function ProjectPage({ name }: { name: string | null }) {
           ))}
           {data.pending_requests.map((q) => (
             <li key={`q${q.id}`}>
-              <a className="row project-row" href={openHref({ kind: 'run', id: q.from_run })} aria-current={isOpenNow({ kind: 'run', id: q.from_run }) ? 'true' : undefined} onClick={openClick({ kind: 'run', id: q.from_run })}>
+              <a className="row project-row" href={href.decisions()} onClick={(e) => (e.preventDefault(), go(href.decisions()))}>
                 <Glyph glyph="!" tone="warn" label="request" />
                 <span className="row-lane">{q.from_lane}</span>
                 <span className="row-detail">

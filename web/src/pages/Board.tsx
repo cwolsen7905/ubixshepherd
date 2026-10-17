@@ -150,16 +150,16 @@ export function BoardPage({
               )
               return (
                 <li key={it.key}>
-                  {op ? (
+                  {op || it.request ? (
                     <a
                       ref={(el) => {
                         rows.current[i] = el
                       }}
                       className="row"
-                      href={openHref(op)}
-                      aria-current={isOpenNow(op) ? 'true' : undefined}
+                      href={op ? openHref(op) : href.decisions()}
+                      aria-current={op && isOpenNow(op) ? 'true' : undefined}
                       onFocus={() => setSel(i)}
-                      onClick={openClick(op)}
+                      onClick={op ? openClick(op) : (e) => (e.preventDefault(), go(href.decisions()))}
                     >
                       {body}
                     </a>
