@@ -1,7 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { BoardItem } from '../model/board'
-import { COLLAPSED_KEY, VIEW_KEY } from '../model/projects'
+import { VIEW_KEY } from '../model/projects'
 import { LiveProvider } from '../state/context'
 import { Live, type Api, type Clock } from '../state/live'
 import { lane, project, run, spend, status, unassigned } from '../test/fixtures'
@@ -83,18 +83,7 @@ describe('BoardPage by project', () => {
     expect(within(shop).getByText('2 open · 1 running · $1.50 today')).toBeInTheDocument()
     const un = screen.getByRole('region', { name: /Unassigned/ })
     expect(within(un).getByText('docs-pass')).toBeInTheDocument()
-    const order = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
-    expect(order.findIndex((t) => t?.includes('shop'))).toBeLessThan(order.findIndex((t) => t?.includes('Unassigned')))
-  })
-
-  it('collapses a group and remembers it', async () => {
-    daemon()
-    await show()
-    await userEvent.click(screen.getByRole('button', { name: /shop/ }))
-    expect(screen.queryByText('feat/login')).toBeNull()
-    expect(screen.getByText('docs-pass')).toBeInTheDocument()
-    expect(JSON.parse(window.localStorage.getItem(COLLAPSED_KEY) ?? '[]')).toEqual(['shop'])
-    expect(screen.getByRole('button', { name: /shop/ })).toHaveAttribute('aria-expanded', 'false')
+    expect(shop.compareDocumentPosition(un) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('flattens on request and remembers the choice', async () => {
@@ -181,36 +170,81 @@ describe('BoardPage closing', () => {
   })
 })
 
-describe('BoardPage agent column', () => {
-  it('shows the model under the agent', async () => {
+describe('BoardPage rows', () => {
+  const one = (r: ReturnType<typeof run>) => [
+    { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: r, detail: 'run 10', at: '2026-10-08T10:00:00Z' } as BoardItem,
+  ]
+  const rowOf = () => screen.getByText('feat/login').closest('[data-component="ListRow"]') as HTMLElement
+
+  it('has two lines: the lane over agent, model and status', async () => {
     daemon([unassigned()])
-    await show([
-      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: 'claude-sonnet' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
-    ])
-    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
-    expect(row.getByText('claude')).toBeInTheDocument()
-    expect(row.getByText('claude-sonnet')).toBeInTheDocument()
+    await show(one(run({ model: 'claude-sonnet' })))
+    expect(within(rowOf()).getByText('feat/login')).toBeInTheDocument()
+    expect(within(rowOf()).getByText('claude · claude-sonnet · run 10')).toBeInTheDocument()
   })
 
   it('shortens a model id to the part after the last slash', async () => {
     daemon([unassigned()])
-    await show([
-      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: 'openrouter/moonshotai/kimi-k2.7-code' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
-    ])
-    const row = within(screen.getByText('feat/login').closest('li') as HTMLElement)
-    expect(row.getByText('kimi-k2.7-code')).toBeInTheDocument()
-    expect(row.getByTitle('openrouter/moonshotai/kimi-k2.7-code')).toBeInTheDocument()
+    await show(one(run({ model: 'openrouter/moonshotai/kimi-k2.7-code' })))
+    expect(within(rowOf()).getByText('claude · kimi-k2.7-code · run 10')).toBeInTheDocument()
   })
 
-  it('shows no model line when the run has none', async () => {
+  it('leaves the model out when the run has none', async () => {
     daemon([unassigned()])
-    await show([
-      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', agent: 'claude', lane: lane(), run: run({ model: undefined }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
-    ])
-    const rowElement = screen.getByText('feat/login').closest('li') as HTMLElement
-    const row = within(rowElement)
-    expect(row.getByText('claude')).toBeInTheDocument()
-    expect(rowElement.querySelector('.row-model')).toBeNull()
+    await show(one(run({ model: undefined })))
+    expect(within(rowOf()).getByText('claude · run 10')).toBeInTheDocument()
+  })
+
+  it('shows the merge request and the age in their columns', async () => {
+    daemon([unassigned()])
+    await show([{ ...one(run())[0] as BoardItem, lane: lane({ mr: 41, mr_state: 'open', pipeline_status: 'passed' }) }])
+    expect(within(rowOf()).getByText(/!41/)).toBeInTheDocument()
+    expect(rowOf().querySelector('.sh-row-age')?.textContent).toMatch(/^\d+[smhd]$/)
+  })
+})
+
+describe('BoardPage groups', () => {
+  const at = '2026-10-08T10:00:00Z'
+  const mk = (id: number, group: BoardItem['group'], name: string): BoardItem => ({
+    key: `lane:${id}`, group, name, laneId: id, repo: 'acme-api', lane: lane({ id, name }), detail: 'd', at,
+  })
+
+  it('lists needs you, broken, to review and working in that order, each with a count', async () => {
+    daemon([unassigned()])
+    await show([mk(1, 'working', 'w'), mk(2, 'review', 'r'), mk(3, 'broken', 'b'), mk(4, 'needs', 'n')])
+    const names = ['Needs you', 'Broken', 'To review', 'Working']
+    const regions = names.map((n) => screen.getByRole('region', { name: new RegExp(`^${n}`) }))
+    regions.slice(1).forEach((r, i) => {
+      expect((regions[i] as HTMLElement).compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+    expect(within(regions[0] as HTMLElement).getByText('1')).toBeInTheDocument()
+  })
+
+  it('adds held and idle groups for open lanes with nothing on the board, after working', async () => {
+    daemon([unassigned()])
+    const lanes = [lane({ id: 5, name: 'quiet' }), lane({ id: 6, name: 'waiting' })]
+    const runs = [run({ id: 20, lane_id: 6, agent: 'claude', state: 'stopped', ended: '2026-10-08T09:00:00Z' })]
+    const holds = [{ agent: 'claude', until: new Date(Date.now() + 3_600_000).toISOString() }]
+    await show([mk(1, 'working', 'w')], {
+      lanes: async () => lanes,
+      runs: async () => runs,
+      status: async () => status({ detail: { os: 'linux', arch: 'amd64', running: 0, open_lanes: 2, decisions: 0, quota_holds: holds, spend_usd: 0 } as never }),
+    })
+    const idle = screen.getByRole('region', { name: /^Idle/ })
+    expect(within(idle).getByText('quiet')).toBeInTheDocument()
+    const held = screen.getByRole('region', { name: /^Held/ })
+    expect(within(held).getByText('waiting')).toBeInTheDocument()
+    expect(within(held).getByText(/held: out of quota until/)).toBeInTheDocument()
+    const working = screen.getByRole('region', { name: /^Working/ })
+    expect(working.compareDocumentPosition(held) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(held.compareDocumentPosition(idle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText(/1 held · 1 idle/)).toBeInTheDocument()
+  })
+
+  it('ends with the Finished footer', async () => {
+    daemon([unassigned()])
+    await show([mk(1, 'working', 'w')])
+    expect(screen.getByRole('region', { name: /^Finished/ })).toBeInTheDocument()
   })
 })
 
@@ -226,7 +260,7 @@ describe('BoardPage quiet projects', () => {
     await show()
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1)
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Board')
-    expect(screen.getAllByRole('heading', { level: 2, name: /^Working/ }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('region', { name: /^Working/ }).length).toBeGreaterThan(0)
   })
 
   it('folds projects with no lanes and nothing on the board under one head, and opens it on request', async () => {
@@ -258,10 +292,11 @@ describe('BoardPage rows and the inspector', () => {
   it('marks the open row with aria-current and the keyboard cursor with data-selected, apart', async () => {
     window.location.hash = '#/?open=lane%3A2'
     await show()
-    const rows = screen.getAllByRole('link').filter((a) => a.classList.contains('row'))
+    const rows = screen.getAllByRole('link').filter((a) => a.getAttribute('data-component') === 'ListRow')
     expect(rows[1]).toHaveAttribute('aria-current', 'true')
     expect(rows[0]).not.toHaveAttribute('aria-current')
-    expect(rows[0]).toHaveAttribute('data-selected', 'true')
-    expect(rows[1]).not.toHaveAttribute('data-selected')
+    const wraps = rows.map((r) => r.closest('.board-row'))
+    expect(wraps[0]).toHaveAttribute('data-selected', 'true')
+    expect(wraps[1]).not.toHaveAttribute('data-selected')
   })
 })

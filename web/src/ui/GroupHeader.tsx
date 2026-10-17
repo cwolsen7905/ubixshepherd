@@ -40,6 +40,7 @@ export function GroupHeader({ id, variant = 'section', label, hint, glyph, glyph
       {variant === 'status' && glyph && <StatusGlyph glyph={glyph} tone={glyphTone} />}
       {label}
       {variant === 'status' && count !== undefined && <span className="sh-group-h-n">{count}</span>}
+      {variant === 'status' && meta && <span className="sh-group-h-meta">{meta}</span>}
       {variant === 'section' && hint && <span className="sh-group-h-hint">{hint}</span>}
     </div>
   )

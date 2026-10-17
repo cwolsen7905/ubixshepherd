@@ -120,15 +120,15 @@ describe('the Finished section of the board', () => {
     expect(rows[0]).toHaveTextContent('closed, no MR')
     expect(rows[0]).toHaveTextContent('1 run')
     expect(rows[1]).toHaveTextContent('feat/login')
-    expect(rows[1]).toHaveTextContent('merged !34')
+    expect(rows[1]).toHaveTextContent('merged')
+    expect(rows[1]).toHaveTextContent('!34')
     expect(rows[1]).toHaveTextContent('3 runs')
     expect(rows[1]).toHaveTextContent('$1.24')
     expect(rows[2]).toHaveTextContent('spike')
     expect(rows[2]).toHaveTextContent('dropped')
     expect(rows[2]).toHaveTextContent('$0.30')
-    // The merge request links out; the lane's name opens it in the inspector.
-    expect(within(rows[1] as HTMLElement).getByRole('link', { name: '!34' })).toHaveAttribute('href', 'https://forge.test/acme/-/merge_requests/34')
-    expect(within(rows[1] as HTMLElement).getByRole('link', { name: 'feat/login' })).toHaveAttribute('href', '#/?open=lane%3A1')
+    // The row opens the lane in the inspector.
+    expect(rows[1]?.querySelector('a')).toHaveAttribute('href', '#/?open=lane%3A1')
     // Today starts at local midnight.
     const asked = seen.find((u) => u.pathname === '/v1/history/lanes')
     const midnight = new Date(NOW)
@@ -141,7 +141,7 @@ describe('the Finished section of the board', () => {
     daemon()
     const section = await show('week')
     expect(await within(section).findAllByRole('listitem')).toHaveLength(4)
-    expect(within(section).getByText('MR closed')).toBeInTheDocument()
+    expect(within(section).getByText(/MR closed/)).toBeInTheDocument()
     expect(within(section).getByRole('link', { name: 'Last 7 days' })).toHaveAttribute('aria-current', 'true')
     expect(within(section).getByRole('link', { name: 'Today' })).toHaveAttribute('href', '#/board?range=today')
   })

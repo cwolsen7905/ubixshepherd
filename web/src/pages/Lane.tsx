@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import { api, history } from '../api/client'
 import type { LaneView, RequestView, RunView } from '../api/types'
 import { BackLink } from '../components/BackLink'
-import { boardItems } from '../model/board'
 import { useNow } from '../hooks'
 import { useLive, useSnapshot } from '../state/context'
-import { LaneDetail, type LaneDetailTab } from '../ui/LaneDetail'
+import { LaneDetail, defaultLaneDetailTab, type LaneDetailTab } from '../ui/LaneDetail'
+import { rememberedTab } from '../ui/LaneDetailMemory'
 import { laneSource } from '../conversation/api'
 import '../styles/conversation.css'
 
@@ -18,7 +18,7 @@ export const PROGRESS_POLL = 5000
 
 /** `conversation` replaces the daemon's reader; tests give it a fake. */
 export function LanePage({ id, conversation }: { id: number; conversation?: (laneId: number) => import('../conversation/types').ConversationSource }) {
-  const [tab, setTab] = useState<LaneDetailTab>('overview')
+  const [picked, setPicked] = useState<LaneDetailTab | null>(null)
   const snap = useSnapshot()
   const live = useLive()
   const now = useNow()
@@ -40,6 +40,7 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
       current = false
     }
   }, [id, unlisted, feedLast])
+  const known = listed ?? record
   const lane: LaneView | undefined = listed ?? record ?? (data?.runs[0] ? closedLane(id, data.runs[0]) : undefined)
 
   useEffect(() => {
@@ -69,13 +70,6 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
     if (lane?.closed) live.markSeen(`lane:${lane.id}`)
   }, [live, latest?.id, latest?.ended, lane?.id, lane?.closed])
 
-  useEffect(() => {
-    if (lane && lane.state !== 'closed') {
-      const group = boardItems({ ...snap, lanes: [lane], decisions: [], requests: [] })[0]?.group
-      setTab(group === 'review' ? 'changes' : 'overview')
-    }
-  }, [lane?.id, snap])
-
   if (!lane) {
     const known = snap.ready && data
     return (
@@ -86,6 +80,9 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
     )
   }
 
+  // The panel's tab carries over; failing that, to-review lanes open on Changes.
+  const tab = picked ?? rememberedTab(lane.id) ?? (lane.state === 'closed' ? 'overview' : defaultLaneDetailTab(lane, data?.runs))
+
   return (
     <div className="page lane">
       <BackLink />
@@ -94,10 +91,12 @@ export function LanePage({ id, conversation }: { id: number; conversation?: (lan
         runs={data?.runs ?? []}
         now={now}
         tab={tab}
-        onTab={setTab}
+        onTab={setPicked}
         feedLast={feedLast}
         conversation={conversation ?? laneSource}
         full
+        known={known !== undefined}
+        record={record ?? undefined}
       />
     </div>
   )

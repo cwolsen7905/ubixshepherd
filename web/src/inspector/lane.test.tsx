@@ -1,4 +1,4 @@
-import { render as rtlRender, screen, within } from '@testing-library/react'
+import { act, render as rtlRender, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { LiveProvider } from '../state/context'
@@ -7,10 +7,20 @@ import { lane, run, spend, status } from '../test/fixtures'
 import { InspectorFrame, isWide } from './Inspector'
 import { laneTab } from './lane'
 import { mrTab } from './mr'
+import { LanePage } from '../pages/Lane'
+import { rememberedScroll, rememberedTab } from '../ui/LaneDetailMemory'
 
 vi.mock('../api/client', async (orig) => ({
   ...(await orig<typeof import('../api/client')>()),
-  laneChanges: { diff: async () => ({ committed: [{}, {}], uncommitted: [{}], untracked: [], commits: [], out_of_scope: 0 }) },
+  laneChanges: {
+    diff: async () => {
+      const f = (path: string) => ({ path, status: 'modified', added: 1, removed: 0, in_scope: true })
+      return {
+        lane_id: 4, lane: 'feat/login', branch: 'feat/export-csv', base: 'dev', base_ref: 'dev', head: 'abcdef1234567', mode: 'lane', read_at: 'now',
+        committed: [f('a.go'), f('b.go')], uncommitted: [f('c.go')], untracked: [], commits: [], commits_total: 0, out_of_scope: 0,
+      }
+    },
+  },
   laneApprove: {
     read: async () => ({ supported: true, mr: 7, mr_state: 'opened', mr_url: 'https://git.example/mr/7', sha: 'abcdef1234567', approved: false, require_approval: 'manual' }),
     approve: vi.fn(async () => ({ retried: true })),
@@ -61,6 +71,7 @@ describe('isWide', () => {
 describe('the lane inspector tabs', () => {
   beforeEach(() => {
     window.location.hash = '#/?open=lane:4'
+    window.sessionStorage.clear()
   })
   it('uses the kit tabs with counts, and a Runs tab', async () => {
     render(<InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame>)
@@ -69,11 +80,42 @@ describe('the lane inspector tabs', () => {
     expect(await within(tabs).findByRole('tab', { name: 'Changes 3' })).toBeInTheDocument()
     expect(within(tabs).getByRole('tab', { name: 'Artifacts 3' })).toBeInTheDocument()
     expect(within(tabs).getByRole('tab', { name: 'Runs 2' })).toBeInTheDocument()
-    expect(within(tabs).getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(tabs).getByRole('tab', { name: 'Files' })).toBeInTheDocument()
+    expect(within(tabs).getByRole('tab', { name: 'Conversation' })).toBeInTheDocument()
+  })
+  it('opens a lane waiting for a merge review on Changes, and any other on Overview', async () => {
+    const { unmount } = render(<InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame>)
+    expect(await screen.findByRole('tab', { name: /^Changes/ })).toHaveAttribute('aria-selected', 'true')
+    unmount()
+    window.sessionStorage.clear()
+    const calm = { ...api, lanes: async () => [lane({ id: 4 })] } as Api
+    rtlRender(<LiveProvider live={new Live(calm, still)}><InspectorFrame open={{ kind: 'lane', id: 4 }} mode="split">page</InspectorFrame></LiveProvider>)
+    expect(await screen.findByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+  })
+  it('keeps the tab and the scroll position from the panel when the page opens (MAINT-C-04)', async () => {
+    // jsdom does not scroll: give the page a scroll offset that holds.
+    let top = 0
+    Object.defineProperty(document.documentElement, 'scrollTop', { configurable: true, get: () => top, set: (v: number) => { top = v } })
+    const panel = render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'runs' }} mode="split">page</InspectorFrame>)
+    await screen.findByRole('tab', { name: /^Runs/ })
+    top = 120
+    act(() => {
+      window.dispatchEvent(new Event('scroll'))
+    })
+    expect(rememberedTab(4)).toBe('runs')
+    expect(rememberedScroll(4, 'runs')).toBe(120)
+    panel.unmount()
+    top = 0
+    // The page form of the same lane starts on the tab, and the scroll, the panel left.
+    render(<LanePage id={4} />)
+    expect(await screen.findByRole('tab', { name: /^Runs/ })).toHaveAttribute('aria-selected', 'true')
+    expect(top).toBe(120)
+    delete (document.documentElement as unknown as Record<string, unknown>).scrollTop
   })
   it('lists the lane runs on the Runs tab', async () => {
     render(<InspectorFrame open={{ kind: 'lane', id: 4, tab: 'runs' }} mode="split">page</InspectorFrame>)
-    expect(await screen.findByRole('link', { name: 'Run 12' })).toHaveAttribute('href', '#/?open=run%3A12')
+    expect(await screen.findByRole('link', { name: '12' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '11' })).toBeInTheDocument()
   })
 })
 

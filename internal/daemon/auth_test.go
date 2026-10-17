@@ -83,6 +83,8 @@ func TestRoleEndpointMatrix(t *testing.T) {
 		{"POST", api.PathLanes + "/1/close", map[string]any{}, opDesk},
 		{"POST", api.PathLanes + "/1/scope", map[string]any{}, op},
 		{"GET", api.PathLanes + "/1/approval", nil, op},
+		{"GET", api.PathLaneFiles(1, "path=docs"), nil, opDesk},
+		{"POST", api.PathLaneFiles(1, ""), map[string]any{}, op},
 		{"POST", api.PathLanes + "/1/ship", nil, opDesk},
 		{"GET", api.PathFoldGC + "?workspace_id=1", nil, opDesk},
 		{"POST", api.PathPrePush, map[string]any{}, opWorker},

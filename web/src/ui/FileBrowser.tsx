@@ -8,60 +8,60 @@ import { Button } from './Button'
  * A read-only file tree and viewer for a lane's worktree or any repo ref. `tree` shows only
  * the tree; `tree-viewer` adds a file reader beside it.
  */
-export function FileBrowser({ laneId, ref, layout = 'tree-viewer' }: {
+export function FileBrowser({ laneId, gitRef, layout = 'tree-viewer' }: {
   laneId: number
-  ref?: string
+  /** A branch, tag or sha; the lane's worktree when absent. */
+  gitRef?: string
   layout?: 'tree' | 'tree-viewer'
 }) {
+  const [target, setTarget] = useState('')
   const [root, setRoot] = useState<LaneFileNode | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [path, setPath] = useState('')
   const [file, setFile] = useState<LaneFileNode | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [got, setGot] = useState<{ key: string; error?: string } | null>(null)
+  const key = `${laneId}|${gitRef ?? ''}|${target}`
+  const loading = got?.key !== key
+  const error = got?.key === key ? got.error : undefined
+  const path = root?.path ?? ''
 
-  const read = (target: string) => {
-    setLoading(true)
-    laneFiles.read(laneId, target, ref).then(
+  // A new lane or ref starts again at the top.
+  const scope = `${laneId}|${gitRef ?? ''}`
+  const [seen, setSeen] = useState(scope)
+  if (seen !== scope) {
+    setSeen(scope)
+    setTarget('')
+    setRoot(null)
+    setFile(null)
+  }
+
+  useEffect(() => {
+    let current = true
+    laneFiles.read(laneId, target, gitRef).then(
       (n) => {
-        setLoading(false)
-        setError(null)
-        if (target === '' || target.endsWith('/')) {
+        if (!current) return
+        if (n.kind === 'dir') {
           setRoot(n)
-          setPath(n.path)
-        } else if (n.kind === 'dir') {
-          setRoot(n)
-          setPath(n.path)
           setFile(null)
         } else {
           setFile(n)
         }
+        setGot({ key })
       },
-      (e: unknown) => {
-        setLoading(false)
-        setError(e instanceof Error ? e.message : String(e))
-      },
+      (e: unknown) => current && setGot({ key, error: e instanceof Error ? e.message : String(e) }),
     )
-  }
-
-  useEffect(() => {
-    read('')
-  }, [laneId, ref])
-
-  const navigate = (child: LaneFileNode) => {
-    if (child.kind === 'dir') {
-      read(child.path)
-    } else if (layout === 'tree-viewer' || layout === 'tree') {
-      read(child.path)
+    return () => {
+      current = false
     }
-  }
+  }, [key, laneId, gitRef, target])
 
-  if (error) return <p className="tone-bad">Could not load the files: {error}</p>
+  const navigate = (child: LaneFileNode) => setTarget(child.path)
+
+  if (error && !root) return <p className="tone-bad">Could not load the files: {error}</p>
   if (!root) return <p className="faint">Reading…</p>
 
   const tree = (
     <nav className="sh-file-tree" aria-label="Files">
       {path !== '' && (
-        <Button variant="ghost" size="small" onClick={() => read(parentPath(path))}>
+        <Button variant="ghost" size="small" onClick={() => setTarget(parentPath(path))}>
           ← back
         </Button>
       )}
@@ -82,6 +82,7 @@ export function FileBrowser({ laneId, ref, layout = 'tree-viewer' }: {
         ))}
       </ul>
       {loading && <p className="faint">Reading…</p>}
+      {error && <p className="tone-bad">Could not load the files: {error}</p>}
     </nav>
   )
 

@@ -72,6 +72,7 @@ async function showLane(src: ConversationSource, lanes = [lane()]) {
   await userEvent.click(await screen.findByRole('tab', { name: 'Conversation' }))
 }
 
+beforeEach(() => window.sessionStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
 
 describe('the Conversation tab', () => {
@@ -82,7 +83,7 @@ describe('the Conversation tab', () => {
     expect(await within(thread).findByText('Fix the login redirect.')).toBeInTheDocument()
     await userEvent.click(screen.getByRole('tab', { name: 'Overview' }))
     expect(screen.queryByText('Fix the login redirect.')).not.toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Runs' })).toBeVisible()
+    expect(screen.getByText('Branch')).toBeVisible()
   })
 
   it('draws one thread with a divider per run, and markdown for agent text', async () => {

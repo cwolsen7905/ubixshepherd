@@ -49,7 +49,7 @@ export function Changes({ laneId, worktree, editorUrl, refreshKey, now, run }: {
 
   return (
     <div
-      {...(run ? { 'aria-label': `Changes in run ${run.id}` } : { id: 'lane-panel', role: 'tabpanel', 'aria-labelledby': 'lane-tab-changes' })}
+      aria-label={run ? `Changes in run ${run.id}` : 'Changes in the lane'}
       className="changes"
     >
       <div className="changes-bar">

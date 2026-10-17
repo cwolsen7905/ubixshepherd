@@ -196,13 +196,12 @@ func filesRef(ctx context.Context, repoPath, ref, rel string) (LaneFileNode, err
 		return LaneFileNode{}, refusef("ref %q not found", ref)
 	}
 
-	full := rel
-	if full == "" {
-		full = "."
-	}
-	ty, err := gitRun(repoPath, "cat-file", "-t", resolved+":"+full)
-	if err != nil {
-		return LaneFileNode{}, os.ErrNotExist
+	ty := "tree" // the root of a ref is its tree
+	if rel != "" {
+		var err error
+		if ty, err = gitRun(repoPath, "cat-file", "-t", resolved+":"+rel); err != nil {
+			return LaneFileNode{}, os.ErrNotExist
+		}
 	}
 	switch ty {
 	case "tree":
@@ -335,23 +334,16 @@ func listRefDir(repoPath, ref, rel string) ([]LaneFileNode, error) {
 	var nodes []LaneFileNode
 	seen := map[string]bool{}
 	for _, rec := range strings.Split(out, "\x00") {
-		rec = strings.TrimSpace(rec)
 		if rec == "" {
 			continue
 		}
-		mode, rest, ok := strings.Cut(rec, " ")
-		if !ok {
+		// "<mode> <type> <object>\t<path>"; -z keeps the path unquoted.
+		meta, full, ok := strings.Cut(rec, "\t")
+		fields := strings.Fields(meta)
+		if !ok || len(fields) < 3 {
 			continue
 		}
-		ty, full, ok := strings.Cut(rest, "\t")
-		if !ok {
-			// Older gits may include sha before tab. Try splitting by space again.
-			_, ty, full, ok = splitRefEntry(rec)
-			if !ok {
-				continue
-			}
-		}
-		_ = mode
+		ty := fields[1]
 		if !strings.HasPrefix(full, prefix) {
 			continue
 		}
@@ -383,21 +375,6 @@ func listRefDir(repoPath, ref, rel string) ([]LaneFileNode, error) {
 		return nodes[i].Name < nodes[j].Name
 	})
 	return nodes, nil
-}
-
-// splitRefEntry parses "<mode> <type> <sha>\t<path>" when two-space split did not land on type.
-func splitRefEntry(rec string) (mode, ty, full string, ok bool) {
-	parts := strings.Fields(rec)
-	if len(parts) < 4 {
-		return "", "", "", false
-	}
-	mode = parts[0]
-	ty = parts[1]
-	full = strings.TrimPrefix(rec, fmt.Sprintf("%s %s %s\t", parts[0], parts[1], parts[2]))
-	if full == rec {
-		return "", "", "", false
-	}
-	return mode, ty, full, true
 }
 
 func readRefFile(repoPath, ref, rel string) (LaneFileNode, error) {

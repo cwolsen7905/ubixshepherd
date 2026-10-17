@@ -5,7 +5,7 @@ import { RangeFilter } from '../components/RangeFilter'
 import { DEFAULT_RANGE, ending, finished, RANGE_PHRASE, rangeStart } from '../model/history'
 import { useHistory } from '../state/history'
 import type { Range } from '../router'
-import { canDismiss, counts, countsText, GROUP_NAMES, GROUPS, type BoardItem, type Group } from '../model/board'
+import { canDismiss, counts, countsText, GROUP_NAMES, latestRuns, type BoardItem, type Group } from '../model/board'
 import {
   collapseKey, groupByProject, type ProjectGroup, readView, summaryText, writeView, type BoardView,
 } from '../model/projects'
@@ -17,10 +17,11 @@ import { useLive, useSnapshot } from '../state/context'
 import { isOpenNow, itemOpen, openHref } from '../components/BacklogOpen'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { RunFailure } from '../components/RunFailure'
-import { since, usd } from '../format'
+import { runCost, since, usd } from '../format'
 import { ListRow, GroupHeader, Chip, EmptyState, Popover } from '../ui'
 import { glyphTone } from '../ui/StatusGlyph'
 import { GROUP_MARKS } from '../model/groups'
+import type { Tone } from '../model/marks'
 import { MrBadge } from '../components/MrBadge'
 import { GateBadge } from '../components/GateBadge'
 import '../styles/projects.css'
@@ -42,6 +43,25 @@ function agentSub(it: BoardItem): string {
   return parts.join(' · ')
 }
 
+/**
+ * A row of the board. Held and idle lanes are not in the model's groups (they need nothing from
+ * anyone); the page adds them, marked by `row`, so the model and the terminal's dock stay as they are.
+ */
+type Row = BoardItem & { row?: 'held' | 'idle' }
+type RowGroup = Group | 'held' | 'idle'
+
+/** Top to bottom: what needs the person first, what needs no one last. */
+const ROW_GROUPS: readonly RowGroup[] = ['needs', 'broken', 'review', 'working', 'held', 'idle', 'done']
+const ROW_NAMES: Record<RowGroup, string> = { ...GROUP_NAMES, held: 'held', idle: 'idle' }
+const ROW_MARKS: Record<RowGroup, { glyph: string; tone: Tone }> = {
+  ...GROUP_MARKS,
+  held: { glyph: '‖', tone: 'muted' },
+  idle: { glyph: '○', tone: 'muted' },
+}
+const rowGroup = (it: Row): RowGroup => it.row ?? it.group
+
+const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })
+
 /** A project with no open lane and nothing on the board has nothing to show: it folds. */
 const isQuiet = (g: ProjectGroup) => g.items.length === 0 && g.summary.open === 0
 
@@ -52,12 +72,29 @@ export interface DismissedControl {
 }
 
 export function BoardPage({
-  items, range = DEFAULT_RANGE, dismissed,
+  items: listed, range = DEFAULT_RANGE, dismissed,
 }: { items: BoardItem[]; range?: Range; dismissed?: DismissedControl }) {
   const snap = useSnapshot()
   const live = useLive()
   const now = useNow()
   const [sel, setSel] = useState(0)
+  const quotaHolds = snap.status?.detail?.quota_holds
+  const items: Row[] = useMemo(() => {
+    const onBoard = new Set(listed.flatMap((it) => (it.laneId === undefined ? [] : [it.laneId])))
+    const latest = latestRuns(snap.runs)
+    const extra: Row[] = []
+    for (const l of snap.lanes) {
+      if (l.state !== 'open' || onBoard.has(l.id)) continue
+      const run = latest.get(l.id)
+      const hold = run && quotaHolds?.find((h) => h.agent === run.agent && Date.parse(h.until) > now)
+      extra.push({
+        key: `lane:${l.id}`, group: 'done', row: hold ? 'held' : 'idle', name: l.name, laneId: l.id, repo: l.repo,
+        agent: run?.agent, lane: l, run, at: run?.ended ?? l.created,
+        detail: hold ? `held: out of quota until ${clock(hold.until)}` : 'idle',
+      })
+    }
+    return [...listed, ...extra.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))]
+  }, [listed, snap.lanes, snap.runs, quotaHolds, now])
   const rows = useRef<(HTMLAnchorElement | HTMLDivElement | null)[]>([])
 
   const closed = useHistory(range, async (ids) => {
@@ -113,15 +150,23 @@ export function BoardPage({
     return <p className="empty">{snap.error ? 'Waiting for the daemon.' : 'Loading lanes…'}</p>
   }
 
+  const idle = items.filter((it) => it.row === 'idle').length
+  const held = items.filter((it) => it.row === 'held').length
+  const summary = [
+    countsText(counts(items.filter((it) => !it.row))),
+    held > 0 ? `${held} held` : '',
+    idle > 0 ? `${idle} idle` : '',
+  ].filter(Boolean).join(' · ')
+
   let index = -1
-  const renderGroups = (its: BoardItem[]) => {
-    const byGroup = new Map<Group, BoardItem[]>()
-    for (const it of its) byGroup.set(it.group, [...(byGroup.get(it.group) ?? []), it])
-    return GROUPS.flatMap((g) => {
+  const renderGroups = (its: Row[]) => {
+    const byGroup = new Map<RowGroup, Row[]>()
+    for (const it of its) byGroup.set(rowGroup(it), [...(byGroup.get(rowGroup(it)) ?? []), it])
+    return ROW_GROUPS.flatMap((g) => {
       const list = byGroup.get(g)
       return list ? [{ g, list }] : []
     }).map(({ g, list }) => {
-      const mark = GROUP_MARKS[g]
+      const mark = ROW_MARKS[g]
       return (
         <section key={g} className="board-group" aria-labelledby={`group-${g}`}>
           <GroupHeader
@@ -129,7 +174,7 @@ export function BoardPage({
             variant="status"
             glyph={mark.glyph}
             glyphTone={glyphTone(mark.tone)}
-            label={sentence(GROUP_NAMES[g])}
+            label={sentence(ROW_NAMES[g])}
             count={list.length}
             warn={g === 'needs'}
           />
@@ -137,6 +182,7 @@ export function BoardPage({
             {list.map((it) => {
               const i = ++index
               const op = itemOpen(it)
+              const runId = it.run?.id
               const row = (
                 <ListRow
                   ref={(el: HTMLAnchorElement | HTMLDivElement | null) => {
@@ -145,37 +191,22 @@ export function BoardPage({
                   variant="lane"
                   glyph={it.glyph ?? mark.glyph}
                   tone={it.glyph ? 'idle' : glyphTone(mark.tone)}
-                  glyphLabel={sentence(GROUP_NAMES[g])}
+                  glyphLabel={sentence(ROW_NAMES[g])}
                   title={it.name}
                   titleAttr={it.key}
                   sub={agentSub(it)}
                   right={it.lane ? <><MrBadge lane={it.lane} /> {it.lane.gate && <GateBadge gate={it.lane.gate} />}</> : undefined}
                   age={since(it.at, now)}
-                  selected={i === clamped}
+                  selected={op ? isOpenNow(op) : i === clamped}
                   onSelect={() => setSel(i)}
                   href={op ? openHref(op) : it.request ? href.decisions() : undefined}
                 />
               )
               return (
                 <li key={it.key} className="board-row-wrap">
-                  {op || it.request ? (
-                    <div
-                      className="board-row"
-                      aria-current={op && isOpenNow(op) ? 'true' : undefined}
-                      data-selected={i === clamped ? 'true' : undefined}
-                      onClick={() => setSel(i)}
-                    >
-                      {row}
-                    </div>
-                  ) : (
-                    <div
-                      className="board-row"
-                      data-selected={i === clamped ? 'true' : undefined}
-                      onClick={() => setSel(i)}
-                    >
-                      {row}
-                    </div>
-                  )}
+                  <div className="board-row" data-selected={i === clamped ? 'true' : undefined} onClick={() => setSel(i)}>
+                    {row}
+                  </div>
                   {it.lane && it.lane.state === 'open' && !it.decision && !it.request && (
                     <p className="row-actions lane-close-row">
                       {(() => {
@@ -187,20 +218,20 @@ export function BoardPage({
                       </Popover>
                     </p>
                   )}
-                  {it.run && (canDismiss(it) || (dismissed?.show && it.run.dismissed)) && (
+                  {it.run && runId !== undefined && (canDismiss(it) || (dismissed?.show && it.run.dismissed)) && (
                     <p className="row-actions">
                       {it.run.dismissed ? (
-                        <button type="button" className="link-button" onClick={() => void dismiss(it.run!.id, true)}>
-                          Undismiss run {it.run.id}
+                        <button type="button" className="link-button" onClick={() => void dismiss(runId, true)}>
+                          Undismiss run {runId}
                         </button>
                       ) : (
                         <button
                           type="button"
                           className="link-button"
                           title="Clear this run from the board. Its log and record stay in history."
-                          onClick={() => void dismiss(it.run!.id)}
+                          onClick={() => void dismiss(runId)}
                         >
-                          Dismiss run {it.run.id}
+                          Dismiss run {runId}
                         </button>
                       )}
                     </p>
@@ -221,7 +252,7 @@ export function BoardPage({
     <div className="board">
       <header className="page-head">
         <h1>Board</h1>
-        <p className="page-sub">{countsText(counts(items)) || 'Nothing needs you right now.'}</p>
+        <p className="page-sub">{summary || 'Nothing needs you right now.'}</p>
         <div className="page-actions">
           {hasProjects && (
             <span className="board-view" role="group" aria-label="View">
@@ -264,7 +295,7 @@ export function BoardPage({
                   )}
                 />
                 <div className="project-group-body">
-                  {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items)}
+                  {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items as Row[])}
                 </div>
               </section>
             )
@@ -347,13 +378,14 @@ function FinishedSection({
                   tone={finishedTone}
                   glyphLabel="closed"
                   title={l.name}
-                  sub={`${l.repo} · ${end.text}`}
+                  sub={`${l.repo} · ${end.text} · ${l.runs} ${l.runs === 1 ? 'run' : 'runs'} · ${runCost(l) || usd(0)}`}
                   right={l.mr ? `!${l.mr}` : undefined}
                   rightTone={rightTone}
                   age={`${since(l.closed, now)} ago`}
                   selected={i === selected}
                   onSelect={() => onSelect(i)}
-                  href={href.lane(l.id)}
+                  href={openHref({ kind: 'lane', id: l.id })}
+                  titleAttr={end.title}
                 />
               </li>
             )

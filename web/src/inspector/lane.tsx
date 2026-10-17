@@ -1,9 +1,9 @@
-import { useState } from 'react'
 import { go, href, withOpen, type Open } from '../router'
 import { useSnapshot } from '../state/context'
 import { useNow } from '../hooks'
 import { since } from '../format'
 import { LaneDetail, laneDetailTab, defaultLaneDetailTab, type LaneDetailTab } from '../ui/LaneDetail'
+import { rememberedTab } from '../ui/LaneDetailMemory'
 import type { ConversationSource } from '../conversation/types'
 
 export const LANE_TABS = ['overview', 'changes', 'artifacts', 'conversation', 'runs', 'files'] as const
@@ -24,13 +24,9 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
   const lane = snap.lanes.find((l) => l.id === open.id)
   const feedLast = snap.feed.at(-1)?.id ?? 0
   const runs = snap.runs.filter((r) => r.lane_id === open.id).sort((a, b) => b.id - a.id)
-  const fromUrl = laneDetailTab(open.tab)
-  const [seen, setSeen] = useState(open.tab)
-  const tab = seen === open.tab ? fromUrl : fromUrl
-  if (seen !== open.tab) setSeen(open.tab)
 
   const select = (t: LaneDetailTab) =>
-    go(withOpen(window.location.hash, { kind: 'lane', id: open.id, ...(t === 'overview' ? {} : { tab: t }), ...(open.full ? { full: true } : {}) }))
+    go(withOpen(window.location.hash, { kind: 'lane', id: open.id, tab: t, ...(open.full ? { full: true } : {}) }))
 
   if (!lane) {
     return (
@@ -41,8 +37,8 @@ export function LaneInspector({ open, conversation }: { open: Open; conversation
     )
   }
 
-  const initial = defaultLaneDetailTab(lane)
-  const effective = tab === 'overview' && open.tab === undefined ? initial : tab
+  // The address wins; then the tab the person last had on this lane (the page's too); then the state's own.
+  const effective = open.tab ? laneDetailTab(open.tab) : (rememberedTab(lane.id) ?? defaultLaneDetailTab(lane, runs))
 
   return (
     <div className="inspector-body lane-inspector">
