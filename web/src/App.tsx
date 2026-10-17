@@ -22,7 +22,6 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { Help } from './components/Help'
 import { InspectorFrame } from './inspector/Inspector'
 import { CommandPalette, type PaletteHandle } from './palette/CommandPalette'
-import { StatusCounts } from './components/StatusCounts'
 import { statusCounts } from './state/attention'
 import { ArtifactsPage } from './pages/Artifacts'
 import { UpdateNotice } from './components/UpdateNotice'
@@ -75,15 +74,12 @@ export function App() {
       )}
       <div className="foot-row">
         <ErrorBoundary region="The daemon status">
-          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} spend={spend} counts={counts} />
+          <DaemonStatus error={snap.error} downSince={snap.downSince} ready={snap.ready} chat={chat} spend={spend} counts={counts} watch />
         </ErrorBoundary>
         <button type="button" className="help-button" onClick={() => setHelp(true)} aria-label="Keyboard shortcuts">
           <kbd>?</kbd>
         </button>
       </div>
-      <ErrorBoundary region="The lane counts">
-        <StatusCounts counts={counts} />
-      </ErrorBoundary>
       <ErrorBoundary region="The update notice">
         <UpdateNotice />
       </ErrorBoundary>
@@ -98,6 +94,7 @@ export function App() {
         workspaces={snap.status?.workspaces ?? []}
         footer={footer}
         boardBroken={boardBroken}
+        lanes={snap.lanes}
         paletteOpen={() => paletteRef.current?.open()}
         banner={
           snap.error && (

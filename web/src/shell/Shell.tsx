@@ -1,14 +1,16 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import type { Route } from '../router'
+import { href, type Route } from '../router'
 import type { Status, Waiting } from '../api/types'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SessionBanner } from '../session/SessionBanner'
 import { Sidebar } from './Sidebar'
-import { currentItem } from './nav'
+import { Badge } from '../ui'
+import { attentionCount } from '../state/attention'
+import { pageTitle } from './title'
 import { useShellMode } from './useMedia'
 
 /**
- * The frame: a left sidebar, a slim page head and the page. The sidebar is full width, icons
+ * The frame: a left sidebar and the page, which renders its own head. Below 760px a page bar carries the menu, the route's title and the waiting count. The sidebar is full width, icons
  * only below 1280px, and a sheet (closed until the menu button opens it) below 760px. The
  * sidebar and the page each sit in their own error boundary, so one failing leaves the other.
  */
@@ -21,6 +23,7 @@ export function Shell({
   children,
   boardBroken = 0,
   paletteOpen,
+  lanes,
 }: {
   route: Route
   waiting: Waiting | null
@@ -30,6 +33,8 @@ export function Shell({
   children: ReactNode
   boardBroken?: number
   paletteOpen?: () => void
+  /** Lane names, so the lane route is titled by its lane. */
+  lanes?: readonly { id: number; name: string }[]
 }) {
   const mode = useShellMode()
   // The sheet is open for the route it was opened on: navigating closes it.
@@ -57,7 +62,8 @@ export function Shell({
     return () => document.removeEventListener('keydown', onKey)
   }, [sheet, open])
 
-  const title = currentItem(route)?.label ?? (route.page === 'status' ? 'Status' : '')
+  const title = pageTitle(route, lanes)
+  const waitingCount = attentionCount(waiting)
 
   return (
     <div className="app shell" data-mode={mode}>
@@ -75,8 +81,8 @@ export function Shell({
       {sheet && open && <div className="sheet-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
       <div className="shell-body">
         <SessionBanner />
-        <header className="page-bar">
-          {sheet && (
+        {sheet && (
+          <header className="page-bar">
             <button
               ref={menu}
               type="button"
@@ -87,9 +93,14 @@ export function Shell({
             >
               Menu
             </button>
-          )}
-          <span className="page-bar-title">{title}</span>
-        </header>
+            <span className="page-bar-title">{title}</span>
+            {waitingCount > 0 && (
+              <a className="page-bar-count" href={href.inbox()}>
+                <Badge count={waitingCount} tone="attention" label="waiting on you" />
+              </a>
+            )}
+          </header>
+        )}
         {banner}
         <main id="main" className="main" tabIndex={-1}>
           <ErrorBoundary region="This page" resetKey={window.location.hash}>

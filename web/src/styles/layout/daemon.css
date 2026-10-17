@@ -5,9 +5,9 @@
   display: flex; align-items: center; gap: var(--s-2);
 }
 .daemon-dot-indicator { font-size: var(--t-2xs); }
-.live-dot { min-width: 0; max-width: 100%; text-align: left; color: var(--ink); }
+.live-dot { min-width: 0; max-width: 100%; text-align: left; color: var(--ink); padding-inline: 0; gap: var(--s-1); }
 .daemon-dot-indicator { flex: none; }
-.daemon-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-xs); }
+.daemon-status-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 /* Today's spend, compact under the keep-going bar and above the status line: a bar as wide and tall as that one and a short amount; the words are in the popover. */
 .rail-spend { display: grid; gap: 2px; padding: 0; min-width: 0; font-size: var(--t-2xs); color: var(--muted); }
 .rail-spend .meter { display: block; height: 4px; border-radius: 2px; background: var(--sunk); }

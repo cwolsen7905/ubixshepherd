@@ -15,15 +15,19 @@
 
 .prose { max-width: var(--measure-prose); }
 
-/* The one page head: title, an optional sub, and an actions slot on the right for filters and
-   the primary button. */
+/* The one page head, a 45px row as in the mockup: the title, chips beside it, hints and buttons at the right,
+   an optional sub under it. Pages render it through components/PageHead. */
 .page-head {
-  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;
-  column-gap: var(--s-4);
-  margin: var(--s-2) 0 var(--s-5); padding-left: var(--gutter);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+  column-gap: var(--s-4); min-height: 45px; box-sizing: border-box;
+  margin: 0 0 var(--s-3); padding-left: var(--gutter);
 }
 .page-head > * { grid-column: 1; }
-.page-head h1 { margin: 0; font-size: var(--t-xl); font-weight: 600; letter-spacing: -0.01em; }
+.page-head h1 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.3; }
+.page-head:has(> .page-chips) { grid-template-columns: auto minmax(0, 1fr) auto; }
+.page-head > .page-chips { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-2); }
+.page-head:has(> .page-chips) > .page-actions { grid-column: 3; grid-row: 1; }
+.page-head:has(> .page-chips) > .page-sub { grid-column: 1 / -1; }
 .page-sub { margin: var(--s-1) 0 0; color: var(--muted); max-width: var(--measure-prose); }
 .page-head > .page-actions {
   grid-column: 2; grid-row: 1 / span 2;
