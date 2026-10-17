@@ -50,7 +50,9 @@ type endInfo struct {
 	// run that exited 0 (it changed nothing).
 	Err      string
 	NoChange bool
-	Limit    Limit
+	// Unfinished is why Shepherd made an exit 0 fail or continued it: it ended without finishing.
+	Unfinished string
+	Limit      Limit
 	// QuotaUntil is when the agent's hold lifts, when the run ended out of quota.
 	QuotaUntil time.Time
 	// Tail is the end of the agent's output as it was logged: scrubbed, not yet capped.
@@ -76,6 +78,12 @@ func classifyEnd(in endInfo) (d store.Diagnosis, ok bool) {
 		d.Kind = store.DiagQuota
 		d.ResetAt = &in.QuotaUntil
 		d.Summary = fmt.Sprintf("%s is out of quota (%s); held until %s", in.Agent, clip(in.Limit.Text, 120), in.QuotaUntil.Local().Format("Jan 2 15:04"))
+	case in.Unfinished != "":
+		d.Kind, d.Summary = store.DiagNoChange, in.Agent+" "+in.Unfinished
+		if in.NoChange {
+			d.Summary += " (changed nothing: no commit, no file change and nothing asked or reported)"
+		}
+		d.Summary += "; see the run log"
 	case in.NoChange:
 		d.Kind = store.DiagNoChange
 		d.Summary = fmt.Sprintf("%s exited 0 but changed nothing: no commit, no file change and nothing asked or reported; see the run log", in.Agent)

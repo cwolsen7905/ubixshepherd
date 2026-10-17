@@ -153,14 +153,20 @@ func TestOpenCodeNoEditIsNotQuietSuccess(t *testing.T) {
 	if !strings.Contains(log, "WARNING the model printed a tool call as text and changed nothing") {
 		t.Errorf("log:\n%s", log)
 	}
-	// Exit 0 with nothing changed is a failure the person sees, with the reason.
-	if done.State != store.RunFailed || *done.ExitCode != 0 || !strings.Contains(done.Error, "changed nothing") {
+	// Exit 0 with nothing changed is incomplete: continued once, then a failure the
+	// person sees, with the reason.
+	if done.State != store.RunFailed || *done.ExitCode != 0 || !strings.Contains(done.Error, "without finishing") {
 		t.Errorf("run = %s (exit %d), error %q", done.State, *done.ExitCode, done.Error)
 	}
-	if !strings.Contains(log, "# shepherd: opencode exited 0 but changed nothing") {
+	if !strings.Contains(log, "# shepherd: ended without finishing; continued once") {
 		t.Errorf("log:\n%s", log)
 	}
-	if k := feedKind(t, f, "changed nothing"); k != store.FeedRunFailed {
+	waitFeed(t, f, "continued once as run")
+	second := f.wait(t, run.ID+1)
+	if second.Parent != run.ID || second.State != store.RunFailed || second.Error != "ended twice without finishing" {
+		t.Errorf("continuation = %+v", second)
+	}
+	if k := feedKind(t, f, "ended twice without finishing"); k != store.FeedRunFailed {
 		t.Errorf("feed kind = %q", k)
 	}
 }
