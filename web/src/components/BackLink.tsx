@@ -10,6 +10,9 @@ export function routeName(r: Route): string {
     case 'timeline': return 'Timeline'
     case 'next': return 'Next'
     case 'artifacts': return 'Artifacts'
+    case 'history': return 'History'
+    case 'files': return 'Files'
+    case 'rules': return 'Rules'
     case 'projects': return 'Projects'
     case 'project': return r.name
     case 'unassigned': return 'Unassigned'
