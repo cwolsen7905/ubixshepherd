@@ -64,7 +64,7 @@ export function HoldsCard({ holds, now }: { holds: { agent: string; until: strin
           {holds.map((h) => (
             <li key={h.agent} className="sh-spend-row">
               <span className="sh-spend-name">
-                <StatusGlyph glyph="∅" tone="held" label="held" /> {h.agent}
+                <StatusGlyph glyph="○" tone="held" label="held" /> {h.agent}
               </span>
               <span className="sh-spend-amount">until {clockShort(h.until, now)}</span>
             </li>
@@ -106,7 +106,7 @@ export function SpendChart({ bars, max, cap }: { bars: { day: string; usd: numbe
   return (
     <section className="sh-spend-chart" aria-label="Spend, last 14 days" data-component="SpendChart">
       <GroupHeader label="Last 14 days" hint={cap > 0 ? `daily cap ${usd(cap)}` : undefined} />
-      <div className="sh-chart" role="img" aria-label={`Spend per day for the last 14 days${cap > 0 ? `, daily cap ${usd(cap)}` : ''}`}>
+      <div role="img" aria-label={`Spend per day for the last 14 days${cap > 0 ? `, daily cap ${usd(cap)}` : ''}`}>
         <div className="sh-chart-plot">
           {capPct !== null && <span className="sh-chart-cap" style={{ bottom: capPct }} title={`Daily cap ${usd(cap)}`} />}
           {bars.map((b) => (

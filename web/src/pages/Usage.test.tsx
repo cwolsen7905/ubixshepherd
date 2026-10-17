@@ -7,7 +7,7 @@ import { Live, type Api, type Clock } from '../state/live'
 import { spend, status } from '../test/fixtures'
 import { UsagePage } from './Usage'
 
-const NOW = Date.parse('2026-10-10T15:00:00Z')
+const NOW = new Date(2026, 9, 10, 15, 0).getTime()
 const still: Clock = { now: () => NOW, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
 function show(spendToday: SpendToday = spend(), statusToday: Status = status(), runs: Api['runs'] = async () => []) {
