@@ -440,6 +440,7 @@ func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string)
 			fmt.Fprintf(&b, "- %s\n", s)
 		}
 	}
+	b.WriteString(r.autoWidenMR(ctx, lane))
 	fmt.Fprintf(&b, "\nScope: `%s`. Shepherd does not merge; that is yours.\n", strings.Join(lane.Scope, "`, `"))
 	return title, b.String()
 }
