@@ -504,7 +504,7 @@ type Profile struct {
 	Artifacts Artifacts `yaml:"artifacts,omitempty" json:"artifacts"`
 	// Widen is "auto" or "human" (the default): whether Shepherd widens a lane's scope
 	// by rule for a small, near, unprotected request, or leaves every widening to the
-	// person (docs/design/auto-widen.md).
+	// person (docs/config.md).
 	Widen string `yaml:"widen,omitempty" json:"widen,omitempty"`
 	// WidenMaxFiles is the most files one auto-widen may add; 0 is autowiden's default.
 	WidenMaxFiles int `yaml:"widen_max_files,omitempty" json:"widen_max_files,omitempty"`

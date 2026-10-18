@@ -1940,6 +1940,8 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 			// A version a run's end records is copied at once, not at the next sweep.
 			s.Runner.ArtifactSnapshot = s.Fold.SnapshotKnown
 		}
+		// Off unless a repo sets `widen: auto` (docs/config.md).
+		s.wireAutoWiden()
 		s.ReapOrphans(ctx)
 		if err := s.Runner.Recover(ctx); err != nil {
 			return err

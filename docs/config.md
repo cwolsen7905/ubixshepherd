@@ -106,8 +106,10 @@ is empty until a key is first retired.
 
 By default every widening of a lane's scope is the person's call. A repo can let Shepherd
 widen by rule instead, for a small request that stays near the lane's work. No model
-decides; the rule is in [design/auto-widen.md](design/auto-widen.md). Set these under
-`defaults:` or under a repo in `repos:`.
+decides. Set these under `defaults:` or under a repo in `repos:`.
+
+`widen` is the switch, and it is off until a repo sets it to `auto`. The daemon reads it
+when it starts, so turning it on needs a restart.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -125,8 +127,15 @@ covers CI definitions (`.gitlab-ci.yml`, `ci/`, `.github/`), migrations, `go.mod
 (`Makefile`, `bin/`, `scripts/`, hooks, lint and test configuration) and `docs/WORK.md`. If any condition fails, the
 request goes to the person as before.
 
+It acts in two places: when a run ends with files outside its scope, and when an agent asks
+a decision that explicitly asks to widen the scope and names the files in backticks, with no
+options or alternative such as a revert. In the first the run is continued and told its scope
+now includes the files. In the second the decision is answered with a note that says
+Shepherd's rule answered it, not the person; the question stays on record. If continuing the
+run fails, the widening is undone and the request goes to the person.
+
 Each auto-widen is a feed item naming the files and the checks that passed, and the
-agent is told its scope now includes them.
+merge request description lists the lane's auto-widens.
 
 ```yaml
 repos:

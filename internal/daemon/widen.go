@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -83,11 +84,20 @@ func (s *Server) widenLane(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, lane)
 }
 
-// wireAutoWiden lets the Runner widen a lane's scope by rule (docs/design/auto-widen.md)
-// through the Fold, which judges the overlap with other open lanes. A repo still has to
-// opt in with `widen: auto`.
+// wireAutoWiden lets the Runner widen a lane's scope by rule through the Fold, which
+// judges the overlap with other open lanes. It does so only when the config in force
+// has a repo (or the defaults) set to `widen: auto`; otherwise the Runner is left as it
+// was and no widening happens. The setting is read when the daemon starts.
 func (s *Server) wireAutoWiden() {
-	if s.Runner != nil && s.Fold != nil && s.Runner.Rescope == nil {
+	if s.Runner == nil || s.Fold == nil || s.Runner.Rescope != nil {
+		return
+	}
+	cfg := s.LiveConfig()
+	on := cfg.Defaults.Widen == config.WidenAuto
+	for _, p := range cfg.Repos {
+		on = on || p.Widen == config.WidenAuto
+	}
+	if on {
 		s.Runner.Rescope = s.Fold.Rescope
 	}
 }
