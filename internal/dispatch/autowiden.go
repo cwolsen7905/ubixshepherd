@@ -43,8 +43,8 @@ func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, 
 		}
 	}
 	var tracked []string
-	if out, err := git.Run(ctx, repo.Path, "ls-tree", "-r", "--name-only", "HEAD"); err == nil {
-		tracked = strings.Split(out, "\n")
+	if out, err := git.Run(ctx, repo.Path, "ls-tree", "-r", "-z", "--name-only", "HEAD"); err == nil {
+		tracked = strings.Split(out, "\x00")
 	}
 	v := autowiden.Decide(autowiden.Input{
 		Files: files, Scope: lane.Scope, Changed: changedFiles(ctx, lane),
@@ -118,16 +118,20 @@ func (r *Runner) autoWidenOutside(ctx context.Context, run store.Run, lane store
 
 var (
 	backticked   = regexp.MustCompile("`([^`\n]+)`")
-	aboutScope   = regexp.MustCompile(`(?i)\b(scope|widen|widening|outside)\b`)
+	// asksToWiden is an explicit request to widen; offersOther is a sign the question
+	// offers another way out (a revert, a move), which the person must choose between.
+	asksToWiden = regexp.MustCompile(`(?i)\b(widen|widening|extend|expand)\b.*\bscope\b|\bscope\b.*\b(widen|widening|extend|expand)\b|\b(add|include)\b.*\bto\b.*\bscope\b`)
+	offersOther = regexp.MustCompile(`(?i)\b(revert|drop|undo|remove|instead|rather|alternatively|move|or should|or would|or do)\b`)
 	looksLikePth = regexp.MustCompile(`^[\w.@+\-/]+$`)
 )
 
 // scopeFiles parses the files a scope question names: the backticked paths of a question
-// that talks about the scope. Anything else in backticks (a command, a word) is not a
+// that asks to widen the scope and offers no other way out (no options, no revert or
+// move), so that saying yes to the widening is the only reading. Anything else in backticks (a command, a word) is not a
 // file and is left out; no files means the question is not one the rule can read.
 func scopeFiles(d store.Decision) []string {
 	text := d.Question
-	if !aboutScope.MatchString(text) {
+	if !asksToWiden.MatchString(text) || offersOther.MatchString(text) || len(d.Options) > 0 {
 		return nil
 	}
 	var out []string

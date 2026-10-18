@@ -96,6 +96,19 @@ func TestDecide(t *testing.T) {
 		{"repo protected", func(in *Input) {
 			in.Protected = []string{"internal/foo/helper.go"}
 		}, false, "protected"},
+		{"protected makefile", func(in *Input) { in.Files = []string{"internal/foo/Makefile"} }, false, "protected"},
+		{"protected scripts", func(in *Input) {
+			in.Scope, in.Changed = []string{"scripts/a.sh"}, []string{"scripts/a.sh"}
+			in.Files = []string{"scripts/b.sh"}
+		}, false, "protected"},
+		{"protected bin", func(in *Input) {
+			in.Scope, in.Changed = []string{"bin/a.sh"}, []string{"bin/a.sh"}
+			in.Files = []string{"bin/promote.sh"}
+		}, false, "protected"},
+		{"new file under another lane's glob", func(in *Input) {
+			in.Others = [][]string{{"internal/foo/**"}}
+			in.RepoFiles = nil
+		}, false, "overlaps"},
 		{"cap reached", func(in *Input) { in.Used = 3 }, false, "used its 3"},
 		{"below cap", func(in *Input) { in.Used = 2 }, true, ""},
 		{"cap raised", func(in *Input) { in.Used, in.Cap = 3, 5 }, true, ""},

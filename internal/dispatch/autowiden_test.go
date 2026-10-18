@@ -142,6 +142,11 @@ func TestAutoWidenAScopeDecision(t *testing.T) {
 	if got.State != store.DecisionAnswered || !strings.Contains(got.Answer, "not by the person") {
 		t.Errorf("decision = %+v", got)
 	}
+	// A question with options offers a choice, so it waits for the person.
+	opt, _ := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Widen the scope to `src/c.go`?", Options: []string{"yes", "revert it"}})
+	if got, _ := f.st.Decision(ctx, opt.ID); got.State != store.DecisionOpen {
+		t.Errorf("a question with options was answered: %s", got.State)
+	}
 	// A question that names no file, or a protected one, waits for the person.
 	for _, q := range []string{"Should the scope grow?", "Widen the scope to `go.mod` too?", "Use `make check`?"} {
 		d, _ := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: q})
@@ -166,11 +171,14 @@ func TestAutoWidenInTheMergeRequest(t *testing.T) {
 
 func TestScopeFiles(t *testing.T) {
 	for q, want := range map[string][]string{
-		"Widen scope to `a/b.go` and `c.go`?": {"a/b.go", "c.go"},
-		"Widen scope to `Makefile`?":          nil,
-		"Widen scope: `rm -rf /`":             nil,
-		"Edit `a/b.go`?":                      nil,
-		"Scope: `internal/x/*.go`":            nil,
+		"Widen scope to `a/b.go` and `c.go`?":                        {"a/b.go", "c.go"},
+		"Widen scope to `Makefile`?":                                 nil,
+		"Widen scope: `rm -rf /`":                                    nil,
+		"`src/b.go` is outside the scope; should I revert it?":       nil,
+		"Widen the scope to `a/b.go`, or move the change elsewhere?": nil,
+		"The change touches `a/b.go`, outside the scope. Widen it?":  {"a/b.go"},
+		"Edit `a/b.go`?":           nil,
+		"Scope: `internal/x/*.go`": nil,
 	} {
 		got := scopeFiles(store.Decision{Question: q})
 		if !slices.Equal(got, want) {

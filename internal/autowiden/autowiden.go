@@ -29,6 +29,11 @@ var DefaultProtected = []string{
 	"deploy/**", "**/deploy/**", "**/secrets/**", "**/secret*", "**/.env", "**/.env.*",
 	"**/*.pem", "**/*.key", "**/id_rsa*", "**/Dockerfile", "**/docker-compose*.yml",
 	"**/CODEOWNERS", "docs/WORK.md",
+	// What defines the checks a lane's own work must pass: build and gate scripts, hooks,
+	// and lint and test configuration.
+	"**/Makefile", "**/GNUmakefile", "**/*.mk", "bin/**", "scripts/**", ".githooks/**", ".husky/**",
+	".pre-commit-config.yaml", "**/.golangci*", "**/.eslintrc*", "**/eslint.config.*",
+	"**/vitest.config.*", "**/jest.config.*", "**/tsconfig*.json",
 }
 
 // Input is everything the rule looks at.

@@ -121,7 +121,8 @@ repo, no other open lane's scope overlaps them, each is in the directory of a fi
 lane changed or is a test of one, and none is protected. The built-in protected list
 covers CI definitions (`.gitlab-ci.yml`, `ci/`, `.github/`), migrations, `go.mod`,
 `go.sum`, `package.json`, other manifests and lockfiles, deploy and secret files
-(`deploy/`, `secrets/`, `.env*`, keys) and `docs/WORK.md`. If any condition fails, the
+(`deploy/`, `secrets/`, `.env*`, keys), the files that define a lane's own checks
+(`Makefile`, `bin/`, `scripts/`, hooks, lint and test configuration) and `docs/WORK.md`. If any condition fails, the
 request goes to the person as before.
 
 Each auto-widen is a feed item naming the files and the checks that passed, and the
