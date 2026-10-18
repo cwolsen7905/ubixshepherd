@@ -101,3 +101,46 @@ ignored and one warning per occurrence, naming the key and what replaces it. The
 logs the warnings when it starts, and `shepherd daemon restart`, `daemon reload` and
 `daemon check` print them. Edit the key out of the file to silence the warning. The list
 is empty until a key is first retired.
+
+## Auto-widen
+
+By default every widening of a lane's scope is the person's call. A repo can let Shepherd
+widen by rule instead, for a small request that stays near the lane's work. No model
+decides. Set these under `defaults:` or under a repo in `repos:`.
+
+`widen` is the switch, and it is off until a repo sets it to `auto`. The daemon reads it
+when it starts, so turning it on needs a restart.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `widen` | `human` | `auto` turns the rule on; `human` leaves every widening to the person. |
+| `widen_max_files` | 3 | The most files one auto-widen may add. |
+| `widen_cap` | 3 | The most auto-widens one lane may have; after that the person is asked. |
+| `widen_protected` | none | Globs added to the built-in protected list. A repo's list extends the defaults' list. |
+
+An auto-widen happens only when the request names exact files (no globs) in the same
+repo, no other open lane's scope overlaps them, each is in the directory of a file the
+lane changed or is a test of one, and none is protected. The built-in protected list
+covers CI definitions (`.gitlab-ci.yml`, `ci/`, `.github/`), migrations, `go.mod`,
+`go.sum`, `package.json`, other manifests and lockfiles, deploy and secret files
+(`deploy/`, `secrets/`, `.env*`, keys), the files that define a lane's own checks
+(`Makefile`, `bin/`, `scripts/`, hooks, lint and test configuration) and `docs/WORK.md`. If any condition fails, the
+request goes to the person as before.
+
+It acts in two places: when a run ends with files outside its scope, and when an agent asks
+a decision that explicitly asks to widen the scope and names the files in backticks, with no
+options or alternative such as a revert. In the first the run is continued and told its scope
+now includes the files. In the second the decision is answered with a note that says
+Shepherd's rule answered it, not the person; the question stays on record. If continuing the
+run fails, the widening is undone and the request goes to the person.
+
+Each auto-widen is a feed item naming the files and the checks that passed, and the
+merge request description lists the lane's auto-widens.
+
+```yaml
+repos:
+  myrepo:
+    widen: auto
+    widen_max_files: 2
+    widen_protected: ["internal/billing/**"]
+```

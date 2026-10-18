@@ -113,6 +113,15 @@ type Runner struct {
 	// sets it to Fold.SnapshotKnown. A run's end calls it after recording versions, so
 	// a version recorded then is copied then, not at the next sweep. Nil copies none.
 	ArtifactSnapshot func(ctx context.Context, laneID int64)
+	// Rescope widens an open lane's scope; the daemon sets it to Fold.Rescope, which
+	// judges the overlap with other lanes. Nil turns auto-widening off.
+	Rescope func(ctx context.Context, laneID int64, add, remove []string) (store.Lane, error)
+	// widens caches each lane's auto-widen count (see widenCount).
+	widenMu sync.Mutex
+	widens  map[int64]int
+	// widenStep serialises auto-widens, so two runs that end together cannot both read
+	// the count under the cap and both widen.
+	widenStep sync.Mutex
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
@@ -829,6 +838,9 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			return
 		}
 	}
+	if r.autoWidenOutside(ctx, run, lane) {
+		return
+	}
 	r.deliverAnswers(ctx, run.ID)
 	r.Route(ctx)
 	r.ship(ctx, run, lane)
@@ -926,6 +938,7 @@ func (r *Runner) Ask(ctx context.Context, d store.Decision) (store.Decision, err
 			text += "  (recommends: " + clip(d.Recommendation, 120) + ")"
 		}
 		r.feed(ctx, store.FeedDecision, d.ID, "%s", text)
+		r.autoWidenDecision(ctx, d)
 	}
 	return d, err
 }
