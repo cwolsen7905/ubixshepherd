@@ -226,3 +226,17 @@ func TestLaneConversationCalls(t *testing.T) {
 		t.Errorf("calls = %v", got)
 	}
 }
+
+func TestProjects(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != api.PathProjects {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		w.Write([]byte(`{"projects":[{"name":"shop","repos":["app"],"lanes":3,"spend_today":1.2}]}`))
+	}))
+	defer srv.Close()
+	list, err := New(srv.URL, "tok").Projects(context.Background())
+	if err != nil || len(list.Projects) != 1 || list.Projects[0].Name != "shop" || list.Projects[0].Lanes != 3 {
+		t.Fatalf("projects: %+v %v", list, err)
+	}
+}

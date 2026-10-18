@@ -35,6 +35,7 @@ type API interface {
 	SettingInfo(ctx context.Context, key string) (api.Setting, error)
 	SetSetting(ctx context.Context, key, value string) error
 	SpendToday(ctx context.Context) (api.SpendToday, error)
+	Projects(ctx context.Context) (api.ProjectList, error)
 	KeepGoing(ctx context.Context, workspaceID int64) (api.KeepGoingStatus, error)
 	SetKeepGoing(ctx context.Context, req api.KeepGoingSet) (api.KeepGoingStatus, error)
 	AddSpend(ctx context.Context, sp store.Spend) error
@@ -151,6 +152,14 @@ type Model struct {
 	spend    api.SpendToday
 	sessions []api.SessionView
 
+	// The expanded dock: projects as the daemon counts them, whether it groups by
+	// project, which projects are folded, and whether the pager is showing it.
+	projects    []api.ProjectSummary
+	dockGroup   bool
+	collapsed   map[string]bool
+	dockView    bool
+	dockHeaders []string // the headers shown, for the number keys
+
 	// What the person has seen, for the dock's "done unseen": anything that finished
 	// before seenUntil (when the chat started, or they last cleared it), and anything
 	// they opened since.
@@ -221,6 +230,8 @@ type panelMsg struct {
 	waiting         api.Waiting
 	keepOn          bool
 	spend           api.SpendToday
+	projects        []api.ProjectSummary
+	projectsRead    bool // projects is what the daemon said, even if empty
 	sessions        []api.SessionView
 	panelUpdated    bool
 	sessionsUpdated bool
@@ -355,7 +366,7 @@ func (m *Model) Init() tea.Cmd {
 	m.lastPanelPoll = now
 	m.lastSessionsPoll = now
 	m.loadingHistory = true
-	return tea.Batch(textarea.Blink, m.loadHistory(), m.openDecisions(), m.pollPanel(true), m.loadModel(false), m.scheduleTick(m.feedInterval(now)))
+	return tea.Batch(textarea.Blink, m.loadHistory(), m.openDecisions(), m.pollPanel(true), m.loadModel(false), m.loadDockPrefs(), m.scheduleTick(m.feedInterval(now)))
 }
 
 func (m *Model) openDecisions() tea.Cmd {
@@ -434,6 +445,8 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		// A failed read (an older daemon, or a blip) keeps the projects already known.
+		pl, perr := m.api.Projects(m.ctx)
 		// An older daemon without the endpoint reads as off, the cautious text.
 		kg, _ := m.api.KeepGoing(m.ctx, m.workspace.ID)
 		var ss []api.SessionView
@@ -444,7 +457,7 @@ func (m *Model) pollPanelAt(includeSessions bool, now time.Time) tea.Cmd {
 			}
 		}
 		pm := panelMsg{
-			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), waiting: wt, spend: sp, sessions: ss,
+			lanes: lanes, runs: runs, decisions: ds, requests: reqs, approvals: len(api.AwaitingApproval(next.Items)), waiting: wt, spend: sp, projects: pl.Projects, projectsRead: perr == nil, sessions: ss,
 			panelUpdated: true, sessionsUpdated: includeSessions, keepOn: kg.On,
 		}
 		if includeSessions {
@@ -578,6 +591,13 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 		m.input.SetWidth(m.width)
 		m.ready = true
 		m.refreshPager()
+	case dockPrefsMsg:
+		m.dockGroup = msg.group
+		m.collapsed = map[string]bool{}
+		for _, n := range msg.collapsed {
+			m.collapsed[n] = true
+		}
+		m.refreshPager()
 	case tea.MouseMsg:
 		// The mouse is captured only while the pager is open.
 		if m.pager != nil {
@@ -594,6 +614,11 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 			return tea.Batch(append(cmds, m.quit())...)
 		}
 		if m.pager != nil {
+			if m.dockView && !m.pager.searching {
+				if cmd, ok := m.dockKey(msg); ok {
+					return tea.Batch(append(cmds, cmd)...)
+				}
+			}
 			if m.pager.update(msg) {
 				cmds = append(cmds, m.closePager())
 			}
@@ -668,6 +693,12 @@ func (m *Model) update(msg tea.Msg) tea.Cmd {
 				m.focusInput()
 			}
 			m.spend = msg.spend
+			if msg.projectsRead {
+				m.projects = msg.projects
+			}
+			if m.dockView {
+				m.refreshPager()
+			}
 		}
 		if msg.sessionsUpdated {
 			m.sessions = msg.sessions
@@ -788,6 +819,7 @@ func (m *Model) openPager(title string) tea.Cmd {
 func (m *Model) closePager() tea.Cmd {
 	m.pager = nil
 	m.logRun = 0
+	m.dockView = false
 	return tea.Sequence(tea.ExitAltScreen, tea.DisableMouse, m.flush())
 }
 
@@ -797,6 +829,11 @@ func (m *Model) refreshPager() {
 		return
 	}
 	m.pager.resize(m.width, m.height)
+	if m.dockView {
+		m.pager.hint = dockHint
+		m.pager.setLines(m.renderDock())
+		return
+	}
 	if m.logRun == 0 {
 		m.pager.setLines(strings.Split(m.renderTranscript(), "\n"))
 		return
@@ -829,6 +866,7 @@ func (m *Model) handle(text string) tea.Cmd {
 		m.add(Line{Kind: KindInfo, Text: "/answer <decision> <option number or words>   answer a decision yourself\n" +
 			"Tab / Shift-Tab   move to the decisions in the dock and between them; a number answers with that option (Enter confirms when asked), Enter alone answers in your own words, Esc goes back\n" +
 			"/sessions   your adopted conversations; /attach <id> reopens one here, /ask <id> <question> asks it\n" +
+			"/dock   the whole dock in a full-screen view; /group [on|off] groups it by project, /group collapse|expand <project> folds one (p and 1-9 do the same inside it)\n" +
 			"/decisions   decisions waiting for you\n/next   Next-up items waiting for your approval\n/log <run>   a run's live output (q to come back)\n" +
 			"/auto on|off   let swarm events reach the desk on their own (on)\n/new   start a new conversation with the desk\n" +
 			"/keep-going on|off   let the desk carry on with what is already approved, within limits (shepherd keep-going status shows them)\n" +
@@ -846,6 +884,10 @@ func (m *Model) handle(text string) tea.Cmd {
 		m.session, m.lastCost = "", 0
 		m.add(Line{Kind: KindInfo, Text: "The next message starts a new conversation with the desk."})
 		return func() tea.Msg { m.api.SetSetting(m.ctx, settingSession, ""); return nil }
+	case "/dock":
+		return m.openDock()
+	case "/group":
+		return m.groupCommand(f)
 	case "/model":
 		switch {
 		case len(f) == 1:

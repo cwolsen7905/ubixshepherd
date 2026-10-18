@@ -192,7 +192,7 @@ func dockLines(m *Model) []string {
 	items := m.dockItems()
 	rows := []string{ansi.Strip(m.countsRow(items))}
 	for _, it := range items {
-		rows = append(rows, ansi.Strip(m.itemRow(it)))
+		rows = append(rows, ansi.Strip(m.itemRow(it, false)))
 	}
 	return rows
 }

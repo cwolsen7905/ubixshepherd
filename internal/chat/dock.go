@@ -53,6 +53,7 @@ type dockItem struct {
 	detail   string
 	at       time.Time // orders items in a group
 	decision int64     // the decision, for one that needs you
+	project  string    // the repo's project; "" is Unassigned
 }
 
 // dockItems is everything the dock could show, most urgent first.
@@ -68,13 +69,13 @@ func (m *Model) dockItems() []dockItem {
 	var items []dockItem
 	for _, d := range m.decisions {
 		items = append(items, dockItem{
-			group: groupNeedsYou, lane: name(d.Repo, d.Lane), agent: d.Agent, at: d.Created, decision: d.ID,
+			group: groupNeedsYou, lane: name(d.Repo, d.Lane), project: m.projectOf(d.Repo), agent: d.Agent, at: d.Created, decision: d.ID,
 			detail: fmt.Sprintf("decision %d: %s%s", d.ID, oneLine(d.Question), waited(now, d.Created)),
 		})
 	}
 	for _, q := range m.requests {
 		items = append(items, dockItem{
-			group: groupNeedsYou, glyph: eventMarks[api.EventRequestAttention].glyph, lane: name(q.Repo, q.FromLane), agent: q.FromAgent, at: q.Created,
+			group: groupNeedsYou, glyph: eventMarks[api.EventRequestAttention].glyph, lane: name(q.Repo, q.FromLane), project: m.projectOf(q.Repo), agent: q.FromAgent, at: q.Created,
 			detail: fmt.Sprintf("request %d needs routing: %s%s", q.ID, oneLine(q.Message), waited(now, q.Created)),
 		})
 	}
@@ -87,7 +88,7 @@ func (m *Model) dockItems() []dockItem {
 		}
 	}
 	for _, l := range m.lanes {
-		it := dockItem{lane: name(l.Repo, l.Name), mr: l}
+		it := dockItem{lane: name(l.Repo, l.Name), project: m.projectOf(l.Repo), mr: l}
 		run, hasRun := latest[l.ID]
 		if hasRun {
 			it.agent = run.Agent
@@ -252,11 +253,24 @@ func (m *Model) dockBudget() int {
 // dockRows draws the dock within its budget: the counts, then the items, most urgent
 // first, with "+N more" for what does not fit. Nothing at all when nothing is there.
 func (m *Model) dockRows(items []dockItem) []string {
-	if len(items) == 0 && m.approvals == 0 && m.waiting.Count == 0 {
+	budget := m.budgetRows()
+	if len(items) == 0 && m.approvals == 0 && m.waiting.Count == 0 && len(budget) == 0 {
 		return nil
 	}
 	rows := []string{m.countsRow(items)}
 	room := m.dockBudget() - 1
+	// Budget pressure keeps its rows while it lasts, before the items, but never takes
+	// the last row from them: what needs the person outranks a warning.
+	keep := room
+	if len(items) > 0 {
+		keep = max(room-1, 0)
+	}
+	if len(budget) > keep {
+		budget = budget[:keep]
+	}
+	rows = append(rows, budget...)
+	room -= len(budget)
+	qualify := qualifyProjects(items)
 	show := len(items)
 	more := 0
 	if show > room {
@@ -268,7 +282,7 @@ func (m *Model) dockRows(items []dockItem) []string {
 		more = len(items) - show
 	}
 	for _, it := range items[:show] {
-		rows = append(rows, m.itemRow(it))
+		rows = append(rows, m.itemRow(it, qualify))
 	}
 	if more > 0 && room > 1 {
 		rows = append(rows, styleInfo.Render(fmt.Sprintf("  +%d more", more)))
@@ -302,10 +316,13 @@ func (m *Model) countsRow(items []dockItem) string {
 		// requests held on them, lanes to ship and Next-up proposals.
 		parts = append(parts, pal.warn.Render(fmt.Sprintf("%d waiting on you", n)))
 	}
+	if len(parts) == 0 {
+		return pal.muted.Render("nothing needs you")
+	}
 	return strings.Join(parts, pal.muted.Render(" · "))
 }
 
-func (m *Model) itemRow(it dockItem) string {
+func (m *Model) itemRow(it dockItem, qualify bool) string {
 	mk := groupMarks[it.group]
 	glyph := mk.glyph
 	if it.glyph != "" {
@@ -313,7 +330,11 @@ func (m *Model) itemRow(it dockItem) string {
 	}
 	var parts []string
 	if it.lane != "" {
-		parts = append(parts, styleLane(it.lane).Render(it.lane))
+		lane := it.lane
+		if qualify && it.project != "" {
+			lane = it.project + "/" + lane
+		}
+		parts = append(parts, styleLane(lane).Render(lane))
 	}
 	if it.agent != "" {
 		parts = append(parts, styleAgent(it.agent).Render(it.agent))
