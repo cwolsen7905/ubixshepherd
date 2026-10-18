@@ -149,3 +149,14 @@ func TestDecideAddsOnlyWhatIsOutside(t *testing.T) {
 		t.Errorf("verdict = %+v", v)
 	}
 }
+
+func TestSecretGlobsAreNarrow(t *testing.T) {
+	for file, want := range map[string]bool{
+		"internal/secrets/key.go": true, "config/secret": true, "config/secret.yaml": true,
+		"config/secrets.json": true, "internal/secretary.go": false, "lib/secretion.py": false,
+	} {
+		if got := protectedBy(DefaultProtected, file) != ""; got != want {
+			t.Errorf("%s protected = %v, want %v", file, got, want)
+		}
+	}
+}

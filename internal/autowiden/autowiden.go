@@ -26,7 +26,7 @@ var DefaultProtected = []string{
 	"**/yarn.lock", "**/pnpm-lock.yaml", "**/bun.lock", "**/bun.lockb",
 	"**/Cargo.toml", "**/Cargo.lock", "**/Gemfile", "**/Gemfile.lock", "**/composer.json", "**/composer.lock",
 	"**/poetry.lock", "**/Pipfile.lock", "**/pyproject.toml", "**/requirements*.txt",
-	"deploy/**", "**/deploy/**", "**/secrets/**", "**/secret*", "**/.env", "**/.env.*",
+	"deploy/**", "**/deploy/**", "**/secrets/**", "**/secret", "**/secret.*", "**/secrets.*", "**/.env", "**/.env.*",
 	"**/*.pem", "**/*.key", "**/id_rsa*", "**/Dockerfile", "**/docker-compose*.yml",
 	"**/CODEOWNERS", "docs/WORK.md",
 	// What defines the checks a lane's own work must pass: build and gate scripts, hooks,

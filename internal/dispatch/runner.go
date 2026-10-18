@@ -119,6 +119,9 @@ type Runner struct {
 	// widens caches each lane's auto-widen count (see widenCount).
 	widenMu sync.Mutex
 	widens  map[int64]int
+	// widenStep serialises auto-widens, so two runs that end together cannot both read
+	// the count under the cap and both widen.
+	widenStep sync.Mutex
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 

@@ -24,6 +24,8 @@ func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, 
 	if r.Rescope == nil || len(files) == 0 {
 		return lane, nil, false
 	}
+	r.widenStep.Lock()
+	defer r.widenStep.Unlock()
 	repo, err := r.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
 		return lane, nil, false
