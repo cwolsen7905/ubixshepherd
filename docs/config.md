@@ -101,3 +101,36 @@ ignored and one warning per occurrence, naming the key and what replaces it. The
 logs the warnings when it starts, and `shepherd daemon restart`, `daemon reload` and
 `daemon check` print them. Edit the key out of the file to silence the warning. The list
 is empty until a key is first retired.
+
+## Auto-widen
+
+By default every widening of a lane's scope is the person's call. A repo can let Shepherd
+widen by rule instead, for a small request that stays near the lane's work. No model
+decides; the rule is in [design/auto-widen.md](design/auto-widen.md). Set these under
+`defaults:` or under a repo in `repos:`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `widen` | `human` | `auto` turns the rule on; `human` leaves every widening to the person. |
+| `widen_max_files` | 3 | The most files one auto-widen may add. |
+| `widen_cap` | 3 | The most auto-widens one lane may have; after that the person is asked. |
+| `widen_protected` | none | Globs added to the built-in protected list. A repo's list extends the defaults' list. |
+
+An auto-widen happens only when the request names exact files (no globs) in the same
+repo, no other open lane's scope overlaps them, each is in the directory of a file the
+lane changed or is a test of one, and none is protected. The built-in protected list
+covers CI definitions (`.gitlab-ci.yml`, `ci/`, `.github/`), migrations, `go.mod`,
+`go.sum`, `package.json`, other manifests and lockfiles, deploy and secret files
+(`deploy/`, `secrets/`, `.env*`, keys) and `docs/WORK.md`. If any condition fails, the
+request goes to the person as before.
+
+Each auto-widen is a feed item naming the files and the checks that passed, and the
+agent is told its scope now includes them.
+
+```yaml
+repos:
+  myrepo:
+    widen: auto
+    widen_max_files: 2
+    widen_protected: ["internal/billing/**"]
+```

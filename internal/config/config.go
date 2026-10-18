@@ -502,7 +502,21 @@ type Profile struct {
 	Watch Watch `yaml:"watch,omitempty" json:"watch"`
 	// Artifacts says which files a lane's agents wrote that the person may want to read.
 	Artifacts Artifacts `yaml:"artifacts,omitempty" json:"artifacts"`
+	// Widen is "auto" or "human" (the default): whether Shepherd widens a lane's scope
+	// by rule for a small, near, unprotected request, or leaves every widening to the
+	// person (docs/design/auto-widen.md).
+	Widen string `yaml:"widen,omitempty" json:"widen,omitempty"`
+	// WidenMaxFiles is the most files one auto-widen may add; 0 is autowiden's default.
+	WidenMaxFiles int `yaml:"widen_max_files,omitempty" json:"widen_max_files,omitempty"`
+	// WidenCap is the most auto-widens a lane may have; 0 is autowiden's default.
+	WidenCap int `yaml:"widen_cap,omitempty" json:"widen_cap,omitempty"`
+	// WidenProtected are globs added to autowiden.DefaultProtected: files no auto-widen
+	// may reach.
+	WidenProtected []string `yaml:"widen_protected,omitempty" json:"widen_protected,omitempty"`
 }
+
+// Widen modes.
+const WidenAuto = "auto"
 
 // Artifacts is the artifact discovery setting of a repo.
 type Artifacts struct {
@@ -939,6 +953,20 @@ func (p Profile) validate(at string) []error {
 	if !slices.Contains(PermissionModes, p.Agent.PermissionMode) {
 		errs = append(errs, fmt.Errorf("%s.agent.permission_mode: %q is not %s", at, p.Agent.PermissionMode, strings.Join(PermissionModes, ", ")))
 	}
+	if p.Widen != "" && p.Widen != WidenAuto && p.Widen != Human {
+		errs = append(errs, fmt.Errorf("%s.widen: %q is not %s or %s", at, p.Widen, WidenAuto, Human))
+	}
+	if p.WidenMaxFiles < 0 {
+		errs = append(errs, fmt.Errorf("%s.widen_max_files: %d cannot be negative; 0 takes the default", at, p.WidenMaxFiles))
+	}
+	if p.WidenCap < 0 {
+		errs = append(errs, fmt.Errorf("%s.widen_cap: %d cannot be negative; 0 takes the default", at, p.WidenCap))
+	}
+	for i, g := range p.WidenProtected {
+		if bad := badRepoPath(g); bad != "" {
+			errs = append(errs, fmt.Errorf("%s.widen_protected[%d]: %q %s", at, i, g, bad))
+		}
+	}
 	if p.MaxRuns < 0 {
 		errs = append(errs, fmt.Errorf("%s.max_runs: %d cannot be negative; 0 leaves only daemon.max_runs", at, p.MaxRuns))
 	}
@@ -1098,6 +1126,18 @@ func merge(base, over Profile) Profile {
 	}
 	if over.MaxRuns != 0 {
 		out.MaxRuns = over.MaxRuns
+	}
+	if over.Widen != "" {
+		out.Widen = over.Widen
+	}
+	if over.WidenMaxFiles != 0 {
+		out.WidenMaxFiles = over.WidenMaxFiles
+	}
+	if over.WidenCap != 0 {
+		out.WidenCap = over.WidenCap
+	}
+	if len(over.WidenProtected) > 0 {
+		out.WidenProtected = append(slices.Clone(base.WidenProtected), over.WidenProtected...)
 	}
 	if over.Agent.PermissionMode != "" {
 		out.Agent.PermissionMode = over.Agent.PermissionMode
