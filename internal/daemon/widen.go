@@ -82,3 +82,12 @@ func (s *Server) widenLane(w http.ResponseWriter, r *http.Request) {
 	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, lane)
 }
+
+// wireAutoWiden lets the Runner widen a lane's scope by rule (docs/design/auto-widen.md)
+// through the Fold, which judges the overlap with other open lanes. A repo still has to
+// opt in with `widen: auto`.
+func (s *Server) wireAutoWiden() {
+	if s.Runner != nil && s.Fold != nil && s.Runner.Rescope == nil {
+		s.Runner.Rescope = s.Fold.Rescope
+	}
+}
