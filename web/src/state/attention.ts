@@ -2,19 +2,16 @@
 // store holds (GET /v1/waiting), so the title, favicon, sidebar, backlog head and topic
 // chips cannot disagree.
 import type { Waiting, WaitingItem } from '../api/types'
-import { boardItems, counts, type BoardInput } from '../model/board'
+import { boardItems, counts, waitsOnYou, type BoardInput } from '../model/board'
 
 /** How many things wait on the person alone; 0 until the list has loaded. */
 export function attentionCount(w: Waiting | null): number {
   return waitingOnYou(w).length
 }
 
-/** Kinds counted elsewhere: requests under "needs routing", blocked lanes under "broken". */
-const COUNTED_ELSEWHERE: WaitingItem['kind'][] = ['request', 'blocked']
-
 /** Items that wait on the person alone: everything but what needs routing or is broken. */
 export function waitingOnYou(w: Waiting | null): WaitingItem[] {
-  return (w?.items ?? []).filter((it) => !COUNTED_ELSEWHERE.includes(it.kind))
+  return (w?.items ?? []).filter((it) => waitsOnYou(it.kind))
 }
 
 /** Items of one kind, e.g. the decisions and requests behind the sidebar's count. */

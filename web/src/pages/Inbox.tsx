@@ -12,7 +12,7 @@ import { Button, Chip, Count, GroupHeader, Kbd, ListRow } from '../ui'
 import type { GlyphTone } from '../ui'
 import './Inbox.css'
 
-type Group = 'answer' | 'approve' | 'broken'
+type Group = 'answer' | 'approve' | 'broken' | 'other'
 type Show = 'waiting' | 'broken' | 'done'
 
 const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
@@ -20,6 +20,10 @@ const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
   { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope'] },
   { key: 'broken', title: 'Broken', kinds: ['blocked'] },
 ]
+
+/** Kinds some group lists; housekeeping (a merged lane's undecided files) and any kind a newer daemon adds go under To tidy, so the rows match the count. */
+const GROUPED = new Set<string>(GROUPS.flatMap((g) => g.kinds))
+const OTHER = { key: 'other' as Group, title: 'To tidy', kinds: [] as WaitingItem['kind'][] }
 
 const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   decision: 'decision',
@@ -30,6 +34,7 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   ship: 'to ship',
   scope: 'scope request',
   blocked: 'blocked',
+  artifact: 'files to decide',
 }
 
 /** Each kind's glyph and tone: `?` decision, `!` request, `◆` approve, `≡` next up, `✗` broken. */
@@ -42,7 +47,11 @@ const MARK: Record<WaitingItem['kind'], { glyph: string; tone: GlyphTone }> = {
   ship: { glyph: '◆', tone: 'warn' },
   scope: { glyph: '!', tone: 'warn' },
   blocked: { glyph: '✗', tone: 'bad' },
+  artifact: { glyph: '▤', tone: 'warn' },
 }
+
+/** A kind this page does not know yet (a newer daemon) still shows, with a neutral mark. */
+const UNKNOWN_MARK: { glyph: string; tone: GlyphTone } = { glyph: '○', tone: 'idle' }
 
 /** The least time between two reads of what finished today. */
 const MIN_REREAD = 15_000
@@ -222,10 +231,10 @@ export function InboxPage({ kind }: { kind?: string }) {
     const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
     const actionable = inboxOpen(it) !== null || pageFor(it) !== null
     const note = notes[waitingKey(it)]
-    const mark = MARK[it.kind]
+    const mark = MARK[it.kind] ?? UNKNOWN_MARK
     const sub = (
       <>
-        {[KIND_LABEL[it.kind], where].filter(Boolean).join(' · ')}
+        {[KIND_LABEL[it.kind] ?? it.kind, where].filter(Boolean).join(' · ')}
         {it.kind === 'request' && it.request_id && !actionable ? (
           <>
             {' · route it with '}
@@ -247,7 +256,7 @@ export function InboxPage({ kind }: { kind?: string }) {
         <ListRow
           glyph={mark.glyph}
           tone={mark.tone}
-          glyphLabel={KIND_LABEL[it.kind]}
+          glyphLabel={KIND_LABEL[it.kind] ?? it.kind}
           title={title}
           sub={sub}
           age={it.since ? since(it.since, now) : undefined}
@@ -297,8 +306,8 @@ export function InboxPage({ kind }: { kind?: string }) {
       {loaded && all.length === 0 && <p className="faint">Nothing waits on you.</p>}
       {loaded && items.length === 0 && all.length > 0 && <p className="faint">Nothing of this kind waits on you.</p>}
 
-      {GROUPS.map((g) => {
-        const rows = items.filter((it) => g.kinds.includes(it.kind))
+      {[...GROUPS, OTHER].map((g) => {
+        const rows = items.filter((it) => (g.key === 'other' ? !GROUPED.has(it.kind) : g.kinds.includes(it.kind)))
         if (rows.length === 0 || !shown(g.key === 'broken' ? 'broken' : 'waiting')) return null
         return (
           <section key={g.key} className="inbox-group" aria-labelledby={`inbox-${g.key}`}>

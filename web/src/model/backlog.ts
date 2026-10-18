@@ -5,7 +5,7 @@
 import type { FeedEntry } from './feed'
 import { aboutLane } from './feed'
 import {
-  boardItems, laneClashes, latestRuns, endedBadly, mrOpen, pipelineInProgress, type BoardItem,
+  boardItems, laneClashes, latestRuns, endedBadly, mrOpen, pipelineInProgress, waitingOnYouCount, type BoardItem,
 } from './board'
 import type { ActivityKind, DecisionView, LaneView, RequestView, RunView } from '../api/types'
 import type { Tone } from './marks'
@@ -170,8 +170,8 @@ export function backlogCounts(items: BacklogItem[]): Record<BacklogGroup, number
 }
 
 /** The counts with "needs you" taken from the attention store, as for the board's bar. */
-export function backlogWithAttention(n: Record<BacklogGroup, number>, waiting: { count: number } | null): Record<BacklogGroup, number> {
-  return waiting ? { ...n, needs: waiting.count } : n
+export function backlogWithAttention(n: Record<BacklogGroup, number>, waiting: { items?: { kind: string }[] } | null): Record<BacklogGroup, number> {
+  return waiting ? { ...n, needs: waitingOnYouCount(waiting) } : n
 }
 
 /** "2 needs you · 1 broken · 3 idle", the groups that hold anything. */

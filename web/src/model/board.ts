@@ -1,7 +1,7 @@
 // The board groups lanes by what they need from the person, with the same rules as the
 // terminal's dock (internal/chat/dock.go): built from the daemon's lists on every change,
 // never from the feed, since a feed item does not say whether a run succeeded.
-import type { DecisionView, LaneView, RequestView, RunView } from '../api/types'
+import type { DecisionView, LaneView, RequestView, RunView, WaitingItem } from '../api/types'
 
 export type Group = 'needs' | 'broken' | 'review' | 'working' | 'done'
 
@@ -223,8 +223,21 @@ export function counts(items: BoardItem[]): Record<Group, number> {
  * agree with every other place that counts what waits on the person. Until the list has
  * loaded the board's own rule stands.
  */
-export function withAttention(n: Record<Group, number>, waiting: { count: number } | null): Record<Group, number> {
-  return waiting ? { ...n, needs: waiting.count } : n
+export function withAttention(n: Record<Group, number>, waiting: { items?: { kind: string }[] } | null): Record<Group, number> {
+  return waiting ? { ...n, needs: waitingOnYouCount(waiting) } : n
+}
+
+/** Waiting kinds counted under "needs routing" or "broken", not "waiting on you". */
+const COUNTED_ELSEWHERE: readonly WaitingItem['kind'][] = ['request', 'blocked']
+
+/** Whether a waiting item of this kind waits on the person alone. */
+export function waitsOnYou(kind: string): boolean {
+  return !(COUNTED_ELSEWHERE as readonly string[]).includes(kind)
+}
+
+/** How many items wait on the person alone: the one count the title, strip and groups share. */
+export function waitingOnYouCount(waiting: { items?: { kind: string }[] }): number {
+  return (waiting.items ?? []).filter((it) => waitsOnYou(it.kind)).length
 }
 
 /** The groups that hold anything, most urgent first: "1 needs you · 2 broken". */

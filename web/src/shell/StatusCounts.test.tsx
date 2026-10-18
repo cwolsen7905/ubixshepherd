@@ -106,6 +106,19 @@ describe('popLists', () => {
     expect(l.broken.map((x) => x.full)).toContain('Blocked by lane feat/other')
   })
 
+  it('shows a merged lane with undecided files, and never throws on a kind it does not know', () => {
+    const items = [
+      { kind: 'artifact', action: 'open', lane_id: 7, lane: 'feat/done', title: 'Undecided files hold feat/done open' },
+      { kind: 'from-a-newer-daemon', action: 'open', title: 'Something new' },
+    ] as unknown as Waiting['items']
+    const s = { ...snap, waiting: { ...waiting, count: 2, items } }
+    const l = popLists(s, Date.parse('2026-10-10T12:00:00Z'))
+    expect(l.waiting.map((x) => [x.glyph, x.full])).toEqual([
+      ['▤', 'Undecided files hold feat/done open'],
+      ['○', 'Something new'],
+    ])
+  })
+
   it('cuts at a whole word', () => {
     expect(cutWord('short')).toBe('short')
     expect(cutWord('one two three four', 10)).toBe('one two…')
