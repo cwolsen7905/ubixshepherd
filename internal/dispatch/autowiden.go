@@ -117,11 +117,11 @@ func (r *Runner) autoWidenOutside(ctx context.Context, run store.Run, lane store
 }
 
 var (
-	backticked   = regexp.MustCompile("`([^`\n]+)`")
+	backticked = regexp.MustCompile("`([^`\n]+)`")
 	// asksToWiden is an explicit request to widen; offersOther is a sign the question
 	// offers another way out (a revert, a move), which the person must choose between.
-	asksToWiden = regexp.MustCompile(`(?i)\b(widen|widening|extend|expand)\b.*\bscope\b|\bscope\b.*\b(widen|widening|extend|expand)\b|\b(add|include)\b.*\bto\b.*\bscope\b`)
-	offersOther = regexp.MustCompile(`(?i)\b(revert|drop|undo|remove|instead|rather|alternatively|move|or should|or would|or do)\b`)
+	asksToWiden  = regexp.MustCompile(`(?i)\b(widen|widening|extend|expand)\b.*\bscope\b|\bscope\b.*\b(widen|widening|extend|expand)\b|\b(add|include)\b.*\bto\b.*\bscope\b`)
+	offersOther  = regexp.MustCompile(`(?i)\b(revert|drop|undo|remove|instead|rather|alternatively|move|or should|or would|or do)\b`)
 	looksLikePth = regexp.MustCompile(`^[\w.@+\-/]+$`)
 )
 
