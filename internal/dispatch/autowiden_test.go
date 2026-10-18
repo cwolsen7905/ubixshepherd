@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -194,4 +195,36 @@ func allFeed(f *fixture) string {
 		all = append(all, it.Text)
 	}
 	return strings.Join(all, "\n")
+}
+
+func TestAutoWidenUndoneWhenTheAgentCannotBeTold(t *testing.T) {
+	f := widenFixture(t, widens)
+	ctx := context.Background()
+	commitInLane(t, f, "src/b.go", "feat: b")
+	run := endedRun(t, f)
+	run.Outside = []string{"src/b.go"}
+	f.runner.lookPath = func(string) (string, error) { return "", errors.New("no agent") }
+	if f.runner.autoWidenOutside(ctx, run, f.lane) {
+		t.Fatal("reported a continued run that did not start")
+	}
+	waitFeed(t, f, "the auto-widen of src/b.go was undone")
+	if got := laneScope(t, f); !slices.Equal(got, []string{"src/a.go"}) {
+		t.Errorf("scope = %v", got)
+	}
+}
+
+func TestWidenCountSurvivesARestart(t *testing.T) {
+	f := widenFixture(t, widens)
+	ctx := context.Background()
+	commitInLane(t, f, "src/b.go", "feat: b")
+	if _, _, ok := f.runner.autoWiden(ctx, endedRun(t, f), f.lane, []string{"src/b.go"}); !ok {
+		t.Fatal("did not widen")
+	}
+	if n := f.runner.widenCount(ctx, f.lane); n != 1 {
+		t.Errorf("count = %d", n)
+	}
+	f.runner.widens = nil // a new process reads the feed again
+	if n := f.runner.widenCount(ctx, f.lane); n != 1 {
+		t.Errorf("count after restart = %d", n)
+	}
 }

@@ -48,7 +48,7 @@ func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, 
 	}
 	v := autowiden.Decide(autowiden.Input{
 		Files: files, Scope: lane.Scope, Changed: changedFiles(ctx, lane),
-		Others: others, RepoFiles: tracked, Used: len(r.autoWidens(ctx, lane)),
+		Others: others, RepoFiles: tracked, Used: r.widenCount(ctx, lane),
 		Mode: prof.Widen, MaxFiles: prof.WidenMaxFiles, Cap: prof.WidenCap, Protected: prof.WidenProtected,
 	})
 	if !v.OK {
@@ -61,9 +61,35 @@ func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, 
 		r.Log.Info("auto-widen refused by the fold", "lane", lane.Name, "run", run.ID, "err", err)
 		return lane, nil, false
 	}
+	r.widenUsed(lane.ID, 1)
 	r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s%s+%s (run %d); checks passed: %s; scope is now %s",
 		lane.Name, widenMark, strings.Join(v.Files, ", "), run.ID, strings.Join(v.Checks, ", "), strings.Join(next.Scope, ", "))
 	return next, v.Files, true
+}
+
+// widenCount is how many auto-widens the lane has had. The feed is the durable record,
+// so the first ask after a start reads it; after that the count is kept in memory.
+func (r *Runner) widenCount(ctx context.Context, lane store.Lane) int {
+	r.widenMu.Lock()
+	defer r.widenMu.Unlock()
+	n, ok := r.widens[lane.ID]
+	if !ok {
+		n = len(r.autoWidens(ctx, lane))
+		if r.widens == nil {
+			r.widens = map[int64]int{}
+		}
+		r.widens[lane.ID] = n
+	}
+	return n
+}
+
+// widenUsed adds n to the lane's cached count, if it has one.
+func (r *Runner) widenUsed(laneID int64, n int) {
+	r.widenMu.Lock()
+	defer r.widenMu.Unlock()
+	if _, ok := r.widens[laneID]; ok {
+		r.widens[laneID] += n
+	}
 }
 
 // autoWidens are the feed items of the lane's auto-widens, oldest first.
@@ -109,7 +135,13 @@ func (r *Runner) autoWidenOutside(ctx context.Context, run store.Run, lane store
 	}
 	started, err := r.Start(ctx, StartRequest{Continue: run.ID, Prompt: widenNote(files, next), Auto: true})
 	if err != nil {
-		r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s was auto-widened, but continuing run %d failed: %s", lane.Name, run.ID, clip(err.Error(), 200))
+		// The agent cannot be told, so the widening is undone and the person decides as
+		// before; the feed keeps the record of both.
+		if _, rerr := r.Rescope(ctx, lane.ID, nil, files); rerr != nil {
+			r.Log.Error("undo an auto-widen", "lane", lane.Name, "err", rerr)
+		}
+		r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s: the auto-widen of %s was undone because continuing run %d failed: %s",
+			lane.Name, strings.Join(files, ", "), run.ID, clip(err.Error(), 200))
 		return false
 	}
 	r.feed(ctx, store.FeedRunStarted, started.ID, "run %d continues after the auto-widen of lane %s", started.ID, lane.Name)

@@ -116,6 +116,9 @@ type Runner struct {
 	// Rescope widens an open lane's scope; the daemon sets it to Fold.Rescope, which
 	// judges the overlap with other lanes. Nil turns auto-widening off.
 	Rescope func(ctx context.Context, laneID int64, add, remove []string) (store.Lane, error)
+	// widens caches each lane's auto-widen count (see widenCount).
+	widenMu sync.Mutex
+	widens  map[int64]int
 	// lookPath finds an agent's executable; tests replace it.
 	lookPath func(string) (string, error)
 
