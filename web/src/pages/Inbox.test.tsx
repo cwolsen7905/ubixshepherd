@@ -26,7 +26,7 @@ const waiting: Waiting = {
   ],
 }
 
-async function show(kind?: string) {
+async function show(kind?: string, w: Waiting = waiting) {
   const api = {
     status: async () => status(),
     lanes: async () => [],
@@ -38,7 +38,7 @@ async function show(kind?: string) {
     feed: async (after: number) => ({ items: [], events: [], last: after }),
     next: async () => [],
   } as unknown as Api
-  const live = new Live(api, still, async () => waiting)
+  const live = new Live(api, still, async () => w)
   await act(async () => {
     await live.refresh()
     await live.readWaiting()
@@ -62,6 +62,18 @@ describe('InboxPage', () => {
     expect(screen.getByRole('heading', { name: /Broken/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Waiting on you/ })).toBeInTheDocument()
     expect(screen.getByText(/move/)).toBeInTheDocument()
+  })
+
+  it('lists a merged lane with undecided files, and a kind it does not know under Other', async () => {
+    const items = [
+      ...waiting.items,
+      { kind: 'artifact', action: 'open', lane_id: 11, lane: 'e', title: 'Undecided files hold lane e open' },
+      { kind: 'from-a-newer-daemon', action: 'open', title: 'Something new' },
+    ] as unknown as Waiting['items']
+    await show(undefined, { ...waiting, count: waiting.count + 2, items })
+    expect(screen.getByText('Undecided files hold lane e open')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Other/ })).toBeInTheDocument()
+    expect(screen.getByText('Something new')).toBeInTheDocument()
   })
 
   it('filters to one kind', async () => {

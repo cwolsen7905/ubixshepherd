@@ -12,7 +12,7 @@ import { Button, Chip, Count, GroupHeader, Kbd, ListRow } from '../ui'
 import type { GlyphTone } from '../ui'
 import './Inbox.css'
 
-type Group = 'answer' | 'approve' | 'broken'
+type Group = 'answer' | 'approve' | 'broken' | 'other'
 type Show = 'waiting' | 'broken' | 'done'
 
 const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
@@ -20,6 +20,10 @@ const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
   { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope', 'artifact'] },
   { key: 'broken', title: 'Broken', kinds: ['blocked'] },
 ]
+
+/** Kinds some group lists; anything else (a newer daemon's kind) goes under Other, so the rows match the count. */
+const GROUPED = new Set<string>(GROUPS.flatMap((g) => g.kinds))
+const OTHER = { key: 'other' as Group, title: 'Other', kinds: [] as WaitingItem['kind'][] }
 
 const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   decision: 'decision',
@@ -302,8 +306,8 @@ export function InboxPage({ kind }: { kind?: string }) {
       {loaded && all.length === 0 && <p className="faint">Nothing waits on you.</p>}
       {loaded && items.length === 0 && all.length > 0 && <p className="faint">Nothing of this kind waits on you.</p>}
 
-      {GROUPS.map((g) => {
-        const rows = items.filter((it) => g.kinds.includes(it.kind))
+      {[...GROUPS, OTHER].map((g) => {
+        const rows = items.filter((it) => (g.key === 'other' ? !GROUPED.has(it.kind) : g.kinds.includes(it.kind)))
         if (rows.length === 0 || !shown(g.key === 'broken' ? 'broken' : 'waiting')) return null
         return (
           <section key={g.key} className="inbox-group" aria-labelledby={`inbox-${g.key}`}>

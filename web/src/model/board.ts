@@ -1,7 +1,7 @@
 // The board groups lanes by what they need from the person, with the same rules as the
 // terminal's dock (internal/chat/dock.go): built from the daemon's lists on every change,
 // never from the feed, since a feed item does not say whether a run succeeded.
-import type { DecisionView, LaneView, RequestView, RunView } from '../api/types'
+import type { DecisionView, LaneView, RequestView, RunView, WaitingItem } from '../api/types'
 
 export type Group = 'needs' | 'broken' | 'review' | 'working' | 'done'
 
@@ -228,11 +228,11 @@ export function withAttention(n: Record<Group, number>, waiting: { items?: { kin
 }
 
 /** Waiting kinds counted under "needs routing" or "broken", not "waiting on you". */
-const COUNTED_ELSEWHERE = ['request', 'blocked']
+const COUNTED_ELSEWHERE: readonly WaitingItem['kind'][] = ['request', 'blocked']
 
 /** Whether a waiting item of this kind waits on the person alone. */
 export function waitsOnYou(kind: string): boolean {
-  return !COUNTED_ELSEWHERE.includes(kind)
+  return !(COUNTED_ELSEWHERE as readonly string[]).includes(kind)
 }
 
 /** How many items wait on the person alone: the one count the title, strip and groups share. */
