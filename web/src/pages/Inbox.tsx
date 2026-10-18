@@ -17,7 +17,7 @@ type Show = 'waiting' | 'broken' | 'done'
 
 const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
   { key: 'answer', title: 'Answer', kinds: ['decision', 'question', 'request'] },
-  { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope'] },
+  { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope', 'artifact'] },
   { key: 'broken', title: 'Broken', kinds: ['blocked'] },
 ]
 
@@ -30,6 +30,7 @@ const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   ship: 'to ship',
   scope: 'scope request',
   blocked: 'blocked',
+  artifact: 'files to decide',
 }
 
 /** Each kind's glyph and tone: `?` decision, `!` request, `◆` approve, `≡` next up, `✗` broken. */
@@ -42,7 +43,11 @@ const MARK: Record<WaitingItem['kind'], { glyph: string; tone: GlyphTone }> = {
   ship: { glyph: '◆', tone: 'warn' },
   scope: { glyph: '!', tone: 'warn' },
   blocked: { glyph: '✗', tone: 'bad' },
+  artifact: { glyph: '▤', tone: 'warn' },
 }
+
+/** A kind this page does not know yet (a newer daemon) still shows, with a neutral mark. */
+const UNKNOWN_MARK: { glyph: string; tone: GlyphTone } = { glyph: '·', tone: 'idle' }
 
 /** The least time between two reads of what finished today. */
 const MIN_REREAD = 15_000
@@ -222,10 +227,10 @@ export function InboxPage({ kind }: { kind?: string }) {
     const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
     const actionable = inboxOpen(it) !== null || pageFor(it) !== null
     const note = notes[waitingKey(it)]
-    const mark = MARK[it.kind]
+    const mark = MARK[it.kind] ?? UNKNOWN_MARK
     const sub = (
       <>
-        {[KIND_LABEL[it.kind], where].filter(Boolean).join(' · ')}
+        {[KIND_LABEL[it.kind] ?? it.kind, where].filter(Boolean).join(' · ')}
         {it.kind === 'request' && it.request_id && !actionable ? (
           <>
             {' · route it with '}
@@ -247,7 +252,7 @@ export function InboxPage({ kind }: { kind?: string }) {
         <ListRow
           glyph={mark.glyph}
           tone={mark.tone}
-          glyphLabel={KIND_LABEL[it.kind]}
+          glyphLabel={KIND_LABEL[it.kind] ?? it.kind}
           title={title}
           sub={sub}
           age={it.since ? since(it.since, now) : undefined}

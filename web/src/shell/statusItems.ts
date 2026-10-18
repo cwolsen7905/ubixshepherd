@@ -66,7 +66,11 @@ const WAIT_GLYPH: Record<WaitingItem['kind'], [string, GlyphTone]> = {
   next: ['≡', 'warn'],
   blocked: ['✗', 'bad'],
   scope: ['!', 'warn'],
+  artifact: ['▤', 'warn'],
 }
+
+/** A kind this page does not know yet (a newer daemon) still shows, with a neutral mark. */
+const UNKNOWN_GLYPH: [string, GlyphTone] = ['·', 'idle']
 
 function waitingHref(it: WaitingItem): string {
   if (it.decision_id) return href.decisions(it.decision_id)
@@ -76,7 +80,7 @@ function waitingHref(it: WaitingItem): string {
 }
 
 function fromWaiting(it: WaitingItem, now: number): PopItem {
-  const [glyph, tone] = WAIT_GLYPH[it.kind]
+  const [glyph, tone] = WAIT_GLYPH[it.kind] ?? UNKNOWN_GLYPH
   const at = it.since ? now - Date.parse(it.since) : NaN
   return {
     key: `${it.kind}:${it.decision_id ?? it.request_id ?? it.next_id ?? it.mr ?? it.question_id ?? it.title}`,

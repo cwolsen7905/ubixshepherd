@@ -881,7 +881,7 @@ export interface UpgradeStatus {
 
 /** One thing that needs the person (internal/api WaitingItem). */
 export interface WaitingItem {
-  kind: 'decision' | 'mr' | 'ship' | 'next' | 'question' | 'blocked' | 'scope' | 'request'
+  kind: 'decision' | 'mr' | 'ship' | 'next' | 'question' | 'blocked' | 'scope' | 'request' | 'artifact'
   /** answer, approve, ship, review, reply, route or open: what the person can do from here. */
   action: 'answer' | 'approve' | 'ship' | 'review' | 'reply' | 'route' | 'open'
   repo?: string
