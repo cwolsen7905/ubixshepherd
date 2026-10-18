@@ -17,13 +17,13 @@ type Show = 'waiting' | 'broken' | 'done'
 
 const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
   { key: 'answer', title: 'Answer', kinds: ['decision', 'question', 'request'] },
-  { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope', 'artifact'] },
+  { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope'] },
   { key: 'broken', title: 'Broken', kinds: ['blocked'] },
 ]
 
-/** Kinds some group lists; anything else (a newer daemon's kind) goes under Other, so the rows match the count. */
+/** Kinds some group lists; housekeeping (a merged lane's undecided files) and any kind a newer daemon adds go under To tidy, so the rows match the count. */
 const GROUPED = new Set<string>(GROUPS.flatMap((g) => g.kinds))
-const OTHER = { key: 'other' as Group, title: 'Other', kinds: [] as WaitingItem['kind'][] }
+const OTHER = { key: 'other' as Group, title: 'To tidy', kinds: [] as WaitingItem['kind'][] }
 
 const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   decision: 'decision',
@@ -51,7 +51,7 @@ const MARK: Record<WaitingItem['kind'], { glyph: string; tone: GlyphTone }> = {
 }
 
 /** A kind this page does not know yet (a newer daemon) still shows, with a neutral mark. */
-const UNKNOWN_MARK: { glyph: string; tone: GlyphTone } = { glyph: '·', tone: 'idle' }
+const UNKNOWN_MARK: { glyph: string; tone: GlyphTone } = { glyph: '○', tone: 'idle' }
 
 /** The least time between two reads of what finished today. */
 const MIN_REREAD = 15_000

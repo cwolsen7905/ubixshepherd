@@ -70,7 +70,7 @@ const WAIT_GLYPH: Record<WaitingItem['kind'], [string, GlyphTone]> = {
 }
 
 /** A kind this page does not know yet (a newer daemon) still shows, with a neutral mark. */
-const UNKNOWN_GLYPH: [string, GlyphTone] = ['·', 'idle']
+const UNKNOWN_GLYPH: [string, GlyphTone] = ['○', 'idle']
 
 function waitingHref(it: WaitingItem): string {
   if (it.decision_id) return href.decisions(it.decision_id)

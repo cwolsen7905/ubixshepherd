@@ -115,7 +115,7 @@ describe('popLists', () => {
     const l = popLists(s, Date.parse('2026-10-10T12:00:00Z'))
     expect(l.waiting.map((x) => [x.glyph, x.full])).toEqual([
       ['▤', 'Undecided files hold feat/done open'],
-      ['·', 'Something new'],
+      ['○', 'Something new'],
     ])
   })
 
