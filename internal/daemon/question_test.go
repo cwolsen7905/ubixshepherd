@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -146,10 +148,20 @@ func TestConcurrentRepliesReachTheDeskOnce(t *testing.T) {
 	ws, _ := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, nil)
 	q, _ := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Turn: 4, Text: "Ship it?"})
 
+	// The goroutines only report: call would t.Fatal off the test goroutine.
+	body, _ := json.Marshal(api.DeskTurn{Text: "yes", ReplyTo: q.ID})
 	codes := make(chan int, 6)
 	for i := 0; i < 6; i++ {
 		go func() {
-			codes <- call(t, ts, s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "yes", ReplyTo: q.ID}, nil)
+			req, _ := http.NewRequest("POST", ts.URL+api.PathDeskTurn, bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+s.Token)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				codes <- -1
+				return
+			}
+			resp.Body.Close()
+			codes <- resp.StatusCode
 		}()
 	}
 	accepted := 0
@@ -160,5 +172,24 @@ func TestConcurrentRepliesReachTheDeskOnce(t *testing.T) {
 	}
 	if accepted != 1 {
 		t.Errorf("%d replies accepted, want 1", accepted)
+	}
+}
+
+func TestSkipDuringAReplyIsNotTold(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	root, _ := paths.Canonical(t.TempDir())
+	ws, _ := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, nil)
+	q, _ := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Turn: 4, Text: "Ship it?"})
+	// A skip that wins leaves a later reply refused, and no person turn reaches the desk.
+	call(t, ts, s.Token, "POST", api.PathQuestion(q.ID)+"/skip", struct{}{}, nil)
+	if code := call(t, ts, s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "yes", ReplyTo: q.ID}, nil); code != http.StatusConflict {
+		t.Errorf("reply after skip: %d", code)
+	}
+	es, _ := s.Store.DeskHistory(ctx, ws.ID, 0, 10)
+	for _, e := range es {
+		if e.Kind == store.DeskUser {
+			t.Errorf("a person turn reached the desk: %+v", e)
+		}
 	}
 }

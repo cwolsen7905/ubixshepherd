@@ -85,6 +85,9 @@ var errQuestionNotPersons = errors.New("the front desk may clear a question only
 
 func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	// Ordered with a reply (see deskTurn): a question is closed by one of them, once.
+	s.replyMu.Lock()
+	defer s.replyMu.Unlock()
 	q, ok := s.questionID(w, r)
 	if !ok {
 		return
@@ -116,6 +119,9 @@ func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) skipQuestion(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	// Ordered with a reply (see deskTurn): a question is closed by one of them, once.
+	s.replyMu.Lock()
+	defer s.replyMu.Unlock()
 	q, ok := s.questionID(w, r)
 	if !ok {
 		return
