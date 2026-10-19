@@ -139,7 +139,7 @@ export function deskEntry({
             {questions.slice(1).map((q) => (
               <span key={`a${q.id}`} id={threadId(`q${q.id}`)} />
             ))}
-            {thread && open.map((q) => <QuestionActions key={q.id} q={q} thread={thread} topicId={topicFilter} onCleared={() => onCleared?.()} />)}
+            {thread && open.map((q) => <QuestionActions key={q.id} q={q} thread={thread} topicId={topicFilter} onCleared={() => onCleared?.()} onReplied={() => onCleared?.()} />)}
           </>
         ),
       }
