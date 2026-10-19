@@ -6,9 +6,8 @@ import { Button } from '../ui'
 
 /**
  * Reply here and Skip under a desk message that asked the person something. Reply opens an
- * input right here; sending it posts a normal turn linked to the question and leaves it open,
- * since a reply may be a follow-up or a partial answer. Mark answered, Skip, or the desk's
- * question_answer clears it; only then do the buttons go away.
+ * input right here; sending it posts a normal turn linked to the question, and the daemon clears it
+ * whatever the words say. Skip, Mark answered or the desk's question_answer also clear it.
  */
 function QuestionActions({
   q, thread, topicId = null, onCleared, onReplied,
@@ -18,7 +17,7 @@ function QuestionActions({
   topicId?: number | null
   /** Called once the question is no longer open (answered or skipped). */
   onCleared: () => void
-  /** Called after a reply that left it open. */
+  /** Called after a reply was accepted: the daemon has cleared the question. */
   onReplied?: () => void
 }) {
   const [replying, setReplying] = useState(false)

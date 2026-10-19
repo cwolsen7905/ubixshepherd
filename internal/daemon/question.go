@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -89,6 +90,8 @@ func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Ordered with a reply (see deskTurn): a question is closed by one of them, once.
+	defer s.questionMu.lock(q.ID)()
 	var req api.QuestionAnswer
 	if r.ContentLength != 0 && !decode(w, r, &req) {
 		return
@@ -120,6 +123,8 @@ func (s *Server) skipQuestion(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Ordered with a reply (see deskTurn): a question is closed by one of them, once.
+	defer s.questionMu.lock(q.ID)()
 	if !personsNext(r) {
 		writeError(w, http.StatusForbidden, errQuestionNotPersons)
 		return
@@ -149,4 +154,39 @@ func (s *Server) skipQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, c)
+}
+
+// keyedMutex is a mutex per key, held only while a key is in use.
+type keyedMutex struct {
+	mu sync.Mutex
+	m  map[int64]*keyLock
+}
+
+type keyLock struct {
+	mu   sync.Mutex
+	refs int
+}
+
+// lock takes the key's mutex and returns the function that releases it.
+func (k *keyedMutex) lock(key int64) func() {
+	k.mu.Lock()
+	if k.m == nil {
+		k.m = map[int64]*keyLock{}
+	}
+	l := k.m[key]
+	if l == nil {
+		l = &keyLock{}
+		k.m[key] = l
+	}
+	l.refs++
+	k.mu.Unlock()
+	l.mu.Lock()
+	return func() {
+		l.mu.Unlock()
+		k.mu.Lock()
+		if l.refs--; l.refs == 0 {
+			delete(k.m, key)
+		}
+		k.mu.Unlock()
+	}
 }
