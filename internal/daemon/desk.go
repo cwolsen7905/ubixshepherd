@@ -149,10 +149,9 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	text := req.Text
 	var replyTo store.Question
 	if req.ReplyTo != 0 {
-		// The open check and the close are one step: two replies to one question cannot
-		// both reach the desk.
-		s.replyMu.Lock()
-		defer s.replyMu.Unlock()
+		// The open check and the close are one step per question: two replies to one
+		// question cannot both reach the desk, and a skip cannot slip between them.
+		defer s.questionMu.lock(req.ReplyTo)()
 		q, err := s.Store.Question(r.Context(), req.ReplyTo)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -188,7 +187,7 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 			// the person replies again or skips it.
 			var cerr error
 			for try := 0; try < 2; try++ {
-				if _, cerr = s.Store.CloseQuestion(r.Context(), replyTo.ID, store.QuestionAnswered, id); cerr == nil || errors.Is(cerr, store.ErrConflict) {
+				if _, cerr = s.Store.CloseQuestion(context.WithoutCancel(r.Context()), replyTo.ID, store.QuestionAnswered, id); cerr == nil || errors.Is(cerr, store.ErrConflict) {
 					break
 				}
 			}

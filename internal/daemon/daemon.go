@@ -38,8 +38,8 @@ import (
 // Server serves the API over a store.
 type Server struct {
 	Store store.Store
-	// replyMu orders replies to desk questions (see deskTurn).
-	replyMu sync.Mutex
+	// questionMu orders the replies, skips and answers aimed at one desk question (see deskTurn).
+	questionMu keyedMutex
 	// Config is the config the daemon started with; read LiveConfig, which a reload
 	// (SIGHUP) replaces.
 	Config     config.Config

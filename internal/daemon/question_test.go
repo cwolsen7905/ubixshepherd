@@ -175,13 +175,13 @@ func TestConcurrentRepliesReachTheDeskOnce(t *testing.T) {
 	}
 }
 
-func TestSkipDuringAReplyIsNotTold(t *testing.T) {
+func TestReplyAfterASkipIsRefused(t *testing.T) {
 	s, ts := newServer(t)
 	ctx := context.Background()
 	root, _ := paths.Canonical(t.TempDir())
 	ws, _ := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, nil)
 	q, _ := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Turn: 4, Text: "Ship it?"})
-	// A skip that wins leaves a later reply refused, and no person turn reaches the desk.
+	// A skip that came first leaves a later reply refused, and no person turn reaches the desk.
 	call(t, ts, s.Token, "POST", api.PathQuestion(q.ID)+"/skip", struct{}{}, nil)
 	if code := call(t, ts, s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "yes", ReplyTo: q.ID}, nil); code != http.StatusConflict {
 		t.Errorf("reply after skip: %d", code)
@@ -190,6 +190,42 @@ func TestSkipDuringAReplyIsNotTold(t *testing.T) {
 	for _, e := range es {
 		if e.Kind == store.DeskUser {
 			t.Errorf("a person turn reached the desk: %+v", e)
+		}
+	}
+}
+
+func TestSkipRacingAReplyClosesOnce(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	root, _ := paths.Canonical(t.TempDir())
+	ws, _ := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, nil)
+	for i := 0; i < 20; i++ {
+		q, _ := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Turn: 4, Text: "Ship it?"})
+		reply, _ := json.Marshal(api.DeskTurn{Text: "yes", ReplyTo: q.ID})
+		do := func(path string, body []byte) int {
+			req, _ := http.NewRequest("POST", ts.URL+path, bytes.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+s.Token)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return -1
+			}
+			resp.Body.Close()
+			return resp.StatusCode
+		}
+		codes := make(chan [2]int, 2)
+		go func() { codes <- [2]int{0, do(api.PathDeskTurn, reply)} }()
+		go func() { codes <- [2]int{1, do(api.PathQuestion(q.ID)+"/skip", []byte("{}"))} }()
+		var got [2]int
+		for j := 0; j < 2; j++ {
+			c := <-codes
+			got[c[0]] = c[1]
+		}
+		replied, skipped := got[0] == http.StatusAccepted, got[1] == http.StatusOK
+		if replied == skipped {
+			t.Fatalf("round %d: reply %d, skip %d: exactly one should win", i, got[0], got[1])
+		}
+		if c, _ := s.Store.Question(ctx, q.ID); (replied && c.State != store.QuestionAnswered) || (skipped && c.State != store.QuestionSkipped) {
+			t.Fatalf("round %d: reply %d, skip %d, state %s", i, got[0], got[1], c.State)
 		}
 	}
 }
