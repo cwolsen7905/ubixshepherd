@@ -149,6 +149,10 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	text := req.Text
 	var replyTo store.Question
 	if req.ReplyTo != 0 {
+		// The open check and the close are one step: two replies to one question cannot
+		// both reach the desk.
+		s.replyMu.Lock()
+		defer s.replyMu.Unlock()
 		q, err := s.Store.Question(r.Context(), req.ReplyTo)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
@@ -179,8 +183,17 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 		// The person spoke: idle time counts from now.
 		s.KeepGoing().Touch(r.Context(), d.Workspace().ID)
 		if replyTo.ID != 0 {
-			if _, err := s.Store.CloseQuestion(r.Context(), replyTo.ID, store.QuestionAnswered, id); err != nil && !errors.Is(err, store.ErrConflict) {
-				s.Log.Warn("close a replied question", "question", replyTo.ID, "err", err)
+			// The turn is already queued, so a failed close cannot fail the request: it is
+			// retried once and then logged, and the question stays in Waiting on you until
+			// the person replies again or skips it.
+			var cerr error
+			for try := 0; try < 2; try++ {
+				if _, cerr = s.Store.CloseQuestion(r.Context(), replyTo.ID, store.QuestionAnswered, id); cerr == nil || errors.Is(cerr, store.ErrConflict) {
+					break
+				}
+			}
+			if cerr != nil && !errors.Is(cerr, store.ErrConflict) {
+				s.Log.Warn("close a replied question", "question", replyTo.ID, "err", cerr)
 			}
 		}
 		writeJSON(w, http.StatusAccepted, api.DeskTurnAccepted{WorkspaceID: d.Workspace().ID, Turn: id, Ahead: ahead})

@@ -17,7 +17,7 @@ function QuestionActions({
   topicId?: number | null
   /** Called once the question is no longer open (answered or skipped). */
   onCleared: () => void
-  /** Called after a reply that left it open. */
+  /** Called after a reply was accepted: the daemon has cleared the question. */
   onReplied?: () => void
 }) {
   const [replying, setReplying] = useState(false)

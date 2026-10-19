@@ -138,3 +138,27 @@ func TestReplyToClosesTheQuestion(t *testing.T) {
 		t.Errorf("after an empty reply: %+v", o)
 	}
 }
+
+func TestConcurrentRepliesReachTheDeskOnce(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	root, _ := paths.Canonical(t.TempDir())
+	ws, _ := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, nil)
+	q, _ := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Turn: 4, Text: "Ship it?"})
+
+	codes := make(chan int, 6)
+	for i := 0; i < 6; i++ {
+		go func() {
+			codes <- call(t, ts, s.Token, "POST", api.PathDeskTurn, api.DeskTurn{Text: "yes", ReplyTo: q.ID}, nil)
+		}()
+	}
+	accepted := 0
+	for i := 0; i < 6; i++ {
+		if <-codes == http.StatusAccepted {
+			accepted++
+		}
+	}
+	if accepted != 1 {
+		t.Errorf("%d replies accepted, want 1", accepted)
+	}
+}
