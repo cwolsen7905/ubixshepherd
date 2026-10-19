@@ -9,8 +9,28 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+## [0.5.0-beta.2] - 2026-10-19
+
+A fix release for 0.5.0-beta.1. The web UI no longer shows a blank page when a merged
+lane is held open by files waiting on a decision, and the counts in the window title,
+favicon, Board and Next up now agree with Waiting on you. It also adds auto-widen (off
+unless a repo turns it on) and project grouping in the `shepherd chat` dock.
+
+### Fixed
+
+- Web UI: a waiting item of kind `artifact` (a merged lane held open by undecided files),
+  or any kind the page does not know, no longer blanks every page. Such items list in the
+  Inbox under To tidy, and unknown kinds show a neutral mark in the status counts.
+- Web UI: the window title, favicon, and the Board and Next up Needs counts follow the
+  Waiting on you count.
+
 ### Added
 
+- Auto-widen: a repo can let Shepherd widen a lane's scope by rule, for a small request
+  that names exact files near the lane's work, instead of asking the person. It is off
+  unless the repo sets `widen: auto`; protected paths (gate files, secrets and any listed
+  globs) are never widened by rule. Each auto-widen is a feed item and is listed in the
+  merge request description. See `docs/config.md`.
 - `shepherd chat`: the dock names a lane's project (`shop/feat-login`) when more than one
   project has items. `/dock` opens the whole dock, and `/group` or `p` there groups it by
   project with a summary line each; the choice and the folded projects are remembered.
@@ -18,6 +38,8 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Interface changes
 
+- Config: new keys `widen` (`human` by default, or `auto`), `widen_max_files`
+  (3), `widen_cap` (3) and `widen_protected`, under `defaults` or a repo.
 - Settings: the daemon accepts two new keys, `dock.group` and `dock.collapsed`.
 
 ## [0.5.0-beta.1] - 2026-10-17
