@@ -334,3 +334,56 @@ func driveApproved(t *testing.T, s *Server, repo, title string) store.NextItem {
 	}
 	return it
 }
+
+func TestSinceYouLeftIsEmptyBeforeTheModeEverRan(t *testing.T) {
+	s, _, _, ws, _ := keepSetup(t)
+	sum, err := s.KeepGoing().SinceYouLeft(context.Background(), ws.ID)
+	if err != nil || sum != "" {
+		t.Fatalf("got %q, %v", sum, err)
+	}
+}
+
+func TestSinceYouLeftSaysWhatHappenedAndWhyItStopped(t *testing.T) {
+	s, _, clk, _, _ := keepSetup(t)
+	ctx := context.Background()
+	ws, repos := driveRepos(t, s, 2)
+	rec := &driveRecorder{}
+	rec.install(s, clk)
+	driveApproved(t, s, repos[0], "Gamma work")
+	driveApproved(t, s, repos[1], "Delta work")
+	keepOn(t, s, ws, api.KeepGoingSet{MaxRuns: 2, IdleHours: 12})
+	driveTick(s, clk)
+	runs, _ := s.Store.Runs(ctx, 0, store.RunRunning, 10)
+	if len(runs) != 2 {
+		t.Fatalf("setup: %d runs", len(runs))
+	}
+	now := time.Now()
+	runs[0].State, runs[0].Ended = store.RunSucceeded, &now
+	runs[1].State, runs[1].Ended, runs[1].Error = store.RunFailed, &now, "tests failed\nsecond line"
+	for _, r := range runs {
+		if err := s.Store.UpdateRun(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.Store.PutLaneForge(ctx, store.LaneForge{LaneID: runs[0].LaneID, MR: 12, MRState: "merged"}); err != nil {
+		t.Fatal(err)
+	}
+	clk.Add(24 * time.Hour)
+	s.KeepGoing().EvaluateAll(ctx)
+	sum, err := s.KeepGoing().SinceYouLeft(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Gamma work", "Delta work", "!12", "merged", "tests failed", offText(store.KeepOffDayEnd)} {
+		if !strings.Contains(sum, want) {
+			t.Errorf("summary lacks %q:\n%s", want, sum)
+		}
+	}
+	if strings.Contains(sum, "second line") {
+		t.Errorf("only the first line of an error:\n%s", sum)
+	}
+	st, err := s.KeepGoing().Status(ctx, ws.ID)
+	if err != nil || st.Summary != sum {
+		t.Errorf("status carries the summary: %v\n%s", err, st.Summary)
+	}
+}

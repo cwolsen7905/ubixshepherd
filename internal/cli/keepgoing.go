@@ -67,6 +67,9 @@ func runKeepGoing(ctx context.Context, env Env, args []string) error {
 
 func writeKeepGoing(w io.Writer, st api.KeepGoingStatus) {
 	defer writeRecent(w, st.Recent)
+	if st.Summary != "" {
+		defer fmt.Fprint(w, st.Summary)
+	}
 	if !st.On {
 		fmt.Fprintln(w, "keep-going: off")
 		if st.ReasonOff != "" {

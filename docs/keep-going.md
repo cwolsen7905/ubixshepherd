@@ -116,6 +116,9 @@ held merge request on its lane, or an open question linked to the item, its lane
 topic. A question linked to none of them blocks nothing. The stall alert fires only when
 nothing can start, and lists each item with its own blockers.
 
+`shepherd keep-going` status ends with a summary of what the mode did since it was turned
+on: items started, runs finished and failed, merge requests, and why and when it stopped.
+
 The drive never answers a decision, approves, merges, pushes for a person, tags,
 releases or deploys. A failed pipeline is still followed up by the watcher, capped as
 before.

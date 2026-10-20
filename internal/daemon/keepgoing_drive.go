@@ -399,10 +399,3 @@ func driveLaneName(it store.NextItem) string {
 	}
 	return name
 }
-
-// SinceYouLeft is a placeholder that always errors until the summary lands in the next
-// change. It is the one summary for the person coming back: items started, runs
-// finished, MRs opened or merged, what failed, and why and when the mode stopped.
-func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) {
-	return "", errors.New("keep-going summary: not implemented")
-}

@@ -475,6 +475,9 @@ func (k *KeepGoing) Status(ctx context.Context, ws int64) (api.KeepGoingStatus, 
 		out.ReasonOff, out.OffAt = "", time.Time{}
 	}
 	out.Recent = k.recent(ctx)
+	if out.Summary, err = k.SinceYouLeft(ctx, ws); err != nil {
+		return out, err
+	}
 	if out.SpentUSD, err = k.spentSince(ctx, row, now, cfg); err != nil {
 		return out, err
 	}

@@ -55,6 +55,9 @@ type KeepGoingStatus struct {
 	// Recent is the last ten keep-going feed items, oldest first: on, off and each
 	// autonomous action.
 	Recent []KeepGoingAction `json:"recent,omitempty"`
+	// Summary is what keep-going did since it was last turned on: items started, runs
+	// finished and failed, merge requests, and why it stopped. Empty if never turned on.
+	Summary string `json:"summary,omitempty"`
 }
 
 // KeepGoingAction is one keep-going feed item as status lists it.
