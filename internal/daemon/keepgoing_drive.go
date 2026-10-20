@@ -284,8 +284,8 @@ func (k *KeepGoing) driveOnce(ctx context.Context, ws int64) {
 // item and the lane.
 func (k *KeepGoing) recordAction(ctx context.Context, ws int64, c driveItem, run store.Run) {
 	k.mu.Lock()
-	if err := k.countStart(ctx, c.action, c.lane.ID); err != nil {
-		k.s.Log.Warn("keep-going: count a lane start", "lane", c.lane.ID, "err", err)
+	if err := k.countStart(ctx, c.action, run.LaneID); err != nil {
+		k.s.Log.Warn("keep-going: count a lane start", "lane", run.LaneID, "err", err)
 	}
 	if row, err := k.s.Store.KeepGoing(ctx, ws); err == nil {
 		row.LastAction = k.Now().UTC()
@@ -367,19 +367,34 @@ func (s *Server) driveOpen(ctx context.Context, req DriveStart) (store.Lane, err
 	if repo.ID == 0 {
 		return store.Lane{}, fmt.Errorf("repo %q is not registered", req.Item.Repo)
 	}
+	name := driveLaneName(req.Item)
+	// A lane this item opened before, whose link failed, is taken up again: its
+	// repo-wide scope would refuse a second open.
+	lanes, err := s.Store.Lanes(ctx, repo.ID)
+	if err != nil {
+		return store.Lane{}, err
+	}
+	for _, l := range lanes {
+		if l.Name == name && l.State == store.LaneOpen {
+			if _, err := s.linkLaneItem(ctx, l, repo.Name, req.Item.ID); err != nil {
+				return store.Lane{}, fmt.Errorf("link item %d to its lane %s: %w", req.Item.ID, l.Name, err)
+			}
+			return l, nil
+		}
+	}
 	opened, err := s.Fold.Open(ctx, fold.OpenRequest{
-		RepoID: repo.ID, Name: driveLaneName(req.Item), Scope: []string{"**"},
+		RepoID: repo.ID, Name: name, Scope: []string{"**"},
 		Origin: store.Origin{Via: "keep-going", Detail: fmt.Sprintf("item %d", req.Item.ID)},
 	})
 	if err != nil {
 		return store.Lane{}, err
 	}
 	lane := opened.Lane
-	if _, err := s.linkLaneItem(ctx, lane, repo.Name, req.Item.ID); err != nil {
-		s.Log.Warn("link a next item to its lane", "lane", lane.Name, "err", err)
-	}
 	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s opened via keep-going (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
+	if _, err := s.linkLaneItem(ctx, lane, repo.Name, req.Item.ID); err != nil {
+		return store.Lane{}, fmt.Errorf("link item %d to its lane %s: %w", req.Item.ID, lane.Name, err)
+	}
 	return lane, nil
 }
 

@@ -300,6 +300,19 @@ func TestDriveOpenMakesAndLinksTheItemsLane(t *testing.T) {
 	if err != nil || got.LaneID != lane.ID {
 		t.Errorf("the item is linked to its lane: %+v %v", got, err)
 	}
+	// If the link was lost, the next pass takes the lane up again instead of being refused
+	// by its own lease.
+	zero := int64(0)
+	if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	again, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it})
+	if err != nil || again.ID != lane.ID {
+		t.Fatalf("want lane %d reused: %+v %v", lane.ID, again, err)
+	}
+	if got, _ := s.Store.NextItem(ctx, it.ID); got.LaneID != lane.ID {
+		t.Errorf("the item is linked again: %+v", got)
+	}
 	// A second item in the same repo is refused by the whole-repo scope, naming the lane.
 	it2, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Second", Repo: "app", State: store.NextApproved, Source: store.NextByPerson})
 	if _, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it2}); err == nil || !strings.Contains(err.Error(), lane.Name) {
@@ -429,5 +442,23 @@ func TestDriveFailedStartDoesNotUseTheLanesStarts(t *testing.T) {
 	}
 	if n, _ := s.Store.LaneStarts(ctx, lane.ID, clk.Now().Format("2006-01-02")); n != 1 {
 		t.Errorf("the start that happened counts once: %d", n)
+	}
+}
+
+// The start that opens a lane counts against that lane's day, like every later one.
+func TestDriveCountsTheFirstStartOfANewLane(t *testing.T) {
+	s, _, clk, _, _ := keepSetup(t)
+	ws, repos := driveRepos(t, s, 1)
+	rec := &driveRecorder{}
+	rec.install(s, clk)
+	driveApproved(t, s, repos[0], "Counted")
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	driveTick(s, clk)
+	if len(rec.calls) != 1 {
+		t.Fatalf("setup: %v", rec.actions())
+	}
+	lane := rec.calls[0].Lane
+	if n, err := s.Store.LaneStarts(context.Background(), lane.ID, clk.Now().Format("2006-01-02")); err != nil || n != 1 {
+		t.Fatalf("lane %d starts today: %d %v", lane.ID, n, err)
 	}
 }
