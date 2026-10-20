@@ -3,14 +3,12 @@ package daemon
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
-	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
 
 // stallGrace is how long a workspace must stay stalled before the person is told, so
@@ -71,83 +69,29 @@ func (k *KeepGoing) checkStall(ctx context.Context, row store.KeepGoing) {
 	}
 }
 
-// stallLines is one line per approved, unstarted item in the workspace, saying what
-// blocks it and what the person must do; empty when there is no such item.
+// stallLines is one line per approved item the drive could not start, saying what blocks
+// it and what the person must do; empty when there is no such item. A blocker holds only
+// the item it belongs to.
 func (k *KeepGoing) stallLines(ctx context.Context, ws int64) ([]string, error) {
-	s := k.s
-	items, err := s.Store.NextItems(ctx)
-	if err != nil {
+	items, err := k.assess(ctx, ws)
+	if err != nil || len(items) == 0 {
 		return nil, err
 	}
-	repos, err := s.Store.Repos(ctx, ws)
-	if err != nil {
-		return nil, err
-	}
-	mine := map[string]bool{}
-	for _, r := range repos {
-		mine[r.Name] = true
-	}
-	// known is every repo in any workspace: an item for one of another workspace's
-	// repos is not this workspace's stall, but one for a repo in none is.
-	known := map[string]bool{}
-	wss, err := s.Store.Workspaces(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, w := range wss {
-		rs, err := s.Store.Repos(ctx, w.ID)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range rs {
-			known[r.Name] = true
-		}
-	}
-	var approved []api.NextItemView
-	for _, it := range items {
-		v := s.nextView(ctx, it)
-		if v.State == store.NextApproved && v.LaneID == 0 && (v.Repo == "" || mine[v.Repo] || !known[v.Repo]) {
-			approved = append(approved, v)
-		}
-	}
-	if len(approved) == 0 {
-		return nil, nil
-	}
-	w, err := waiting.Collect(ctx, s.Store, s.LiveConfig(), ws)
-	if err != nil {
-		return nil, err
-	}
-	qs, err := s.Store.Questions(ctx, ws, store.QuestionOpen)
-	if err != nil {
-		return nil, err
-	}
-	w.AddQuestions(qs)
 	var everyone []string // blockers that hold every item
-	for _, it := range w.Items {
-		if it.Kind == api.WaitingQuestion {
-			everyone = append(everyone, fmt.Sprintf("question %d is waiting on you: reply to it", it.QuestionID))
-		}
-	}
-	if s.QuotaHolds != nil {
-		for _, h := range s.QuotaHolds() {
+	if k.s.QuotaHolds != nil {
+		for _, h := range k.s.QuotaHolds() {
 			everyone = append(everyone, fmt.Sprintf("%s is out of quota until %s: wait, or use another agent", h.Agent, h.Until.Local().Format("Jan 2 15:04")))
 		}
 	}
-	sort.SliceStable(approved, func(i, j int) bool { return approved[i].Rank < approved[j].Rank })
 	var lines []string
-	for i, v := range approved {
+	for i, d := range items {
 		if i == stallItems {
-			lines = append(lines, fmt.Sprintf("(and %d more approved items)", len(approved)-stallItems))
+			lines = append(lines, fmt.Sprintf("(and %d more approved items)", len(items)-stallItems))
 			break
 		}
-		reasons := append([]string(nil), everyone...)
-		if v.Repo != "" && !mine[v.Repo] {
-			reasons = append(reasons, "repo "+v.Repo+" is not registered: register it")
-		}
-		for _, it := range w.Items {
-			if it.Repo == v.Repo && it.Kind != api.WaitingQuestion && it.Kind != api.WaitingNext {
-				reasons = append(reasons, stallReason(it))
-			}
+		reasons := append(append([]string(nil), everyone...), d.reasons...)
+		if why := k.refusedWhy(d.item.ID); why != "" {
+			reasons = append(reasons, "keep-going could not start it: "+why)
 		}
 		if len(reasons) == 0 {
 			reasons = append(reasons, "nothing known blocks it: ask the desk to start it")
@@ -155,7 +99,7 @@ func (k *KeepGoing) stallLines(ctx context.Context, ws int64) ([]string, error) 
 		if len(reasons) > stallReasons {
 			reasons = append(reasons[:stallReasons], fmt.Sprintf("and %d more", len(reasons)-stallReasons))
 		}
-		lines = append(lines, fmt.Sprintf("Item %d %q: %s.", v.ID, v.Title, strings.Join(reasons, "; ")))
+		lines = append(lines, fmt.Sprintf("Item %d %q: %s.", d.item.ID, d.item.Title, strings.Join(reasons, "; ")))
 	}
 	return lines, nil
 }

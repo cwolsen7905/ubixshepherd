@@ -93,6 +93,33 @@ reloaded on SIGHUP, and the CLI flags set the per-session cap and run limit.
 Turning itself off is a recorded event: `reason_off` (cap, runs, budget, idle, day end,
 person) goes to the feed, and the next desk turn is told in the event text.
 
+## 4a. The daemon starts the work
+
+While the mode is on, the daemon itself keeps work moving: nothing depends on a client
+being attached, on `desk.wake`, or on the desk choosing to act in an event turn. On every
+tick, and when a run ends, `KeepGoing.EvaluateAll` checks the limits and then drives
+(`internal/daemon/keepgoing_drive.go`):
+
+- It continues first: an approved item whose open lane never ran, or whose last run a
+  crash interrupted. A run stopped for a restart is resumed by the restart, not here.
+- Then it starts approved items with no lane, in rank order, until the run slots are
+  full. A new lane takes the whole repo as its scope, so a second item in the same repo
+  waits for the first lane to close.
+- An item needs a plan doc or an acceptance line. Without either, only that item is held
+  and the feed says so once.
+- Every start passes the same gate as the desk's (`permit`): the spend cap, run cap, idle
+  time, end of day and starts per lane all hold, with the reason in the feed.
+- Each start is named in the feed with the item, its title, the lane and the run.
+
+An item is held only by its own blockers: a dependency not done, an open decision or a
+held merge request on its lane, or an open question linked to the item, its lane or its
+topic. A question linked to none of them blocks nothing. The stall alert fires only when
+nothing can start, and lists each item with its own blockers.
+
+The drive never answers a decision, approves, merges, pushes for a person, tags,
+releases or deploys. A failed pipeline is still followed up by the watcher, capped as
+before.
+
 ## 5. How the desk's instructions change and how Shepherd enforces the limits
 
 **Instructions.** The three copies of "do not start new work they have not asked for"

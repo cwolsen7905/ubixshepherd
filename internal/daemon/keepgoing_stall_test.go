@@ -44,9 +44,17 @@ func TestStallAlertFiresOncePerStall(t *testing.T) {
 	if got := stallAlerts(t, s); len(got) != 0 {
 		t.Fatalf("no approved item, yet alerted: %v", got)
 	}
-	approvedItem(t, s, "Ship the thing")
-	if _, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Text: "which db?", State: store.QuestionOpen}); err != nil {
+	ship := approvedItem(t, s, "Ship the thing")
+	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: ws.ID, Text: "which db?", State: store.QuestionOpen})
+	if err != nil {
 		t.Fatal(err)
+	}
+	// Only a question linked to the item holds it.
+	kg.Drive().LinkOf = func(x store.Question) QuestionLink {
+		if x.ID == q.ID {
+			return QuestionLink{ItemID: ship.ID}
+		}
+		return QuestionLink{}
 	}
 	kg.EvaluateAll(ctx) // first sight: inside the grace period
 	if got := stallAlerts(t, s); len(got) != 0 {
@@ -134,7 +142,11 @@ func TestStallAlertKeepsToItsWorkspaceAndGroupsBlockersPerRepo(t *testing.T) {
 	if _, err := s.Store.AddNextItem(ctx, store.NextItem{Title: "Other workspace item", Repo: "elsewhere", State: store.NextApproved, Source: store.NextByPerson}); err != nil {
 		t.Fatal(err)
 	}
-	approvedItem(t, s, "App item")
+	app := approvedItem(t, s, "App item")
+	// The item's lane is the one the decision is open on, so the decision holds it.
+	if _, err := s.Store.UpdateNextItem(ctx, app.ID, store.NextPatch{LaneID: &lane.ID}); err != nil {
+		t.Fatal(err)
+	}
 	run, err := s.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded, Started: clk.Now()})
 	if err != nil {
 		t.Fatal(err)

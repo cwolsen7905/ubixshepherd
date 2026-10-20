@@ -56,14 +56,18 @@ type KeepGoing struct {
 	// stalls is the stall alert's debounce, per workspace (keepgoing_stall.go).
 	stallMu sync.Mutex
 	stalls  map[int64]*stallState
-	// drive is the hooks the keep-going drive uses (keepgoing_drive.go).
-	drive DriveSeams
+	// drive is the hooks the keep-going drive uses (keepgoing_drive.go); driveMu keeps
+	// two passes from starting the same item. refused is why the drive last could not
+	// start an item, by id, guarded by stallMu.
+	drive   DriveSeams
+	driveMu sync.Mutex
+	refused map[int64]string
 }
 
 // KeepGoing returns the server's keep-going controller.
 func (s *Server) KeepGoing() *KeepGoing {
 	s.keepOnce.Do(func() {
-		s.keep = &KeepGoing{s: s, Now: time.Now, told: map[string]bool{}, stalls: map[int64]*stallState{}}
+		s.keep = &KeepGoing{s: s, Now: time.Now, told: map[string]bool{}, stalls: map[int64]*stallState{}, refused: map[int64]string{}}
 	})
 	return s.keep
 }
@@ -316,6 +320,9 @@ func (k *KeepGoing) EvaluateAll(ctx context.Context) {
 			k.s.Log.Warn("keep-going: evaluate", "workspace", ws.ID, "err", err)
 			continue
 		}
+		if row.On {
+			k.driveOnce(ctx, ws.ID)
+		}
 		k.checkStall(ctx, row)
 	}
 }
@@ -327,6 +334,28 @@ func (k *KeepGoing) EvaluateAll(ctx context.Context) {
 // relays Reason as the tool's result; the repo's own autonomy and the item's approval
 // are checked where the action runs.
 func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int64) Decision {
+	d := k.permit(ctx, ws, action, lane)
+	if !d.OK {
+		return d
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	row, err := k.s.Store.KeepGoing(ctx, ws)
+	if err != nil {
+		return Decision{Reason: fmt.Sprintf("keep-going state unreadable: %v", err)}
+	}
+	row.LastAction = k.Now().UTC()
+	if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
+		return Decision{Reason: fmt.Sprintf("keep-going state unwritable: %v", err)}
+	}
+	k.s.postFeed(ctx, FeedKeepGoing, lane, actionText(action, lane))
+	return d
+}
+
+// permit is Allow's check without its record: it refuses or counts the lane's start and
+// lets the caller record the action once it has happened, and name it in the feed. The
+// drive uses it so a start that fails does not count as activity.
+func (k *KeepGoing) permit(ctx context.Context, ws int64, action string, lane int64) Decision {
 	switch action {
 	case KeepStartItem, KeepContinue, KeepFix, KeepRerun, KeepScope:
 	default:
@@ -381,11 +410,6 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 			return refuse("lane starts unwritable: %v", err)
 		}
 	}
-	row.LastAction = k.Now().UTC()
-	if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
-		return refuse("keep-going state unwritable: %v", err)
-	}
-	k.s.postFeed(ctx, FeedKeepGoing, lane, actionText(action, lane))
 	return Decision{OK: true}
 }
 
