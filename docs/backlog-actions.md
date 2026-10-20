@@ -61,8 +61,9 @@ render time. Where no rule applies, nothing is marked.
 
 Notes on the table:
 
-- **To review has no merge button.** Shepherd never merges and agents never approve their
-  own work; the person merges in the forge. The card is a shortcut to it.
+- **To review has no merge button.** Merging follows the repo's `autonomy.merge` rule:
+  with `merge: human` only the person merges, in the forge. Agents never approve their
+  own work. The card is a shortcut to it.
 - **A lane that has never run** has no session to continue, so its idle card offers only
   close lane, ask the desk and details. Starting a first run needs an agent and a task and
   is left for later.

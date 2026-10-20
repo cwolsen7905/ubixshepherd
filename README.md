@@ -301,8 +301,10 @@ profile (and a `gate` set), when an agent's run ends with commits inside its sco
 Shepherd runs the gate itself in the lane. If it passes, Shepherd pushes the branch
 (the scope hook still checks it) and opens the merge request, or updates the open one;
 if it fails, the output goes back into the agent's conversation to fix, at most twice.
-It waits while the agent is waiting on you or another lane, or said it was blocked. It
-never merges. For repos configured with `autonomy.push: shepherd`, you can also ask Shepherd to ship
+It waits while the agent is waiting on you or another lane, or said it was blocked. Merging
+follows the repo's `autonomy.merge` rule: with `merge: human` (the default) only you
+merge; with `merge: agent` the agent may arm its own lane's merge request to merge when
+its pipeline succeeds. For repos configured with `autonomy.push: shepherd`, you can also ask Shepherd to ship
 committed lane work with `shepherd lane ship`, which runs the repo gate before pushing and
 opening or updating the merge request.
 The default is `push: human`: agents commit, you push.
