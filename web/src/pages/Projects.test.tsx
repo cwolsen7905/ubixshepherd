@@ -168,7 +168,7 @@ describe('ProjectPage', () => {
     expect(screen.getByText(/not approved/)).toBeInTheDocument()
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
     // Read-only: nothing here can approve or edit.
-    expect(screen.queryAllByRole('button').filter((b) => !b.closest('[data-component="ErrorState"]'))).toEqual([])
+    expect(screen.queryAllByRole('button').filter((b) => !(b.textContent === 'Retry' && b.closest('[data-component="ErrorState"]')))).toEqual([])
   })
 
   it('shows a waiting decision by its short title, rendered, not its whole body', async () => {
