@@ -133,6 +133,21 @@ describe('ProjectsPage', () => {
     await show(<ProjectsPage />)
     expect(await screen.findByText(/Projects did not load/)).toBeInTheDocument()
   })
+
+  it('asks again on Retry and shows what the second read returns', async () => {
+    let calls = 0
+    const ok = new Response(JSON.stringify({ projects: [project()] }))
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url !== '/v1/projects') return new Response(JSON.stringify({ error: 'no' }), { status: 404 })
+      calls++
+      return calls === 1 ? new Response(JSON.stringify({ error: 'boom' }), { status: 500 }) : ok.clone()
+    })
+    await show(<ProjectsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('link', { name: 'shop' })).toBeInTheDocument()
+    expect(calls).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText(/Projects did not load/)).toBeNull()
+  })
 })
 
 describe('ProjectPage', () => {
@@ -153,7 +168,7 @@ describe('ProjectPage', () => {
     expect(screen.getByText(/not approved/)).toBeInTheDocument()
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
     // Read-only: nothing here can approve or edit.
-    expect(screen.queryAllByRole('button').filter((b) => b.textContent !== 'Retry')).toEqual([])
+    expect(screen.queryAllByRole('button').filter((b) => !b.closest('[data-component="ErrorState"]'))).toEqual([])
   })
 
   it('shows a waiting decision by its short title, rendered, not its whole body', async () => {

@@ -164,7 +164,7 @@ describe('ErrorState and LoadingRows', () => {
   it('says what failed, offers Retry and the status page', () => {
     const retry = vi.fn()
     render(<ErrorState what="Runs" error="The daemon answered 502." at="20:51" request="GET /v1/runs" onRetry={retry} />)
-    expect(screen.getByRole('alert')).toHaveTextContent('Runs did not load. The daemon answered 502 at 20:51.')
+    expect(screen.getByRole('alert')).toHaveTextContent('Runs did not load: The daemon answered 502 at 20:51.')
     expect(screen.getByText('GET /v1/runs')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open status' })).toHaveAttribute('href', '#/status')
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }))

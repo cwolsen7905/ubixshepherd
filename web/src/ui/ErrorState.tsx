@@ -11,8 +11,8 @@ export function ErrorState({ what, error, at, request, onRetry, back }: { what: 
   return (
     <div className="ui-error" role="alert" data-component="ErrorState">
       <p className="ui-error-line">
-        <StatusGlyph glyph="✗" tone="bad" label="Failed" /> {what} did not load.
-        {error ? ` ${error.replace(/\.$/, '')}` : ''}
+        <StatusGlyph glyph="✗" tone="bad" label="Failed" /> {what} did not load
+        {error ? `: ${error.replace(/\.$/, '')}` : ''}
         {at ? ` at ${at}` : ''}.
       </p>
       {request && <p className="ui-error-request">{request}</p>}
