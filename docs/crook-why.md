@@ -63,7 +63,9 @@ The front desk has the same read as the `crook_why` tool.
 
 ## Keeping it
 
-Holds, asks and refusals are kept. Proceeds are kept for 90 days: the daemon prunes older
+Holds, asks and refusals are kept, but an identical one (same action, actor, rule, reason
+and subject) is logged once a minute, so a caller that keeps hitting the same answer does
+not fill the log. Proceeds are kept for 90 days: the daemon prunes older
 ones when it starts and once a day after. A failure to write a row is logged by the
 daemon and never changes a verdict.
 

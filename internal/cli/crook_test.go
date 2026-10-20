@@ -36,8 +36,12 @@ func TestCrookCLI(t *testing.T) {
 	defer crook.SetRecorder(nil, nil)
 	crook.Check(context.Background(), crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker,
 		Facts: crook.Facts{Push: crook.AutonomyShepherd, Run: 42, Agent: "claude", Lane: "feat-x", Repo: "r"}})
+	crook.Check(context.Background(), crook.Request{Action: crook.ActionRunStart, Actor: crook.ActorPerson})
 	crook.SetRecorder(nil, nil)
 
+	if code := h.run("crook", "why", "2"); code != 0 || !strings.Contains(h.out.String(), "6. default") || !strings.Contains(h.out.String(), "6. default    decided") {
+		t.Fatalf("a default proceed ends its path at default: %d %s", code, h.out)
+	}
 	if code := h.run("crook", "why", "1"); code != 0 {
 		t.Fatalf("why 1: %d %s", code, h.err)
 	}

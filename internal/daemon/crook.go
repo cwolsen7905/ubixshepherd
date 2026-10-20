@@ -124,12 +124,17 @@ func (s *Server) crookWhy(w http.ResponseWriter, r *http.Request) {
 	}
 	out := api.CrookWhy{Verdict: v}
 	if v.Stage != "" {
+		decided := false
 		for _, name := range crook.Stages() {
 			if name == v.Stage {
 				out.Path = append(out.Path, api.CrookStep{Stage: name, Outcome: "decided"})
+				decided = true
 				break
 			}
 			out.Path = append(out.Path, api.CrookStep{Stage: name, Outcome: "no opinion"})
+		}
+		if !decided {
+			out.Path = append(out.Path, api.CrookStep{Stage: v.Stage, Outcome: "decided"})
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

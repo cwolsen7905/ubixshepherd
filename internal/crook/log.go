@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -47,6 +48,9 @@ var (
 // SetRecorder sets where Check logs (nil: nowhere). fail is called with a recording
 // error, which never changes a verdict; it may be nil.
 func SetRecorder(r Recorder, fail func(error)) {
+	seenMu.Lock()
+	clear(seen)
+	seenMu.Unlock()
 	if r == nil {
 		recorder.Store(nil)
 	} else {
@@ -73,12 +77,49 @@ func Check(ctx context.Context, req Request) Verdict {
 // a hold that a queue retries is logged once.
 func Record(ctx context.Context, req Request, v Verdict) {
 	if p := recorder.Load(); p != nil && !(v.Kind == Proceed && strings.HasPrefix(string(req.Action), "route ")) {
-		if err := (*p).Record(context.WithoutCancel(ctx), entryFor(req, v)); err != nil {
+		e := entryFor(req, v)
+		if v.Kind != Proceed && repeated(e) {
+			return
+		}
+		if err := (*p).Record(context.WithoutCancel(ctx), e); err != nil {
 			if f := onError.Load(); f != nil {
 				(*f)(err)
 			}
 		}
 	}
+}
+
+// repeatWindow is how long an identical hold, ask or refusal is logged only once, so a
+// caller that keeps hitting the same answer cannot grow the log without bound. Refusals
+// are kept for good, which is why the repeats are dropped here.
+const repeatWindow = time.Minute
+
+var (
+	seenMu sync.Mutex
+	seen   = map[Entry]time.Time{}
+)
+
+// repeated reports whether the same non-proceed verdict was logged within repeatWindow,
+// and otherwise notes this one.
+func repeated(e Entry) bool {
+	key := Entry{Action: e.Action, Actor: e.Actor, Kind: e.Kind, Rule: e.Rule, Reason: e.Reason, Repo: e.Repo, Lane: e.Lane, Run: e.Run}
+	seenMu.Lock()
+	defer seenMu.Unlock()
+	if at, ok := seen[key]; ok && e.At.Sub(at) < repeatWindow {
+		return true
+	}
+	if len(seen) >= 1024 {
+		for k, at := range seen {
+			if e.At.Sub(at) >= repeatWindow {
+				delete(seen, k)
+			}
+		}
+		if len(seen) >= 1024 {
+			clear(seen)
+		}
+	}
+	seen[key] = e.At
+	return false
 }
 
 func entryFor(req Request, v Verdict) Entry {

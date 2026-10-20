@@ -96,3 +96,22 @@ func TestDecideAloneLogsNothingAndRecordLogsWhatItIsGiven(t *testing.T) {
 		t.Fatalf("Record: %+v", rec.got)
 	}
 }
+
+func TestRepeatedNonProceedsAreLoggedOncePerWindow(t *testing.T) {
+	rec := &memRecorder{}
+	SetRecorder(rec, nil)
+	defer SetRecorder(nil, nil)
+	deny := Request{Action: RouteAction("POST /v1/x"), Actor: ActorWorker, Facts: Facts{Route: &RouteFacts{Denied: DeniedWorker}}}
+	for i := 0; i < 50; i++ {
+		Check(context.Background(), deny)
+	}
+	other := deny
+	other.Actor = ActorDesk
+	Check(context.Background(), other)
+	ship := Request{Action: ActionShip, Actor: ActorDaemon, Facts: Facts{Push: AutonomyShepherd}}
+	Check(context.Background(), ship)
+	Check(context.Background(), ship)
+	if len(rec.got) != 4 {
+		t.Fatalf("want one refusal per actor and every proceed; got %d: %+v", len(rec.got), rec.got)
+	}
+}
