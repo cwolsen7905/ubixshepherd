@@ -7,7 +7,7 @@ import './ui.css'
  * shows when the page can ask again; `Open status` always, as the daemon is the usual cause.
  * `request` is the failed call in mono, for the person who has to report it.
  */
-export function ErrorState({ what, error, at, request, onRetry }: { what: string; error?: string; at?: string; request?: string; onRetry?: () => void }) {
+export function ErrorState({ what, error, at, request, onRetry, back }: { what: string; error?: string; at?: string; request?: string; onRetry?: () => void; back?: { href: string; label: string } }) {
   return (
     <div className="ui-error" role="alert" data-component="ErrorState">
       <p className="ui-error-line">
@@ -18,6 +18,7 @@ export function ErrorState({ what, error, at, request, onRetry }: { what: string
       {request && <p className="ui-error-request">{request}</p>}
       <p className="ui-error-actions">
         {onRetry && <Button size="small" onClick={onRetry}>Retry</Button>}
+        {back && <a className="sh-link" href={back.href}>{back.label}</a>}
         <a className="sh-link" href="#/status">Open status</a>
       </p>
     </div>

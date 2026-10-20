@@ -185,3 +185,10 @@ describe('ErrorState and LoadingRows', () => {
     vi.useRealTimers()
   })
 })
+
+describe('ErrorState back link', () => {
+  it('offers the way back beside Open status', () => {
+    render(<ErrorState what="Project x" back={{ href: '#/projects', label: 'All projects' }} />)
+    expect(screen.getByRole('link', { name: 'All projects' })).toHaveAttribute('href', '#/projects')
+  })
+})

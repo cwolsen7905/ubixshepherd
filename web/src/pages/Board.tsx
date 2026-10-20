@@ -345,18 +345,19 @@ export function BoardPage({
           )}
         </section>
       )}
-      <FinishedSection lanes={done} range={range} loading={closed.loading && closed.data === null} error={closed.error} offset={shown} now={now} selected={clamped} onSelect={setSel} rows={rows} />
+      <FinishedSection lanes={done} range={range} loading={closed.loading && closed.data === null} error={closed.error} onRetry={closed.reload} offset={shown} now={now} selected={clamped} onSelect={setSel} rows={rows} />
     </div>
   )
 }
 
 function FinishedSection({
-  lanes, range, loading, error, offset, now, selected, onSelect, rows,
+  lanes, range, loading, error, onRetry, offset, now, selected, onSelect, rows,
 }: {
   lanes: LaneRecord[]
   range: Range
   loading: boolean
   error: string | null
+  onRetry?: () => void
   offset: number
   now: number
   selected: number
@@ -375,7 +376,7 @@ function FinishedSection({
         count={lanes.length}
         meta={<RangeFilter range={range} href={href.board} />}
       />
-      {error && <ErrorState what="Closed lanes" error={error} />}
+      {error && <ErrorState what="Closed lanes" error={error} onRetry={onRetry} />}
       {loading && !error && <LoadingRows rows={2} />}
       {!loading && !error && lanes.length === 0 && <EmptyState title={`No lane closed ${phrase}.`} />}
       {!loading && !error && lanes.length > 0 && (

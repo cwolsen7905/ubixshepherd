@@ -29,7 +29,7 @@ function summary(list: ProjectSummary[]): string {
 
 /** Every project: its repos, merge rule per repo, open lanes, spend and needs-you count. */
 export function ProjectsPage() {
-  const { data, error, loading } = useProjectList()
+  const { data, error, loading, reload } = useProjectList()
   const [doc, setDoc] = useState<ConfigDoc | null>(null)
   const [cursor, setCursor] = useState(0)
   useEffect(() => {
@@ -72,7 +72,7 @@ export function ProjectsPage() {
           </a>
         </div>
       </header>
-      {error && <ErrorState what="Projects" error={error} />}
+      {error && <ErrorState what="Projects" error={error} onRetry={reload} />}
       {loading && !data && !error && <LoadingRows />}
       {data && list.length === 0 && (
         <EmptyState title="No projects yet">

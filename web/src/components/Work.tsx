@@ -143,14 +143,14 @@ export function WorkView({ work }: { work: ProjectWork }): ReactNode {
 
 /** A project's Work section: its repos' docs/WORK.md as of the base branch's last fetch. */
 export function Work({ name }: { name: string | null }) {
-  const { data, error, loading } = useProjectWork(name)
+  const { data, error, loading, reload } = useProjectWork(name)
   return (
     <section aria-labelledby="project-work" className="project-section">
       <h2 id="project-work">
         Work{data && <span className="group-count">{data.repos.flatMap((r) => r.rows).length}</span>}
       </h2>
       {!data && loading && <LoadingRows />}
-      {!data && error && <ErrorState what="Work" error={error} />}
+      {!data && error && <ErrorState what="Work" error={error} onRetry={reload} />}
       {data && <WorkView work={data} />}
     </section>
   )

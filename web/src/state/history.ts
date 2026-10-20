@@ -6,6 +6,8 @@ export interface Loaded<T> {
   error: string | null
   /** A load is under way; data is the last answer, if any. */
   loading: boolean
+  /** Asks again now, for a Retry after a failure. */
+  reload?: () => void
 }
 
 /**
@@ -18,6 +20,8 @@ export function useHistory<T>(key: string, load: (workspaceIds: number[]) => Pro
   const ids = snap.status?.workspaces.map((w) => w.id).join(',') ?? ''
   const feedLast = snap.feed.at(-1)?.id ?? 0
   const [state, setState] = useState<Loaded<T> & { key: string }>({ data: null, error: null, loading: true, key })
+  const [tries, setTries] = useState(0)
+  const reload = () => setTries((n) => n + 1)
 
   useEffect(() => {
     if (!ids) return
@@ -31,9 +35,9 @@ export function useHistory<T>(key: string, load: (workspaceIds: number[]) => Pro
     }
     // load closes over what key names.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids, key, feedLast])
+  }, [ids, key, feedLast, tries])
 
   // A new key's answer is not the old key's: show nothing rather than the wrong range.
-  if (state.key !== key) return { data: null, error: null, loading: true }
-  return state
+  if (state.key !== key) return { data: null, error: null, loading: true, reload }
+  return { ...state, reload }
 }

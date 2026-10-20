@@ -104,7 +104,7 @@ function LaneRow({ lane, now }: { lane: LaneView; now: number }) {
 
 /** One project (or the Unassigned group, name null): brief, budget, repos and lanes. */
 export function ProjectPage({ name }: { name: string | null }) {
-  const { data, error, loading } = useProject(name)
+  const { data, error, loading, reload } = useProject(name)
   const now = useNow()
   useHashOpen()
   const title = name ?? UNASSIGNED
@@ -127,7 +127,7 @@ export function ProjectPage({ name }: { name: string | null }) {
           <h1>{title}</h1>
         </header>
         {error ? (
-          <ErrorState what={name === null ? 'The unassigned repos' : `Project ${name}`} error={error} />
+          <ErrorState what={name === null ? 'The unassigned repos' : `Project ${name}`} error={error} onRetry={reload} back={{ href: href.projects(), label: 'All projects' }} />
         ) : (
           loading && <LoadingRows />
         )}

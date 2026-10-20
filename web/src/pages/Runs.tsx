@@ -19,7 +19,7 @@ function filterAgents(agents: string[], current: string): string[] {
  * Runs page: filter chips for range/agent/lane plus a RunsTable in list variant.
  */
 export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { range?: Range; agent?: string; lane?: number }) {
-  const { data, error, loading } = useHistory<RunHistory>(`runs:${range}:${agent}:${lane}`, async (ids) => {
+  const { data, error, loading, reload } = useHistory<RunHistory>(`runs:${range}:${agent}:${lane}`, async (ids) => {
     const since = rangeStart(range, Date.now()).toISOString()
     return mergeHistories(await Promise.all(ids.map((id) => history.runs(id, since, agent, lane))))
   })
@@ -99,7 +99,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
         </span>
       </nav>
 
-      {error && <ErrorState what="Runs" error={error} />}
+      {error && <ErrorState what="Runs" error={error} onRetry={reload} />}
       {data && data.runs.length === 0 && (
         <EmptyState title={`${agent || lane > 0 ? 'No run matches these filters' : 'No run started'} in ${label.toLowerCase()}.`} />
       )}
