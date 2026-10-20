@@ -28,9 +28,16 @@ const (
 
 // personsNext reports whether the caller may choose an item's state or order. Like an
 // answer to a decision it is the person's: an agent's token never reaches these routes,
-// and the front desk does it only in a turn the person started.
+// and the front desk does it only in a turn the person started. It only classifies the
+// caller and logs nothing; personsNextGate is for where a refusal is returned.
 func personsNext(r *http.Request) bool {
 	return crook.Decide(r.Context(), crook.Request{Action: crook.ActionNextChoose, Actor: principalOf(r.Context()).actor()}).OK()
+}
+
+// personsNextGate is personsNext for a route that refuses the caller: Crook logs the
+// verdict.
+func personsNextGate(r *http.Request) bool {
+	return crook.Check(r.Context(), crook.Request{Action: crook.ActionNextChoose, Actor: principalOf(r.Context()).actor()}).OK()
 }
 
 var errNotPersons = errors.New(crook.PersonOnlyReason(crook.ActionNextChoose))
@@ -257,7 +264,7 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("state is planned, approved, deferred, dropped or done, not %q", req.State))
 		return
 	}
-	if req.State != store.NextPlanned && !personsNext(r) {
+	if req.State != store.NextPlanned && !personsNextGate(r) {
 		writeError(w, http.StatusForbidden, errNotPersons)
 		return
 	}
@@ -309,7 +316,7 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 	}
 	// A suggestion is something to notice, and only the person acts on it, so only the
 	// person may dismiss it.
-	if (req.State != nil || req.Move != "" || req.Suggestion != nil) && !personsNext(r) {
+	if (req.State != nil || req.Move != "" || req.Suggestion != nil) && !personsNextGate(r) {
 		writeError(w, http.StatusForbidden, errNotPersons)
 		return
 	}

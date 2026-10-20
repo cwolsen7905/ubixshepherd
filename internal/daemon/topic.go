@@ -431,7 +431,7 @@ func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("say what to tie: --turn, --feed, --item, --lane, --run, --decision or --request, or --summary"))
 		return
 	}
-	if (req.Title != nil || req.Status != nil || req.MergeInto != 0) && !personsNext(r) {
+	if (req.Title != nil || req.Status != nil || req.MergeInto != 0) && !personsNextGate(r) {
 		writeError(w, http.StatusForbidden, errTopicNotPersons)
 		return
 	}

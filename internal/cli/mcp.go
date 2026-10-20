@@ -821,6 +821,44 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "crook_why",
+			Description: "Why Shepherd did, held or refused something: Crook's verdict log. With id, one verdict with the rule that decided and its path through the stages. With run or lane, that run's or lane's verdicts, newest first. With neither, the latest verdicts. Read only.",
+			InputSchema: obj(map[string]any{
+				"id":   map[string]any{"type": "integer", "description": "A verdict id."},
+				"run":  map[string]any{"type": "integer", "description": "A run id."},
+				"lane": map[string]any{"type": "string", "description": "A lane name."},
+				"kind": map[string]any{"type": "string", "enum": []string{"proceed", "ask", "hold", "refuse"}},
+			}),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"crook"}
+				switch {
+				case a["id"] != nil:
+					if str(a, "kind") != "" {
+						return nil, fmt.Errorf("kind filters a list; it does not apply with id")
+					}
+					id, ok := a["id"].(float64)
+					if !ok {
+						return nil, fmt.Errorf("id must be a number")
+					}
+					return append(out, "why", fmt.Sprint(int64(id))), nil
+				case a["run"] != nil:
+					run, ok := a["run"].(float64)
+					if !ok {
+						return nil, fmt.Errorf("run must be a number")
+					}
+					out = append(out, "why", "run", fmt.Sprint(int64(run)))
+				case str(a, "lane") != "":
+					out = append(out, "why", "lane", str(a, "lane"))
+				default:
+					out = append(out, "log")
+				}
+				if k := str(a, "kind"); k != "" {
+					out = append(out, "--kind", k)
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "request_list",
 			Description: "Requests between lanes: agents asking each other, through Shepherd, for answers, hand-offs and reviews. needs_routing ones wait for you to say which lane (and agent).",
 			InputSchema: obj(map[string]any{}),

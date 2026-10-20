@@ -891,6 +891,16 @@ type Store interface {
 	AddHeldStart(ctx context.Context, h HeldStart) (HeldStart, error)
 	HeldStarts(ctx context.Context) ([]HeldStart, error)
 	DeleteHeldStart(ctx context.Context, id int64) error
+	// AddCrookVerdict appends a verdict to the log and returns it with its id.
+	// CrookVerdict reads one (ErrNotFound for none). CrookVerdicts lists the ones the
+	// filter selects, newest first. CrookCounts counts verdicts per rule and kind since a
+	// time. PruneCrookProceeds deletes proceeds older than a time and returns how many;
+	// holds, asks and refusals are never pruned.
+	AddCrookVerdict(ctx context.Context, v CrookVerdict) (CrookVerdict, error)
+	CrookVerdict(ctx context.Context, id int64) (CrookVerdict, error)
+	CrookVerdicts(ctx context.Context, f CrookFilter) ([]CrookVerdict, error)
+	CrookCounts(ctx context.Context, since time.Time) ([]CrookRuleCount, error)
+	PruneCrookProceeds(ctx context.Context, before time.Time) (int64, error)
 	// SetRunReason sets a run's Reason and nothing else of it.
 	SetRunReason(ctx context.Context, id int64, reason string) error
 

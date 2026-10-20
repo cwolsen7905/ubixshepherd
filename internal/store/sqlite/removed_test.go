@@ -20,6 +20,9 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if _, err := db.db.ExecContext(ctx, `DROP TABLE crook_verdicts`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE held_starts`); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +64,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-13)); err != nil {
+	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-14)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

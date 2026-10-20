@@ -99,6 +99,8 @@ func commands() []command {
 			"shepherd links thread <mr_iid> <discussion_id> | mr <iid> | pipeline <id> | job <id> [--repo R]", runLinks},
 		{"keep-going", "Let the front desk carry on with what is already approved, within limits, until a decision needs you",
 			"shepherd keep-going on [--cap USD] [--runs N] [--idle HOURS] | off | status   (each takes --json)", runKeepGoing},
+		{"crook", "Why Shepherd did, held or refused something: Crook's verdict log",
+			"shepherd crook why <id> | why run <id> | why lane <name> | log [--rule R] [--action A] | rules [--since 7d]   (each takes --json, --kind, --since, --limit where it lists)", runCrook},
 		{"update", "Whether a newer Shepherd release exists, from the daemon's daily check, dismissing its notice, and installing it",
 			"shepherd update [status | dismiss | upgrade [--now]]   (each takes --json)", runUpdate},
 		{"decision", "The questions agents hold for you: list and answer them",

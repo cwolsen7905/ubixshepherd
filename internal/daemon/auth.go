@@ -246,7 +246,7 @@ func routeVerdict(pattern string, a access, r *http.Request) (crook.Verdict, boo
 	default:
 		return crook.Verdict{}, false
 	}
-	return crook.Decide(r.Context(), crook.Request{Action: crook.RouteAction(pattern), Actor: p.actor(), Facts: crook.Facts{Route: &rf}}), true
+	return crook.Check(r.Context(), crook.Request{Action: crook.RouteAction(pattern), Actor: p.actor(), Facts: crook.Facts{Route: &rf}}), true
 }
 
 // workerLane is the lane of the run a worker's token is for, or nil when the request is
@@ -303,5 +303,5 @@ func (s *Server) personsOnly(w http.ResponseWriter, r *http.Request, a crook.Act
 // personVerdict is Crook's answer to whether the caller in ctx may take a person-only
 // action.
 func personVerdict(ctx context.Context, a crook.Action) crook.Verdict {
-	return crook.Decide(ctx, crook.Request{Action: a, Actor: principalOf(ctx).actor()})
+	return crook.Check(ctx, crook.Request{Action: a, Actor: principalOf(ctx).actor()})
 }

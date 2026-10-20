@@ -87,7 +87,7 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 			if repo != nil {
 				push = prof.Autonomy.Push
 			}
-			d := crook.Decide(ctx, crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker, Facts: crook.Facts{
+			d := crook.Check(ctx, crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker, Facts: crook.Facts{
 				Push: push, ToOrigin: push == PushAgent && isOrigin(ctx, dir, remote), Remote: remote,
 				Run: running[0].ID, Agent: running[0].Agent, Lane: lane.Name,
 			}})
@@ -155,7 +155,7 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 		}
 	}
 	// What the scope, branch, message and tag checks found is Crook's floor.
-	d := crook.Decide(ctx, crook.Request{Action: crook.ActionPrePush, Actor: crook.ActorWorker, Facts: crook.Facts{Problems: v.Problems}})
+	d := crook.Check(ctx, crook.Request{Action: crook.ActionPrePush, Actor: crook.ActorWorker, Facts: crook.Facts{Problems: v.Problems}})
 	v.OK, v.rule = d.OK(), d.Rule
 	return v, nil
 }

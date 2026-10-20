@@ -25,7 +25,7 @@ func (s *Server) gate(w http.ResponseWriter, r *http.Request, ws int64, action s
 
 // gateVerdict is Crook's answer for the caller in ctx.
 func (s *Server) gateVerdict(ctx context.Context, ws int64, action string, lane int64) crook.Verdict {
-	return crook.Decide(ctx, crook.Request{
+	return crook.Check(ctx, crook.Request{
 		Action: crook.KeepGoingAction(action),
 		Actor:  principalOf(ctx).actor(),
 		Facts: crook.Facts{KeepGoing: func(ctx context.Context) (bool, string) {

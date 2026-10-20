@@ -125,7 +125,7 @@ func (s *Server) skipQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 	// Ordered with a reply (see deskTurn): a question is closed by one of them, once.
 	defer s.questionMu.lock(q.ID)()
-	if !personsNext(r) {
+	if !personsNextGate(r) {
 		writeError(w, http.StatusForbidden, errQuestionNotPersons)
 		return
 	}
