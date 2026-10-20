@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { config as configApi } from '../api/client'
 import type { ConfigDoc } from '../api/types'
-import { Chip, EmptyState, GroupHeader } from '../ui'
+import { Chip, EmptyState, ErrorState, GroupHeader, LoadingRows } from '../ui'
 import './Rules.css'
 
 export type Verdict = 'refuse' | 'hold' | 'proceed'
@@ -136,8 +136,8 @@ export function RulesPage() {
       ) : (
         <>
         <p className="rules-order">Later layers win: a repo rule overrides its project, which overrides the workspace, which overrides built-in.</p>
-        {state?.error && <p className="tone-bad rules-pad">Could not load the rules: {state.error}</p>}
-        {!state && <p className="faint rules-pad">Loading…</p>}
+        {state?.error && <ErrorState what="The rules" error={state.error} />}
+        {!state && <LoadingRows />}
         <section aria-label="Proposed by Shepherd">
           <GroupHeader label="Proposed by Shepherd" hint="learned from your answers · runs in shadow until you approve" />
           <EmptyState title="No proposed rules.">Shepherd proposes a rule once it learns a pattern in your decisions. That needs Crook's rule files, which are not built yet.</EmptyState>

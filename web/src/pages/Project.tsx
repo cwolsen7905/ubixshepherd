@@ -11,7 +11,7 @@ import { go, href } from '../router'
 import { isOpenNow, openHref, useHashOpen } from '../components/BacklogOpen'
 import { useProject } from '../state/projects'
 import type { BriefView, LaneView, ProjectBrief } from '../api/types'
-import { Count, EmptyState, GroupHeader, ListRow, Skeleton } from '../ui'
+import { Count, EmptyState, ErrorState, GroupHeader, ListRow, LoadingRows } from '../ui'
 import './Projects.css'
 
 const NS_PER_MS = 1_000_000
@@ -127,11 +127,9 @@ export function ProjectPage({ name }: { name: string | null }) {
           <h1>{title}</h1>
         </header>
         {error ? (
-          <p className="tone-bad">
-            Could not load {name === null ? 'the unassigned repos' : `project ${name}`}: {error}. <a href={href.projects()}>All projects</a>.
-          </p>
+          <ErrorState what={name === null ? 'The unassigned repos' : `Project ${name}`} error={error} />
         ) : (
-          loading && <Skeleton lines={3} />
+          loading && <LoadingRows />
         )}
       </div>
     )

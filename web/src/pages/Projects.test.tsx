@@ -131,7 +131,7 @@ describe('ProjectsPage', () => {
   it('says so when the daemon cannot be read', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }))
     await show(<ProjectsPage />)
-    expect(await screen.findByText(/Could not load projects/)).toBeInTheDocument()
+    expect(await screen.findByText(/Projects did not load/)).toBeInTheDocument()
   })
 })
 
@@ -260,7 +260,7 @@ describe('ProjectPage', () => {
   it('names a project the daemon does not know', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="nope" />)
-    expect(await screen.findByText(/Could not load project nope/)).toBeInTheDocument()
+    expect(await screen.findByText(/Project nope did not load/)).toBeInTheDocument()
   })
 })
 
@@ -310,6 +310,6 @@ describe('ProjectPage work section', () => {
   it('says so quietly when the work is not available', async () => {
     daemon({ projects: [project()] })
     await show(<ProjectPage name="shop" />)
-    expect(await screen.findByText(/Work is not available/)).toBeInTheDocument()
+    expect(await screen.findByText(/Work did not load/)).toBeInTheDocument()
   })
 })

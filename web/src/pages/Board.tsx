@@ -18,7 +18,7 @@ import { isOpenNow, itemOpen, openHref } from '../components/BacklogOpen'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
-import { ListRow, GroupHeader, Chip, EmptyState, Popover } from '../ui'
+import { ListRow, GroupHeader, Chip, EmptyState, ErrorState, LoadingRows, Popover } from '../ui'
 import { glyphTone } from '../ui/StatusGlyph'
 import { GROUP_MARKS } from '../model/groups'
 import type { Tone } from '../model/marks'
@@ -375,9 +375,9 @@ function FinishedSection({
         count={lanes.length}
         meta={<RangeFilter range={range} href={href.board} />}
       />
-      {error && <p className="group-note tone-bad">Could not load closed lanes: {error}</p>}
-      {loading && !error && <p className="group-note faint">Loading…</p>}
-      {!loading && !error && lanes.length === 0 && <p className="group-note faint">No lane closed {phrase}.</p>}
+      {error && <ErrorState what="Closed lanes" error={error} />}
+      {loading && !error && <LoadingRows rows={2} />}
+      {!loading && !error && lanes.length === 0 && <EmptyState title={`No lane closed ${phrase}.`} />}
       {!loading && !error && lanes.length > 0 && (
         <ul className="board-rows">
           {lanes.map((l, n) => {

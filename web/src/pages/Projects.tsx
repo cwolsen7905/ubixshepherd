@@ -8,7 +8,7 @@ import { UNASSIGNED } from '../model/projects'
 import { NEW_PROJECT } from '../model/settings'
 import { useProjectList } from '../state/projects'
 import { BudgetMeter } from '../components/BudgetMeter'
-import { EmptyState, Skeleton } from '../ui'
+import { EmptyState, ErrorState, LoadingRows } from '../ui'
 import './Projects.css'
 
 export const projectHref = (p: Pick<ProjectSummary, 'name' | 'unassigned'>) => (p.unassigned ? href.unassigned() : href.project(p.name))
@@ -72,8 +72,8 @@ export function ProjectsPage() {
           </a>
         </div>
       </header>
-      {error && <p className="tone-bad">Could not load projects: {error}</p>}
-      {loading && !data && !error && <Skeleton lines={3} />}
+      {error && <ErrorState what="Projects" error={error} />}
+      {loading && !data && !error && <LoadingRows />}
       {data && list.length === 0 && (
         <EmptyState title="No projects yet">
           No projects are configured and no repo is known. Add a <code>projects:</code> section in Settings or in the

@@ -8,7 +8,7 @@ import { useKeys, useNow } from '../hooks'
 import { isSuggestion, neighbour, openKey, SUGGESTION_LABEL, suggestionChoices, suggestionPatch, waitingKey, type SuggestionChoice } from '../model/waitingStep'
 import { go, href, parse, useFocusTarget, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
-import { Button, Chip, Count, GroupHeader, Kbd, ListRow } from '../ui'
+import { Button, Chip, Count, EmptyState, GroupHeader, Kbd, ListRow, LoadingRows } from '../ui'
 import type { GlyphTone } from '../ui'
 import './Inbox.css'
 
@@ -302,8 +302,8 @@ export function InboxPage({ kind }: { kind?: string }) {
           Showing {KIND_LABEL[kind as WaitingItem['kind']] ?? kind} only. <a href={href.inbox()}>Show all</a>
         </p>
       )}
-      {!loaded && <p className="faint">Loading…</p>}
-      {loaded && all.length === 0 && <p className="faint">Nothing waits on you.</p>}
+      {!loaded && <LoadingRows />}
+      {loaded && all.length === 0 && <EmptyState title="Nothing waits on you." />}
       {loaded && items.length === 0 && all.length > 0 && <p className="faint">Nothing of this kind waits on you.</p>}
 
       {[...GROUPS, OTHER].map((g) => {

@@ -21,9 +21,22 @@
 .ui-toast-bad { border-color: var(--sh-broken); }
 .ui-toast-ok { border-color: var(--sh-ok); }
 
-.ui-empty { padding: 40px var(--sh-s8); text-align: center; color: var(--sh-muted); }
-.ui-empty-title { margin: 0 0 var(--sh-s2); color: var(--sh-ink); font-size: var(--sh-t-body); font-weight: 600; }
-.ui-empty-body { margin: 0 0 var(--sh-s6); font-size: var(--sh-t-small); }
+.ui-empty { padding: var(--sh-s6) var(--sh-s4); color: var(--sh-faint); font-size: var(--sh-t-small); }
+.ui-empty-title { margin: 0; color: var(--sh-faint); }
+.ui-empty-body { margin: var(--sh-s2) 0 0; }
+.ui-empty .sh-btn { margin-top: var(--sh-s4); }
+
+.ui-error { padding: var(--sh-s6) var(--sh-s4); font-size: var(--sh-t-small); }
+.ui-error p { margin: 0; }
+.ui-error-line { color: var(--sh-ink); }
+.ui-error-request { margin-top: var(--sh-s2); color: var(--sh-faint); font-family: var(--sh-mono); font-size: var(--sh-t-meta); }
+.ui-error-actions { display: flex; align-items: center; gap: var(--sh-s6); margin-top: var(--sh-s4); }
+
+.ui-loadrows { display: grid; }
+.ui-loadrow { display: grid; grid-template-columns: 1.25rem 1fr 5rem; align-items: center; gap: var(--sh-s4); padding: var(--sh-s4); border-bottom: 1px solid var(--sh-rule); }
+.ui-loadrow-glyph { width: 1em; }
+.ui-loadrow-title { width: 70%; }
+.ui-loadrow-meta { width: 100%; }
 
 .ui-skeletons { display: grid; gap: var(--sh-s4); }
 .ui-skeleton {

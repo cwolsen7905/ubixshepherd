@@ -155,7 +155,7 @@ describe('the Finished section of the board', () => {
   it('shows why the history is missing rather than an empty list', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'not found' }), { status: 404 }))
     const section = await show()
-    expect(await within(section).findByText(/Could not load closed lanes: not found/)).toBeInTheDocument()
+    expect(await within(section).findByText(/Closed lanes did not load\. not found/)).toBeInTheDocument()
   })
 })
 

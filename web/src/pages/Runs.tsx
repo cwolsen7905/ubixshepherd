@@ -5,7 +5,7 @@ import { costNote, runCost, usd } from '../format'
 import { DEFAULT_RANGE, mergeHistories, RANGES, RANGE_PHRASE, rangeStart } from '../model/history'
 import { go, href, type Range } from '../router'
 import { useHistory } from '../state/history'
-import { Button, Chip, EmptyState } from '../ui'
+import { Button, Chip, EmptyState, ErrorState } from '../ui'
 import { RunsTable } from '../ui/RunsTable'
 import './Runs.css'
 
@@ -99,7 +99,7 @@ export function RunsPage({ range = DEFAULT_RANGE, agent = '', lane = 0 }: { rang
         </span>
       </nav>
 
-      {error && <p className="tone-bad">Could not load runs: {error}</p>}
+      {error && <ErrorState what="Runs" error={error} />}
       {data && data.runs.length === 0 && (
         <EmptyState title={`${agent || lane > 0 ? 'No run matches these filters' : 'No run started'} in ${label.toLowerCase()}.`} />
       )}

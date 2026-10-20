@@ -9,7 +9,7 @@ import {
   problemsFor, projectRepos, removeProject, revert, scopes, setValue, show, unsetValue, type Draft, type Scope,
 } from '../model/settings'
 import { go, href } from '../router'
-import { Button, Chip } from '../ui'
+import { Button, Chip, ErrorState, LoadingRows } from '../ui'
 import { Confirm } from '../ui/Confirm'
 import { Kbd } from '../ui/Kbd'
 import { StatusGlyph } from '../ui/StatusGlyph'
@@ -556,8 +556,8 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   )
   const scope = pickScope(all, scopeId)
 
-  if (loadError && !doc) return <div className="sh-settings"><p className="banner tone-bad" role="alert">Settings did not load: {loadError}</p></div>
-  if (!doc || !scope) return <div className="sh-settings"><p className="sh-setting-desc">Loading settings…</p></div>
+  if (loadError && !doc) return <div className="sh-settings"><ErrorState what="Settings" error={loadError} /></div>
+  if (!doc || !scope) return <div className="sh-settings"><LoadingRows /></div>
 
   const readOnly = !doc.can_write
 
