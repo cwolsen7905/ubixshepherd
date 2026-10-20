@@ -340,6 +340,9 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
+	if err := k.countStart(ctx, action, lane); err != nil {
+		return Decision{Reason: fmt.Sprintf("lane starts unwritable: %v", err)}
+	}
 	row, err := k.s.Store.KeepGoing(ctx, ws)
 	if err != nil {
 		return Decision{Reason: fmt.Sprintf("keep-going state unreadable: %v", err)}
@@ -352,9 +355,10 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 	return d
 }
 
-// permit is Allow's check without its record: it refuses or counts the lane's start and
-// lets the caller record the action once it has happened, and name it in the feed. The
-// drive uses it so a start that fails does not count as activity.
+// permit is Allow's check without its record: it refuses or lets the start through, and
+// the caller counts the lane's start and records the action once it has happened, and
+// names it in the feed. The
+// drive uses it so a start that fails neither counts as activity nor uses the lane's starts.
 func (k *KeepGoing) permit(ctx context.Context, ws int64, action string, lane int64) Decision {
 	switch action {
 	case KeepStartItem, KeepContinue, KeepFix, KeepRerun, KeepScope:
@@ -406,11 +410,18 @@ func (k *KeepGoing) permit(ctx context.Context, ws int64, action string, lane in
 			}
 			return refuse("lane %d has had its %d autonomous starts today; it is handed back to the person", lane, max)
 		}
-		if _, err := k.s.Store.CountLaneStart(ctx, lane, day); err != nil {
-			return refuse("lane starts unwritable: %v", err)
-		}
 	}
 	return Decision{OK: true}
+}
+
+// countStart counts an autonomous start against its lane's day. It is called once the
+// start has happened, so an attempt that fails does not use the lane's starts.
+func (k *KeepGoing) countStart(ctx context.Context, action string, lane int64) error {
+	if action == KeepScope || lane == 0 {
+		return nil
+	}
+	_, err := k.s.Store.CountLaneStart(ctx, lane, k.day(k.Now()))
+	return err
 }
 
 // actionText is the feed line for an autonomous action Allow let through.

@@ -284,6 +284,9 @@ func (k *KeepGoing) driveOnce(ctx context.Context, ws int64) {
 // item and the lane.
 func (k *KeepGoing) recordAction(ctx context.Context, ws int64, c driveItem, run store.Run) {
 	k.mu.Lock()
+	if err := k.countStart(ctx, c.action, c.lane.ID); err != nil {
+		k.s.Log.Warn("keep-going: count a lane start", "lane", c.lane.ID, "err", err)
+	}
 	if row, err := k.s.Store.KeepGoing(ctx, ws); err == nil {
 		row.LastAction = k.Now().UTC()
 		if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {

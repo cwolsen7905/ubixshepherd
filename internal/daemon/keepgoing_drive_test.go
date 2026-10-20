@@ -387,3 +387,47 @@ func TestSinceYouLeftSaysWhatHappenedAndWhyItStopped(t *testing.T) {
 		t.Errorf("status carries the summary: %v\n%s", err, st.Summary)
 	}
 }
+
+// A start that fails does not use the lane's starts for the day, so a lane that keeps
+// failing to start is not handed back for runs that never began.
+func TestDriveFailedStartDoesNotUseTheLanesStarts(t *testing.T) {
+	s, _, clk, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	it := approvedItem(t, s, "Cannot start yet")
+	if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &lane.ID}); err != nil {
+		t.Fatal(err)
+	}
+	fail := true
+	var calls int
+	s.KeepGoing().Drive().StartRun = func(ctx context.Context, req DriveStart) (store.Run, error) {
+		calls++
+		if fail {
+			return store.Run{}, fmt.Errorf("the agent is not installed")
+		}
+		return s.Store.CreateRun(ctx, store.Run{LaneID: req.Lane.ID, Agent: "claude", State: store.RunRunning, Started: clk.Now()})
+	}
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	max := s.LiveConfig().KeepGoing.StartsPerLane()
+	for i := 0; i < max+2; i++ {
+		driveTick(s, clk)
+	}
+	if calls != max+2 {
+		t.Fatalf("every tick should try again: %d calls", calls)
+	}
+	if n, err := s.Store.LaneStarts(ctx, lane.ID, clk.Now().Format("2006-01-02")); err != nil || n != 0 {
+		t.Fatalf("failed starts used the lane's starts: %d %v", n, err)
+	}
+	for _, l := range keepFeed(t, s) {
+		if strings.Contains(l, "handed lane") {
+			t.Errorf("the lane was handed back for starts that never began: %q", l)
+		}
+	}
+	fail = false
+	driveTick(s, clk)
+	if calls != max+3 {
+		t.Fatalf("the lane still starts once it can: %d calls", calls)
+	}
+	if n, _ := s.Store.LaneStarts(ctx, lane.ID, clk.Now().Format("2006-01-02")); n != 1 {
+		t.Errorf("the start that happened counts once: %d", n)
+	}
+}
