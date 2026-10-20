@@ -131,7 +131,22 @@ describe('ProjectsPage', () => {
   it('says so when the daemon cannot be read', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ error: 'boom' }), { status: 500 }))
     await show(<ProjectsPage />)
-    expect(await screen.findByText(/Could not load projects/)).toBeInTheDocument()
+    expect(await screen.findByText(/Projects did not load/)).toBeInTheDocument()
+  })
+
+  it('asks again on Retry and shows what the second read returns', async () => {
+    let calls = 0
+    const ok = new Response(JSON.stringify({ projects: [project()] }))
+    vi.stubGlobal('fetch', async (url: string) => {
+      if (url !== '/v1/projects') return new Response(JSON.stringify({ error: 'no' }), { status: 404 })
+      calls++
+      return calls === 1 ? new Response(JSON.stringify({ error: 'boom' }), { status: 500 }) : ok.clone()
+    })
+    await show(<ProjectsPage />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+    expect(await screen.findByRole('link', { name: 'shop' })).toBeInTheDocument()
+    expect(calls).toBeGreaterThanOrEqual(2)
+    expect(screen.queryByText(/Projects did not load/)).toBeNull()
   })
 })
 
@@ -153,7 +168,7 @@ describe('ProjectPage', () => {
     expect(screen.getByText(/not approved/)).toBeInTheDocument()
     expect(screen.getByText('Ship checkout and refunds.')).toBeInTheDocument()
     // Read-only: nothing here can approve or edit.
-    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.queryAllByRole('button').filter((b) => !(b.textContent === 'Retry' && b.closest('[data-component="ErrorState"]')))).toEqual([])
   })
 
   it('shows a waiting decision by its short title, rendered, not its whole body', async () => {
@@ -260,7 +275,7 @@ describe('ProjectPage', () => {
   it('names a project the daemon does not know', async () => {
     daemon({ projects: [] })
     await show(<ProjectPage name="nope" />)
-    expect(await screen.findByText(/Could not load project nope/)).toBeInTheDocument()
+    expect(await screen.findByText(/Project nope did not load/)).toBeInTheDocument()
   })
 })
 
@@ -310,6 +325,6 @@ describe('ProjectPage work section', () => {
   it('says so quietly when the work is not available', async () => {
     daemon({ projects: [project()] })
     await show(<ProjectPage name="shop" />)
-    expect(await screen.findByText(/Work is not available/)).toBeInTheDocument()
+    expect(await screen.findByText(/Work did not load/)).toBeInTheDocument()
   })
 })

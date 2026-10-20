@@ -11,7 +11,7 @@ import { go, href } from '../router'
 import { isOpenNow, openHref, useHashOpen } from '../components/BacklogOpen'
 import { useProject } from '../state/projects'
 import type { BriefView, LaneView, ProjectBrief } from '../api/types'
-import { Count, EmptyState, GroupHeader, ListRow, Skeleton } from '../ui'
+import { Count, EmptyState, ErrorState, GroupHeader, ListRow, LoadingRows } from '../ui'
 import './Projects.css'
 
 const NS_PER_MS = 1_000_000
@@ -104,7 +104,7 @@ function LaneRow({ lane, now }: { lane: LaneView; now: number }) {
 
 /** One project (or the Unassigned group, name null): brief, budget, repos and lanes. */
 export function ProjectPage({ name }: { name: string | null }) {
-  const { data, error, loading } = useProject(name)
+  const { data, error, loading, reload } = useProject(name)
   const now = useNow()
   useHashOpen()
   const title = name ?? UNASSIGNED
@@ -127,11 +127,9 @@ export function ProjectPage({ name }: { name: string | null }) {
           <h1>{title}</h1>
         </header>
         {error ? (
-          <p className="tone-bad">
-            Could not load {name === null ? 'the unassigned repos' : `project ${name}`}: {error}. <a href={href.projects()}>All projects</a>.
-          </p>
+          <ErrorState what={name === null ? 'The unassigned repos' : `Project ${name}`} error={error} onRetry={reload} back={{ href: href.projects(), label: 'All projects' }} />
         ) : (
-          loading && <Skeleton lines={3} />
+          loading && <LoadingRows />
         )}
       </div>
     )

@@ -36,8 +36,9 @@ function useProjectLoad<T>(key: string, load: () => Promise<T>): Loaded<T> {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, feedLast, tick])
 
-  if (state.key !== key) return { data: null, error: null, loading: true }
-  return state
+  const reload = () => setTick((n) => n + 1)
+  if (state.key !== key) return { data: null, error: null, loading: true, reload }
+  return { ...state, reload }
 }
 
 export const useProjectList = (): Loaded<ProjectList> => useProjectLoad('list', projects.list)

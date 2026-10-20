@@ -18,7 +18,7 @@ import { isOpenNow, itemOpen, openHref } from '../components/BacklogOpen'
 import { FinishedMark, LaneCloseButton, useFinishedLanes } from '../components/LaneClose'
 import { RunFailure } from '../components/RunFailure'
 import { runCost, since, usd } from '../format'
-import { ListRow, GroupHeader, Chip, EmptyState, Popover } from '../ui'
+import { ListRow, GroupHeader, Chip, EmptyState, ErrorState, LoadingRows, Popover } from '../ui'
 import { glyphTone } from '../ui/StatusGlyph'
 import { GROUP_MARKS } from '../model/groups'
 import type { Tone } from '../model/marks'
@@ -345,18 +345,19 @@ export function BoardPage({
           )}
         </section>
       )}
-      <FinishedSection lanes={done} range={range} loading={closed.loading && closed.data === null} error={closed.error} offset={shown} now={now} selected={clamped} onSelect={setSel} rows={rows} />
+      <FinishedSection lanes={done} range={range} loading={closed.loading && closed.data === null} error={closed.error} onRetry={closed.reload} offset={shown} now={now} selected={clamped} onSelect={setSel} rows={rows} />
     </div>
   )
 }
 
 function FinishedSection({
-  lanes, range, loading, error, offset, now, selected, onSelect, rows,
+  lanes, range, loading, error, onRetry, offset, now, selected, onSelect, rows,
 }: {
   lanes: LaneRecord[]
   range: Range
   loading: boolean
   error: string | null
+  onRetry?: () => void
   offset: number
   now: number
   selected: number
@@ -375,9 +376,9 @@ function FinishedSection({
         count={lanes.length}
         meta={<RangeFilter range={range} href={href.board} />}
       />
-      {error && <p className="group-note tone-bad">Could not load closed lanes: {error}</p>}
-      {loading && !error && <p className="group-note faint">Loading…</p>}
-      {!loading && !error && lanes.length === 0 && <p className="group-note faint">No lane closed {phrase}.</p>}
+      {error && <ErrorState what="Closed lanes" error={error} onRetry={onRetry} />}
+      {loading && !error && <LoadingRows rows={2} />}
+      {!loading && !error && lanes.length === 0 && <EmptyState title={`No lane closed ${phrase}.`} />}
       {!loading && !error && lanes.length > 0 && (
         <ul className="board-rows">
           {lanes.map((l, n) => {

@@ -1,7 +1,7 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { Badge, Button, Chip, Dialog, EmptyState, IdChip, Kbd, Popover, Skeleton, Tabs, TOAST_MS, ToastProvider, useToast } from './index'
+import { Badge, Button, Chip, Dialog, EmptyState, ErrorState, IdChip, Kbd, LoadingRows, LOADING_DELAY_MS, Popover, Skeleton, Tabs, TOAST_MS, ToastProvider, useToast } from './index'
 import { KitPage, kitEnabled } from './KitPage'
 
 describe('Button', () => {
@@ -157,5 +157,38 @@ describe('KitPage', () => {
     expect(kitEnabled('/other')).toBe(false)
     render(<KitPage />)
     expect(screen.getByRole('heading', { name: 'Kit' })).toBeInTheDocument()
+  })
+})
+
+describe('ErrorState and LoadingRows', () => {
+  it('says what failed, offers Retry and the status page', () => {
+    const retry = vi.fn()
+    render(<ErrorState what="Runs" error="The daemon answered 502." at="20:51" request="GET /v1/runs" onRetry={retry} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('Runs did not load: The daemon answered 502 at 20:51.')
+    expect(screen.getByText('GET /v1/runs')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open status' })).toHaveAttribute('href', '#/status')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(retry).toHaveBeenCalled()
+  })
+
+  it('shows no Retry when the page cannot ask again', () => {
+    render(<ErrorState what="Runs" />)
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+  })
+
+  it('shows its rows only after the delay', () => {
+    vi.useFakeTimers()
+    render(<LoadingRows rows={2} />)
+    expect(screen.queryByRole('status')).toBeNull()
+    act(() => { vi.advanceTimersByTime(LOADING_DELAY_MS) })
+    expect(screen.getByRole('status', { name: 'Loading' })).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+})
+
+describe('ErrorState back link', () => {
+  it('offers the way back beside Open status', () => {
+    render(<ErrorState what="Project x" back={{ href: '#/projects', label: 'All projects' }} />)
+    expect(screen.getByRole('link', { name: 'All projects' })).toHaveAttribute('href', '#/projects')
   })
 })

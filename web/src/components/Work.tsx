@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { Glyph } from './Glyph'
+import { ErrorState, LoadingRows } from '../ui'
 import { go, href } from '../router'
 import { useProjectWork } from '../state/projects'
 import type { Tone } from '../model/marks'
@@ -142,14 +143,14 @@ export function WorkView({ work }: { work: ProjectWork }): ReactNode {
 
 /** A project's Work section: its repos' docs/WORK.md as of the base branch's last fetch. */
 export function Work({ name }: { name: string | null }) {
-  const { data, error, loading } = useProjectWork(name)
+  const { data, error, loading, reload } = useProjectWork(name)
   return (
     <section aria-labelledby="project-work" className="project-section">
       <h2 id="project-work">
         Work{data && <span className="group-count">{data.repos.flatMap((r) => r.rows).length}</span>}
       </h2>
-      {!data && loading && <p className="faint">Loading…</p>}
-      {!data && error && <p className="faint">Work is not available: {error}.</p>}
+      {!data && loading && <LoadingRows />}
+      {!data && error && <ErrorState what="Work" error={error} onRetry={reload} />}
       {data && <WorkView work={data} />}
     </section>
   )

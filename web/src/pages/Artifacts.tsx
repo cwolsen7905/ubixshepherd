@@ -7,7 +7,7 @@ import { since } from '../format'
 import { useNow } from '../hooks'
 import { go, href } from '../router'
 import { useSnapshot } from '../state/context'
-import { EmptyState, Skeleton } from '../ui'
+import { EmptyState, ErrorState, LoadingRows } from '../ui'
 import { dialogShown } from '../ui/LaneDetailEscape'
 import './Artifacts.css'
 
@@ -248,8 +248,8 @@ export function ArtifactsPage({ repo = 0, lane = 0, run = 0, topic = 0 }: Filter
           )}
         </div>
 
-        {here?.error && <p className="tone-bad">Could not load artifacts: {here.error}</p>}
-        {!here && <Skeleton lines={4} />}
+        {here?.error && <ErrorState what="Artifacts" error={here.error} />}
+        {!here && <LoadingRows />}
         {here?.rows && rows.length === 0 && (
           <EmptyState title={filtered ? 'No artifact matches these filters' : 'No artifacts yet'}>
             {filtered ? 'Try clearing a filter.' : 'A file an agent declares, or one that matches the repo’s artifact globs, appears here.'}

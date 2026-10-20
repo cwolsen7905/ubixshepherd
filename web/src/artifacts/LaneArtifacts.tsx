@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { laneArtifacts, type LaneArtifacts as Listing } from '../api/artifacts'
-import { EmptyState, Skeleton } from '../ui'
+import { EmptyState, ErrorState, LoadingRows } from '../ui'
 import { ArtifactViewer, bytes } from './ArtifactViewer'
 
 /** A lane's artifacts: the list, and the chosen one below it. */
@@ -23,8 +23,8 @@ export function LaneArtifactsPanel({ laneId, refreshKey }: { laneId: number; ref
     }
   }, [laneId, refreshKey])
 
-  if (error) return <EmptyState title="Could not load the artifacts">{error}</EmptyState>
-  if (!list) return <Skeleton lines={4} />
+  if (error) return <ErrorState what="The artifacts" error={error} />
+  if (!list) return <LoadingRows />
   if (list.artifacts.length === 0) {
     return (
       <EmptyState title="No artifacts in this lane yet">
