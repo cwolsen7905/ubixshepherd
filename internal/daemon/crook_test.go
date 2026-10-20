@@ -7,6 +7,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // These tests pin the verdicts Crook gives at the daemon's call sites: kind, rule id and
@@ -117,5 +118,22 @@ func TestCrookRouteRoles(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	if _, known := routeVerdict("GET /v1/x", forDesk, r); known {
 		t.Error("a request with no role was known")
+	}
+}
+
+// Verdicts are queued and written in the background; stopping the log writes what is
+// queued and puts back the recorder that was there.
+func TestCrookLogWritesInTheBackgroundAndRestores(t *testing.T) {
+	s, _ := newServer(t)
+	stop := s.startCrookLog(context.Background())
+	crook.Check(context.Background(), crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyAgent, Repo: "r"}})
+	stop()
+	vs, err := s.Store.CrookVerdicts(context.Background(), store.CrookFilter{})
+	if err != nil || len(vs) != 1 || vs[0].Kind != "refuse" || vs[0].Repo != "r" {
+		t.Fatalf("queued verdict should be written on stop: %+v, %v", vs, err)
+	}
+	crook.Check(context.Background(), crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyAgent, Repo: "other"}})
+	if vs, _ := s.Store.CrookVerdicts(context.Background(), store.CrookFilter{}); len(vs) != 1 {
+		t.Fatalf("nothing is logged once stopped: %d", len(vs))
 	}
 }

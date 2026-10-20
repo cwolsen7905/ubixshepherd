@@ -46,8 +46,10 @@ var (
 )
 
 // SetRecorder sets where Check logs (nil: nowhere). fail is called with a recording
-// error, which never changes a verdict; it may be nil.
-func SetRecorder(r Recorder, fail func(error)) {
+// error, which never changes a verdict; it may be nil. It returns a func that puts back
+// what was set before, so a caller that stops its recorder does not clear another's.
+func SetRecorder(r Recorder, fail func(error)) (restore func()) {
+	prevR, prevF := recorder.Load(), onError.Load()
 	seenMu.Lock()
 	clear(seen)
 	seenMu.Unlock()
@@ -60,6 +62,10 @@ func SetRecorder(r Recorder, fail func(error)) {
 		onError.Store(nil)
 	} else {
 		onError.Store(&fail)
+	}
+	return func() {
+		recorder.Store(prevR)
+		onError.Store(prevF)
 	}
 }
 

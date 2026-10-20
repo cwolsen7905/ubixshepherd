@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/url"
@@ -88,6 +89,15 @@ func runCrook(ctx context.Context, env Env, args []string) error {
 		// why <id> | why run <id> | why lane <name>
 		switch {
 		case len(pos) == 1:
+			var ignored []string
+			fs.Visit(func(f *flag.Flag) {
+				if f.Name != "json" {
+					ignored = append(ignored, "--"+f.Name)
+				}
+			})
+			if len(ignored) > 0 {
+				return fmt.Errorf("%s do not apply to one verdict; they filter a list (crook why run <id>, crook why lane <name> or crook log)", strings.Join(ignored, ", "))
+			}
 			id, err := strconv.ParseInt(pos[0], 10, 64)
 			if err != nil || id <= 0 {
 				return fmt.Errorf("%q is not a verdict id; use `crook why run <id>` or `crook why lane <name>` for a run or lane", pos[0])
@@ -181,7 +191,11 @@ func writeCrookWhy(w io.Writer, d api.CrookWhy) {
 	if len(d.Path) > 0 {
 		fmt.Fprintln(w, "  path:")
 		for i, s := range d.Path {
-			fmt.Fprintf(w, "    %d. %-10s %s\n", i+1, s.Stage, s.Outcome)
+			outcome := s.Outcome
+			if s.Stage == "default" && outcome == "decided" {
+				outcome = "decided (nothing earlier had a say; the default is to proceed)"
+			}
+			fmt.Fprintf(w, "    %d. %-10s %s\n", i+1, s.Stage, outcome)
 		}
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -18,10 +20,28 @@ import (
 // kept for good.
 const crookKeepProceeds = 90 * 24 * time.Hour
 
-// crookRecorder writes Crook's verdicts to the store.
-type crookRecorder struct{ st store.Store }
+// crookQueue is how many verdicts wait to be written. A verdict is logged off the request
+// path, so a slow or locked database never delays an answer; when the queue is full the
+// verdict is dropped and counted.
+const crookQueue = 512
 
-func (r crookRecorder) Record(ctx context.Context, e crook.Entry) error {
+// crookRecorder queues Crook's verdicts and a goroutine writes them to the store.
+type crookRecorder struct {
+	st      store.Store
+	q       chan crook.Entry
+	dropped atomic.Int64
+}
+
+func (r *crookRecorder) Record(_ context.Context, e crook.Entry) error {
+	select {
+	case r.q <- e:
+		return nil
+	default:
+		return fmt.Errorf("crook log queue full: %d verdicts dropped so far", r.dropped.Add(1))
+	}
+}
+
+func (r *crookRecorder) write(ctx context.Context, e crook.Entry) error {
 	_, err := r.st.AddCrookVerdict(ctx, store.CrookVerdict{
 		At: e.At, Action: string(e.Action), Actor: string(e.Actor), Kind: string(e.Kind),
 		Rule: e.Rule, RuleVersion: e.RuleVersion, Stage: e.Stage, Reason: e.Reason,
@@ -31,13 +51,24 @@ func (r crookRecorder) Record(ctx context.Context, e crook.Entry) error {
 }
 
 // startCrookLog sends Crook's verdicts to the store and prunes old proceeds once a day.
-// The returned func stops both.
+// The returned func stops both, after the queue is written, and puts back the recorder
+// that was set before.
 func (s *Server) startCrookLog(ctx context.Context) func() {
-	crook.SetRecorder(crookRecorder{s.Store}, func(err error) { s.Log.Warn("log a crook verdict", "err", err) })
+	rec := &crookRecorder{st: s.Store, q: make(chan crook.Entry, crookQueue)}
+	restore := crook.SetRecorder(rec, func(err error) { s.Log.Warn("log a crook verdict", "err", err) })
 	ctx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
 	go func() {
-		defer close(done)
+		defer wg.Done()
+		for e := range rec.q {
+			if err := rec.write(context.Background(), e); err != nil {
+				s.Log.Warn("write a crook verdict", "err", err)
+			}
+		}
+	}()
+	go func() {
+		defer wg.Done()
 		for {
 			if n, err := s.Store.PruneCrookProceeds(ctx, time.Now().Add(-crookKeepProceeds)); err != nil {
 				if ctx.Err() == nil {
@@ -53,7 +84,12 @@ func (s *Server) startCrookLog(ctx context.Context) func() {
 			}
 		}
 	}()
-	return func() { cancel(); <-done; crook.SetRecorder(nil, nil) }
+	return func() {
+		cancel()
+		restore()
+		close(rec.q)
+		wg.Wait()
+	}
 }
 
 // parseSince reads a time as RFC 3339 or "Nd" for N days ago; "" gives def.

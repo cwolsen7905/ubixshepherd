@@ -833,6 +833,9 @@ func mcpTools() []mcpTool {
 				out := []string{"crook"}
 				switch {
 				case a["id"] != nil:
+					if str(a, "kind") != "" {
+						return nil, fmt.Errorf("kind filters a list; it does not apply with id")
+					}
 					id, ok := a["id"].(float64)
 					if !ok {
 						return nil, fmt.Errorf("id must be a number")

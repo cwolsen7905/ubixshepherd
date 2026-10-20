@@ -39,7 +39,7 @@ func TestCrookCLI(t *testing.T) {
 	crook.Check(context.Background(), crook.Request{Action: crook.ActionRunStart, Actor: crook.ActorPerson})
 	crook.SetRecorder(nil, nil)
 
-	if code := h.run("crook", "why", "2"); code != 0 || !strings.Contains(h.out.String(), "6. default") || !strings.Contains(h.out.String(), "6. default    decided") {
+	if code := h.run("crook", "why", "2"); code != 0 || !strings.Contains(h.out.String(), "6. default") || !strings.Contains(h.out.String(), "decided (nothing earlier had a say") {
 		t.Fatalf("a default proceed ends its path at default: %d %s", code, h.out)
 	}
 	if code := h.run("crook", "why", "1"); code != 0 {
@@ -64,7 +64,7 @@ func TestCrookCLI(t *testing.T) {
 	if code := h.run("crook", "rules"); code != 0 || !strings.Contains(h.out.String(), "builtin/push-autonomy") {
 		t.Fatalf("rules: %d %s", code, h.out)
 	}
-	for _, bad := range [][]string{{"crook"}, {"crook", "why"}, {"crook", "why", "nope"}, {"crook", "why", "run", "x"}, {"crook", "log", "--kind", "maybe"}, {"crook", "sideways"}, {"crook", "why", "999"}} {
+	for _, bad := range [][]string{{"crook"}, {"crook", "why"}, {"crook", "why", "nope"}, {"crook", "why", "run", "x"}, {"crook", "log", "--kind", "maybe"}, {"crook", "sideways"}, {"crook", "why", "999"}, {"crook", "why", "1", "--kind", "refuse"}, {"crook", "why", "1", "--limit", "3"}} {
 		if code := h.run(bad...); code == 0 {
 			t.Errorf("%v should fail", bad)
 		}

@@ -22,7 +22,7 @@ One row per verdict:
 | facts | The facts that mattered, as JSON with the empty ones left out, redacted |
 
 A check that only classifies the caller or probes what a repo allows is not logged, and a
-start held by a limit is logged once, not again each time the queue retries it. A route
+start held by a limit is logged at most once a minute, not again each time the queue retries it. A route
 that proceeds is not logged: it is a request answered, not an act, and the web
 polls constantly. A route Crook refuses is logged.
 
@@ -42,7 +42,9 @@ time in RFC 3339 or a number of days such as `7d`. `rules` takes `--since` (defa
 `7d`). Every form takes `--json`.
 
 `crook why <id>` prints the stages in the order Crook runs them, up to the one that
-decided. A stage with nothing to say reads "no opinion":
+decided. A stage with nothing to say reads "no opinion". When none has a say, the last step is the
+default, which proceeds and reads "decided (nothing earlier had a say; the default is to
+proceed)":
 
 ```
 verdict #12: refuse
@@ -66,8 +68,9 @@ The front desk has the same read as the `crook_why` tool.
 Holds, asks and refusals are kept, but an identical one (same action, actor, rule, reason
 and subject) is logged once a minute, so a caller that keeps hitting the same answer does
 not fill the log. Proceeds are kept for 90 days: the daemon prunes older
-ones when it starts and once a day after. A failure to write a row is logged by the
-daemon and never changes a verdict.
+ones when it starts and once a day after. Rows are written in the background, so a slow database never delays an answer; if the queue
+is full the verdict is dropped and the daemon logs it. A failure to write a row is logged by
+the daemon and never changes a verdict.
 
 The route is `GET /v1/crook/verdicts`, `GET /v1/crook/verdicts/{id}` and
 `GET /v1/crook/rules`.

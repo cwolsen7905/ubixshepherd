@@ -115,3 +115,15 @@ func TestRepeatedNonProceedsAreLoggedOncePerWindow(t *testing.T) {
 		t.Fatalf("want one refusal per actor and every proceed; got %d: %+v", len(rec.got), rec.got)
 	}
 }
+
+func TestSetRecorderRestoresWhatWasThere(t *testing.T) {
+	first, second := &memRecorder{}, &memRecorder{}
+	defer SetRecorder(nil, nil)()
+	SetRecorder(first, nil)
+	restore := SetRecorder(second, nil)
+	restore()
+	Check(context.Background(), Request{Action: ActionShip, Actor: ActorDaemon, Facts: Facts{Push: AutonomyShepherd}})
+	if len(first.got) != 1 || len(second.got) != 0 {
+		t.Fatalf("restoring the second should put the first back: %d, %d", len(first.got), len(second.got))
+	}
+}
