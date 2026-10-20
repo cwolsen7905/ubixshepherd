@@ -978,12 +978,33 @@ func (r *Runner) Record(ctx context.Context, e store.Event) (store.Event, error)
 	return e, err
 }
 
-// Stop asks a running agent to stop, and kills it if it has not after a grace period.
+// Stop asks a running agent to stop, and kills it if it has not after a grace period. It
+// is the person's stop: the run ends stopped and is not continued after a restart, even
+// if a drain had already marked it.
 func (r *Runner) Stop(ctx context.Context, id int64) error {
+	return r.stop(id, false)
+}
+
+// StopForRestart is the stop the front desk makes to hurry a drain along. While a drain is
+// under way the run ends interrupted with the reason restart, so the next start
+// continues it, as for the drain's own cut-off. A run the person already stopped stays
+// theirs, and with no drain under way this is the person's stop.
+func (r *Runner) StopForRestart(ctx context.Context, id int64) error {
+	return r.stop(id, true)
+}
+
+func (r *Runner) stop(id int64, forRestart bool) error {
 	r.mu.Lock()
 	p, ok := r.procs[id]
 	if ok {
-		p.stopped = true
+		if forRestart && r.drain != nil {
+			if !p.stopped {
+				p.restarting = true
+			}
+		} else {
+			p.stopped = true
+			p.restarting = false
+		}
 	}
 	r.mu.Unlock()
 	if !ok {
