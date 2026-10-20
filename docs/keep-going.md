@@ -103,18 +103,23 @@ tick, and when a run ends, `KeepGoing.EvaluateAll` checks the limits and then dr
 - It continues first: an approved item whose open lane never ran, or whose last run a
   crash interrupted. A run stopped for a restart is resumed by the restart, not here.
 - Then it starts approved items with no lane, in rank order, until the run slots are
-  full. A new lane takes the whole repo as its scope, so a second item in the same repo
-  waits for the first lane to close.
-- An item needs a plan doc or an acceptance line. Without either, only that item is held
-  and the feed says so once.
+  full. A new lane takes the scope its item's plan doc names, on a line such as
+  `Scope: internal/x/**, docs/y.md`. An item whose plan names no scope is held and the
+  feed says so, since an unattended lane must not be wider than the plan. If the runner
+  refuses to start (an agent not installed, a quota hold, the budget), the lane is closed
+  again and the item unlinked, so no idle lane holds the repo.
+- An item needs a plan doc or an acceptance line, whether or not it already has a lane.
+  Without either, only that item is held and the feed says so once.
 - Every start passes the same gate as the desk's (`permit`): the spend cap, run cap, idle
   time, end of day and starts per lane all hold, with the reason in the feed.
 - Each start is named in the feed with the item, its title, the lane and the run.
 
 An item is held only by its own blockers: a dependency not done, an open decision or a
 held merge request on its lane, or an open question linked to the item, its lane or its
-topic. A question linked to none of them blocks nothing. The stall alert fires only when
-nothing can start, and lists each item with its own blockers.
+topic. A question linked to none of them blocks nothing. An item whose lane's last run
+failed or was stopped is not re-run by the drive; it is listed in the stall alert with
+that run. The stall alert fires only when nothing can start, and lists each item with its
+own blockers.
 
 `shepherd keep-going` status ends with a summary of what the mode did since it was turned
 on: items started, runs finished and failed, merge requests, and why and when it stopped.

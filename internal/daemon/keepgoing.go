@@ -39,6 +39,10 @@ const keepGoingTick = time.Minute
 type Decision struct {
 	OK     bool   `json:"ok"`
 	Reason string `json:"reason,omitempty"`
+	// routine marks a refusal that is the normal state of a busy workspace (the run slots
+	// are full) or that was already announced (a lane handed back), so the drive does not
+	// repeat it in the feed.
+	routine bool
 }
 
 // KeepGoing is the daemon's side of keep-going mode: the one place that decides whether
@@ -61,6 +65,9 @@ type KeepGoing struct {
 	// start an item, by id, guarded by stallMu.
 	drive   DriveSeams
 	driveMu sync.Mutex
+	// startMu orders the drive's whole start (check, run, count) against the desk's
+	// check-and-count in Allow, so neither passes a cap the other is using. Taken before mu.
+	startMu sync.Mutex
 	refused map[int64]string
 }
 
@@ -334,12 +341,14 @@ func (k *KeepGoing) EvaluateAll(ctx context.Context) {
 // relays Reason as the tool's result; the repo's own autonomy and the item's approval
 // are checked where the action runs.
 func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int64) Decision {
-	d := k.permit(ctx, ws, action, lane)
+	k.startMu.Lock()
+	defer k.startMu.Unlock()
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	d := k.permitLocked(ctx, ws, action, lane)
 	if !d.OK {
 		return d
 	}
-	k.mu.Lock()
-	defer k.mu.Unlock()
 	if err := k.countStart(ctx, action, lane); err != nil {
 		return Decision{Reason: fmt.Sprintf("lane starts unwritable: %v", err)}
 	}
@@ -355,18 +364,23 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 	return d
 }
 
-// permit is Allow's check without its record: it refuses or lets the start through, and
-// the caller counts the lane's start and records the action once it has happened, and
-// names it in the feed. The
-// drive uses it so a start that fails neither counts as activity nor uses the lane's starts.
+// permit is Allow's check without its record, for the drive: it refuses or lets the
+// start through, and the drive counts the lane's start and records the action once the
+// run has started, so a start that fails neither counts as activity nor uses the lane's
+// starts. The drive holds startMu from permit to the count.
 func (k *KeepGoing) permit(ctx context.Context, ws int64, action string, lane int64) Decision {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.permitLocked(ctx, ws, action, lane)
+}
+
+// permitLocked is permit with k.mu held by the caller.
+func (k *KeepGoing) permitLocked(ctx context.Context, ws int64, action string, lane int64) Decision {
 	switch action {
 	case KeepStartItem, KeepContinue, KeepFix, KeepRerun, KeepScope:
 	default:
 		return Decision{Reason: fmt.Sprintf("%q is not an action keep-going covers", action)}
 	}
-	k.mu.Lock()
-	defer k.mu.Unlock()
 	refuse := func(format string, a ...any) Decision { return Decision{Reason: fmt.Sprintf(format, a...)} }
 	if ws == 0 {
 		return refuse("keep-going cannot tell which workspace this %s belongs to (its lane or repo is unknown), so it starts nothing", action)
@@ -393,7 +407,9 @@ func (k *KeepGoing) permit(ctx context.Context, ws int64, action string, lane in
 			return refuse("runs unreadable: %v", err)
 		}
 		if n >= lim.runs {
-			return refuse("%d of %d runs are running; keep-going starts nothing past that", n, lim.runs)
+			d := refuse("%d of %d runs are running; keep-going starts nothing past that", n, lim.runs)
+			d.routine = true
+			return d
 		}
 	}
 	day := k.day(k.Now())
@@ -408,7 +424,9 @@ func (k *KeepGoing) permit(ctx context.Context, ws int64, action string, lane in
 				k.told[key] = true
 				k.s.postFeed(ctx, FeedKeepGoing, lane, fmt.Sprintf("keep-going handed lane %d back: %d autonomous starts today", lane, n))
 			}
-			return refuse("lane %d has had its %d autonomous starts today; it is handed back to the person", lane, max)
+			d := refuse("lane %d has had its %d autonomous starts today; it is handed back to the person", lane, max)
+			d.routine = true
+			return d
 		}
 	}
 	return Decision{OK: true}

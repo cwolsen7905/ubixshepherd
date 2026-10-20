@@ -13,6 +13,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -243,17 +244,34 @@ func TestDriveTopicLinkedQuestionBlocksItsItem(t *testing.T) {
 }
 
 func TestDriveStartWithoutRunnerStartsNothing(t *testing.T) {
-	s, _, clk, ws, _ := keepSetup(t)
-	approvedItem(t, s, "Waits for a runner")
+	s, _, clk, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	it := approvedItem(t, s, "Waits for a runner")
 	keepOn(t, s, ws, api.KeepGoingSet{})
 	driveTick(s, clk) // no StartRun, no Runner: the drive must not panic or start
 	if row := keepRow(t, s, ws); !row.On {
 		t.Fatalf("mode: %+v", row)
 	}
+	if runs, _ := s.Store.Runs(ctx, 0, "", 10); len(runs) != 0 {
+		t.Errorf("a run was created: %v", runs)
+	}
+	if lanes, _ := s.Store.Lanes(ctx, lane.RepoID); len(lanes) != 1 {
+		t.Errorf("a lane was opened: %v", lanes)
+	}
+	if got, _ := s.Store.NextItem(ctx, it.ID); got.LaneID != 0 || got.State != store.NextApproved {
+		t.Errorf("the item changed: %+v", got)
+	}
+	for _, l := range keepFeed(t, s) {
+		if strings.Contains(l, "keep-going started") {
+			t.Errorf("the feed says something started: %q", l)
+		}
+	}
 }
 
-// driveOpen opens a real lane for the item, scoped to the repo, links it and names it.
-func TestDriveOpenMakesAndLinksTheItemsLane(t *testing.T) {
+// realDriveRepo registers a workspace with one real repo, "app", cloned from a bare
+// origin, and gives the server a fold over it.
+func realDriveRepo(t *testing.T) (*Server, store.Workspace, string) {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -261,7 +279,6 @@ func TestDriveOpenMakesAndLinksTheItemsLane(t *testing.T) {
 		t.Setenv(k, v)
 	}
 	s, _ := newServer(t)
-	ctx := context.Background()
 	root, _ := paths.Canonical(t.TempDir())
 	g := func(dir string, args ...string) {
 		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
@@ -278,23 +295,74 @@ func TestDriveOpenMakesAndLinksTheItemsLane(t *testing.T) {
 	g(seed, "push", "-q", "origin", "HEAD:main")
 	wsDir := filepath.Join(root, "ws")
 	os.MkdirAll(wsDir, 0o755)
-	g(wsDir, "clone", "-q", origin, filepath.Join(wsDir, "app"))
-	ws, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: wsDir}, []store.Repo{{Name: "app", Path: filepath.Join(wsDir, "app")}})
+	app := filepath.Join(wsDir, "app")
+	g(wsDir, "clone", "-q", origin, app)
+	ws, err := s.Store.SaveWorkspace(context.Background(), store.Workspace{Name: "ws", Path: wsDir}, []store.Repo{{Name: "app", Path: app}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Default()
-	s.Fold.Config, s.Fold.Store = cfg, s.Store
-	it, err := s.Store.AddNextItem(ctx, store.NextItem{Title: "Real lane", Repo: "app", State: store.NextApproved, Source: store.NextByPerson})
+	s.Fold.Config, s.Fold.Store = config.Default(), s.Store
+	return s, ws, app
+}
+
+// planWith writes a plan doc in the repo and returns its path under the repo.
+func planWith(t *testing.T, app, name, body string) string {
+	t.Helper()
+	rel := filepath.Join("docs", name)
+	if err := os.MkdirAll(filepath.Join(app, "docs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(app, rel), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return rel
+}
+
+func TestPlanScopeReadsTheScopeLine(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) string {
+		os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644)
+		return name
+	}
+	for _, c := range []struct {
+		body string
+		want []string
+	}{
+		{"# Plan\n\nScope: internal/x/**, docs/y.md\n", []string{"internal/x/**", "docs/y.md"}},
+		{"- **Scope:** `src/**` `docs/**`\n", []string{"src/**", "docs/**"}},
+		{"**Scope**: web/**\n", []string{"web/**"}},
+		{"scope : a/**\n", []string{"a/**"}},
+	} {
+		got, err := planScope(dir, write("p.md", c.body))
+		if err != nil || strings.Join(got, " ") != strings.Join(c.want, " ") {
+			t.Errorf("%q: got %v, %v; want %v", c.body, got, err, c.want)
+		}
+	}
+	for name, plan := range map[string]string{"no plan": "", "no such file": "nope.md", "outside": "../x.md", "absolute": "/etc/passwd", "no line": write("q.md", "# Plan\nNo scope here\nScope:\n")} {
+		if got, err := planScope(dir, plan); err == nil {
+			t.Errorf("%s: want a refusal, got %v", name, got)
+		}
+	}
+}
+
+// driveOpen opens a real lane for the item, scoped by its plan, links it and names it.
+func TestDriveOpenMakesAndLinksTheItemsLane(t *testing.T) {
+	s, ws, app := realDriveRepo(t)
+	ctx := context.Background()
+	plan := planWith(t, app, "a.md", "Scope: src/a/**\n")
+	it, err := s.Store.AddNextItem(ctx, store.NextItem{Title: "Real lane", Repo: "app", Plan: plan, State: store.NextApproved, Source: store.NextByPerson})
 	if err != nil {
 		t.Fatal(err)
 	}
-	lane, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it})
-	if err != nil {
-		t.Fatal(err)
+	lane, fresh, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it})
+	if err != nil || !fresh {
+		t.Fatal(fresh, err)
 	}
 	if lane.Name != driveLaneName(it) || lane.State != store.LaneOpen || lane.Origin.Via != "keep-going" {
 		t.Errorf("lane: %+v", lane)
+	}
+	if strings.Join(lane.Scope, " ") != "src/a/**" {
+		t.Errorf("the lane takes the plan's scope and no more: %v", lane.Scope)
 	}
 	got, err := s.Store.NextItem(ctx, it.ID)
 	if err != nil || got.LaneID != lane.ID {
@@ -306,46 +374,65 @@ func TestDriveOpenMakesAndLinksTheItemsLane(t *testing.T) {
 	if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &zero}); err != nil {
 		t.Fatal(err)
 	}
-	again, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it})
-	if err != nil || again.ID != lane.ID {
+	again, fresh, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it})
+	if err != nil || again.ID != lane.ID || fresh {
 		t.Fatalf("want lane %d reused: %+v %v", lane.ID, again, err)
 	}
 	if got, _ := s.Store.NextItem(ctx, it.ID); got.LaneID != lane.ID {
 		t.Errorf("the item is linked again: %+v", got)
 	}
-	// A second item in the same repo is refused by the whole-repo scope, naming the lane.
-	it2, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Second", Repo: "app", State: store.NextApproved, Source: store.NextByPerson})
-	if _, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it2}); err == nil || !strings.Contains(err.Error(), lane.Name) {
+	// A second item whose scope overlaps is refused by the lease, naming the lane; one with
+	// a scope of its own opens beside it.
+	over, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Overlaps", Repo: "app", Plan: plan, State: store.NextApproved, Source: store.NextByPerson})
+	if _, _, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: over}); err == nil || !strings.Contains(err.Error(), lane.Name) {
 		t.Errorf("want a refusal naming lane %s: %v", lane.Name, err)
 	}
+	other, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Elsewhere", Repo: "app", Plan: planWith(t, app, "b.md", "Scope: src/b/**\n"), State: store.NextApproved, Source: store.NextByPerson})
+	if _, _, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: other}); err != nil {
+		t.Errorf("a disjoint scope opens beside it: %v", err)
+	}
 }
 
-// driveRepos replaces the server's workspace with one of n repos named r00, r01 ...
-func driveRepos(t *testing.T, s *Server, n int) (store.Workspace, []string) {
-	t.Helper()
-	root := t.TempDir()
-	var repos []store.Repo
-	var names []string
-	for i := 0; i < n; i++ {
-		name := fmt.Sprintf("r%02d", i)
-		names = append(names, name)
-		repos = append(repos, store.Repo{Name: name, Path: filepath.Join(root, name)})
+// An item whose plan names no scope is not started, and no lane is opened for it.
+func TestDriveOpenRefusesAPlanWithoutScope(t *testing.T) {
+	s, ws, app := realDriveRepo(t)
+	ctx := context.Background()
+	for name, plan := range map[string]string{"no plan": "", "no scope line": planWith(t, app, "c.md", "# Plan\nDo things.\n")} {
+		it, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Scopeless " + name, Repo: "app", Plan: plan, DoneWhen: "done", State: store.NextApproved, Source: store.NextByPerson})
+		if _, _, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it}); err == nil || !strings.Contains(err.Error(), "Scope") {
+			t.Errorf("%s: want a refusal naming the Scope line: %v", name, err)
+		}
 	}
-	ws, err := s.Store.SaveWorkspace(context.Background(), store.Workspace{Name: "many", Path: root}, repos)
-	if err != nil {
-		t.Fatal(err)
+	if lanes, _ := s.Store.Lanes(ctx, 1); len(lanes) != 0 {
+		t.Errorf("no lane is opened: %v", lanes)
 	}
-	return ws, names
 }
 
-// driveApproved adds an approved item for a repo.
-func driveApproved(t *testing.T, s *Server, repo, title string) store.NextItem {
-	t.Helper()
-	it, err := s.Store.AddNextItem(context.Background(), store.NextItem{Title: title, Repo: repo, State: store.NextApproved, Source: store.NextByPerson})
-	if err != nil {
-		t.Fatal(err)
+// When the runner refuses, a lane the drive opened is closed and the item unlinked, so
+// nothing idle holds the repo's scope.
+func TestDriveStartClosesTheLaneWhenTheRunnerRefuses(t *testing.T) {
+	s, ws, app := realDriveRepo(t)
+	ctx := context.Background()
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	it, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Refused start", Repo: "app", Plan: planWith(t, app, "d.md", "Scope: src/d/**\n"), State: store.NextApproved, Source: store.NextByPerson})
+	// A blank prompt is refused by the runner before any agent starts, whatever is installed.
+	_, err := s.driveStart(ctx, DriveStart{WorkspaceID: ws.ID, Item: it, Prompt: " "})
+	if err == nil {
+		t.Fatal("want the runner's refusal")
 	}
-	return it
+	lanes, _ := s.Store.Lanes(ctx, 1)
+	for _, l := range lanes {
+		if l.State != store.LaneClosed {
+			t.Errorf("lane %s is left %s", l.Name, l.State)
+		}
+	}
+	if got, _ := s.Store.NextItem(ctx, it.ID); got.LaneID != 0 || got.Lane != "" {
+		t.Errorf("the item is unlinked: %+v", got)
+	}
+	// The scope is free again: the same item opens once more.
+	if _, fresh, err := s.driveOpen(ctx, DriveStart{WorkspaceID: ws.ID, Item: it}); err != nil || !fresh {
+		t.Errorf("reopen: %v %v", fresh, err)
+	}
 }
 
 func TestSinceYouLeftIsEmptyBeforeTheModeEverRan(t *testing.T) {
@@ -461,4 +548,213 @@ func TestDriveCountsTheFirstStartOfANewLane(t *testing.T) {
 	if n, err := s.Store.LaneStarts(context.Background(), lane.ID, clk.Now().Format("2006-01-02")); err != nil || n != 1 {
 		t.Fatalf("lane %d starts today: %d %v", lane.ID, n, err)
 	}
+}
+
+// driveRepos replaces the server's workspace with one of n repos named r00, r01 ...
+func driveRepos(t *testing.T, s *Server, n int) (store.Workspace, []string) {
+	t.Helper()
+	root := t.TempDir()
+	var repos []store.Repo
+	var names []string
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("r%02d", i)
+		names = append(names, name)
+		repos = append(repos, store.Repo{Name: name, Path: filepath.Join(root, name)})
+	}
+	ws, err := s.Store.SaveWorkspace(context.Background(), store.Workspace{Name: "many", Path: root}, repos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ws, names
+}
+
+// driveApproved adds an approved item for a repo.
+func driveApproved(t *testing.T, s *Server, repo, title string) store.NextItem {
+	t.Helper()
+	it, err := s.Store.AddNextItem(context.Background(), store.NextItem{Title: title, Repo: repo, State: store.NextApproved, Source: store.NextByPerson})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return it
+}
+
+// An approved item whose lane's last run failed or was stopped is not driven, and it is
+// not silent: the stall alert names it with the run.
+func TestStallNamesAnItemWhoseLastRunFailed(t *testing.T) {
+	for _, state := range []string{store.RunFailed, store.RunStopped} {
+		t.Run(state, func(t *testing.T) {
+			s, _, clk, ws, lane := keepSetup(t)
+			ctx := context.Background()
+			rec := &driveRecorder{}
+			rec.install(s, clk)
+			it := approvedItem(t, s, "Chain that broke")
+			if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &lane.ID}); err != nil {
+				t.Fatal(err)
+			}
+			end := clk.Now()
+			run, err := s.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: state, Started: end, Ended: &end})
+			if err != nil {
+				t.Fatal(err)
+			}
+			keepOn(t, s, ws, api.KeepGoingSet{})
+			s.KeepGoing().EvaluateAll(ctx)
+			clk.Add(stallGrace)
+			s.KeepGoing().EvaluateAll(ctx)
+			if got := rec.actions(); len(got) != 0 {
+				t.Fatalf("a failed lane is not re-run by the drive: %v", got)
+			}
+			al := stallAlerts(t, s)
+			want := fmt.Sprintf("last run %d", run.ID)
+			if len(al) != 1 || !strings.Contains(al[0], "Chain that broke") || !strings.Contains(al[0], want) {
+				t.Fatalf("want one alert naming the item and %q: %v", want, al)
+			}
+		})
+	}
+}
+
+// A run that succeeded with its merge request pending is not a stall.
+func TestStallIgnoresAnItemWhoseLastRunSucceeded(t *testing.T) {
+	s, _, clk, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	it := approvedItem(t, s, "Waiting on CI")
+	if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &lane.ID}); err != nil {
+		t.Fatal(err)
+	}
+	end := clk.Now()
+	if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded, Started: end, Ended: &end}); err != nil {
+		t.Fatal(err)
+	}
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	s.KeepGoing().EvaluateAll(ctx)
+	clk.Add(stallGrace)
+	s.KeepGoing().EvaluateAll(ctx)
+	if al := stallAlerts(t, s); len(al) != 0 {
+		t.Fatalf("nothing is stuck: %v", al)
+	}
+}
+
+// Allow checks and counts a lane's starts as one step: with one start left, concurrent
+// calls let exactly one through.
+func TestAllowCountsALanesStartsAtomically(t *testing.T) {
+	s, _, _, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	keepOn(t, s, ws, api.KeepGoingSet{MaxRuns: 50})
+	max := s.LiveConfig().KeepGoing.StartsPerLane()
+	day := s.KeepGoing().day(s.KeepGoing().Now())
+	for i := 0; i < max-1; i++ {
+		if _, err := s.Store.CountLaneStart(ctx, lane.ID, day); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	ok := 0
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if d := s.KeepGoing().Allow(ctx, ws.ID, KeepContinue, lane.ID); d.OK {
+				mu.Lock()
+				ok++
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	if ok != 1 {
+		t.Fatalf("one start was left, %d were allowed", ok)
+	}
+	if n, _ := s.Store.LaneStarts(ctx, lane.ID, day); n != max {
+		t.Fatalf("starts today: %d, want %d", n, max)
+	}
+}
+
+// The gate's refusals other than full slots reach the feed, once per reason.
+func TestDriveGateRefusalReachesTheFeedOnce(t *testing.T) {
+	s, _, clk, ws, _ := keepSetup(t)
+	ctx := context.Background()
+	it := approvedItem(t, s, "Gated")
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	if _, err := s.KeepGoing().Disable(ctx, ws.ID, store.KeepByCLI); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	start := func(context.Context, DriveStart) (store.Run, error) { ran = true; return store.Run{}, nil }
+	c := driveItem{item: it, action: KeepStartItem}
+	for i := 0; i < 3; i++ {
+		if s.KeepGoing().driveOne(ctx, ws.ID, c, start, map[string]bool{}) {
+			t.Fatal("a refused new item stops the pass")
+		}
+	}
+	if ran {
+		t.Fatal("started past the gate")
+	}
+	n := 0
+	for _, l := range keepFeed(t, s) {
+		if strings.Contains(l, "could not start work") && strings.Contains(l, "keep-going is off") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("want the refusal in the feed once, got %d: %q", n, keepFeed(t, s))
+	}
+	_ = clk
+}
+
+// Full run slots are the normal state of a busy workspace: not announced.
+func TestDriveFullSlotsAreNotAnnounced(t *testing.T) {
+	s, _, clk, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	rec := &driveRecorder{}
+	rec.install(s, clk)
+	if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunRunning, Started: clk.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	approvedItem(t, s, "Next in line")
+	keepOn(t, s, ws, api.KeepGoingSet{MaxRuns: 1})
+	driveTick(s, clk)
+	driveTick(s, clk)
+	if len(rec.actions()) != 0 {
+		t.Fatal("started past the run cap")
+	}
+	for _, l := range keepFeed(t, s) {
+		if strings.Contains(l, "could not start work") {
+			t.Errorf("announced a routine refusal: %q", l)
+		}
+	}
+}
+
+// The readiness rule holds for an item that already has a lane, not only a new one.
+func TestDriveHoldsAVagueItemThatHasALane(t *testing.T) {
+	s, _, clk, ws, lane := keepSetup(t)
+	ctx := context.Background()
+	rec := &driveRecorder{}
+	rec.install(s, clk)
+	s.KeepGoing().Drive().Ready = driveReady
+	it := approvedItem(t, s, "Plan was removed")
+	if _, err := s.Store.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &lane.ID}); err != nil {
+		t.Fatal(err)
+	}
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	driveTick(s, clk)
+	if got := rec.actions(); len(got) != 0 {
+		t.Fatalf("a vague item with a lane was continued: %v", got)
+	}
+	if !feedHasT(t, s, fmt.Sprintf("could not start item %d", it.ID), "no plan doc") {
+		t.Errorf("the feed says why: %q", keepFeed(t, s))
+	}
+}
+
+func feedHasT(t *testing.T, s *Server, subs ...string) bool {
+	t.Helper()
+	for _, l := range keepFeed(t, s) {
+		ok := true
+		for _, sub := range subs {
+			ok = ok && strings.Contains(l, sub)
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }
