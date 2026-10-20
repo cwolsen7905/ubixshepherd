@@ -461,7 +461,13 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 			}
 		}
 	}
-	if v := crook.Check(ctx, crook.Request{Action: crook.ActionRunStart, Actor: actor, Facts: facts}); !v.OK() {
+	startReq := crook.Request{Action: crook.ActionRunStart, Actor: actor, Facts: facts}
+	v := crook.Decide(ctx, startReq)
+	// A held start the queue retries is logged when it is first held, not on every retry.
+	if !(fromQueue && v.Kind == crook.Hold) {
+		crook.Record(ctx, startReq, v)
+	}
+	if !v.OK() {
 		return store.Run{}, refusal{msg: v.Reason, held: true, rule: v.Rule}
 	}
 
@@ -635,7 +641,8 @@ func powers(prof config.Profile, remote string) Powers {
 	if f, err := forge.For(remote); err == nil {
 		gitlab = f.Name() == "gitlab"
 	}
-	merge := crook.Check(context.Background(), crook.Request{Action: crook.ActionMergeArm, Actor: crook.ActorWorker,
+	// A probe of what the repo lets agents do, run at every start: Decide, not Check.
+	merge := crook.Decide(context.Background(), crook.Request{Action: crook.ActionMergeArm, Actor: crook.ActorWorker,
 		Facts: crook.Facts{Merge: prof.Autonomy.Merge, GitLab: gitlab}})
 	return Powers{Push: prof.Autonomy.Push, Merge: merge.OK(), GitLab: gitlab, Forbid: prof.Forbid}
 }

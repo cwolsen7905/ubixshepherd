@@ -64,6 +64,14 @@ func SetRecorder(r Recorder, fail func(error)) {
 // a request answered, not an act, and the web polls constantly.
 func Check(ctx context.Context, req Request) Verdict {
 	v := Decide(ctx, req)
+	Record(ctx, req, v)
+	return v
+}
+
+// Record logs a verdict Decide gave. Use it with Decide when a caller acts on a verdict
+// only some of the time: a probe or a classification is not an act and is not logged, and
+// a hold that a queue retries is logged once.
+func Record(ctx context.Context, req Request, v Verdict) {
 	if p := recorder.Load(); p != nil && !(v.Kind == Proceed && strings.HasPrefix(string(req.Action), "route ")) {
 		if err := (*p).Record(context.WithoutCancel(ctx), entryFor(req, v)); err != nil {
 			if f := onError.Load(); f != nil {
@@ -71,7 +79,6 @@ func Check(ctx context.Context, req Request) Verdict {
 			}
 		}
 	}
-	return v
 }
 
 func entryFor(req Request, v Verdict) Entry {

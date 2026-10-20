@@ -81,3 +81,18 @@ func TestDecideNamesTheStageAndFactsAreRedacted(t *testing.T) {
 		t.Fatalf("facts keep a secret: %s", f)
 	}
 }
+
+func TestDecideAloneLogsNothingAndRecordLogsWhatItIsGiven(t *testing.T) {
+	rec := &memRecorder{}
+	SetRecorder(rec, nil)
+	defer SetRecorder(nil, nil)
+	req := Request{Action: ActionMergeArm, Actor: ActorWorker, Facts: Facts{Merge: AutonomyShepherd}}
+	v := Decide(context.Background(), req)
+	if len(rec.got) != 0 {
+		t.Fatalf("Decide logged: %+v", rec.got)
+	}
+	Record(context.Background(), req, v)
+	if len(rec.got) != 1 || rec.got[0].Kind != Refuse || rec.got[0].Rule != RuleMergeAutonomy {
+		t.Fatalf("Record: %+v", rec.got)
+	}
+}

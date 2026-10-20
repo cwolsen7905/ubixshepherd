@@ -21,7 +21,9 @@ One row per verdict:
 | repo, lane, run | What the request named, when it named them |
 | facts | The facts that mattered, as JSON with the empty ones left out, redacted |
 
-A route that proceeds is not logged: it is a request answered, not an act, and the web
+A check that only classifies the caller or probes what a repo allows is not logged, and a
+start held by a limit is logged once, not again each time the queue retries it. A route
+that proceeds is not logged: it is a request answered, not an act, and the web
 polls constantly. A route Crook refuses is logged.
 
 ## Reading it
