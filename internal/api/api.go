@@ -195,6 +195,13 @@ func PathDecisionAnswer(id int64) string { return fmt.Sprintf("%s/%d/answer", Pa
 func PathRunEvents(id int64) string      { return fmt.Sprintf("%s/%d/events", PathRuns, id) }
 func PathRunDecisions(id int64) string   { return fmt.Sprintf("%s/%d/decisions", PathRuns, id) }
 
+// StopRun is the optional body of POST /v1/runs/{id}/stop. ForRestart marks a stop the
+// front desk makes to hurry a restart's drain: the run is continued after the restart. It
+// is off by default, so a person's stop (no body) is never continued.
+type StopRun struct {
+	ForRestart bool `json:"for_restart,omitempty"`
+}
+
 // Answer is the body of POST /v1/decisions/{id}/answer.
 type Answer struct {
 	Answer string `json:"answer"`

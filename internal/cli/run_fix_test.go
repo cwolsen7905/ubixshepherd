@@ -150,3 +150,16 @@ func TestRunDismissAndTools(t *testing.T) {
 		t.Error("the tools left the run dismissed")
 	}
 }
+
+// The restart flag travels from the CLI to the daemon: both forms reach the runner's
+// refusal for a run that is not running, rather than a usage error.
+func TestRunStopForRestartFlag(t *testing.T) {
+	h := newHarness(t, "", false)
+	id := seedFailedRun(t, h)
+	for _, args := range [][]string{{"run", "stop", fmt.Sprint(id)}, {"run", "stop", fmt.Sprint(id), "--for-restart"}} {
+		h.err.Reset()
+		if code := h.run(args...); code == 0 || !strings.Contains(h.err.String(), "not running") {
+			t.Errorf("%v: %d %s", args, code, h.err)
+		}
+	}
+}

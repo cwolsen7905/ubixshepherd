@@ -488,6 +488,13 @@ func (c *Client) StopRun(ctx context.Context, id int64) error {
 	return c.do(ctx, http.MethodPost, api.PathRunStop(id), nil, &out)
 }
 
+// StopRunForRestart is the front desk's stop to hurry a drain: the run is continued after
+// the restart. Without a drain under way the daemon treats it as a person's stop.
+func (c *Client) StopRunForRestart(ctx context.Context, id int64) error {
+	var out struct{}
+	return c.do(ctx, http.MethodPost, api.PathRunStop(id), api.StopRun{ForRestart: true}, &out)
+}
+
 // DismissRun hides a failed or stopped run from the attention lists. The daemon refuses a
 // running or succeeded run.
 func (c *Client) DismissRun(ctx context.Context, id int64) (api.RunView, error) {
