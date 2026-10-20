@@ -30,7 +30,7 @@ const (
 // answer to a decision it is the person's: an agent's token never reaches these routes,
 // and the front desk does it only in a turn the person started.
 func personsNext(r *http.Request) bool {
-	return crook.Decide(r.Context(), crook.Request{Action: crook.ActionNextChoose, Actor: principalOf(r.Context()).actor()}).OK()
+	return crook.Check(r.Context(), crook.Request{Action: crook.ActionNextChoose, Actor: principalOf(r.Context()).actor()}).OK()
 }
 
 var errNotPersons = errors.New(crook.PersonOnlyReason(crook.ActionNextChoose))

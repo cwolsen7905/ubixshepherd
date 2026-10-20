@@ -174,6 +174,8 @@ type Verdict struct {
 	Rule string
 	// Reason is the text for a person.
 	Reason string
+	// Stage is the stage that decided: one of Stages.
+	Stage string
 }
 
 // OK reports whether the action may go ahead.
@@ -199,10 +201,20 @@ var stages = []stage{
 func Decide(ctx context.Context, req Request) Verdict {
 	for _, s := range stages {
 		if v, ok := s.run(ctx, req); ok {
+			v.Stage = s.name
 			return v
 		}
 	}
-	return Verdict{Kind: Proceed, Rule: RuleDefault}
+	return Verdict{Kind: Proceed, Rule: RuleDefault, Stage: "default"}
+}
+
+// Stages are the stage names in evaluation order.
+func Stages() []string {
+	out := make([]string, len(stages))
+	for i, s := range stages {
+		out[i] = s.name
+	}
+	return out
 }
 
 func refuse(rule, format string, a ...any) (Verdict, bool) {

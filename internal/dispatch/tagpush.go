@@ -20,7 +20,7 @@ import (
 // creates a tag. Each refusal and failure is told to the feed; the reservation stays
 // reserved so a later ship retries. It returns what it said, for Ship.
 func (r *Runner) pushTags(ctx context.Context, lane store.Lane, repo store.Repo, prof config.Profile) []string {
-	if !crook.Decide(ctx, crook.Request{Action: crook.ActionTagPush, Actor: crook.ActorDaemon, Facts: crook.Facts{
+	if !crook.Check(ctx, crook.Request{Action: crook.ActionTagPush, Actor: crook.ActorDaemon, Facts: crook.Facts{
 		Repo: repo.Name, Push: prof.Autonomy.Push, Tag: prof.Autonomy.Tag, TagsReserved: prof.Tags == config.TagsReserved,
 	}}).OK() {
 		return nil

@@ -67,9 +67,9 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 	if err := db.PutLaneForge(ctx, store.LaneForge{LaneID: lane, MR: 3, MRState: "opened"}); err != nil {
 		t.Fatal(err)
 	}
-	// Step the schema back over the forge-times migration, which is the fourteenth to last
-	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated, the approval columns, desk_questions, the chat relabel, threads_seen, the artifact tables, the next-up guard columns and the restart reason and held starts), as a daemon one release old left it.
-	last := len(migrations) - 14
+	// Step the schema back over the forge-times migration, which is the fifteenth to last
+	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated, the approval columns, desk_questions, the chat relabel, threads_seen, the artifact tables, the next-up guard columns and the restart reason and held starts and the crook verdict log), as a daemon one release old left it.
+	last := len(migrations) - 15
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_questions`); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,9 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 		if _, err := db.db.ExecContext(ctx, `ALTER TABLE lane_forge DROP COLUMN `+c); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err := db.db.ExecContext(ctx, `DROP TABLE crook_verdicts`); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE held_starts`); err != nil {
 		t.Fatal(err)

@@ -479,6 +479,26 @@ var migrations = []string{
 		auto    INTEGER NOT NULL DEFAULT 0,
 		created TEXT NOT NULL
 	);`,
+	// Crook's verdict log. at is fixed-width UTC text so it sorts and compares as text.
+	`CREATE TABLE crook_verdicts (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		at           TEXT NOT NULL,
+		action       TEXT NOT NULL,
+		actor        TEXT NOT NULL,
+		kind         TEXT NOT NULL,
+		rule         TEXT NOT NULL,
+		rule_version INTEGER NOT NULL DEFAULT 1,
+		stage        TEXT NOT NULL DEFAULT '',
+		reason       TEXT NOT NULL DEFAULT '',
+		repo         TEXT NOT NULL DEFAULT '',
+		lane         TEXT NOT NULL DEFAULT '',
+		run_id       INTEGER NOT NULL DEFAULT 0,
+		facts        TEXT NOT NULL DEFAULT '{}'
+	);
+	CREATE INDEX crook_verdicts_at ON crook_verdicts (at);
+	CREATE INDEX crook_verdicts_rule ON crook_verdicts (rule, at);
+	CREATE INDEX crook_verdicts_run ON crook_verdicts (run_id);
+	CREATE INDEX crook_verdicts_lane ON crook_verdicts (lane);`,
 }
 
 // DB is a SQLite-backed store.Store.

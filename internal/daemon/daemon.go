@@ -266,6 +266,10 @@ func (s *Server) Handler() http.Handler {
 	// Keep-going mode: the desk may read it and turn it off; turning it on is the
 	// person's, checked in the handler (keepGoing).
 	handle("GET "+api.PathKeepGoing, desk, s.keepGoing)
+	// Crook's verdict log, read only (docs/crook-why.md).
+	handle("GET "+api.PathCrookVerdicts, desk, s.crookVerdicts)
+	handle("GET "+api.PathCrookVerdicts+"/{id}", desk, s.crookWhy)
+	handle("GET "+api.PathCrookRules, desk, s.crookRules)
 	handle("POST "+api.PathKeepGoing, desk, s.keepGoing)
 	handle("GET "+api.PathNext, desk, s.listNext)
 	handle("GET "+api.PathWaiting, desk, s.waiting)
@@ -1935,6 +1939,8 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	defer os.Remove(runtimePath)
 
 	s.addr.Store(&rt.Addr)
+	// Log Crook's verdicts from here on; Runner.Recover below already asks it.
+	defer s.startCrookLog(ctx)()
 	if s.Runner != nil {
 		// Each run's agent gets its own worker token, never the operator's.
 		s.Runner.SetCredentials(s)

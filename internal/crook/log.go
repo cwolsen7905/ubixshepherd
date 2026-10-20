@@ -1,0 +1,125 @@
+package crook
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"sync/atomic"
+	"time"
+
+	"github.com/ubixsys/ubixshepherd/internal/redact"
+)
+
+// RuleVersion is the version every built-in rule carries. A later layer's rules bring
+// their own; a built-in's changes only with a release that changes its answer.
+const RuleVersion = 1
+
+// Entry is one logged verdict: what was asked, who asked, what Crook said and which rule
+// said it.
+type Entry struct {
+	At          time.Time
+	Action      Action
+	Actor       Actor
+	Kind        Kind
+	Rule        string
+	RuleVersion int
+	Stage       string
+	Reason      string
+	// Repo and Lane are names, Run an id; each is empty or 0 when the request did not
+	// name one.
+	Repo, Lane string
+	Run        int64
+	// Facts is a JSON object of the facts that mattered, redacted.
+	Facts string
+}
+
+// Recorder keeps entries. The daemon sets one at start; with none set, Check only
+// decides.
+type Recorder interface {
+	Record(ctx context.Context, e Entry) error
+}
+
+var (
+	recorder atomic.Pointer[Recorder]
+	onError  atomic.Pointer[func(error)]
+)
+
+// SetRecorder sets where Check logs (nil: nowhere). fail is called with a recording
+// error, which never changes a verdict; it may be nil.
+func SetRecorder(r Recorder, fail func(error)) {
+	if r == nil {
+		recorder.Store(nil)
+	} else {
+		recorder.Store(&r)
+	}
+	if fail == nil {
+		onError.Store(nil)
+	} else {
+		onError.Store(&fail)
+	}
+}
+
+// Check is Decide plus the log: it decides, records the verdict and returns it. Every
+// call site that acts on a verdict uses it. A route that proceeds is not recorded: it is
+// a request answered, not an act, and the web polls constantly.
+func Check(ctx context.Context, req Request) Verdict {
+	v := Decide(ctx, req)
+	if p := recorder.Load(); p != nil && !(v.Kind == Proceed && strings.HasPrefix(string(req.Action), "route ")) {
+		if err := (*p).Record(context.WithoutCancel(ctx), entryFor(req, v)); err != nil {
+			if f := onError.Load(); f != nil {
+				(*f)(err)
+			}
+		}
+	}
+	return v
+}
+
+func entryFor(req Request, v Verdict) Entry {
+	f := req.Facts
+	return Entry{
+		At: time.Now().UTC(), Action: req.Action, Actor: req.Actor,
+		Kind: v.Kind, Rule: v.Rule, RuleVersion: RuleVersion, Stage: v.Stage,
+		Reason: redact.String(v.Reason),
+		Repo:   f.Repo, Lane: f.Lane, Run: f.Run,
+		Facts: factsJSON(f),
+	}
+}
+
+// factsJSON is the facts a caller gave, as a JSON object with the empty ones left out.
+// Funcs are not facts; a keep-going check is recorded by its verdict's reason.
+func factsJSON(f Facts) string {
+	m := map[string]any{}
+	set := func(k string, v any) { m[k] = v }
+	if f.Budget != "" {
+		set("budget", f.Budget)
+		set("budget_daily", f.BudgetDaily)
+	}
+	if f.Runs != nil {
+		set("runs", f.Runs)
+	}
+	if f.Route != nil {
+		set("route_denied", string(f.Route.Denied))
+	}
+	if len(f.Problems) > 0 {
+		set("problems", f.Problems)
+	}
+	for k, v := range map[string]string{"push": f.Push, "tag": f.Tag, "merge": f.Merge, "agent": f.Agent, "remote": f.Remote} {
+		if v != "" {
+			set(k, v)
+		}
+	}
+	if f.TagsReserved {
+		set("tags_reserved", true)
+	}
+	if f.GitLab {
+		set("gitlab", true)
+	}
+	if f.ToOrigin {
+		set("to_origin", true)
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return redact.String(string(b))
+}

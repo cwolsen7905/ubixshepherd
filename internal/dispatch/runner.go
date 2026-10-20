@@ -461,7 +461,7 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 			}
 		}
 	}
-	if v := crook.Decide(ctx, crook.Request{Action: crook.ActionRunStart, Actor: actor, Facts: facts}); !v.OK() {
+	if v := crook.Check(ctx, crook.Request{Action: crook.ActionRunStart, Actor: actor, Facts: facts}); !v.OK() {
 		return store.Run{}, refusal{msg: v.Reason, held: true, rule: v.Rule}
 	}
 
@@ -635,7 +635,7 @@ func powers(prof config.Profile, remote string) Powers {
 	if f, err := forge.For(remote); err == nil {
 		gitlab = f.Name() == "gitlab"
 	}
-	merge := crook.Decide(context.Background(), crook.Request{Action: crook.ActionMergeArm, Actor: crook.ActorWorker,
+	merge := crook.Check(context.Background(), crook.Request{Action: crook.ActionMergeArm, Actor: crook.ActorWorker,
 		Facts: crook.Facts{Merge: prof.Autonomy.Merge, GitLab: gitlab}})
 	return Powers{Push: prof.Autonomy.Push, Merge: merge.OK(), GitLab: gitlab, Forbid: prof.Forbid}
 }

@@ -473,6 +473,6 @@ func Unpushed(ctx context.Context, lane store.Lane) int {
 // shipVerdict is Crook's answer to whether Shepherd may push the lane: only a repo that
 // has opted in with autonomy.push: shepherd.
 func shipVerdict(ctx context.Context, repo store.Repo, lane store.Lane, prof config.Profile) crook.Verdict {
-	return crook.Decide(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon,
+	return crook.Check(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon,
 		Facts: crook.Facts{Repo: repo.Name, Lane: lane.Name, Push: prof.Autonomy.Push}})
 }
