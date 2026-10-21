@@ -183,6 +183,12 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+pathLaneApproval, web, s.laneApproval)
 	handle("POST "+pathLaneApprove, web, s.acted(s.describeApproveLane, s.approveLane))
 	handle("POST "+api.PathLanes+"/{id}/widen", desk, s.widenLane)
+	// Approved check files: any client may read them (an agent should know what it may
+	// not touch); approving and releasing are the person's, and the desk's only in a
+	// turn they started, citing the decision in which they said so (checks.go).
+	handle("GET "+api.PathChecks, desk|worker|web, s.listChecks)
+	handle("POST "+api.PathChecksApprove, desk|web, s.approveChecks)
+	handle("POST "+api.PathChecksRelease, desk|web, s.releaseChecks)
 	handle("POST "+api.PathLanes+"/{id}/ship", desk, s.acted(s.describeShipLane, s.withRunner(s.shipLane)))
 	// A transcript holds full tool input and output: the person's alone, never the desk's
 	// or an agent's.
@@ -637,6 +643,11 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 		}
 		commits := s.commits.Times(ctx, rp.Path, lanes)
 		heads := fold.BranchHeads(ctx, rp.Path, lanes)
+		protected, err := s.Fold.Protected(ctx, rp.ID)
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
 		for _, l := range lanes {
 			v := api.LaneView{Lane: l, Repo: rp.Name}
 			// The store holds the last the forge said, so an unreachable forge keeps it.
@@ -654,6 +665,7 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 			if l.State == store.LaneOpen {
 				b := s.Fold.GateBadge(ctx, l.ID, heads[l.ID])
 				v.Gate = &b
+				v.Excluded = fold.ExcludedFrom(l.Scope, protected)
 			}
 			out = append(out, v)
 		}
@@ -765,14 +777,14 @@ func (s *Server) rescopeLane(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	lane, err := s.Fold.Rescope(r.Context(), id, req.Add, req.Remove)
+	lane, excluded, err := s.Fold.RescopeExcluding(r.Context(), id, req.Add, req.Remove)
 	if err != nil {
 		s.foldError(w, err)
 		return
 	}
 	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
-	writeJSON(w, http.StatusOK, lane)
+	writeJSON(w, http.StatusOK, api.Rescoped{Lane: lane, Excluded: excluded})
 }
 
 func (s *Server) shipLane(w http.ResponseWriter, r *http.Request) {

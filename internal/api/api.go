@@ -563,6 +563,9 @@ type LaneView struct {
 	// Gate is whether Shepherd's own gate run covers the lane's branch head: passed,
 	// failed, stale (the newest record is for an earlier commit) or not_run.
 	Gate *store.GateBadge `json:"gate,omitempty"`
+	// Excluded are the approved check files the lane's scope reaches but the lane may
+	// not change; absent when there are none. Set for open lanes in the lane list.
+	Excluded []string `json:"excluded,omitempty"`
 }
 
 // Where a lane's last activity came from (LaneView.LastActivityBy): the store's three
