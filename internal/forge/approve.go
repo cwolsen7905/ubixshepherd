@@ -12,9 +12,9 @@ import (
 // has signed off (bin/ci/require-approval.sh).
 const RequireApprovalJob = "require-approval"
 
-// AIReviewJob is the name of the pipeline's AI review job. It is advisory (never red); it
-// exits UnreviewedExit when it could not review.
-const AIReviewJob = "ai-review-mr"
+// AIReviewJob is the name of the pipeline's AI review job, as Kelpie's review template names
+// it. It is advisory (never red); it exits UnreviewedExit when it could not review.
+const AIReviewJob = "kelpie-review"
 
 // UnreviewedExit is the exit code of an AI review job that did not review.
 const UnreviewedExit = 75

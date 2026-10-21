@@ -61,3 +61,12 @@ func TestGitLabJobByNameAndRetry(t *testing.T) {
 		t.Errorf("found %+v", j)
 	}
 }
+
+// The watcher's tests use AIReviewJob itself, so they pass whatever it is set to. This literal
+// only guards the constant's value against an accidental edit; it cannot read Kelpie's
+// template. When the CI include ref is bumped, check the template's job name and update both.
+func TestAIReviewJobValue(t *testing.T) {
+	if AIReviewJob != "kelpie-review" {
+		t.Fatalf("AIReviewJob = %q, want kelpie-review", AIReviewJob)
+	}
+}
