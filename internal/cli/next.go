@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -33,7 +34,11 @@ func runNext(ctx context.Context, env Env, args []string) error {
 	lane := fs.String("lane", "", "the lane's name (a hint for add and update; the lane to link for link)")
 	note := fs.String("note", "", "a note")
 	title := fs.String("title", "", "update: a new title")
-	state := fs.String("state", "", "update: planned, approved, deferred, dropped or done")
+	state := fs.String("state", "", "update: planned, approved, deferred, dropped or done; list: states to show, comma separated (approved, started, planned, proposed, deferred, todo, blocked)")
+	topic := fs.String("topic", "", "list: only items in this conversation topic, by id (83 or #83) or a title substring that names one topic")
+	text := fs.String("text", "", "list: only items whose title, note or done-when contains this")
+	matrix := fs.String("matrix", "", "list: the read-only matrix rows to show: none, or a repo's name (default all)")
+	compact := fs.Bool("compact", false, "list: one line per item")
 	move := fs.String("move", "", "update: top, up or down")
 	doneWhen := fs.String("done-when", "", "add, update: one line, how to tell the item is done")
 	depends := fs.String("depends", "", "add, update: ids of the items this one needs done first, comma separated (empty clears)")
@@ -54,14 +59,26 @@ func runNext(ctx context.Context, env Env, args []string) error {
 		if len(pos) > 0 {
 			return errUsage
 		}
-		l, err := c.NextItems(ctx, *all)
+		f := nextFilter{Repo: *repo, Text: *text, Matrix: *matrix}
+		if f.States, err = parseNextStates(*state); err != nil {
+			return err
+		}
+		// Asking for dropped or done items fetches them: the server leaves them out otherwise.
+		fetchAll := *all || slices.Contains(f.States, store.NextDropped) || slices.Contains(f.States, store.NextDone)
+		l, err := c.NextItems(ctx, fetchAll)
 		if err != nil {
 			return err
 		}
+		if *topic != "" {
+			if f.Topic, err = topicItems(ctx, c, *topic); err != nil {
+				return err
+			}
+		}
+		l = f.apply(l)
 		if *asJSON {
 			return printJSON(env, l)
 		}
-		writeNextList(env.Stdout, l)
+		writeNextList(env.Stdout, l, *compact)
 		return nil
 	case "show":
 		id, err := nextID(pos, 1)
@@ -247,7 +264,128 @@ func nextMark(v api.NextItemView) string {
 	return v.State
 }
 
-func writeNextList(w io.Writer, l api.NextList) {
+// nextFilter narrows a next-up list: every field set must match. Matching is case
+// insensitive and by substring, except States and the repo names, which are exact.
+type nextFilter struct {
+	Repo, Text string
+	// Topic, when non-nil, is the ids of the items in the chosen conversation topic;
+	// matrix rows have no topic, so they drop out.
+	Topic map[int64]bool
+	// Matrix is "" (all rows), "none", or the one repo whose matrix rows show.
+	Matrix string
+	States []string
+}
+
+var nextListStates = []string{"approved", "started", "planned", "proposed", "deferred", "dropped", "done", "todo", "blocked"}
+
+func parseNextStates(s string) ([]string, error) {
+	var out []string
+	for _, st := range strings.Split(s, ",") {
+		if st = strings.ToLower(strings.TrimSpace(st)); st == "" {
+			continue
+		}
+		if !slices.Contains(nextListStates, st) {
+			return nil, fmt.Errorf("unknown state %q: use %s", st, strings.Join(nextListStates, ", "))
+		}
+		out = append(out, st)
+	}
+	return out, nil
+}
+
+// topicItems resolves a topic given by id (83 or #83; a merged topic's id keeps
+// resolving) or by title substring, and returns the ids of the next-up items it holds.
+func topicItems(ctx context.Context, c *client.Client, spec string) (map[int64]bool, error) {
+	var topics []api.TopicView
+	if id, err := strconv.ParseInt(strings.TrimPrefix(strings.TrimSpace(spec), "#"), 10, 64); err == nil {
+		t, err := c.Topic(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		topics = append(topics, t)
+	} else {
+		l, err := c.Topics(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		var titles []string
+		for _, t := range l.Topics {
+			low := strings.ToLower(t.Title)
+			if low == strings.ToLower(spec) {
+				topics, titles = []api.TopicView{t}, nil
+				break
+			}
+			if strings.Contains(low, strings.ToLower(spec)) {
+				topics = append(topics, t)
+				titles = append(titles, fmt.Sprintf("#%d %s", t.ID, t.Title))
+			}
+		}
+		if len(topics) == 0 {
+			return nil, fmt.Errorf("no topic title contains %q", spec)
+		}
+		if len(topics) > 1 {
+			return nil, fmt.Errorf("%q matches %d topics (%s): use an id or the full title", spec, len(topics), strings.Join(titles, "; "))
+		}
+	}
+	ids := map[int64]bool{}
+	for _, t := range topics {
+		for _, l := range t.Links {
+			if n, err := strconv.ParseInt(l.Ref, 10, 64); err == nil && l.Kind == store.TopicNextItem {
+				ids[n] = true
+			}
+		}
+	}
+	return ids, nil
+}
+
+func (f nextFilter) match(v api.NextItemView) bool {
+	if f.Repo != "" && !strings.EqualFold(v.Repo, f.Repo) {
+		return false
+	}
+	if len(f.States) > 0 && !slices.Contains(f.States, nextMark(v)) {
+		return false
+	}
+	has := func(q string, fields ...string) bool {
+		for _, x := range fields {
+			if strings.Contains(strings.ToLower(x), strings.ToLower(q)) {
+				return true
+			}
+		}
+		return false
+	}
+	if f.Topic != nil && !f.Topic[v.ID] {
+		return false
+	}
+	return f.Text == "" || has(f.Text, v.Title, v.Note, v.DoneWhen)
+}
+
+// apply returns the list with only the items and matrix rows the filter keeps. NextUp
+// stays only if its item does.
+func (f nextFilter) apply(l api.NextList) api.NextList {
+	var out api.NextList
+	for _, v := range l.Items {
+		if f.match(v) {
+			out.Items = append(out.Items, v)
+			if v.ID == l.NextUp {
+				out.NextUp = l.NextUp
+			}
+		}
+	}
+	if f.Matrix == "none" {
+		return out
+	}
+	m := f
+	if f.Matrix != "" {
+		m.Repo = f.Matrix
+	}
+	for _, v := range l.Matrix {
+		if m.match(v) {
+			out.Matrix = append(out.Matrix, v)
+		}
+	}
+	return out
+}
+
+func writeNextList(w io.Writer, l api.NextList, compact bool) {
 	if len(l.Items) == 0 && len(l.Matrix) == 0 {
 		fmt.Fprintln(w, "Nothing on the next-up list. Add one with: shepherd next add \"title\"")
 		return
@@ -265,6 +403,9 @@ func writeNextList(w io.Writer, l api.NextList) {
 			fmt.Fprintf(w, "  (%s)", v.Repo)
 		}
 		fmt.Fprintln(w)
+		if compact {
+			continue
+		}
 		if v.LaneName != "" {
 			line := "lane " + v.LaneName + " " + v.LaneState
 			if v.Running {

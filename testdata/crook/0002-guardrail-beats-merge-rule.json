@@ -1,0 +1,35 @@
+{
+ "name": "0002-guardrail-beats-merge-rule",
+ "spec": "crook/1",
+ "description": "A guardrail match ends evaluation before any merge rule.",
+ "rules": {
+  "repo/rules/migrations-ask-me.md": "---\nkind: guardrail\nactions: [push, merge]\nwhen:\n  paths: [\"db/migrations/**\"]\nthen: ask\n---\nChanges to migrations wait for the person.\n",
+  "repo/rules/spec-verified.md": "---\nkind: merge\nmode: live\nrequire: [linked_requirement, approved_checks_pass, no_test_edits, gate_green, pipeline_green, ai_review_not_blocking, up_to_date]\nmax_changed_lines: 600\npaths_not: [\".gitlab-ci.yml\"]\nthen: proceed\n---\nSpec work merges on its own when the approved checks prove it.\n"
+ },
+ "limits": {},
+ "request": {
+  "action": "merge",
+  "actor": "daemon",
+  "facts": {
+   "item_linked": true,
+   "requirement": [
+    "SHP-FR-WEB-002"
+   ],
+   "approved_checks": "pass",
+   "tests_edited": false,
+   "check_files_edited": false,
+   "gate": "green",
+   "pipeline": "green",
+   "ai_review": "ok",
+   "up_to_date": true,
+   "changed_lines": 220,
+   "paths": [
+    "db/migrations/0042_add.sql"
+   ]
+  }
+ },
+ "expect": {
+  "verdict": "ask",
+  "rule": "migrations-ask-me"
+ }
+}

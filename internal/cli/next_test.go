@@ -36,6 +36,45 @@ func TestNextCLIAndMCP(t *testing.T) {
 	if err := json.Unmarshal(h.out.Bytes(), &l); err != nil || len(l.Items) != 2 || l.Items[0].Title != "Step two" || l.Items[1].State != store.NextPlanned || l.NextUp != 1 {
 		t.Fatalf("list: %v %+v", err, l)
 	}
+	if code := h.run("next", "list", "--state", "approved,proposed", "--compact"); code != 0 || !strings.Contains(h.out.String(), "Step two") || strings.Contains(h.out.String(), "Step three") {
+		t.Errorf("list --state: %s%s", h.out, h.err)
+	}
+	if code := h.run("next", "list", "--text", "THREE", "--repo", "app", "--matrix", "none"); code != 0 || strings.Contains(h.out.String(), "Step two") || !strings.Contains(h.out.String(), "Step three") {
+		t.Errorf("list --text: %s%s", h.out, h.err)
+	}
+	if code := h.run("topic", "new", "release work"); code != 0 {
+		t.Fatalf("topic new: %s", h.err)
+	}
+	if code := h.run("topic", "set", "release work", "--item", "2"); code != 0 {
+		t.Fatalf("topic set: %s", h.err)
+	}
+	for _, spec := range []string{"1", "#1", "RELEASE WORK", "work"} {
+		if code := h.run("next", "list", "--topic", spec, "--matrix", "none"); code != 0 || strings.Contains(h.out.String(), "Step two") || !strings.Contains(h.out.String(), "Step three") {
+			t.Errorf("list --topic %s: %s%s", spec, h.out, h.err)
+		}
+	}
+	if code := h.run("topic", "new", "release notes"); code != 0 {
+		t.Fatalf("topic new: %s", h.err)
+	}
+	if code := h.run("next", "list", "--topic", "release"); code == 0 || !strings.Contains(h.err.String(), "matches 2 topics") {
+		t.Errorf("an ambiguous topic title was accepted: %d %s", code, h.err)
+	}
+	if code := h.run("next", "list", "--topic", "release work", "--matrix", "none"); code != 0 || !strings.Contains(h.out.String(), "Step three") {
+		t.Errorf("list --topic by full title: %s%s", h.out, h.err)
+	}
+	if code := h.run("next", "list", "--topic", "nonesuch"); code == 0 {
+		t.Error("an unknown topic was accepted")
+	}
+	if code := h.run("next", "drop", "2"); code != 0 {
+		t.Fatalf("drop: %s", h.err)
+	}
+	if code := h.run("next", "list", "--state", "dropped", "--compact"); code != 0 || !strings.Contains(h.out.String(), "Step three") {
+		t.Errorf("list --state dropped without --all: %s%s", h.out, h.err)
+	}
+	h.run("next", "update", "2", "--state", "planned")
+	if code := h.run("next", "list", "--state", "bogus"); code == 0 {
+		t.Error("an unknown state was accepted")
+	}
 	if code := h.run("next", "add", "x", "--plan", "/abs"); code == 0 {
 		t.Error("an absolute plan path was accepted")
 	}
@@ -99,6 +138,11 @@ func TestNextCLIAndMCP(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"next_list","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3,"state":"deferred","move":"top"}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3}}}`,
+		// Item 2 (Step three) is started here: it was set back to planned before its lane
+		// opened with --item 2. The state array, repo, topic, text and matrix arguments
+		// must all reach the CLI, and compact must drop the detail lines.
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["started","approved"],"compact":true,"topic":"release work","repo":"app","text":"three","matrix":"none"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["deferred"],"text":"desk"}}}`,
 	)
 	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "added") {
 		t.Errorf("next_add: %v %s", isErr, text)
@@ -111,6 +155,13 @@ func TestNextCLIAndMCP(t *testing.T) {
 	}
 	if _, isErr := toolText(t, resps[3]); !isErr {
 		t.Error("next_update with nothing to change accepted")
+	}
+
+	if text, isErr := toolText(t, resps[4]); isErr || !strings.Contains(text, "Step three") || strings.Contains(text, "From the desk") || strings.Contains(text, "\n        ") {
+		t.Errorf("next_list with state [started approved] and every filter argument should list only the started Step three, compact: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[5]); isErr || !strings.Contains(text, "From the desk") || strings.Contains(text, "Step three") {
+		t.Errorf("next_list by state: %v %s", isErr, text)
 	}
 
 	// Seeding adds the plan's items once.
@@ -215,5 +266,50 @@ func TestNextGuardFieldsCLIAndMCP(t *testing.T) {
 	}
 	if v := item("2"); v.Suggestion != "" {
 		t.Errorf("suggestion survived --dismiss: %+v", v)
+	}
+}
+
+func TestNextFilter(t *testing.T) {
+	l := api.NextList{
+		NextUp: 1,
+		Items: []api.NextItemView{
+			{ID: 1, Title: "Alpha", Repo: "app", State: store.NextApproved, Plan: "docs/ui.md"},
+			{ID: 2, Title: "Beta", Repo: "lib", State: store.NextPlanned, Proposed: true, Note: "Mentions Alpha"},
+			{ID: 3, Title: "Gamma", Repo: "lib", State: store.NextPlanned, LaneName: "feat/ui-g"},
+		},
+		Matrix: []api.NextItemView{
+			{Title: "Row", Repo: "app", State: "todo", Area: "web"},
+			{Title: "Row two", Repo: "lib", State: "blocked"},
+		},
+	}
+	count := func(f nextFilter) (int, int, int64) {
+		o := f.apply(l)
+		return len(o.Items), len(o.Matrix), o.NextUp
+	}
+	if i, m, n := count(nextFilter{}); i != 3 || m != 2 || n != 1 {
+		t.Errorf("no filter: %d %d %d", i, m, n)
+	}
+	if i, m, n := count(nextFilter{Repo: "LIB"}); i != 2 || m != 1 || n != 0 {
+		t.Errorf("repo: %d %d %d", i, m, n)
+	}
+	if i, m, _ := count(nextFilter{States: []string{"proposed", "approved"}, Matrix: "none"}); i != 2 || m != 0 {
+		t.Errorf("states: %d %d", i, m)
+	}
+	if i, _, _ := count(nextFilter{States: []string{"planned"}}); i != 1 {
+		t.Errorf("a proposed item matched planned: %d", i)
+	}
+	if i, m, _ := count(nextFilter{Topic: map[int64]bool{1: true, 3: true}}); i != 2 || m != 0 {
+		t.Errorf("topic: %d %d", i, m)
+	}
+	if i, _, _ := count(nextFilter{Text: "alpha"}); i != 2 {
+		t.Errorf("text: %d", i)
+	}
+	if i, m, _ := count(nextFilter{Matrix: "lib"}); i != 3 || m != 1 {
+		t.Errorf("matrix repo: %d %d", i, m)
+	}
+	var b strings.Builder
+	writeNextList(&b, nextFilter{Repo: "lib"}.apply(l), true)
+	if strings.Count(b.String(), "\n") < 3 || strings.Contains(b.String(), "lane feat/ui-g") {
+		t.Errorf("compact:\n%s", b.String())
 	}
 }
