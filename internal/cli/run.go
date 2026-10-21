@@ -255,7 +255,7 @@ func runRun(ctx context.Context, env Env, args []string) error {
 	effort := fs.String("effort", "", "continue: effort, in the agent's own words (default: the repo's)")
 	fixAgent := fs.String("agent", "", "fix retry_other: the agent to retry with")
 	fixPrompt := fs.String("prompt", "", "fix continue: the follow-up to send instead of the suggested one")
-	forRestart := fs.Bool("for-restart", false, "stop: the front desk hurrying a restart's drain; the run is continued after the restart")
+	forRestart := fs.Bool("for-restart", false, "stop: for the front desk hurrying a restart's drain (a person's stop is plain): the run is continued after the restart")
 	detach := fs.Bool("detach", false, "continue: start it and return")
 	pos, err := parse(fs, args[1:])
 	if err != nil {
@@ -361,6 +361,10 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		stop, said := c.StopRun, "asked run %d to stop\n"
 		if *forRestart {
 			stop, said = c.StopRunForRestart, "asked run %d to stop for the restart; it is continued after it\n"
+			if st, err := c.Status(ctx); err == nil && st.Draining == nil {
+				fmt.Fprintln(env.Stderr, "no restart is draining: this is a plain stop, and the run is not continued")
+				stop, said = c.StopRun, "asked run %d to stop\n"
+			}
 		}
 		if err := stop(ctx, id); err != nil {
 			return err

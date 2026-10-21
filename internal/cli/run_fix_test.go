@@ -162,4 +162,8 @@ func TestRunStopForRestartFlag(t *testing.T) {
 			t.Errorf("%v: %d %s", args, code, h.err)
 		}
 	}
+	// With no drain under way the flag is said to do nothing.
+	if !strings.Contains(h.err.String(), "no restart is draining") {
+		t.Errorf("--for-restart outside a drain said nothing: %s", h.err)
+	}
 }
