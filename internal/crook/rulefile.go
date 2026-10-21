@@ -267,6 +267,9 @@ func (r *FileRule) fill(f ruleFront) error {
 		}
 		r.AppliesTo, r.Class = f.AppliesTo, f.Class
 	case KindGuardrail:
+		if len(r.When.Class) > 0 {
+			return fmt.Errorf("a guardrail cannot match on class: classes are not known until after the guardrail stage")
+		}
 		set("applies_to", f.AppliesTo != "")
 		set("class", f.Class != "")
 		set("answer", f.Answer != nil)
@@ -296,6 +299,7 @@ func (r *FileRule) fill(f ruleFront) error {
 			return fmt.Errorf("answer is only for the answer_decision action")
 		}
 	case KindStandingAnswer:
+		set("class", f.Class != "")
 		set("applies_to", f.AppliesTo != "")
 		set("then", f.Then != "")
 		set("require", f.Require != nil)

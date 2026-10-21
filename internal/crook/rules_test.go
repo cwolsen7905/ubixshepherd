@@ -32,6 +32,8 @@ func TestParseRuleRejectsUnknowns(t *testing.T) {
 		"bad time":         "---\nkind: guardrail\nactions: [push]\nwhen:\n  time: noon\nthen: ask\n---\nx\n",
 		"classifier then":  "---\nkind: classifier\napplies_to: action\nclass: big\nthen: ask\n---\nx\n",
 		"classifier class": "---\nkind: classifier\napplies_to: action\nclass: big\nwhen:\n  class: other\n---\nx\n",
+		"guardrail class":  "---\nkind: guardrail\nactions: [push]\nwhen:\n  class: big\nthen: ask\n---\nx\n",
+		"standing class":   "---\nkind: standing-answer\nactions: [answer_decision]\nclass: big\nwhen:\n  decision_about: scope\nanswer: 1\n---\nx\n",
 		"bad class":        "---\nkind: classifier\napplies_to: action\nclass: Big\n---\nx\n",
 		"answer elsewhere": "---\nkind: policy\nactions: [push]\nthen: ask\nanswer: recommendation\n---\nx\n",
 		"answer no about":  "---\nkind: standing-answer\nactions: [answer_decision]\nanswer: 1\n---\nx\n",
@@ -242,6 +244,26 @@ func TestReadLayerDirSkipsSymlinks(t *testing.T) {
 	}
 	l, err := ReadLayerDir(LayerWorkspace, dir)
 	if err != nil || len(l.Files) != 1 || l.Files["real.md"] == nil {
+		t.Errorf("files = %v, err %v", l.Files, err)
+	}
+}
+
+func TestRulesFolderFloorNormalisesPaths(t *testing.T) {
+	for _, p := range []string{".SHEPHERD/rules/x.md", "./.shepherd/rules/x.md", ".shepherd\\rules\\x.md", "a/../.shepherd/x"} {
+		got := evalOne(t, nil, Query{Action: "merge", Actor: ActorDaemon, Facts: map[string]any{"paths": []string{p}}})
+		if got.Rule != FloorRulesFolder {
+			t.Errorf("%q: %+v", p, got)
+		}
+	}
+}
+
+func TestReadLayerDirRefusesSymlinkedRulesFolder(t *testing.T) {
+	dir, other := t.TempDir(), t.TempDir()
+	os.WriteFile(filepath.Join(other, "evil.md"), []byte("x"), 0o644)
+	if err := os.Symlink(other, filepath.Join(dir, "rules")); err != nil {
+		t.Skip("no symlinks here")
+	}
+	if l, err := ReadLayerDir(LayerProject, dir); err == nil || len(l.Files) != 0 {
 		t.Errorf("files = %v, err %v", l.Files, err)
 	}
 }

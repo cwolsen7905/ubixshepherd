@@ -2,6 +2,7 @@ package crook
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -104,8 +105,14 @@ func Evaluate(set RuleSet, q Query) Outcome {
 		q.Now = time.Now()
 	}
 	paths, _ := factStrings(q.Facts, "paths")
+	// Paths are cleaned and folded to lower case: on a case-insensitive disk
+	// .SHEPHERD/ is the same folder.
+	globs := []string{".shepherd/**"}
+	for _, g := range q.RulesGlobs {
+		globs = append(globs, strings.ToLower(g))
+	}
 	rulesFolder := slices.ContainsFunc(paths, func(p string) bool {
-		return globMatch([]string{".shepherd/**"}, p) || globMatch(q.RulesGlobs, p)
+		return globMatch(globs, strings.ToLower(path.Clean(strings.ReplaceAll(p, "\\", "/"))))
 	})
 
 	out := evaluate(set, q, rulesFolder)

@@ -38,7 +38,15 @@ func ReadLayerDir(layer, dir string) (LayerFiles, error) {
 // source: a directory, or a repo's base branch rather than a working tree.
 func ReadLayerFS(layer string, fsys fs.FS) (LayerFiles, error) {
 	out := LayerFiles{Layer: layer, Files: map[string][]byte{}}
-	entries, err := fs.ReadDir(fsys, "rules")
+	// Lstat, so a rules folder that is a symlink out of the layer is refused, not followed.
+	info, err := fs.Lstat(fsys, "rules")
+	if err == nil && !info.IsDir() {
+		return out, fmt.Errorf("%s layer: rules is not a plain folder (a symlink or a file)", layer)
+	}
+	var entries []fs.DirEntry
+	if err == nil {
+		entries, err = fs.ReadDir(fsys, "rules")
+	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return out, nil
