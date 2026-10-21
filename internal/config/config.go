@@ -1222,6 +1222,9 @@ func merge(base, over Profile) Profile {
 	if ft := over.Watch.FollowThrough; ft.Owner != "" || ft.Name != "" || ft.Patience != "" || ft.Author != nil {
 		if ft.Owner != "" {
 			out.Watch.FollowThrough.Owner = ft.Owner
+			if ft.Owner != OwnerExternal && ft.Author == nil {
+				out.Watch.FollowThrough.Author = nil // authors are the external owner's only
+			}
 		}
 		if ft.Name != "" {
 			out.Watch.FollowThrough.Name = ft.Name

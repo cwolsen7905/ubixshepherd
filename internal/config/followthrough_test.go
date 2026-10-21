@@ -31,7 +31,6 @@ repos:
     watch:
       follow_through:
         owner: shepherd
-        author: []
 `))
 	if err != nil {
 		t.Fatal(err)

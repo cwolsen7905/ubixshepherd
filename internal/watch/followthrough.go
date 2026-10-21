@@ -121,7 +121,12 @@ func (w *Watcher) ownerThreads(ctx context.Context, lane store.Lane, mr *forge.M
 		switch {
 		case !ok:
 			it = ownerItem{id: t.ID, notes: t.Notes, since: now}
-			waiting = append(waiting, t)
+			if ownerUnfixed(t, ft) {
+				it.taken = true
+				w.feed(ctx, store.FeedPipeline, lane.ID, "%s could not address a review thread on !%d (%s); Shepherd takes it over", ft.Label(), mr.IID, t.Link())
+			} else {
+				waiting = append(waiting, t)
+			}
 		case it.taken:
 		case ownerUnfixed(t, ft):
 			it.taken = true

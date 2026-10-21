@@ -171,3 +171,15 @@ func TestExternalOwnerStateSurvivesARestart(t *testing.T) {
 		t.Fatalf("runs = %d, want 2", n)
 	}
 }
+
+func TestExternalOwnerUnfixedOnFirstSightIsTakenAtOnce(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.f.threads = []forge.Thread{{ID: "d1", Author: "review-bot", Notes: 1, Body: "review-bot: Unfixed: needs a design call"}}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d, want 2", n)
+	}
+}
