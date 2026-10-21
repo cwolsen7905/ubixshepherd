@@ -10,6 +10,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -135,7 +136,7 @@ func (s *Server) approveChecks(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Info("check files approved", "repo_id", req.RepoID, "paths", paths, "by", by, "client", clientName(r))
 	s.postFeed(r.Context(), store.FeedChecksApproved, req.ItemID,
-		fmt.Sprintf("%d check files approved by %s: %s%s", len(files), by, pathList(files), itemWords(req.ItemID)+cited))
+		redact.String(fmt.Sprintf("%d check files approved by %s: %s%s", len(files), by, pathList(files), itemWords(req.ItemID)+cited)))
 	s.refreshView(req.RepoID)
 	writeJSON(w, http.StatusOK, api.CheckChange{Files: files})
 }
@@ -170,7 +171,7 @@ func (s *Server) releaseChecks(w http.ResponseWriter, r *http.Request) {
 		item = files[0].ItemID
 	}
 	s.postFeed(r.Context(), store.FeedChecksReleased, item,
-		fmt.Sprintf("%d check files released by %s%s: %s. Why: %s", len(files), by, forced, pathList(files), strings.TrimSpace(req.Why))+cited)
+		redact.String(fmt.Sprintf("%d check files released by %s%s: %s. Why: %s", len(files), by, forced, pathList(files), strings.TrimSpace(req.Why))+cited))
 	s.refreshView(req.RepoID)
 	writeJSON(w, http.StatusOK, api.CheckChange{Files: files})
 }

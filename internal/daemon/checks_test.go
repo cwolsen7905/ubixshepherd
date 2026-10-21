@@ -169,7 +169,7 @@ func TestChecksEndpoints(t *testing.T) {
 	// Release needs a reason, and the lane for the item being open is not in the way
 	// here (no item). The feed records both acts.
 	var rel api.CheckChange
-	if code := call(t, ts, s.Token, "POST", api.PathChecksRelease, api.ReleaseChecks{RepoID: repo.ID, Paths: body.Paths, Why: "the check was wrong"}, &rel); code != http.StatusOK ||
+	if code := call(t, ts, s.Token, "POST", api.PathChecksRelease, api.ReleaseChecks{RepoID: repo.ID, Paths: body.Paths, Why: "the check was wrong, token ghp_abcdefghijklmnopqrstuvwxyz0123456789"}, &rel); code != http.StatusOK ||
 		len(rel.Files) != 1 || rel.Files[0].Live() {
 		t.Fatalf("release: %d %+v", code, rel)
 	}
@@ -178,14 +178,14 @@ func TestChecksEndpoints(t *testing.T) {
 	}
 	var all api.Checks
 	call(t, ts, s.Token, "GET", api.PathChecks+"?all=1&repo_id="+strconv.FormatInt(repo.ID, 10), nil, &all)
-	if len(all.Files) != 1 || all.Files[0].ReleaseWhy != "the check was wrong" {
+	if len(all.Files) != 1 || !strings.HasPrefix(all.Files[0].ReleaseWhy, "the check was wrong") {
 		t.Errorf("history: %+v", all)
 	}
 	items, _ := s.Store.Feed(ctx, 0, 100)
 	var approved, released bool
 	for _, it := range items {
 		approved = approved || (it.Kind == store.FeedChecksApproved && strings.Contains(it.Text, "src/a_test.go") && strings.Contains(it.Text, "person (desk"))
-		released = released || (it.Kind == store.FeedChecksReleased && strings.Contains(it.Text, "the check was wrong"))
+		released = released || (it.Kind == store.FeedChecksReleased && strings.Contains(it.Text, "the check was wrong") && !strings.Contains(it.Text, "ghp_abcdefghijklmnopqrstuvwxyz0123456789"))
 	}
 	if !approved || !released {
 		t.Errorf("feed: approved=%v released=%v in %+v", approved, released, items)
