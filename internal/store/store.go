@@ -430,6 +430,9 @@ type Event struct {
 const (
 	DecisionOpen     = "open"
 	DecisionAnswered = "answered"
+	// DecisionOutdated: the upkeep pass closed it because its lane is closed. It can be
+	// reopened.
+	DecisionOutdated = "outdated"
 )
 
 // Decision is a question an agent holds for a person.
@@ -543,6 +546,7 @@ const (
 	FeedMRApprove      = "mr_approve" // the person approved a merge request from the web
 	FeedPlan           = "plan"       // a next-up item added, approved, deferred, dropped or done
 	FeedArtifact       = "artifact"   // a run produced a file to read, or a new version of one
+	FeedMuster         = "muster"     // the upkeep pass tidied something, or raised it to tidy
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's
@@ -1114,6 +1118,20 @@ type Store interface {
 	// are not here: they are not the store's.
 	LaneActivity(ctx context.Context, repoID int64) (map[int64]Activity, error)
 	// Driver names the backing database, for status.
+	// AddMuster records a finding. When the key is already there it returns that item
+	// unchanged and created false.
+	AddMuster(ctx context.Context, it MusterItem) (item MusterItem, created bool, err error)
+	// MusterItem returns one item; ErrNotFound if none.
+	MusterItem(ctx context.Context, id int64) (MusterItem, error)
+	// MusterItems lists items, newest first.
+	MusterItems(ctx context.Context, f MusterFilter) ([]MusterItem, error)
+	// UpdateMuster changes an item and returns it; ErrNotFound if none.
+	UpdateMuster(ctx context.Context, id int64, p MusterPatch) (MusterItem, error)
+	// SetQuestionState puts a question in any state, open included, which clears its
+	// closed time. Muster uses it to close a question as out of date and to reopen it.
+	SetQuestionState(ctx context.Context, id int64, state string) (Question, error)
+	// SetDecisionState does the same for a decision.
+	SetDecisionState(ctx context.Context, id int64, state string) (Decision, error)
 	Driver() string
 	Close() error
 }

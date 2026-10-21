@@ -499,6 +499,30 @@ var migrations = []string{
 	CREATE INDEX crook_verdicts_rule ON crook_verdicts (rule, at);
 	CREATE INDEX crook_verdicts_run ON crook_verdicts (run_id);
 	CREATE INDEX crook_verdicts_lane ON crook_verdicts (lane);`,
+	// Muster: the upkeep pass's findings and applied fixes, which are also its log; and
+	// the links a desk question carries to what it is about.
+	`CREATE TABLE muster_items (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		key          TEXT NOT NULL UNIQUE,
+		kind         TEXT NOT NULL,
+		subject_kind TEXT NOT NULL,
+		subject_id   INTEGER NOT NULL DEFAULT 0,
+		repo         TEXT NOT NULL DEFAULT '',
+		reason       TEXT NOT NULL DEFAULT '',
+		fix          TEXT NOT NULL DEFAULT '',
+		fix_arg      TEXT NOT NULL DEFAULT '',
+		before       TEXT NOT NULL DEFAULT '',
+		state        TEXT NOT NULL DEFAULT 'open',
+		auto         INTEGER NOT NULL DEFAULT 0,
+		created      TEXT NOT NULL,
+		updated      TEXT NOT NULL,
+		applied      TEXT NOT NULL DEFAULT '',
+		undo_until   TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX muster_items_state ON muster_items (state, id);
+	ALTER TABLE desk_questions ADD COLUMN repo    TEXT NOT NULL DEFAULT '';
+	ALTER TABLE desk_questions ADD COLUMN lane_id INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE desk_questions ADD COLUMN next_id INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -996,6 +1020,17 @@ func (s *DB) Decisions(ctx context.Context, state string) ([]store.Decision, err
 		out = append(out, d)
 	}
 	return out, rows.Err()
+}
+
+func (s *DB) SetDecisionState(ctx context.Context, id int64, state string) (store.Decision, error) {
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET state = ? WHERE id = ?`, state, id)
+	if err != nil {
+		return store.Decision{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.Decision{}, store.ErrNotFound
+	}
+	return s.Decision(ctx, id)
 }
 
 // AnswerDecision records an answer to an open decision; ErrConflict if it is not open.

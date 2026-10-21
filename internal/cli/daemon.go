@@ -23,6 +23,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/git"
+	"github.com/ubixsys/ubixshepherd/internal/muster"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/service"
 	"github.com/ubixsys/ubixshepherd/internal/standards"
@@ -225,6 +226,7 @@ func daemonServe(ctx context.Context, env Env, restart *bool) error {
 	if cfg.Daemon.Poll != "off" {
 		every, _ := time.ParseDuration(cfg.Daemon.Poll)
 		w := &watch.Watcher{Store: st, Fold: srv.Fold, Runner: srv.Runner, Log: srv.Log, Interval: every}
+		w.Muster = &muster.Pass{Store: st, Conf: srv.Runner.Conf, Log: srv.Log, Probe: muster.DefaultProbe(srv.Fold.ArtifactDir)}
 		srv.ForgeWatch = func() api.ForgeWatch { return forgeWatch(w) }
 		go w.Run(ctx)
 	}
