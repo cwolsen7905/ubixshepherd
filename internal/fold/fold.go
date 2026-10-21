@@ -158,13 +158,26 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if err != nil {
 		return Opened{}, err
 	}
+	// Approved check files are nobody's to change: they are left out of the overlap
+	// test, and reported as excluded from this lane's reach.
+	protected, err := f.Protected(ctx, repo.ID)
+	if err != nil {
+		return Opened{}, err
+	}
+	excluded, err := judgeScope(req.Scope, files, protected)
+	if err != nil {
+		return Opened{}, err
+	}
 	for _, o := range others {
-		if both := scope.Overlap(req.Scope, o.Scope, files); len(both) > 0 {
+		if both := scope.OverlapWithout(req.Scope, o.Scope, files, CheckPaths(protected)); len(both) > 0 {
 			return Opened{}, refuse("scope overlaps lane %s (scope %s) on %s. Narrow the scope, or wait for %s to close",
 				o.Name, strings.Join(o.Scope, ", "), firstN(both, 5), o.Name)
 		}
 	}
 	out := Opened{Shared: sharedTouched(prof.SharedPaths, req.Scope, files)}
+	if note := excludedNote(excluded); note != "" {
+		out.Notes = append(out.Notes, note)
+	}
 
 	// Record first, so a concurrent open of the same name loses at the store.
 	lane, err := f.Store.CreateLane(ctx, store.Lane{
@@ -284,18 +297,26 @@ func checkScope(scope []string) error {
 }
 
 // Rescope adds globs to a lane's scope and removes others. An addition that overlaps
-// another open lane's scope is refused, as at lane open.
+// another open lane's scope is refused, as at lane open; so is one that reaches only
+// approved check files.
 func (f *Fold) Rescope(ctx context.Context, laneID int64, add, remove []string) (store.Lane, error) {
+	lane, _, err := f.RescopeExcluding(ctx, laneID, add, remove)
+	return lane, err
+}
+
+// RescopeExcluding is Rescope that also returns the approved check files the lane's new
+// scope reaches but may not change.
+func (f *Fold) RescopeExcluding(ctx context.Context, laneID int64, add, remove []string) (store.Lane, []string, error) {
 	lane, err := f.Store.Lane(ctx, laneID)
 	if err != nil {
-		return lane, err
+		return lane, nil, err
 	}
 	if lane.State != store.LaneOpen {
-		return lane, refuse("lane %s is %s", lane.Name, lane.State)
+		return lane, nil, refuse("lane %s is %s", lane.Name, lane.State)
 	}
 	if len(add) > 0 {
 		if err := checkScope(add); err != nil {
-			return lane, err
+			return lane, nil, err
 		}
 	}
 	lock := f.repoLock(lane.RepoID)
@@ -303,20 +324,27 @@ func (f *Fold) Rescope(ctx context.Context, laneID int64, add, remove []string) 
 	defer lock.Unlock()
 	repo, err := f.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
-		return lane, err
+		return lane, nil, err
+	}
+	protected, err := f.Protected(ctx, repo.ID)
+	if err != nil {
+		return lane, nil, err
 	}
 	if len(add) > 0 {
 		files, _ := listFiles(ctx, repo.Path, "HEAD")
+		if _, err := judgeScope(add, files, protected); err != nil {
+			return lane, nil, err
+		}
 		others, err := f.Store.Lanes(ctx, repo.ID)
 		if err != nil {
-			return lane, err
+			return lane, nil, err
 		}
 		for _, o := range others {
 			if o.ID == lane.ID {
 				continue
 			}
-			if both := scope.Overlap(add, o.Scope, files); len(both) > 0 {
-				return lane, refuse("adding %s overlaps lane %s (scope %s) on %s", strings.Join(add, ", "), o.Name, strings.Join(o.Scope, ", "), firstN(both, 5))
+			if both := scope.OverlapWithout(add, o.Scope, files, CheckPaths(protected)); len(both) > 0 {
+				return lane, nil, refuse("adding %s overlaps lane %s (scope %s) on %s", strings.Join(add, ", "), o.Name, strings.Join(o.Scope, ", "), firstN(both, 5))
 			}
 		}
 	}
@@ -333,12 +361,13 @@ func (f *Fold) Rescope(ctx context.Context, laneID int64, add, remove []string) 
 		}
 	}
 	if len(next) == 0 {
-		return lane, refuse("a lane needs a scope; that would leave lane %s with none", lane.Name)
+		return lane, nil, refuse("a lane needs a scope; that would leave lane %s with none", lane.Name)
 	}
 	if err := f.Store.SetLaneScope(ctx, lane.ID, next); err != nil {
-		return lane, err
+		return lane, nil, err
 	}
-	return f.Store.Lane(ctx, lane.ID)
+	lane, err = f.Store.Lane(ctx, lane.ID)
+	return lane, ExcludedFrom(lane.Scope, protected), err
 }
 
 // CloseResult says what closing did.

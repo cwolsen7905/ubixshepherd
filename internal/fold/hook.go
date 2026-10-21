@@ -134,15 +134,29 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 		if err != nil {
 			return v, err
 		}
-		var outside []string
+		// Approved check files are judged for every lane, whatever its scope says, and
+		// are named for what they are rather than as out of scope.
+		protected, err := f.Protected(ctx, lane.RepoID)
+		if err != nil {
+			return v, err
+		}
+		mark := CheckPaths(protected)
+		var outside, changed []string
 		for _, file := range strings.Split(out, "\n") {
-			if file != "" && !scope.Any(lane.Scope, file) {
+			switch {
+			case file == "":
+			case contains(mark, file):
+				changed = append(changed, file)
+			case !scope.Any(lane.Scope, file):
 				outside = append(outside, file)
 			}
 		}
 		if len(outside) > 0 {
 			v.Problems = append(v.Problems, fmt.Sprintf("changes outside lane %s's scope (%s):\n    %s",
 				lane.Name, strings.Join(lane.Scope, ", "), strings.Join(firstLinesN(outside, 20), "\n    ")))
+		}
+		if len(changed) > 0 {
+			v.Problems = append(v.Problems, ChecksProblem(changed))
 		}
 		if repo != nil {
 			bad, err := forbiddenMessage(ctx, dir, newCommitsFrom(ctx, dir, from, r), r.LocalSHA, prof.Forbid)
