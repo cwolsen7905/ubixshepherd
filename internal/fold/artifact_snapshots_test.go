@@ -374,3 +374,51 @@ func TestCloseKeepsDeclaredScreenshots(t *testing.T) {
 		})
 	}
 }
+
+func TestCloseSaysWhenAWantedArtifactHasNoCopy(t *testing.T) {
+	f := newFixture(t)
+	f.withSnapshots()
+	ctx := context.Background()
+	l := f.open("feat/nocopy")
+	f.commit(l.Worktree, "src/a.go")
+	f.merge(l)
+	// A declared image whose file went before any copy was taken, and an unpinned
+	// scratch file in the same state: only the first was worth a copy.
+	for p, intent := range map[string]string{"shots/lost.png": store.ArtifactKeep, "shots/scratch.png": store.ArtifactScratch} {
+		writeFile(t, l.Worktree, p, "x")
+		_, sum, err := readLive(l.Worktree, p, 64<<20)
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, _, err := f.fold.Store.UpsertArtifact(ctx, store.Artifact{WorkspaceID: f.repo.WorkspaceID, RepoID: f.repo.ID, LaneID: l.ID,
+			Path: p, Kind: store.ArtifactImage, Source: store.ArtifactDeclared, Intent: intent, IntentBy: store.IntentByAgent, SHA256: sum, Size: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.fold.Store.AddArtifactVersion(ctx, store.ArtifactVersion{ArtifactID: a.ID, SHA256: sum, Size: 1, RunID: 1})
+		if err := os.Remove(filepath.Join(l.Worktree, p)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.fold.Close(ctx, l.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"shots/lost.png", "shots/scratch.png"} {
+		if a := f.artifact(l.ID, p); a.State != store.ArtifactGone {
+			t.Fatalf("%s state = %s", p, a.State)
+		}
+	}
+	feed, err := f.fold.Store.Feed(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, it := range feed {
+		if it.Kind == store.FeedArtifact && strings.Contains(it.Text, "no stored copy") {
+			lines = append(lines, it.Text)
+		}
+	}
+	if len(lines) != 1 || !strings.Contains(lines[0], "shots/lost.png") || !strings.Contains(lines[0], "feat/nocopy") {
+		t.Errorf("feed lines = %q", lines)
+	}
+}

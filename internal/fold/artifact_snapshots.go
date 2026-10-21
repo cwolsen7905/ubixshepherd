@@ -348,7 +348,7 @@ func (f *Fold) settleArtifacts(ctx context.Context, plan artifactPlan) {
 			if lane, err := f.Store.Lane(ctx, a.LaneID); err == nil {
 				name = lane.Name
 			}
-			f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy: it was missing, unreadable or over the snapshot size cap", a.Path, name), id)
+			f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy; the cause is not recorded here, see the close notes", a.Path, name), id)
 		}
 	}
 }
