@@ -138,6 +138,9 @@ func TestNextCLIAndMCP(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"next_list","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3,"state":"deferred","move":"top"}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3}}}`,
+		// Item 2 (Step three) is started here: it was set back to planned before its lane
+		// opened with --item 2. The state array, repo, topic, text and matrix arguments
+		// must all reach the CLI, and compact must drop the detail lines.
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["started","approved"],"compact":true,"topic":"release work","repo":"app","text":"three","matrix":"none"}}}`,
 		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["deferred"],"text":"desk"}}}`,
 	)
@@ -155,7 +158,7 @@ func TestNextCLIAndMCP(t *testing.T) {
 	}
 
 	if text, isErr := toolText(t, resps[4]); isErr || !strings.Contains(text, "Step three") || strings.Contains(text, "From the desk") || strings.Contains(text, "\n        ") {
-		t.Errorf("next_list with filters: %v %s", isErr, text)
+		t.Errorf("next_list with state [started approved] and every filter argument should list only the started Step three, compact: %v %s", isErr, text)
 	}
 	if text, isErr := toolText(t, resps[5]); isErr || !strings.Contains(text, "From the desk") || strings.Contains(text, "Step three") {
 		t.Errorf("next_list by state: %v %s", isErr, text)
