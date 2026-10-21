@@ -1,0 +1,34 @@
+{
+ "name": "0003-spec-verified-proceeds",
+ "spec": "crook/1",
+ "description": "Every condition holds, so the live merge rule proceeds.",
+ "rules": {
+  "repo/rules/spec-verified.md": "---\nkind: merge\nmode: live\nrequire: [linked_requirement, approved_checks_pass, no_test_edits, gate_green, pipeline_green, ai_review_not_blocking, up_to_date]\nmax_changed_lines: 600\npaths_not: [\".gitlab-ci.yml\"]\nthen: proceed\n---\nSpec work merges on its own when the approved checks prove it.\n"
+ },
+ "limits": {},
+ "request": {
+  "action": "merge",
+  "actor": "daemon",
+  "facts": {
+   "item_linked": true,
+   "requirement": [
+    "SHP-FR-WEB-002"
+   ],
+   "approved_checks": "pass",
+   "tests_edited": false,
+   "check_files_edited": false,
+   "gate": "green",
+   "pipeline": "green",
+   "ai_review": "ok",
+   "up_to_date": true,
+   "changed_lines": 220,
+   "paths": [
+    "web/src/pages/Inbox.tsx"
+   ]
+  }
+ },
+ "expect": {
+  "verdict": "proceed",
+  "rule": "spec-verified"
+ }
+}
