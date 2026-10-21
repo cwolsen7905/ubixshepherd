@@ -58,6 +58,7 @@ func TestPushBlockIsScopedToTheLaneRepo(t *testing.T) {
 	must(lane, "commit", "-q", "--allow-empty", "-m", "agent work")
 	for _, args := range [][]string{
 		{"push", "-q", "--no-verify", "origin", "HEAD:main"},
+		{"-c", "core.hooksPath=/dev/null", "push", "-q", "origin", "HEAD:main"},
 		{"push", "-q", "origin", "HEAD:refs/heads/side"},
 		{"push", "-q", origin, "HEAD:main"},
 		{"push", "-q", "mirror", "HEAD:main"},
@@ -75,4 +76,85 @@ func TestPushBlockIsScopedToTheLaneRepo(t *testing.T) {
 	// Fetching the lane's origin still works, and so does pushing another repo.
 	must(lane, "fetch", "-q", "origin")
 	must(other, "push", "-q", "origin", "main")
+}
+
+func TestBypassesHooks(t *testing.T) {
+	for line, want := range map[string]bool{
+		"git push --no-verify origin HEAD":                 true,
+		"▸ Bash: git commit -m x --no-verify":              true,
+		"git -c core.hooksPath=/dev/null push origin HEAD": true,
+		"git config core.hooksPath /tmp/none":              true,
+		"git push origin HEAD --no-verify":                 true,
+		"git push origin HEAD:main --no-verify":            true,
+		"git push origin HEAD:refs/heads/x --no-verify":    true,
+		"git commit -n -m x":                               true,
+		"git commit -an -m x":                              true,
+		"git commit -m x":                                  false,
+		"git commit --no-edit":                             false,
+		"git commit -a -n -m x":                            true,
+		"git commit -m \"use -n here\"":                    false,
+		"git commit --amend -m \"x -n y\"":                 false,
+		"git push -u origin feat/x":                        false,
+		"--disallowedTools Bash(git * --no-verify*)":       false,
+		"the hook was not run with --no-verify":            false,
+	} {
+		if BypassesHooks(line) != want {
+			t.Errorf("BypassesHooks(%q) = %v, want %v", line, !want, want)
+		}
+	}
+}
+
+// globMatch is the * wildcard the deny rules use, as a whole-string match.
+func globMatch(pat, s string) bool {
+	parts := strings.Split(pat, "*")
+	if len(parts) == 1 {
+		return pat == s
+	}
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	for _, p := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, p)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(p):]
+	}
+	return strings.HasSuffix(s, parts[len(parts)-1])
+}
+
+// The Claude deny rules refuse the bypass forms and not a commit message that merely
+// contains -n; Copilot's git -c deny is limited to core.hooksPath.
+func TestBypassDenyRulesBlockWhatTheyClaim(t *testing.T) {
+	denies := func(cmd string) bool {
+		for _, r := range BypassDenied {
+			if globMatch(r, "Bash("+cmd+")") {
+				return true
+			}
+		}
+		return false
+	}
+	for cmd, want := range map[string]bool{
+		"git push --no-verify origin HEAD":  true,
+		"git push origin HEAD --no-verify":  true,
+		"git --no-verify commit -m x":       true,
+		"git -c core.hooksPath=/x push":     true,
+		"git commit -n -m x":                true,
+		"git commit -a -n -m x":             true,
+		"git commit -an -m x":               true,
+		"git commit -m \"handle non-nil\"":  false,
+		"git commit -m \"add --name flag\"": false,
+		"git commit -m x":                   false,
+		"git push -u origin feat/x":         false,
+	} {
+		if got := denies(cmd); got != want {
+			t.Errorf("deny(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+	for _, r := range CopilotBypassDenied {
+		if r == "shell(git -c)" {
+			t.Errorf("rule %q denies every git -c", r)
+		}
+	}
 }

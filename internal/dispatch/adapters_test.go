@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"strings"
 	"testing"
 	"time"
@@ -65,5 +66,58 @@ func TestStandingRedactsTheBrief(t *testing.T) {
 	got := Standing("", "", &ProjectContext{Name: "p", Brief: "use glpat-AbCdEfGhIjKlMnOpQrStUv here"}, "")
 	if strings.Contains(got, "glpat-") {
 		t.Errorf("brief not redacted:\n%s", got)
+	}
+}
+
+// Every brief tells the agent not to skip hooks, whoever pushes; Claude denies the bypass
+// even when the repo lets the agent push.
+func TestBriefAndClaudeForbidHookBypass(t *testing.T) {
+	for _, push := range []string{config.Agent, config.Shepherd, ""} {
+		b := Brief("t", "l", "r", "b", "main", "/w", []string{"x"}, "", Powers{Push: push}, true, "", "")
+		if !strings.Contains(b, "Never bypass git hooks") || !strings.Contains(b, "--no-verify") {
+			t.Errorf("push %q: brief does not forbid skipping hooks:\n%s", push, b)
+		}
+	}
+	denied := func(args []string, flag string) []string {
+		for i, a := range args {
+			if a == flag {
+				return args[i+1:]
+			}
+		}
+		return nil
+	}
+	has := func(list []string, want string) bool {
+		for _, a := range list {
+			if a == want {
+				return true
+			}
+		}
+		return false
+	}
+	for _, push := range []bool{true, false} {
+		list := denied(adapters["claude"].Args(Opts{Push: push}), "--disallowedTools")
+		for _, rule := range BypassDenied {
+			if !has(list, rule) {
+				t.Errorf("push %v: claude does not deny %q: %q", push, rule, list)
+			}
+		}
+		if has(list, "Bash(git push:*)") == push {
+			t.Errorf("push %v: claude push deny = %v", push, !push)
+		}
+		var cop []string
+		args := adapters["copilot"].Args(Opts{Push: push})
+		for i, a := range args {
+			if a == "--deny-tool" && i+1 < len(args) {
+				cop = append(cop, args[i+1])
+			}
+		}
+		for _, rule := range CopilotBypassDenied {
+			if !has(cop, rule) {
+				t.Errorf("push %v: copilot does not deny %q: %q", push, rule, cop)
+			}
+		}
+		if has(cop, "shell(git push)") == push {
+			t.Errorf("push %v: copilot push deny = %v", push, !push)
+		}
 	}
 }

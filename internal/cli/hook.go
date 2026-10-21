@@ -78,7 +78,7 @@ func hookPrePush(ctx context.Context, env Env, args []string) error {
 	}
 	c, err := hookClient(ctx, env)
 	if err != nil {
-		return fmt.Errorf("cannot check this push: %w\n(push without Shepherd's check: git push --no-verify)", err)
+		return checkErr(err)
 	}
 	req := api.PrePush{Path: env.Cwd, Refs: refs}
 	if len(args) > 0 {
@@ -86,7 +86,7 @@ func hookPrePush(ctx context.Context, env Env, args []string) error {
 	}
 	v, err := c.PrePush(ctx, req)
 	if err != nil {
-		return fmt.Errorf("cannot check this push: %w\n(push without Shepherd's check: git push --no-verify)", err)
+		return checkErr(err)
 	}
 	for _, n := range v.Notes {
 		fmt.Fprintf(env.Stderr, "shepherd: %s\n", n)
@@ -98,7 +98,12 @@ func hookPrePush(ctx context.Context, env Env, args []string) error {
 	for _, p := range v.Problems {
 		fmt.Fprintf(env.Stderr, "  - %s\n", p)
 	}
-	fmt.Fprintln(env.Stderr, "Widen the scope with a new lane, move the change to the lane that owns it, or skip once: git push --no-verify")
+	if os.Getenv(dispatch.EnvRun) != "" {
+		// An agent's run: never offer it the bypass.
+		fmt.Fprintln(env.Stderr, "Move the change out of this push, or ask for a wider scope with ask_shepherd. Never skip the hook.")
+	} else {
+		fmt.Fprintln(env.Stderr, "Widen the scope with a new lane, move the change to the lane that owns it, or skip once: git push --no-verify")
+	}
 	return errSilent
 }
 
@@ -121,4 +126,13 @@ func hookClient(ctx context.Context, env Env) (*client.Client, error) {
 	c := client.New(u.Scheme+"://"+u.Host, tok)
 	c.Name = env.Client
 	return c, nil
+}
+
+// checkErr is the hook's failure when it cannot reach the daemon. The person is told the
+// bypass; an agent's run, which has SHEPHERD_RUN, is not.
+func checkErr(err error) error {
+	if os.Getenv(dispatch.EnvRun) != "" {
+		return fmt.Errorf("cannot check this push: %w\n(do not skip the hook: report it as blocked)", err)
+	}
+	return fmt.Errorf("cannot check this push: %w\n(push without Shepherd's check: git push --no-verify)", err)
 }

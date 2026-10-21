@@ -655,6 +655,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	var limit Limit
 	lines, limitAt := 0, 0
+	flagged := false  // the run showed a hook bypass, flagged once
 	var ring []string // the end of what the agent printed, to diagnose a bad end from
 	for sc.Scan() {
 		line := sc.Text()
@@ -686,6 +687,10 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			run.CostUSD, run.Credits = out.USD, out.Credits // the session's latest total
 		}
 		if out.Show != "" {
+			if !flagged && BypassesHooks(out.Show) {
+				flagged = true
+				r.feed(context.Background(), store.FeedGate, run.ID, "run %d: %s tried to skip git hooks (%s). The push guard is not a boundary: check the lane's branch before approving.", run.ID, lane.Name, clip(strings.TrimSpace(scrub(out.Show, p.token)), 120))
+			}
 			shown := scrub(out.Show, p.token)
 			fmt.Fprintln(logf, shown)
 			if ring = append(ring, shown); len(ring) > ringLines {
