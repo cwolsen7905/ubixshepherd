@@ -304,14 +304,18 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "run_stop",
-			Description: "Stop a running agent. Its commits so far stay in the lane.",
-			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
+			Description: "Stop a running agent. Its commits so far stay in the lane. Set for_restart only when you stop it to hurry a restart's drain: it is then continued after the restart. A stop the person asked for is never for_restart.",
+			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}, "for_restart": map[string]any{"type": "boolean"}}, "id"),
 			args: func(a map[string]any) ([]string, error) {
 				id, ok := a["id"].(float64)
 				if !ok {
 					return nil, fmt.Errorf("id must be a number")
 				}
-				return []string{"run", "stop", fmt.Sprint(int64(id))}, nil
+				out := []string{"run", "stop", fmt.Sprint(int64(id))}
+				if b, _ := a["for_restart"].(bool); b {
+					out = append(out, "--for-restart")
+				}
+				return out, nil
 			},
 		},
 		{
