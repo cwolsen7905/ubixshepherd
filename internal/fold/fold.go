@@ -331,7 +331,10 @@ func (f *Fold) RescopeExcluding(ctx context.Context, laneID int64, add, remove [
 		return lane, nil, err
 	}
 	if len(add) > 0 {
-		files, _ := listFiles(ctx, repo.Path, "HEAD")
+		files, err := listFiles(ctx, repo.Path, "HEAD")
+		if err != nil {
+			return lane, nil, err
+		}
 		if _, err := judgeScope(add, files, protected); err != nil {
 			return lane, nil, err
 		}

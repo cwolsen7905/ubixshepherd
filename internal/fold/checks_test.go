@@ -403,3 +403,23 @@ func TestShipProblems(t *testing.T) {
 		t.Fatalf("blob drift: %v %v", p, err)
 	}
 }
+
+// A scope change is judged over the repo's files; when they cannot be listed it fails
+// instead of judging nothing.
+func TestRescopeFailsWhenFilesCannotBeListed(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.land(map[string]string{"src/impl.go": "package src\n", "docs/x.md": "x\n"})
+	l := f.open("work")
+	head := filepath.Join(f.repo.Path, ".git", "HEAD")
+	if err := os.Rename(head, head+".away"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := f.fold.RescopeExcluding(ctx, l.ID, []string{"docs/**"}, nil)
+	if err == nil {
+		t.Fatal("a scope change was accepted without the repo's files")
+	}
+	if got, _ := f.fold.Store.Lane(ctx, l.ID); len(got.Scope) != 1 {
+		t.Errorf("scope changed: %v", got.Scope)
+	}
+}
