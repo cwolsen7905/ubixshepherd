@@ -56,6 +56,13 @@ func TestNextCLIAndMCP(t *testing.T) {
 	if code := h.run("next", "list", "--topic", "nonesuch"); code == 0 {
 		t.Error("an unknown topic was accepted")
 	}
+	if code := h.run("next", "drop", "2"); code != 0 {
+		t.Fatalf("drop: %s", h.err)
+	}
+	if code := h.run("next", "list", "--state", "dropped", "--compact"); code != 0 || !strings.Contains(h.out.String(), "Step three") {
+		t.Errorf("list --state dropped without --all: %s%s", h.out, h.err)
+	}
+	h.run("next", "update", "2", "--state", "planned")
 	if code := h.run("next", "list", "--state", "bogus"); code == 0 {
 		t.Error("an unknown state was accepted")
 	}
@@ -122,6 +129,8 @@ func TestNextCLIAndMCP(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"next_list","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3,"state":"deferred","move":"top"}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["started","approved"],"compact":true,"topic":"release","repo":"app","text":"three","matrix":"none"}}}`,
+		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["deferred"],"text":"desk"}}}`,
 	)
 	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "added") {
 		t.Errorf("next_add: %v %s", isErr, text)
@@ -134,6 +143,13 @@ func TestNextCLIAndMCP(t *testing.T) {
 	}
 	if _, isErr := toolText(t, resps[3]); !isErr {
 		t.Error("next_update with nothing to change accepted")
+	}
+
+	if text, isErr := toolText(t, resps[4]); isErr || !strings.Contains(text, "Step three") || strings.Contains(text, "From the desk") || strings.Contains(text, "\n        ") {
+		t.Errorf("next_list with filters: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[5]); isErr || !strings.Contains(text, "From the desk") || strings.Contains(text, "Step three") {
+		t.Errorf("next_list by state: %v %s", isErr, text)
 	}
 
 	// Seeding adds the plan's items once.

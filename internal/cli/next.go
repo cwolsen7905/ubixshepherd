@@ -59,18 +59,20 @@ func runNext(ctx context.Context, env Env, args []string) error {
 		if len(pos) > 0 {
 			return errUsage
 		}
-		l, err := c.NextItems(ctx, *all)
+		f := nextFilter{Repo: *repo, Text: *text, Matrix: *matrix}
+		if f.States, err = parseNextStates(*state); err != nil {
+			return err
+		}
+		// Asking for dropped or done items fetches them: the server leaves them out otherwise.
+		fetchAll := *all || slices.Contains(f.States, store.NextDropped) || slices.Contains(f.States, store.NextDone)
+		l, err := c.NextItems(ctx, fetchAll)
 		if err != nil {
 			return err
 		}
-		f := nextFilter{Repo: *repo, Text: *text, Matrix: *matrix}
 		if *topic != "" {
 			if f.Topic, err = topicItems(ctx, c, *topic); err != nil {
 				return err
 			}
-		}
-		if f.States, err = parseNextStates(*state); err != nil {
-			return err
 		}
 		l = f.apply(l)
 		if *asJSON {
