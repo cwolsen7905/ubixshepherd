@@ -384,26 +384,47 @@ func TestCloseSaysWhenAWantedArtifactHasNoCopy(t *testing.T) {
 	f.merge(l)
 	// A declared image whose file went before any copy was taken, and an unpinned
 	// scratch file in the same state: only the first was worth a copy.
-	for p, intent := range map[string]string{"shots/lost.png": store.ArtifactKeep, "shots/scratch.png": store.ArtifactScratch} {
-		writeFile(t, l.Worktree, p, "x")
-		_, sum, err := readLive(l.Worktree, p, 64<<20)
-		if err != nil {
-			t.Fatal(err)
+	// Also: a declared image just over the snapshot cap (a sparse file), and a
+	// discovered text file that is not valid UTF-8, which is never copied.
+	cases := []struct{ p, intent, source string }{
+		{"shots/lost.png", store.ArtifactKeep, store.ArtifactDeclared},
+		{"shots/scratch.png", store.ArtifactScratch, store.ArtifactDeclared},
+		{"shots/huge.png", store.ArtifactKeep, store.ArtifactDeclared},
+		{"notes/binary.txt", store.ArtifactKeep, store.ArtifactDiscovered},
+	}
+	for _, c := range cases {
+		p := c.p
+		kind := store.ArtifactKindOf(p)
+		sum := strings.Repeat("a", 64)
+		switch p {
+		case "shots/huge.png":
+			writeFile(t, l.Worktree, p, "")
+			if err := os.Truncate(filepath.Join(l.Worktree, p), MaxSnapshotImage+1); err != nil {
+				t.Fatal(err)
+			}
+		case "notes/binary.txt":
+			writeFile(t, l.Worktree, p, "\xff\xfe not utf-8")
+			_, sum, _ = readLive(l.Worktree, p, 64<<20)
+		default:
+			writeFile(t, l.Worktree, p, "x")
+			_, sum, _ = readLive(l.Worktree, p, 64<<20)
 		}
 		a, _, err := f.fold.Store.UpsertArtifact(ctx, store.Artifact{WorkspaceID: f.repo.WorkspaceID, RepoID: f.repo.ID, LaneID: l.ID,
-			Path: p, Kind: store.ArtifactImage, Source: store.ArtifactDeclared, Intent: intent, IntentBy: store.IntentByAgent, SHA256: sum, Size: 1})
+			Path: p, Kind: kind, Source: c.source, Intent: c.intent, IntentBy: store.IntentByAgent, SHA256: sum, Size: 1})
 		if err != nil {
 			t.Fatal(err)
 		}
 		f.fold.Store.AddArtifactVersion(ctx, store.ArtifactVersion{ArtifactID: a.ID, SHA256: sum, Size: 1, RunID: 1})
-		if err := os.Remove(filepath.Join(l.Worktree, p)); err != nil {
-			t.Fatal(err)
+		if p == "shots/lost.png" || p == "shots/scratch.png" {
+			if err := os.Remove(filepath.Join(l.Worktree, p)); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if _, err := f.fold.Close(ctx, l.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{"shots/lost.png", "shots/scratch.png"} {
+	for _, p := range []string{"shots/lost.png", "shots/scratch.png", "shots/huge.png", "notes/binary.txt"} {
 		if a := f.artifact(l.ID, p); a.State != store.ArtifactGone {
 			t.Fatalf("%s state = %s", p, a.State)
 		}
@@ -418,7 +439,10 @@ func TestCloseSaysWhenAWantedArtifactHasNoCopy(t *testing.T) {
 			lines = append(lines, it.Text)
 		}
 	}
-	if len(lines) != 1 || !strings.Contains(lines[0], "shots/lost.png") || !strings.Contains(lines[0], "feat/nocopy") {
+	// One line each for the two declared images; none for the scratch file or the
+	// discovered text file.
+	if len(lines) != 2 || !strings.Contains(strings.Join(lines, "\n"), "shots/lost.png") || !strings.Contains(strings.Join(lines, "\n"), "shots/huge.png") ||
+		strings.Contains(strings.Join(lines, "\n"), "scratch") || strings.Contains(strings.Join(lines, "\n"), "binary") || !strings.Contains(lines[0], "feat/nocopy") {
 		t.Errorf("feed lines = %q", lines)
 	}
 }

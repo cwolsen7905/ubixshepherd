@@ -343,12 +343,14 @@ func (f *Fold) settleArtifacts(ctx context.Context, plan artifactPlan) {
 		if state != store.ArtifactGone {
 			continue
 		}
-		if a, err := f.Store.Artifact(ctx, id); err == nil && wantsSnapshot(a) {
+		// Only what the agent declared or the person pinned: a discovered file that
+		// was too big or not text is not news.
+		if a, err := f.Store.Artifact(ctx, id); err == nil && wantsSnapshot(a) && (a.Source == store.ArtifactDeclared || a.Pinned) {
 			name := ""
 			if lane, err := f.Store.Lane(ctx, a.LaneID); err == nil {
 				name = lane.Name
 			}
-			f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy; the cause is not recorded here, see the close notes", a.Path, name), id)
+			f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy: the file was gone or unreadable, over the size cap, or a copy could not be written", a.Path, name), id)
 		}
 	}
 }
