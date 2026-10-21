@@ -850,6 +850,24 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "crook_shadow",
+			Description: "What merge rules in shadow mode would have done: per rule, how many merge requests it would have merged, asked about or held, which conditions were short, and what the person did. Nothing was acted on. Read only.",
+			InputSchema: obj(map[string]any{
+				"rule":  map[string]any{"type": "string", "description": "Only this rule id."},
+				"since": map[string]any{"type": "string", "description": "From when: RFC 3339 or a number of days like 14d (default 14d)."},
+			}),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"crook", "shadow"}
+				if r := str(a, "rule"); r != "" {
+					out = append(out, "--rule", r)
+				}
+				if s := str(a, "since"); s != "" {
+					out = append(out, "--since", s)
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "crook_why",
 			Description: "Why Shepherd did, held or refused something: Crook's verdict log. With id, one verdict with the rule that decided and its path through the stages. With run or lane, that run's or lane's verdicts, newest first. With neither, the latest verdicts. Read only.",
 			InputSchema: obj(map[string]any{

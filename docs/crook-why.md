@@ -34,12 +34,19 @@ shepherd crook why run <id>        the verdicts for one run, newest first
 shepherd crook why lane <name>     the verdicts for one lane, newest first
 shepherd crook log                 the latest verdicts
 shepherd crook rules               per rule, what it allowed, asked, held and refused
+shepherd crook shadow              what rules in shadow mode would have done
 ```
 
 `log` takes `--rule`, `--action`, `--kind` and `--since`; `why run` and `why lane` take
 `--kind` and `--since`; `--limit` sets how many are listed (default 50). `--since` is a
 time in RFC 3339 or a number of days such as `7d`. `rules` takes `--since` (default
 `7d`). Every form takes `--json`.
+
+A row logged by a rule in shadow mode is evidence, not an act: it records what the rule
+*would have* done and nothing was done. `rules` leaves those rows out of the counts above
+and shows them in a table of their own; `shadow` lists them. `log` and `why` show every
+row, and `why <id>` on a shadow row has the stage `shadow`. See
+[merge-rules.md](merge-rules.md).
 
 `crook why <id>` prints the stages in the order Crook runs them, up to the one that
 decided. A stage with nothing to say reads "no opinion". When none has a say, the last step is the

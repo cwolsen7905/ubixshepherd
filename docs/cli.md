@@ -25,3 +25,17 @@ is not shown.
 
 The same operation is the `workspace_rename` MCP tool (`workspace`, `name`), and the HTTP
 route `POST /v1/workspaces/{id}/rename` with `{"name": "..."}` (operator token only).
+
+## crook
+
+```sh
+shepherd crook why <id> | why run <id> | why lane <name>
+shepherd crook log [--rule R] [--action A]
+shepherd crook rules [--since 7d]
+shepherd crook shadow [--rule R] [--since 14d] [--limit N]
+```
+
+Reads of Crook's verdict log, described in [crook-why.md](crook-why.md). `rules` counts
+shadow rows apart from what Shepherd did, and `shadow` lists them: see
+[merge-rules.md](merge-rules.md). Every form takes `--json`. `shadow` is also the
+`crook_shadow` MCP tool (`rule`, `since`).

@@ -70,3 +70,63 @@ func TestCrookCLI(t *testing.T) {
 		}
 	}
 }
+
+// Shadow rows are counted apart in `crook rules` and listed by `crook shadow`.
+func TestCrookShadowCLI(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, _ := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	if code := h.run("crook", "shadow"); code != 0 || !strings.Contains(h.out.String(), "no shadow verdicts") {
+		t.Fatalf("empty: %d %s%s", code, h.out, h.err)
+	}
+	ctx := context.Background()
+	rec := storeRecorder{h.srv.Store}
+	row := func(action, kind, stage, lane, why string) {
+		if err := rec.Record(ctx, crook.Entry{Action: crook.Action(action), Actor: crook.ActorDaemon, Kind: crook.Kind(kind),
+			Rule: "spec-verified", RuleVersion: 1, Stage: stage, Reason: why, Repo: "r", Lane: lane}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A live merge-arm verdict by another rule, and three shadow rows plus an outcome.
+	crook.SetRecorder(rec, nil)
+	crook.Check(ctx, crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker,
+		Facts: crook.Facts{Push: crook.AutonomyShepherd, Run: 1, Agent: "claude", Lane: "feat-x", Repo: "r"}})
+	crook.SetRecorder(nil, nil)
+	row("merge", "ask", "shadow", "a", "Not yet met: approved_checks_pass.")
+	row("merge", "proceed", "shadow", "b", "all met")
+	row("merge", "hold", "shadow", "c", "Not yet met: pipeline_green.")
+	row("merge.outcome", "ask", "shadow-outcome", "b", "the person merged !7")
+
+	if code := h.run("crook", "shadow"); code != 0 {
+		t.Fatalf("shadow: %d %s", code, h.err)
+	}
+	for _, want := range []string{"spec-verified", "would have merged", "would have ask", "would have held", "approved_checks_pass", "the person merged !7"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("shadow output lacks %q:\n%s", want, h.out)
+		}
+	}
+	h.run("crook", "shadow", "--json", "--rule", "spec-verified")
+	var got shadowOut
+	if err := json.Unmarshal(h.out.Bytes(), &got); err != nil || len(got.Verdicts) != 3 || len(got.Outcomes) != 1 ||
+		len(got.Counts) != 1 || got.Counts[0].Proceed != 1 || got.Counts[0].Merged != 1 {
+		t.Fatalf("shadow json: %v %+v", err, got)
+	}
+	// The live count has only the real verdict; the shadow rule is in its own table.
+	if code := h.run("crook", "rules"); code != 0 {
+		t.Fatalf("rules: %d %s", code, h.err)
+	}
+	live, shadow, _ := strings.Cut(h.out.String(), "shadow rules")
+	if !strings.Contains(live, "builtin/push-autonomy") || strings.Contains(live, "spec-verified") || !strings.Contains(shadow, "spec-verified") {
+		t.Errorf("rules output:\n%s", h.out)
+	}
+	h.run("crook", "log")
+	if !strings.Contains(h.out.String(), "spec-verified") {
+		t.Errorf("crook log still lists every row, shadow included:\n%s", h.out)
+	}
+	if code := h.run("crook", "shadow", "extra"); code == 0 {
+		t.Error("a stray argument should fail")
+	}
+}
