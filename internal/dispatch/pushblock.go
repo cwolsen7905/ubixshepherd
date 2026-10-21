@@ -50,7 +50,7 @@ func pushBlock(ctx context.Context, dir string) []string {
 // hooks: --no-verify on a push or commit (or commit's -n), or core.hooksPath set on the command line or
 // with git config. It is a cooperative check on what an agent printed, not a boundary:
 // the pre-push hook is a guard, and the forge's rules are the enforcement.
-var hookBypass = regexp.MustCompile("\\bgit\\b[^\\n*`]*(--no-verify\\b|\\bcore\\.hooksPath\\b|\\bcommit\\b[^\\n*`]*\\s-[a-zA-Z]*n[a-zA-Z]*(\\s|$))")
+var hookBypass = regexp.MustCompile("\\bgit\\b[^\\n*`]*(--no-verify\\b|\\bcore\\.hooksPath\\b|\\bcommit(\\s+-[a-zA-Z-]+)*\\s+-[a-zA-Z]*n[a-zA-Z]*(\\s|$))")
 
 // BypassesHooks reports whether a line of agent output shows a git command that skips
 // hooks, as a push with --no-verify does.
@@ -59,8 +59,9 @@ func BypassesHooks(line string) bool { return hookBypass.MatchString(line) }
 // BypassDenied are the Claude Code deny rules that refuse a command skipping hooks,
 // whatever the permission mode; they hold whether or not the agent may push.
 // The globs match the flag at any position, including before the subcommand, and
-// commit's -n alias right after the subcommand (anchored, so a message containing -n is
-// not refused; `git commit -m x -n` is left to the brief and the feed flag). They are a cooperative layer: the CLI's own matching decides.
+// commit's -n alias among the flags that lead the commit (before the message) (anchored, so a message containing -n is
+// not refused; the leading forms -n, -a -n and -an are covered, other combinations such as
+// -vn, and -n after the message, are left to the brief and the feed flag). They are a cooperative layer: the CLI's own matching decides.
 var BypassDenied = []string{"Bash(git*--no-verify*)", "Bash(git*core.hooksPath*)", "Bash(git commit -n*)", "Bash(git commit -a -n*)", "Bash(git commit -an*)"}
 
 // CopilotBypassDenied are Copilot's deny rules for the same. Copilot matches a command

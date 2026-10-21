@@ -91,6 +91,9 @@ func TestBypassesHooks(t *testing.T) {
 		"git commit -an -m x":                              true,
 		"git commit -m x":                                  false,
 		"git commit --no-edit":                             false,
+		"git commit -a -n -m x":                            true,
+		"git commit -m \"use -n here\"":                    false,
+		"git commit --amend -m \"x -n y\"":                 false,
 		"git push -u origin feat/x":                        false,
 		"--disallowedTools Bash(git * --no-verify*)":       false,
 		"the hook was not run with --no-verify":            false,
@@ -101,26 +104,57 @@ func TestBypassesHooks(t *testing.T) {
 	}
 }
 
-// The Claude deny rules are anchored to the flag, so a commit message that merely
-// contains -n is not refused, and Copilot's git -c deny is limited to core.hooksPath.
-func TestBypassDenyRulesAreAnchored(t *testing.T) {
-	for _, r := range BypassDenied {
-		if strings.Contains(r, "commit*") {
-			t.Errorf("rule %q matches -n anywhere in a commit", r)
+// globMatch is the * wildcard the deny rules use, as a whole-string match.
+func globMatch(pat, s string) bool {
+	parts := strings.Split(pat, "*")
+	if len(parts) == 1 {
+		return pat == s
+	}
+	if !strings.HasPrefix(s, parts[0]) {
+		return false
+	}
+	s = s[len(parts[0]):]
+	for _, p := range parts[1 : len(parts)-1] {
+		i := strings.Index(s, p)
+		if i < 0 {
+			return false
+		}
+		s = s[i+len(p):]
+	}
+	return strings.HasSuffix(s, parts[len(parts)-1])
+}
+
+// The Claude deny rules refuse the bypass forms and not a commit message that merely
+// contains -n; Copilot's git -c deny is limited to core.hooksPath.
+func TestBypassDenyRulesBlockWhatTheyClaim(t *testing.T) {
+	denies := func(cmd string) bool {
+		for _, r := range BypassDenied {
+			if globMatch(r, "Bash("+cmd+")") {
+				return true
+			}
+		}
+		return false
+	}
+	for cmd, want := range map[string]bool{
+		"git push --no-verify origin HEAD":  true,
+		"git push origin HEAD --no-verify":  true,
+		"git --no-verify commit -m x":       true,
+		"git -c core.hooksPath=/x push":     true,
+		"git commit -n -m x":                true,
+		"git commit -a -n -m x":             true,
+		"git commit -an -m x":               true,
+		"git commit -m \"handle non-nil\"":  false,
+		"git commit -m \"add --name flag\"": false,
+		"git commit -m x":                   false,
+		"git push -u origin feat/x":         false,
+	} {
+		if got := denies(cmd); got != want {
+			t.Errorf("deny(%q) = %v, want %v", cmd, got, want)
 		}
 	}
 	for _, r := range CopilotBypassDenied {
 		if r == "shell(git -c)" {
 			t.Errorf("rule %q denies every git -c", r)
-		}
-	}
-	for _, want := range []string{"Bash(git commit -n*)", "Bash(git commit -an*)"} {
-		found := false
-		for _, r := range BypassDenied {
-			found = found || r == want
-		}
-		if !found {
-			t.Errorf("no rule %q", want)
 		}
 	}
 }
