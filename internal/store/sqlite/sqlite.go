@@ -523,6 +523,23 @@ var migrations = []string{
 	ALTER TABLE desk_questions ADD COLUMN repo    TEXT NOT NULL DEFAULT '';
 	ALTER TABLE desk_questions ADD COLUMN lane_id INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE desk_questions ADD COLUMN next_id INTEGER NOT NULL DEFAULT 0;`,
+	// Check files: test files the person approved as the definition of done. Pinned to
+	// the blob and base commit approved; a live row (released = '') makes the path
+	// untouchable by any lane. Released rows stay as history.
+	`CREATE TABLE check_files (
+		id          INTEGER PRIMARY KEY,
+		repo_id     INTEGER NOT NULL REFERENCES repos(id),
+		path        TEXT NOT NULL,
+		blob        TEXT NOT NULL,
+		base_commit TEXT NOT NULL,
+		item_id     INTEGER NOT NULL DEFAULT 0,
+		set_name    TEXT NOT NULL DEFAULT '',
+		approved    TEXT NOT NULL,
+		approved_by TEXT NOT NULL,
+		released    TEXT NOT NULL DEFAULT '',
+		release_why TEXT NOT NULL DEFAULT ''
+	);
+	CREATE UNIQUE INDEX check_files_live ON check_files (repo_id, path) WHERE released = '';`,
 }
 
 // DB is a SQLite-backed store.Store.

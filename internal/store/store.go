@@ -543,10 +543,12 @@ const (
 	FeedSession        = "session"
 	FeedPipeline       = "pipeline" // the forge's pipeline only
 	FeedRelease        = "release"
-	FeedMRApprove      = "mr_approve" // the person approved a merge request from the web
-	FeedPlan           = "plan"       // a next-up item added, approved, deferred, dropped or done
-	FeedArtifact       = "artifact"   // a run produced a file to read, or a new version of one
-	FeedMuster         = "muster"     // the upkeep pass tidied something, or raised it to tidy
+	FeedMRApprove      = "mr_approve"      // the person approved a merge request from the web
+	FeedPlan           = "plan"            // a next-up item added, approved, deferred, dropped or done
+	FeedArtifact       = "artifact"        // a run produced a file to read, or a new version of one
+	FeedMuster         = "muster"          // the upkeep pass tidied something, or raised it to tidy
+	FeedChecksApproved = "checks_approved" // the person approved check files
+	FeedChecksReleased = "checks_released" // the person released approved check files
 )
 
 // FeedItem is one thing that happened across the swarm, as a line for the person's
@@ -1127,6 +1129,15 @@ type Store interface {
 	MusterItems(ctx context.Context, f MusterFilter) ([]MusterItem, error)
 	// UpdateMuster changes an item and returns it; ErrNotFound if none.
 	UpdateMuster(ctx context.Context, id int64, p MusterPatch) (MusterItem, error)
+	// CheckFiles lists a repo's approved check files, newest first; liveOnly leaves out
+	// the released ones.
+	CheckFiles(ctx context.Context, repoID int64, liveOnly bool) ([]CheckFile, error)
+	// ApproveCheckFiles marks the files, all or none: ErrConflict if one is already live.
+	// Approved is set to now; ID, Released and ReleaseWhy are ignored.
+	ApproveCheckFiles(ctx context.Context, files []CheckFile) ([]CheckFile, error)
+	// ReleaseCheckFiles lifts the live marks on the paths, all or none: ErrNotFound if
+	// one is not live. The rows stay, with the time and the reason.
+	ReleaseCheckFiles(ctx context.Context, repoID int64, paths []string, why string) ([]CheckFile, error)
 	// SetQuestionState puts a question in any state, open included, which clears its
 	// closed time. Muster uses it to close a question as out of date and to reopen it.
 	SetQuestionState(ctx context.Context, id int64, state string) (Question, error)

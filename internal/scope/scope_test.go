@@ -61,3 +61,47 @@ func TestOverlap(t *testing.T) {
 		t.Errorf("overlap should name the file: %v", got)
 	}
 }
+
+func TestWithout(t *testing.T) {
+	files := []string{"a/x.go", "a/x_test.go", "a/sub/y.go", "b/z.go", "README.md"}
+	cases := []struct {
+		name      string
+		globs     []string
+		protected []string
+		want      string
+	}{
+		{"no marks", []string{"a/**"}, nil, "a/x.go a/x_test.go a/sub/y.go"},
+		{"glob drops the marked file only", []string{"a/**"}, []string{"a/x_test.go"}, "a/x.go a/sub/y.go"},
+		{"literal file", []string{"README.md"}, []string{"README.md"}, ""},
+		{"directory literal", []string{"a"}, []string{"a/sub/y.go"}, "a/x.go a/x_test.go"},
+		{"mark outside the scope", []string{"b/**"}, []string{"a/x.go"}, "b/z.go"},
+		{"unclean mark", []string{"a/*.go"}, []string{"./a/x.go"}, "a/x_test.go"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(Without(c.globs, files, c.protected), " "); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestOverlapWithout(t *testing.T) {
+	files := []string{"d/a.go", "d/a_test.go", "d/b.go"}
+	// Two lanes that both reach a protected file only: no collision.
+	if got := OverlapWithout([]string{"d/a*.go"}, []string{"d/*_test.go"}, files, []string{"d/a_test.go"}); len(got) != 0 {
+		t.Errorf("overlap on a protected file = %v", got)
+	}
+	if got := Overlap([]string{"d/a*.go"}, []string{"d/*_test.go"}, files); len(got) != 1 {
+		t.Errorf("without marks = %v", got)
+	}
+	// A real shared file still collides.
+	if got := OverlapWithout([]string{"d/**"}, []string{"d/b.go"}, files, []string{"d/a_test.go"}); len(got) == 0 || got[0] != "d/b.go" {
+		t.Errorf("shared unprotected file = %v", got)
+	}
+	// A literal naming a protected file that does not exist in files is ignored too.
+	if got := OverlapWithout([]string{"d/new_test.go"}, []string{"d/**"}, nil, []string{"d/new_test.go"}); len(got) != 0 {
+		t.Errorf("protected literal = %v", got)
+	}
+	if got := OverlapWithout([]string{"d/new.go"}, []string{"d/**"}, nil, []string{"d/new_test.go"}); len(got) != 1 {
+		t.Errorf("unprotected literal = %v", got)
+	}
+}

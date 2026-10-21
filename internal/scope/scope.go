@@ -30,6 +30,23 @@ func Any(globs []string, file string) bool {
 	return false
 }
 
+// Without returns the files inside any of the globs that are not in protected: the
+// files a scope really lets a lane change when some are approved checks. Paths in
+// protected are exact repo-relative files; a directory is not expanded.
+func Without(globs, files, protected []string) []string {
+	skip := make(map[string]bool, len(protected))
+	for _, p := range protected {
+		skip[path.Clean(p)] = true
+	}
+	var out []string
+	for _, f := range files {
+		if Any(globs, f) && !skip[path.Clean(f)] {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 func matchSegs(g, f []string) bool {
 	for len(g) > 0 {
 		if g[0] == "**" {
@@ -80,6 +97,17 @@ func within(dir, p string) bool {
 // reporting: two lanes refused wrongly is a message, two lanes allowed wrongly is a
 // collision.
 func Overlap(a, b []string, files []string) []string {
+	return OverlapWithout(a, b, files, nil)
+}
+
+// OverlapWithout is Overlap leaving out the protected files: a file neither lane may
+// change is not a collision, whether it shows among the repo's files or is a literal in
+// one of the scopes.
+func OverlapWithout(a, b []string, files, protected []string) []string {
+	skip := make(map[string]bool, len(protected))
+	for _, p := range protected {
+		skip[path.Clean(p)] = true
+	}
 	var out []string
 	seen := map[string]bool{}
 	add := func(s string) {
@@ -89,6 +117,9 @@ func Overlap(a, b []string, files []string) []string {
 		}
 	}
 	for _, f := range files {
+		if skip[path.Clean(f)] {
+			continue
+		}
 		if Any(a, f) && Any(b, f) {
 			add(f)
 		}
@@ -97,6 +128,9 @@ func Overlap(a, b []string, files []string) []string {
 	// two globs confined to the same directory where one reaches into the other.
 	for _, ga := range a {
 		for _, gb := range b {
+			if (!hasMeta(ga) && skip[path.Clean(ga)]) || (!hasMeta(gb) && skip[path.Clean(gb)]) {
+				continue
+			}
 			switch {
 			case !hasMeta(ga) && Match(gb, ga), !hasMeta(gb) && Match(ga, gb):
 				add(shorter(ga, gb))
