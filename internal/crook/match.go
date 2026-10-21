@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // globs follow crook/1: * stays inside one path segment, ** crosses segments.
@@ -35,8 +36,9 @@ func compileGlob(g string) (*regexp.Regexp, error) {
 			b.WriteString("[^/]*")
 			i++
 		default:
-			b.WriteString(regexp.QuoteMeta(g[i : i+1]))
-			i++
+			_, n := utf8.DecodeRuneInString(g[i:])
+			b.WriteString(regexp.QuoteMeta(g[i : i+n]))
+			i += n
 		}
 	}
 	b.WriteString("$")

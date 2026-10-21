@@ -1,6 +1,7 @@
 package crook
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -39,7 +40,7 @@ func ReadLayerFS(layer string, fsys fs.FS) (LayerFiles, error) {
 	out := LayerFiles{Layer: layer, Files: map[string][]byte{}}
 	entries, err := fs.ReadDir(fsys, "rules")
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return out, nil
 		}
 		return out, fmt.Errorf("%s layer: %w", layer, err)

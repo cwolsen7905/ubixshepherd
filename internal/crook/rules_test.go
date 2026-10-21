@@ -116,6 +116,7 @@ func TestGlobs(t *testing.T) {
 		{".shepherd/**", ".shepherd/rules/x.md", true},
 		{"SHP-FR-WEB-*", "SHP-FR-WEB-002", true},
 		{"a.b", "axb", false},
+		{"docs/café/*.md", "docs/café/x.md", true},
 	} {
 		if got := globMatch([]string{c.glob}, c.p); got != c.want {
 			t.Errorf("%q on %q = %v", c.glob, c.p, got)
