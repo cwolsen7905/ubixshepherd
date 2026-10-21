@@ -27,9 +27,6 @@ const (
 //   - a question made before questions carried a link is flagged.
 func checkInbox(ctx context.Context, r *run) (int, error) {
 	p := r.p
-	for _, k := range []string{KindQuestionOutdated, KindDecisionOutdated, KindQuestionSkip, KindInboxDigest, KindQuestionNoAbout} {
-		r.ran[k] = true
-	}
 	mc := p.conf().Muster
 	now := p.now()
 	day := 24 * time.Hour

@@ -2,6 +2,7 @@ package muster
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -134,6 +135,52 @@ func TestMissingArtifactIsMarkedGoneAndUndone(t *testing.T) {
 	if a, _ := f.st.Artifact(f.ctx, gone.ID); a.State != store.ArtifactLive {
 		t.Errorf("gone.md tidied again: %s", a.State)
 	}
+}
+
+func TestWholeWorktreeMissingDoesNotMarkArtifactsGone(t *testing.T) {
+	f := newFixture(t)
+	a := f.artifact("a.md", store.ArtifactKeep)
+	delete(f.files, "/wt/x") // an unmounted volume: nothing under it can be seen
+	f.p.Run(f.ctx)
+	if got, _ := f.st.Artifact(f.ctx, a.ID); got.State != store.ArtifactLive {
+		t.Errorf("artifact = %s", got.State)
+	}
+	if f.kind(store.MusterOpen, KindLaneGone) == nil {
+		t.Error("the lane is not flagged")
+	}
+}
+
+func TestCommittedOnTheBaseCountsAfterTheBranchIsDeleted(t *testing.T) {
+	f := newFixture(t)
+	l, _ := f.st.CreateLane(f.ctx, store.Lane{RepoID: f.repo.ID, Name: "feat/z", Branch: "feat/z", Base: "dev", Worktree: "/wt/z", State: store.LaneClosed})
+	a2, _, _ := f.st.UpsertArtifact(f.ctx, store.Artifact{WorkspaceID: f.ws.ID, RepoID: f.repo.ID, LaneID: l.ID, Path: "b.md",
+		Kind: store.ArtifactMarkdown, Source: store.ArtifactDiscovered, Intent: store.ArtifactKeep, IntentBy: store.IntentByAgent, State: store.ArtifactLive})
+	f.p.Probe.InBranch = func(_ context.Context, _, branch, _ string) bool { return branch == "dev" }
+	f.p.Run(f.ctx)
+	if got, _ := f.st.Artifact(f.ctx, a2.ID); got.State != store.ArtifactInRepo {
+		t.Errorf("artifact = %s, want committed", got.State)
+	}
+}
+
+func TestFailedCheckDoesNotClearOpenFindings(t *testing.T) {
+	f := newFixture(t)
+	f.st.AddQuestion(f.ctx, store.Question{WorkspaceID: f.ws.ID, Text: "Legacy?"})
+	f.p.Run(f.ctx)
+	if f.kind(store.MusterOpen, KindQuestionNoAbout) == nil {
+		t.Fatal("not flagged")
+	}
+	// The inbox check fails part way: its findings must stay open.
+	f.p.Store = failingDecisions{f.st}
+	f.p.Run(f.ctx)
+	if f.kind(store.MusterOpen, KindQuestionNoAbout) == nil {
+		t.Error("an open finding was cleared by a check that failed")
+	}
+}
+
+type failingDecisions struct{ *sqlite.DB }
+
+func (failingDecisions) Decisions(context.Context, string) ([]store.Decision, error) {
+	return nil, errors.New("database is locked")
 }
 
 func TestUndoWindowEnds(t *testing.T) {
@@ -327,6 +374,7 @@ func TestNextUpChecks(t *testing.T) {
 	closed := add("Closed lane work", "app")
 	cl, _ := f.st.CreateLane(f.ctx, store.Lane{RepoID: f.repo.ID, Name: "feat/c", Branch: "feat/c", State: store.LaneClosed})
 	lid := cl.ID
+	f.st.PutLaneForge(f.ctx, store.LaneForge{LaneID: cl.ID, MR: 4, MRState: "closed"})
 	f.st.UpdateNextItem(f.ctx, closed.ID, store.NextPatch{LaneID: &lid})
 	f.p.Probe.Implemented = func(_ context.Context, it store.NextItem) (bool, string) { return it.ID == first.ID, "requirement 1" }
 

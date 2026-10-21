@@ -50,7 +50,6 @@ func checkArtifacts(ctx context.Context, r *run) (int, error) {
 		}
 		return l, rp, true
 	}
-	r.ran[KindArtifactMissing], r.ran[KindArtifactSettle], r.ran[KindArtifactUndecided] = true, true, true
 	batchDays := p.conf().Muster.Batch()
 	cutoff := p.now().Add(-time.Duration(batchDays) * 24 * time.Hour)
 	for _, ws := range wss {
@@ -72,7 +71,7 @@ func checkArtifacts(ctx context.Context, r *run) (int, error) {
 				}
 				continue
 			}
-			if l.Worktree != "" && !p.Probe.Exists(filepath.Join(l.Worktree, filepath.FromSlash(a.Path))) {
+			if l.Worktree != "" && p.Probe.Exists(l.Worktree) && !p.Probe.Exists(filepath.Join(l.Worktree, filepath.FromSlash(a.Path))) {
 				got, err := r.raise(ctx, candidate{
 					key: fmt.Sprintf("%s:%d:%s", KindArtifactMissing, a.ID, a.SHA256), kind: KindArtifactMissing,
 					subjectKind: "artifact", subjectID: a.ID, repo: rp.Name,
@@ -109,7 +108,14 @@ func (r *run) settleClosed(ctx context.Context, a store.Artifact, l store.Lane, 
 		return 0, nil
 	}
 	state := store.ArtifactGone
-	inBranch := p.Probe.InBranch != nil && p.Probe.InBranch(ctx, rp.Path, l.Branch, a.Path)
+	// The lane's branch is often deleted after a merge, so the base it landed on counts too.
+	inBranch := false
+	for _, b := range []string{l.Branch, l.Base} {
+		if b != "" && p.Probe.InBranch(ctx, rp.Path, b, a.Path) {
+			inBranch = true
+			break
+		}
+	}
 	switch {
 	case inBranch:
 		state = store.ArtifactInRepo

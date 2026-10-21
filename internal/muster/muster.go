@@ -67,7 +67,8 @@ func DefaultProbe(snapshotDir string) Probe {
 		},
 		Alive: processAlive,
 		InBranch: func(ctx context.Context, repoPath, branch, file string) bool {
-			return git.Ok(ctx, repoPath, "cat-file", "-e", "refs/heads/"+branch+":"+file)
+			return git.Ok(ctx, repoPath, "cat-file", "-e", "refs/heads/"+branch+":"+file) ||
+				git.Ok(ctx, repoPath, "cat-file", "-e", "refs/remotes/origin/"+branch+":"+file)
 		},
 		Snapshot: func(id int64, sha string) bool {
 			if snapshotDir == "" || sha == "" {
@@ -154,8 +155,8 @@ type candidate struct {
 	undoable bool
 }
 
-// run is one pass in progress: which finding keys the checks saw, and the kinds they
-// ran to the end, so an open finding that stopped being true can be cleared.
+// run is one pass in progress: which finding keys the checks saw, and the kinds whose
+// checks ran to the end without error, so an open finding that stopped being true can be cleared.
 type run struct {
 	p    *Pass
 	seen map[string]bool
@@ -173,17 +174,24 @@ func (p *Pass) Run(ctx context.Context) int {
 	n := 0
 	for _, c := range []struct {
 		name  string
+		kinds []string
 		check func(context.Context, *run) (int, error)
 	}{
-		{"artifacts", checkArtifacts},
-		{"board", checkBoard},
-		{"next", checkNext},
-		{"inbox", checkInbox},
+		{"artifacts", []string{KindArtifactMissing, KindArtifactSettle, KindArtifactUndecided}, checkArtifacts},
+		{"board", []string{KindLaneGone, KindLaneStale, KindLaneMRClosed, KindLaneScope, KindRunDead}, checkBoard},
+		{"next", []string{KindNextNoRepo, KindNextLaneClosed, KindNextImplemented, KindNextDuplicate}, checkNext},
+		{"inbox", []string{KindQuestionOutdated, KindDecisionOutdated, KindQuestionSkip, KindInboxDigest, KindQuestionNoAbout}, checkInbox},
 	} {
 		got, err := c.check(ctx, r)
 		n += got
 		if err != nil {
+			// A check that did not reach the end has not seen every finding, so it
+			// must not clear the open ones it missed.
 			p.log().Warn("muster: check failed", "check", c.name, "err", err)
+			continue
+		}
+		for _, k := range c.kinds {
+			r.ran[k] = true
 		}
 	}
 	n += r.clear(ctx)

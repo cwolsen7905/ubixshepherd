@@ -28,9 +28,6 @@ const DuplicateThreshold = 0.8
 //   - items with near-identical titles are proposed as duplicates.
 func checkNext(ctx context.Context, r *run) (int, error) {
 	p := r.p
-	for _, k := range []string{KindNextNoRepo, KindNextLaneClosed, KindNextImplemented, KindNextDuplicate} {
-		r.ran[k] = true
-	}
 	items, err := p.Store.NextItems(ctx)
 	if err != nil {
 		return 0, err
@@ -57,8 +54,10 @@ func checkNext(ctx context.Context, r *run) (int, error) {
 		if it.LaneID != 0 {
 			l, err := p.Store.Lane(ctx, it.LaneID)
 			if err == nil && l.State == store.LaneClosed {
-				lf, _ := p.Store.LaneForge(ctx, l.ID)
-				if !strings.EqualFold(lf.MRState, "merged") && lf.MergeSHA == "" {
+				// With no forge record (the store answers a zero one) or one that cannot be read it is not known that the
+				// lane closed unmerged, so nothing is asked.
+				lf, ferr := p.Store.LaneForge(ctx, l.ID)
+				if ferr == nil && (lf.MR != 0 || lf.MRState != "") && !strings.EqualFold(lf.MRState, "merged") && lf.MergeSHA == "" {
 					got, err := r.raise(ctx, candidate{
 						key:  fmt.Sprintf("%s:%d:%d", KindNextLaneClosed, it.ID, l.ID),
 						kind: KindNextLaneClosed, subjectKind: "next", subjectID: it.ID, repo: it.Repo,

@@ -34,9 +34,6 @@ const graceNewRun = time.Minute
 // Retrying a push that failed on the network belongs to the dispatcher, not here.
 func checkBoard(ctx context.Context, r *run) (int, error) {
 	p := r.p
-	for _, k := range []string{KindLaneGone, KindLaneStale, KindLaneMRClosed, KindLaneScope, KindRunDead} {
-		r.ran[k] = true
-	}
 	wss, err := p.Store.Workspaces(ctx)
 	if err != nil {
 		return 0, err
