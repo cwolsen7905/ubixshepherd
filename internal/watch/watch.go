@@ -18,6 +18,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
+	"github.com/ubixsys/ubixshepherd/internal/muster"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/workspace"
@@ -38,6 +39,8 @@ type Watcher struct {
 	ForgeFor func(remote string) (forge.Forge, error)
 	// Clock is the time, for the backoff from an unreachable host; tests replace it.
 	Clock func() time.Time
+	// Muster is the upkeep pass, run on every tick (internal/muster). Nil: none.
+	Muster *muster.Pass
 	// NoAutoClose turns off closing a finished lane by itself (autoclose.go). It is
 	// off by default; the daemon does not yet expose it as a setting.
 	NoAutoClose bool
@@ -127,6 +130,9 @@ func (w *Watcher) Check(ctx context.Context) {
 		return
 	}
 	w.expireProposals(ctx)
+	if w.Muster != nil {
+		w.Muster.Run(ctx)
+	}
 	closedByRepo, linked := w.closedItemLanes(ctx) // once per pass, not per repo
 	w.pruneClosedRead(linked)
 	for _, ws := range wss {

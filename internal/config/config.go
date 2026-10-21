@@ -38,6 +38,8 @@ type Config struct {
 	KeepGoing KeepGoing `yaml:"keep_going,omitempty" json:"keep_going"`
 	// Next holds the next-up list's settings.
 	Next Next `yaml:"next,omitempty" json:"next"`
+	// Muster sets the upkeep pass that tidies lists that have gone stale.
+	Muster Muster `yaml:"muster,omitempty" json:"muster"`
 	// Web holds the browser UI's settings; the page reads them from GET /v1/config.
 	Web      Web                `yaml:"web" json:"web"`
 	OpenCode OpenCode           `yaml:"opencode" json:"opencode,omitempty"`
@@ -773,6 +775,7 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	c.Update = file.Update
 	c.KeepGoing = file.KeepGoing
 	c.Next = file.Next
+	c.Muster = file.Muster
 	if file.Web.EditorURL != nil {
 		c.Web = file.Web
 	}
@@ -823,6 +826,7 @@ func (c Config) Validate() error {
 	errs = append(errs, c.Desk.validate()...)
 	errs = append(errs, c.KeepGoing.validate()...)
 	errs = append(errs, c.Next.validate()...)
+	errs = append(errs, c.Muster.validate()...)
 	errs = append(errs, c.Web.validate()...)
 	if !slices.Contains(Caps, c.Daemon.BudgetCapMode()) {
 		errs = append(errs, fmt.Errorf("daemon.budget_cap: %q is not %s", c.Daemon.BudgetCap, strings.Join(Caps, " or ")))

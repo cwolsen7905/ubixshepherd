@@ -128,6 +128,13 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 	if err != nil {
 		return out, err
 	}
+	tidy, _ := Tidy(ctx, st)
+	tidied := map[int64]bool{} // items the upkeep pass already asks about, so they show once
+	for _, m := range tidy {
+		if m.SubjectKind == "next" && m.Kind == "next.lane-closed" {
+			tidied[m.SubjectID] = true
+		}
+	}
 	for _, it := range items {
 		// A suggestion that the item may be done: the person decides. It stands in for the
 		// other reasons the item might wait, so it shows once.
@@ -137,6 +144,9 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 			continue
 		}
 		if it.State == store.NextApproved && it.LaneID != 0 {
+			if tidied[it.ID] {
+				continue
+			}
 			if wi, ok := closedNextItem(ctx, st, it); ok {
 				out.Items = append(out.Items, wi)
 				out.Counts.Next++
@@ -193,6 +203,17 @@ func Collect(ctx context.Context, st store.Store, conf config.Config, workspaceI
 	sort.SliceStable(out.Items, func(i, j int) bool { return out.Items[i].Since.Before(out.Items[j].Since) })
 	out.Seal()
 	return out, nil
+}
+
+// Tidy is the upkeep pass's open findings: the "To tidy" group, oldest first. Each has
+// a one-click fix or is only to be seen; the daemon's routes apply and dismiss them.
+func Tidy(ctx context.Context, st store.Store) ([]store.MusterItem, error) {
+	items, err := st.MusterItems(ctx, store.MusterFilter{State: store.MusterOpen})
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(items, func(i, j int) bool { return items[i].Created.Before(items[j].Created) })
+	return items, nil
 }
 
 // mrItem is a lane's open merge request that only the person can move: its pipeline is
@@ -337,15 +358,7 @@ func blockedItem(ctx context.Context, st store.Store, l store.Lane, rp store.Rep
 // no further than that, so a hedged answer is not taken as approval; the signal clears
 // the moment the scope covers every named path.
 func scopeItem(l store.Lane, rp store.Repo, d store.Decision) (api.WaitingItem, bool) {
-	if !strings.Contains(strings.ToLower(d.Question), "scope") || !affirmative(d.Answer) {
-		return api.WaitingItem{}, false
-	}
-	var missing []string
-	for _, p := range pathsIn(d.Question) {
-		if !scope.Any(l.Scope, p) {
-			missing = append(missing, p)
-		}
-	}
+	missing := ScopeMissing(l, d)
 	if len(missing) == 0 {
 		return api.WaitingItem{}, false
 	}
@@ -360,6 +373,21 @@ func scopeItem(l store.Lane, rp store.Repo, d store.Decision) (api.WaitingItem, 
 		Detail: oneLine(fmt.Sprintf("decision %d approved widening scope to %s; lane scope is still %s", d.ID, list, strings.Join(l.Scope, ", "))),
 		Since:  since,
 	}, true
+}
+
+// ScopeMissing is the paths an approved scope-widening decision named that the lane's
+// scope still does not cover; none when the decision is not such an approval.
+func ScopeMissing(l store.Lane, d store.Decision) []string {
+	if !strings.Contains(strings.ToLower(d.Question), "scope") || !affirmative(d.Answer) {
+		return nil
+	}
+	var missing []string
+	for _, p := range pathsIn(d.Question) {
+		if !scope.Any(l.Scope, p) {
+			missing = append(missing, p)
+		}
+	}
+	return missing
 }
 
 var negations = []string{"no", "n", "don't", "dont", "deny", "denied", "reject", "rejected", "decline", "never", "keep", "stay", "not"}

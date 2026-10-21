@@ -10,12 +10,12 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-const questionCols = `id, workspace_id, turn, topic_id, text, state, answered_turn, created, closed`
+const questionCols = `id, workspace_id, turn, topic_id, text, state, answered_turn, created, closed, repo, lane_id, next_id`
 
 func scanQuestion(sc interface{ Scan(...any) error }) (store.Question, error) {
 	var q store.Question
 	var created, closed string
-	err := sc.Scan(&q.ID, &q.WorkspaceID, &q.Turn, &q.TopicID, &q.Text, &q.State, &q.AnsweredTurn, &created, &closed)
+	err := sc.Scan(&q.ID, &q.WorkspaceID, &q.Turn, &q.TopicID, &q.Text, &q.State, &q.AnsweredTurn, &created, &closed, &q.Repo, &q.LaneID, &q.NextID)
 	q.Created = parseTime(created)
 	if closed != "" {
 		c := parseTime(closed)
@@ -32,8 +32,8 @@ func (s *DB) AddQuestion(ctx context.Context, q store.Question) (store.Question,
 	if len(q.Text) > store.MaxQuestionText {
 		q.Text = q.Text[:store.MaxQuestionText]
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_questions (workspace_id, turn, topic_id, text, state, created)
-		VALUES (?, ?, ?, ?, ?, ?)`, q.WorkspaceID, q.Turn, q.TopicID, q.Text, store.QuestionOpen, now())
+	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_questions (workspace_id, turn, topic_id, text, state, created, repo, lane_id, next_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, q.WorkspaceID, q.Turn, q.TopicID, q.Text, store.QuestionOpen, now(), q.Repo, q.LaneID, q.NextID)
 	if err != nil {
 		return q, err
 	}
@@ -83,6 +83,21 @@ func (s *DB) CloseQuestion(ctx context.Context, id int64, state string, answered
 			return q, err
 		}
 		return q, fmt.Errorf("%w: question %d is already %s", store.ErrConflict, id, q.State)
+	}
+	return s.Question(ctx, id)
+}
+
+func (s *DB) SetQuestionState(ctx context.Context, id int64, state string) (store.Question, error) {
+	closed := now()
+	if state == store.QuestionOpen {
+		closed = ""
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE desk_questions SET state = ?, closed = ? WHERE id = ?`, state, closed, id)
+	if err != nil {
+		return store.Question{}, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.Question{}, store.ErrNotFound
 	}
 	return s.Question(ctx, id)
 }
