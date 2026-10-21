@@ -323,3 +323,54 @@ func TestArtifactGCCapEvictsOldestFirst(t *testing.T) {
 		t.Errorf("left = %v (ids %v)", e, ids)
 	}
 }
+
+// declaredImage records a screenshot an agent declared, the way a run's end does.
+func (f *fixture) declaredImage(l store.Lane, p, intent string, size int) store.Artifact {
+	f.t.Helper()
+	ctx := context.Background()
+	writeFile(f.t, l.Worktree, p, strings.Repeat("x", size))
+	_, sum, err := readLive(l.Worktree, p, 64<<20)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	a, _, err := f.fold.Store.UpsertArtifact(ctx, store.Artifact{WorkspaceID: f.repo.WorkspaceID, RepoID: f.repo.ID, LaneID: l.ID,
+		Path: p, Kind: store.ArtifactImage, Source: store.ArtifactDeclared, Intent: intent, IntentBy: store.IntentByAgent, SHA256: sum, Size: int64(size)})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.fold.Store.AddArtifactVersion(ctx, store.ArtifactVersion{ArtifactID: a.ID, SHA256: sum, Size: int64(size), RunID: 1})
+	f.fold.SnapshotKnown(ctx, l.ID)
+	return a
+}
+
+func TestCloseKeepsDeclaredScreenshots(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		size       int
+		want       string
+	}{
+		{"in the Shepherd directory", ".shepherd/artifacts/shot.png", 100, store.ArtifactKept},
+		{"elsewhere in the worktree", "docs/shot.png", 100, store.ArtifactKept},
+		{"over the live view's cap", ".shepherd/artifacts/full-page.png", ArtifactMaxImage + 1, store.ArtifactKept},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.withSnapshots()
+			ctx := context.Background()
+			l := f.open("feat/shot")
+			f.commit(l.Worktree, "src/a.go")
+			f.merge(l)
+			a := f.declaredImage(l, tc.path, store.ArtifactKeep, tc.size)
+			if _, err := f.fold.Close(ctx, l.ID, false); err != nil {
+				t.Fatal(err)
+			}
+			if got := f.artifact(l.ID, tc.path); got.State != tc.want {
+				t.Fatalf("state = %s, want %s", got.State, tc.want)
+			}
+			c, err := f.fold.ArtifactSnapshot(ctx, a.ID, "")
+			if err != nil || len(c.Data) != tc.size || !strings.HasPrefix(c.Mime, "image/") {
+				t.Fatalf("snapshot = %d bytes, %q, %v", len(c.Data), c.Mime, err)
+			}
+		})
+	}
+}

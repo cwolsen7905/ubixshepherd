@@ -29,6 +29,12 @@ const (
 	DefaultSnapshotCap = 500 << 20
 )
 
+// MaxSnapshotImage is the largest image a snapshot keeps. It is wider than the live
+// view's ArtifactMaxImage: a full-page or high-density screenshot can pass 10 MiB, and
+// the copy is the only one the person has once the lane closes. It matches the cap on
+// what is hashed at all; the total cap (DefaultSnapshotCap) still bounds the store.
+const MaxSnapshotImage = 64 << 20
+
 // ExcludeLine is what Shepherd adds to a repo's info/exclude.
 const ExcludeLine = "/" + store.ArtifactDir
 
@@ -207,7 +213,7 @@ func (f *Fold) recordUnseen(ctx context.Context, lane store.Lane, repo store.Rep
 func (f *Fold) snapshotArtifact(ctx context.Context, a store.Artifact, worktree string) error {
 	limit := int64(ArtifactMaxText)
 	if a.Kind == store.ArtifactImage {
-		limit = ArtifactMaxImage
+		limit = MaxSnapshotImage
 	}
 	data, sum, err := readLive(worktree, a.Path, 64<<20)
 	if err != nil {
@@ -318,6 +324,9 @@ func (f *Fold) planArtifacts(ctx context.Context, lane store.Lane, repoPath stri
 			plan[a.ID] = store.ArtifactKept
 		default:
 			plan[a.ID] = store.ArtifactGone
+			if wantsSnapshot(a) {
+				f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy: it was missing, unreadable or over the snapshot size cap", a.Path, lane.Name), a.ID)
+			}
 		}
 	}
 	return plan
