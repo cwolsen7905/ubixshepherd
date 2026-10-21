@@ -42,6 +42,7 @@ type Observer struct {
 
 	mu     sync.Mutex
 	last   map[string]string // lane key -> state key of the last row written
+	fed    map[string]string // lane key -> head that already had its feed line
 	failed map[string]string // repo dir -> base commit whose rules failed to load
 }
 
@@ -98,17 +99,10 @@ func (o *Observer) Observe(ctx context.Context, in Input) (*Result, error) {
 	lane := in.Repo + "/" + in.Lane
 	o.mu.Lock()
 	same := o.last[lane] == key
-	if !same {
-		if o.last == nil {
-			o.last = map[string]string{}
-		}
-		o.last[lane] = key
-	}
 	o.mu.Unlock()
 	if same {
 		return res, nil
 	}
-	res.Recorded = true
 	f, _ := json.Marshal(withCommit(facts, rules.Commit))
 	if o.Rec != nil {
 		err := o.Rec.Record(context.WithoutCancel(ctx), crook.Entry{
@@ -117,10 +111,25 @@ func (o *Observer) Observe(ctx context.Context, in Input) (*Result, error) {
 			Repo: in.Repo, Lane: in.Lane, Facts: string(f),
 		})
 		if err != nil {
+			// The key is not kept, so the next poll tries the row again.
 			return res, fmt.Errorf("record shadow verdict: %w", err)
 		}
 	}
-	if res.Verdict == crook.Proceed && o.Feed != nil {
+	res.Recorded = true
+	o.mu.Lock()
+	if o.last == nil {
+		o.last = map[string]string{}
+		o.fed = map[string]string{}
+	}
+	o.last[lane] = key
+	// The feed line is once per head: a head that goes proceed, ask, proceed again does
+	// not say it twice.
+	feed := res.Verdict == crook.Proceed && o.Feed != nil && o.fed[lane] != in.Head
+	if feed {
+		o.fed[lane] = in.Head
+	}
+	o.mu.Unlock()
+	if feed {
 		o.Feed(ctx, in.Lane, fmt.Sprintf("rule %s would have merged !%d (%s) at %s (shadow mode: not merged)", res.Rule, in.MR, in.MRURL, short(in.Head)))
 	}
 	return res, nil
@@ -134,6 +143,7 @@ func (o *Observer) Merged(ctx context.Context, in Input, mergeSHA string) error 
 	o.mu.Lock()
 	key, ok := o.last[lane]
 	delete(o.last, lane)
+	delete(o.fed, lane)
 	o.mu.Unlock()
 	if !ok || o.Rec == nil {
 		return nil

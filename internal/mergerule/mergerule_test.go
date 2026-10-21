@@ -314,3 +314,56 @@ func TestShadowStages(t *testing.T) {
 		t.Error("IsShadowStage")
 	}
 }
+
+type failOnce struct {
+	recorder
+	fail bool
+}
+
+func (f *failOnce) Record(ctx context.Context, e crook.Entry) error {
+	if f.fail {
+		f.fail = false
+		return context.DeadlineExceeded
+	}
+	return f.recorder.Record(ctx, e)
+}
+
+func TestFailedWriteIsRetriedOnTheNextPoll(t *testing.T) {
+	r := newRepo(t, specRule)
+	head := r.lane("l", map[string]string{"b.go": "package a\n"})
+	rec := &failOnce{fail: true}
+	o := &Observer{Rec: rec}
+	ctx := context.Background()
+	if res, err := o.Observe(ctx, r.input(head)); err == nil || res == nil || res.Recorded {
+		t.Fatalf("first poll = %+v, %v", res, err)
+	}
+	if res, err := o.Observe(ctx, r.input(head)); err != nil || !res.Recorded || len(rec.rows) != 1 {
+		t.Fatalf("second poll = %+v, %v, rows %d", res, err, len(rec.rows))
+	}
+}
+
+func TestFeedLineIsOncePerHead(t *testing.T) {
+	r := newRepo(t, specRule)
+	head := r.lane("l", map[string]string{"b.go": "package a\n"})
+	var feed []string
+	o := observer(&recorder{}, &feed)
+	ctx := context.Background()
+	in := r.input(head)
+	for _, p := range []string{"success", "failed", "success"} {
+		in.Pipeline = p
+		if _, err := o.Observe(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(feed) != 1 {
+		t.Fatalf("feed = %v, want one line for the head", feed)
+	}
+	// A new head gets its own line.
+	in.Head, in.GateSHA = r.lane("l2", map[string]string{"c.go": "package a\n"}), ""
+	in.GateSHA = in.Head
+	in.Pipeline = "success"
+	o.Observe(ctx, in)
+	if len(feed) != 2 {
+		t.Errorf("feed = %v, want a second line for the new head", feed)
+	}
+}
