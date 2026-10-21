@@ -150,3 +150,40 @@ func TestRunDismissAndTools(t *testing.T) {
 		t.Error("the tools left the run dismissed")
 	}
 }
+
+// The restart flag travels from the CLI to the daemon: both forms reach the runner's
+// refusal for a run that is not running, rather than a usage error.
+func TestRunStopForRestartFlag(t *testing.T) {
+	h := newHarness(t, "", false)
+	id := seedFailedRun(t, h)
+	for _, args := range [][]string{{"run", "stop", fmt.Sprint(id)}, {"run", "stop", fmt.Sprint(id), "--for-restart"}} {
+		h.err.Reset()
+		if code := h.run(args...); code == 0 || !strings.Contains(h.err.String(), "not running") {
+			t.Errorf("%v: %d %s", args, code, h.err)
+		}
+	}
+	// With no drain under way the flag is said to do nothing.
+	if !strings.Contains(h.err.String(), "no restart is draining") {
+		t.Errorf("--for-restart outside a drain said nothing: %s", h.err)
+	}
+}
+
+// The run_stop tool passes for_restart on as --for-restart; the daemon's own test covers
+// what the flag does, so this only checks the tool's arguments reach the run command.
+func TestRunStopToolMapsForRestart(t *testing.T) {
+	for _, tool := range mcpTools() {
+		if tool.Name != "run_stop" {
+			continue
+		}
+		got, err := tool.args(map[string]any{"id": float64(7), "for_restart": true})
+		if err != nil || strings.Join(got, " ") != "run stop 7 --for-restart" {
+			t.Errorf("for_restart: %v %v", got, err)
+		}
+		got, err = tool.args(map[string]any{"id": float64(7)})
+		if err != nil || strings.Join(got, " ") != "run stop 7" {
+			t.Errorf("plain: %v %v", got, err)
+		}
+		return
+	}
+	t.Fatal("no run_stop tool")
+}

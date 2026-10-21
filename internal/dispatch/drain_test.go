@@ -514,3 +514,61 @@ func TestPersonStoppedRunPastTheShutdownDeadlineIsNotContinued(t *testing.T) {
 		t.Errorf("runs = %+v, want only the stopped one", runs)
 	}
 }
+
+// The desk's stop to hurry a drain is the restart's: the run is continued after it.
+func TestDeskStopToHurryADrainIsContinued(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "long job"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Drain(10 * time.Minute)
+	if err := f.runner.StopForRestart(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.drained(t)
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunInterrupted || got.Reason != store.ReasonRestart {
+		t.Fatalf("run = %+v", got)
+	}
+	if runs := f.resumedOnce(t); len(runs) != 2 {
+		t.Errorf("runs = %+v, want the stopped one and its continuation", runs)
+	}
+}
+
+// The restart flag is honoured only while draining, and a person's stop wins either way.
+func TestStopForRestartWithoutADrainOrAfterAPersonsStopStaysTheirs(t *testing.T) {
+	f := napFixture(t, "30")
+	ctx := context.Background()
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "no drain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.runner.StopForRestart(ctx, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	f.runner.Wait()
+	got, _ := f.st.Run(ctx, run.ID)
+	if got.State != store.RunStopped || got.Reason != "" {
+		t.Fatalf("no drain: run = %+v", got)
+	}
+
+	f2 := napFixture(t, "30")
+	run2, err := f2.runner.Start(ctx, StartRequest{LaneID: f2.lane.ID, Agent: "claude", Prompt: "person wins"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f2.runner.Drain(10 * time.Minute)
+	if err := f2.runner.StopForRestart(ctx, run2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f2.runner.Stop(ctx, run2.ID); err != nil {
+		t.Fatal(err)
+	}
+	f2.drained(t)
+	got2, _ := f2.st.Run(ctx, run2.ID)
+	if got2.State != store.RunStopped || got2.Reason != "" {
+		t.Fatalf("person after desk: run = %+v", got2)
+	}
+}

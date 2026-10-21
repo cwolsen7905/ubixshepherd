@@ -974,7 +974,15 @@ func (s *Server) stopRun(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.Runner.Stop(r.Context(), run.ID); err != nil {
+	var req api.StopRun
+	if !decodeOptional(w, r, &req) {
+		return
+	}
+	stop := s.Runner.Stop
+	if req.ForRestart {
+		stop = s.Runner.StopForRestart
+	}
+	if err := stop(r.Context(), run.ID); err != nil {
 		s.foldError(w, err)
 		return
 	}
