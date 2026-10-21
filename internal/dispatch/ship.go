@@ -14,6 +14,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
+	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
@@ -58,6 +59,11 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
 		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
 		r.diagnose(ctx, run, outsideDiagnosis(outside))
+		return
+	}
+	if problems := r.checkProblems(ctx, lane); len(problems) > 0 {
+		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: %s", lane.Name, problems[0])
+		r.diagnose(ctx, run, checksDiagnosis(problems))
 		return
 	}
 	if why, busy := r.unfinished(ctx, run, lane); why != "" {
@@ -151,6 +157,10 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
 		r.diagnoseLane(ctx, lane, outsideDiagnosis(outside))
 		return out, refuse("not shipping lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
+	}
+	if problems := r.checkProblems(ctx, lane); len(problems) > 0 {
+		r.diagnoseLane(ctx, lane, checksDiagnosis(problems))
+		return out, refuse("not shipping lane %s: %s", lane.Name, strings.Join(problems, "\n"))
 	}
 	if bad := forbidden(ctx, lane, prof.Forbid); bad != "" {
 		r.diagnoseLane(ctx, lane, forbiddenDiagnosis(bad))
@@ -449,6 +459,23 @@ func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string)
 func outsideDiagnosis(files []string) store.Diagnosis {
 	return store.Diagnosis{Kind: store.DiagOutsideScope, Files: files,
 		Summary: "not pushed: commits change files outside the lane's scope: " + clip(strings.Join(files, ", "), 160)}
+}
+
+// checkProblems judges the lane's branch against the repo's approved check files: the
+// hook that would catch a change can be skipped, so Shepherd looks itself before it
+// pushes. A branch it cannot judge counts as a problem.
+func (r *Runner) checkProblems(ctx context.Context, lane store.Lane) []string {
+	problems, err := fold.ShipProblems(ctx, r.Store, lane)
+	if err != nil {
+		return []string{"could not check the lane against the approved check files: " + err.Error()}
+	}
+	return problems
+}
+
+// checksDiagnosis is the diagnosis of a branch that changes approved check files.
+func checksDiagnosis(problems []string) store.Diagnosis {
+	return store.Diagnosis{Kind: store.DiagOutsideScope, Evidence: strings.Join(problems, "\n"),
+		Summary: "not pushed: " + clip(strings.Join(strings.Fields(strings.Join(problems, " ")), " "), 200)}
 }
 
 // forbiddenDiagnosis is the diagnosis of a commit message the repo does not allow; bad is

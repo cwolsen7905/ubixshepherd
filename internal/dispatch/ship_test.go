@@ -231,6 +231,17 @@ func TestShipLaneRefuses(t *testing.T) {
 		commitInLane(t, f, "stray.txt", "feat: stray")
 		refused(t, f, sf, "outside its scope (stray.txt)")
 	})
+	t.Run("approved check file", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		// The person approved src/chk_test.go; the lane commits a change to it with the
+		// pre-push hook out of the way (a ship does not rely on the hook).
+		if _, err := f.st.ApproveCheckFiles(ctx, []store.CheckFile{{RepoID: f.lane.RepoID, Path: "src/chk_test.go",
+			Blob: "0000000000000000000000000000000000000001", BaseCommit: "c1", ApprovedBy: "person (cli)"}}); err != nil {
+			t.Fatal(err)
+		}
+		commitInLane(t, f, "src/chk_test.go", "feat: weaken the check")
+		refused(t, f, sf, "changes approved check files")
+	})
 	t.Run("commit rules", func(t *testing.T) {
 		f, sf := shipFixture(t, "ok", pushes+"    forbid: [\"(?i)wip\"]\n")
 		commitInLane(t, f, "src/a.txt", "WIP: a")
