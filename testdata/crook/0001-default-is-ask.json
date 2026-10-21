@@ -1,0 +1,32 @@
+{
+ "name": "0001-default-is-ask",
+ "spec": "crook/1",
+ "description": "No rule covers a merge, so the default asks.",
+ "rules": {},
+ "limits": {},
+ "request": {
+  "action": "merge",
+  "actor": "daemon",
+  "facts": {
+   "item_linked": true,
+   "requirement": [
+    "SHP-FR-WEB-002"
+   ],
+   "approved_checks": "pass",
+   "tests_edited": false,
+   "check_files_edited": false,
+   "gate": "green",
+   "pipeline": "green",
+   "ai_review": "ok",
+   "up_to_date": true,
+   "changed_lines": 220,
+   "paths": [
+    "web/src/pages/Inbox.tsx"
+   ]
+  }
+ },
+ "expect": {
+  "verdict": "ask",
+  "rule": "builtin/default"
+ }
+}
