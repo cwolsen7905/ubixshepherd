@@ -20,7 +20,10 @@ const shadowRowLimit = 1000
 // shadowRows reads the shadow evidence in Crook's verdict log through the daemon: the
 // would-have rows and the outcome rows, newest first. The daemon lists by action, so
 // the two are fetched apart and told from live rows by their stage.
-func shadowRows(ctx context.Context, c *client.Client, rule, since string) (would, outcomes []store.CrookVerdict, err error) {
+//
+// The daemon pages by a limit only, so truncated says a list reached shadowRowLimit and
+// older rows in the window may be missing from what is returned.
+func shadowRows(ctx context.Context, c *client.Client, rule, since string) (would, outcomes []store.CrookVerdict, truncated bool, err error) {
 	get := func(action string) ([]store.CrookVerdict, error) {
 		q := url.Values{"action": {action}, "limit": {fmt.Sprint(shadowRowLimit)}}
 		if rule != "" {
@@ -33,6 +36,9 @@ func shadowRows(ctx context.Context, c *client.Client, rule, since string) (woul
 		if err != nil {
 			return nil, err
 		}
+		if len(out.Verdicts) >= shadowRowLimit {
+			truncated = true
+		}
 		var rows []store.CrookVerdict
 		for _, v := range out.Verdicts {
 			if mergerule.IsShadowStage(v.Stage) {
@@ -42,10 +48,16 @@ func shadowRows(ctx context.Context, c *client.Client, rule, since string) (woul
 		return rows, nil
 	}
 	if would, err = get(mergerule.ActionMerge); err != nil {
-		return nil, nil, err
+		return nil, nil, false, err
 	}
 	outcomes, err = get(mergerule.ActionOutcome)
-	return would, outcomes, err
+	return would, outcomes, truncated, err
+}
+
+// truncatedNote is said when a read hit the daemon's cap, so a count is not mistaken
+// for the whole window.
+func truncatedNote(w io.Writer) {
+	fmt.Fprintf(w, "note: more than %d rows in that window; older shadow rows are not counted. Use a shorter --since.\n", shadowRowLimit)
 }
 
 // shadowCount is what a shadow rule would have done, counted by verdict.
@@ -54,7 +66,9 @@ type shadowCount struct {
 	Proceed int    `json:"would_have_proceeded"`
 	Ask     int    `json:"would_have_asked"`
 	Hold    int    `json:"would_have_held"`
-	Merged  int    `json:"person_merged"`
+	// Merged counts requests the rule had observed that the person then merged, whatever
+	// the rule had said.
+	Merged int `json:"merged_after"`
 }
 
 func countShadow(would, outcomes []store.CrookVerdict) []shadowCount {
@@ -90,6 +104,9 @@ func countShadow(would, outcomes []store.CrookVerdict) []shadowCount {
 type crookRulesOut struct {
 	api.CrookRules
 	Shadow []shadowCount `json:"shadow,omitempty"`
+	// Truncated says the shadow read hit the daemon's cap, so the live counts may still
+	// include older shadow rows.
+	Truncated bool `json:"truncated,omitempty"`
 }
 
 // crookRules prints per-rule counts with the shadow rows taken out of the live counts
@@ -103,7 +120,7 @@ func crookRules(ctx context.Context, env Env, c *client.Client, since string, as
 	if err != nil {
 		return err
 	}
-	would, outcomes, err := shadowRows(ctx, c, "", since)
+	would, outcomes, truncated, err := shadowRows(ctx, c, "", since)
 	if err != nil {
 		return err
 	}
@@ -141,19 +158,24 @@ func crookRules(ctx context.Context, env Env, c *client.Client, since string, as
 	live.Rules = kept
 	shadow := countShadow(would, outcomes)
 	if asJSON {
-		return printJSON(env, crookRulesOut{live, shadow})
+		return printJSON(env, crookRulesOut{live, shadow, truncated})
 	}
 	writeCrookRules(env.Stdout, live)
 	if len(shadow) > 0 {
 		fmt.Fprintln(env.Stdout)
 		writeShadowCounts(env.Stdout, shadow)
 	}
+	if truncated {
+		fmt.Fprintln(env.Stdout)
+		truncatedNote(env.Stdout)
+		fmt.Fprintln(env.Stdout, "      The live counts above may still include some of those older shadow rows.")
+	}
 	return nil
 }
 
 func writeShadowCounts(w io.Writer, counts []shadowCount) {
 	fmt.Fprintln(w, "shadow rules (what they would have done; nothing was acted on)")
-	fmt.Fprintf(w, "  %-32s %17s %6s %6s %14s\n", "rule", "would have merged", "asked", "held", "person merged")
+	fmt.Fprintf(w, "  %-32s %17s %6s %6s %14s\n", "rule", "would have merged", "asked", "held", "merged after")
 	for _, c := range counts {
 		fmt.Fprintf(w, "  %-32s %17d %6d %6d %14d\n", c.Rule, c.Proceed, c.Ask, c.Hold, c.Merged)
 	}
@@ -161,10 +183,11 @@ func writeShadowCounts(w io.Writer, counts []shadowCount) {
 
 // shadowOut is `crook shadow --json`.
 type shadowOut struct {
-	Since    string               `json:"since"`
-	Counts   []shadowCount        `json:"counts"`
-	Verdicts []store.CrookVerdict `json:"verdicts"`
-	Outcomes []store.CrookVerdict `json:"outcomes"`
+	Since     string               `json:"since"`
+	Counts    []shadowCount        `json:"counts"`
+	Verdicts  []store.CrookVerdict `json:"verdicts"`
+	Truncated bool                 `json:"truncated,omitempty"`
+	Outcomes  []store.CrookVerdict `json:"outcomes"`
 }
 
 // crookShadow is `shepherd crook shadow`: the merge requests a shadow rule had an
@@ -174,7 +197,7 @@ func crookShadow(ctx context.Context, env Env, c *client.Client, rule, since str
 	if since == "" {
 		since = "14d"
 	}
-	would, outcomes, err := shadowRows(ctx, c, rule, since)
+	would, outcomes, truncated, err := shadowRows(ctx, c, rule, since)
 	if err != nil {
 		return err
 	}
@@ -183,7 +206,7 @@ func crookShadow(ctx context.Context, env Env, c *client.Client, rule, since str
 		would = would[:limit]
 	}
 	if asJSON {
-		return printJSON(env, shadowOut{Since: since, Counts: counts, Verdicts: would, Outcomes: outcomes})
+		return printJSON(env, shadowOut{Since: since, Counts: counts, Verdicts: would, Outcomes: outcomes, Truncated: truncated})
 	}
 	if len(would) == 0 {
 		fmt.Fprintf(env.Stdout, "no shadow verdicts since %s\n", since)
@@ -199,6 +222,10 @@ func crookShadow(ctx context.Context, env Env, c *client.Client, rule, since str
 	}
 	for _, o := range outcomes {
 		fmt.Fprintf(env.Stdout, "#%d  %s  %s  %s\n      %s\n", o.ID, o.At.Local().Format("Mon 15:04"), "outcome", crookSubject(o), firstLine(o.Reason))
+	}
+	if truncated {
+		fmt.Fprintln(env.Stdout)
+		truncatedNote(env.Stdout)
 	}
 	return nil
 }

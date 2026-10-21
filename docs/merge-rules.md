@@ -71,8 +71,9 @@ verdict or the unmet conditions change, so a merge request that sits does not fi
 log. The first time a head would have merged, the lane's feed says so.
 
 When the person merges a request the rule had an opinion on, one more row (stage
-`shadow-outcome`) records what happened, so the record can be read as "the rule said
-proceed, and the person merged it".
+`shadow-outcome`) records what happened and what the rule had said, so the record can be
+read as "the rule said proceed, and the person merged it". The "merged after" count
+includes every observed request the person merged, whatever the rule had said.
 
 ## Reading it
 
@@ -83,7 +84,7 @@ shepherd crook rules                   # shadow rows counted in a table of their
 ```
 
 `crook shadow` first counts, per rule, how many requests it would have merged, asked
-about or held and how many the person merged, then lists each would-have verdict with
+about or held and how many observed requests the person merged afterwards, then lists each would-have verdict with
 its reason. `--json` gives the same data. The `crook_shadow` MCP tool reads it too.
 
 Live counts in `crook rules` never include shadow rows, and `crook log` and `crook why`
