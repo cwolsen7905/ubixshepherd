@@ -42,6 +42,20 @@ func TestNextCLIAndMCP(t *testing.T) {
 	if code := h.run("next", "list", "--text", "THREE", "--repo", "app", "--matrix", "none"); code != 0 || strings.Contains(h.out.String(), "Step two") || !strings.Contains(h.out.String(), "Step three") {
 		t.Errorf("list --text: %s%s", h.out, h.err)
 	}
+	if code := h.run("topic", "new", "release work"); code != 0 {
+		t.Fatalf("topic new: %s", h.err)
+	}
+	if code := h.run("topic", "set", "release work", "--item", "2"); code != 0 {
+		t.Fatalf("topic set: %s", h.err)
+	}
+	for _, spec := range []string{"1", "#1", "RELEASE"} {
+		if code := h.run("next", "list", "--topic", spec, "--matrix", "none"); code != 0 || strings.Contains(h.out.String(), "Step two") || !strings.Contains(h.out.String(), "Step three") {
+			t.Errorf("list --topic %s: %s%s", spec, h.out, h.err)
+		}
+	}
+	if code := h.run("next", "list", "--topic", "nonesuch"); code == 0 {
+		t.Error("an unknown topic was accepted")
+	}
 	if code := h.run("next", "list", "--state", "bogus"); code == 0 {
 		t.Error("an unknown state was accepted")
 	}
@@ -256,7 +270,7 @@ func TestNextFilter(t *testing.T) {
 	if i, _, _ := count(nextFilter{States: []string{"planned"}}); i != 1 {
 		t.Errorf("a proposed item matched planned: %d", i)
 	}
-	if i, m, _ := count(nextFilter{Topic: "UI"}); i != 2 || m != 0 {
+	if i, m, _ := count(nextFilter{Topic: map[int64]bool{1: true, 3: true}}); i != 2 || m != 0 {
 		t.Errorf("topic: %d %d", i, m)
 	}
 	if i, _, _ := count(nextFilter{Text: "alpha"}); i != 2 {

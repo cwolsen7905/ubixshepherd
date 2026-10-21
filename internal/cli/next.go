@@ -35,7 +35,7 @@ func runNext(ctx context.Context, env Env, args []string) error {
 	note := fs.String("note", "", "a note")
 	title := fs.String("title", "", "update: a new title")
 	state := fs.String("state", "", "update: planned, approved, deferred, dropped or done; list: states to show, comma separated (approved, started, planned, proposed, deferred, todo, blocked)")
-	topic := fs.String("topic", "", "list: only items whose plan, lane or area contains this")
+	topic := fs.String("topic", "", "list: only items in this conversation topic, by id (83 or #83) or title substring")
 	text := fs.String("text", "", "list: only items whose title, note or done-when contains this")
 	matrix := fs.String("matrix", "", "list: the read-only matrix rows to show: none, or a repo's name (default all)")
 	compact := fs.Bool("compact", false, "list: one line per item")
@@ -63,7 +63,12 @@ func runNext(ctx context.Context, env Env, args []string) error {
 		if err != nil {
 			return err
 		}
-		f := nextFilter{Repo: *repo, Topic: *topic, Text: *text, Matrix: *matrix}
+		f := nextFilter{Repo: *repo, Text: *text, Matrix: *matrix}
+		if *topic != "" {
+			if f.Topic, err = topicItems(ctx, c, *topic); err != nil {
+				return err
+			}
+		}
 		if f.States, err = parseNextStates(*state); err != nil {
 			return err
 		}
@@ -260,7 +265,10 @@ func nextMark(v api.NextItemView) string {
 // nextFilter narrows a next-up list: every field set must match. Matching is case
 // insensitive and by substring, except States and the repo names, which are exact.
 type nextFilter struct {
-	Repo, Topic, Text string
+	Repo, Text string
+	// Topic, when non-nil, is the ids of the items in the chosen conversation topic;
+	// matrix rows have no topic, so they drop out.
+	Topic map[int64]bool
 	// Matrix is "" (all rows), "none", or the one repo whose matrix rows show.
 	Matrix string
 	States []string
@@ -282,6 +290,41 @@ func parseNextStates(s string) ([]string, error) {
 	return out, nil
 }
 
+// topicItems resolves a topic given by id (83 or #83; a merged topic's id keeps
+// resolving) or by title substring, and returns the ids of the next-up items it holds.
+func topicItems(ctx context.Context, c *client.Client, spec string) (map[int64]bool, error) {
+	var topics []api.TopicView
+	if id, err := strconv.ParseInt(strings.TrimPrefix(strings.TrimSpace(spec), "#"), 10, 64); err == nil {
+		t, err := c.Topic(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		topics = append(topics, t)
+	} else {
+		l, err := c.Topics(ctx, true)
+		if err != nil {
+			return nil, err
+		}
+		for _, t := range l.Topics {
+			if strings.Contains(strings.ToLower(t.Title), strings.ToLower(spec)) {
+				topics = append(topics, t)
+			}
+		}
+		if len(topics) == 0 {
+			return nil, fmt.Errorf("no topic title contains %q", spec)
+		}
+	}
+	ids := map[int64]bool{}
+	for _, t := range topics {
+		for _, l := range t.Links {
+			if n, err := strconv.ParseInt(l.Ref, 10, 64); err == nil && l.Kind == store.TopicNextItem {
+				ids[n] = true
+			}
+		}
+	}
+	return ids, nil
+}
+
 func (f nextFilter) match(v api.NextItemView) bool {
 	if f.Repo != "" && !strings.EqualFold(v.Repo, f.Repo) {
 		return false
@@ -297,7 +340,7 @@ func (f nextFilter) match(v api.NextItemView) bool {
 		}
 		return false
 	}
-	if f.Topic != "" && !has(f.Topic, v.Plan, v.LaneName, v.Area) {
+	if f.Topic != nil && !f.Topic[v.ID] {
 		return false
 	}
 	return f.Text == "" || has(f.Text, v.Title, v.Note, v.DoneWhen)
