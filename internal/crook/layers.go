@@ -46,7 +46,8 @@ func ReadLayerFS(layer string, fsys fs.FS) (LayerFiles, error) {
 		return out, fmt.Errorf("%s layer: %w", layer, err)
 	}
 	for _, e := range entries {
-		if e.IsDir() || path.Ext(e.Name()) != ".md" {
+		// Only regular files: a symlink could lead out of the layer folder.
+		if !e.Type().IsRegular() || path.Ext(e.Name()) != ".md" {
 			continue
 		}
 		b, err := fs.ReadFile(fsys, path.Join("rules", e.Name()))
@@ -107,6 +108,10 @@ func Merge(layers ...LayerFiles) RuleSet {
 	for _, l := range layers {
 		if layerIndex(l.Layer) < 0 {
 			set.Errors = append(set.Errors, LoadError{Layer: l.Layer, Err: fmt.Errorf("unknown layer: use %s", strings.Join(LayerOrder, ", "))})
+			continue
+		}
+		if _, dup := byLayer[l.Layer]; dup {
+			set.Errors = append(set.Errors, LoadError{Layer: l.Layer, Err: fmt.Errorf("the layer was given twice; only the first is used")})
 			continue
 		}
 		byLayer[l.Layer] = l

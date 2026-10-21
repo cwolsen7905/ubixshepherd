@@ -256,6 +256,9 @@ func (r *FileRule) fill(f ruleFront) error {
 		set("max_changed_lines", f.MaxChangedLines != nil)
 		set("paths_not", f.PathsNot != nil)
 		set("on_red_after_merge", f.OnRedAfterMerge != "")
+		if len(r.When.Class) > 0 {
+			return fmt.Errorf("a classifier cannot match on class: classifiers see the facts, not each other's classes")
+		}
 		if f.AppliesTo != "action" && f.AppliesTo != "decision" {
 			return fmt.Errorf("a classifier needs applies_to: action or decision")
 		}

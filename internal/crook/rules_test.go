@@ -1,6 +1,8 @@
 package crook
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +31,7 @@ func TestParseRuleRejectsUnknowns(t *testing.T) {
 		"no actions":       "---\nkind: policy\nthen: ask\n---\nx\n",
 		"bad time":         "---\nkind: guardrail\nactions: [push]\nwhen:\n  time: noon\nthen: ask\n---\nx\n",
 		"classifier then":  "---\nkind: classifier\napplies_to: action\nclass: big\nthen: ask\n---\nx\n",
+		"classifier class": "---\nkind: classifier\napplies_to: action\nclass: big\nwhen:\n  class: other\n---\nx\n",
 		"bad class":        "---\nkind: classifier\napplies_to: action\nclass: Big\n---\nx\n",
 		"answer elsewhere": "---\nkind: policy\nactions: [push]\nthen: ask\nanswer: recommendation\n---\nx\n",
 		"answer no about":  "---\nkind: standing-answer\nactions: [answer_decision]\nanswer: 1\n---\nx\n",
@@ -215,5 +218,30 @@ func TestStandingAnswerStartsInShadow(t *testing.T) {
 	live := map[string]string{"sa.md": strings.Replace(files["sa.md"], "kind: standing-answer", "kind: standing-answer\nmode: live", 1)}
 	if got := evalOne(t, live, q); got.Verdict != Proceed || got.Answer != "recommendation" {
 		t.Errorf("live: %+v", got)
+	}
+}
+
+func TestDuplicateLayerIsReported(t *testing.T) {
+	g := "---\nkind: guardrail\nactions: [push]\nthen: ask\n---\nx\n"
+	set := Merge(layer(LayerRepo, map[string]string{"a.md": g}), layer(LayerRepo, map[string]string{"b.md": g}))
+	if len(set.Errors) != 1 || len(set.Rules) != 1 || set.Rules[0].ID != "a" {
+		t.Errorf("set = %+v", set)
+	}
+}
+
+func TestReadLayerDirSkipsSymlinks(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "rules"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	secret := filepath.Join(outside, "secret.md")
+	os.WriteFile(secret, []byte("secret"), 0o644)
+	os.WriteFile(filepath.Join(dir, "rules", "real.md"), []byte("x"), 0o644)
+	if err := os.Symlink(secret, filepath.Join(dir, "rules", "link.md")); err != nil {
+		t.Skip("no symlinks here")
+	}
+	l, err := ReadLayerDir(LayerWorkspace, dir)
+	if err != nil || len(l.Files) != 1 || l.Files["real.md"] == nil {
+		t.Errorf("files = %v, err %v", l.Files, err)
 	}
 }

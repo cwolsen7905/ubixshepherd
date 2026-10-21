@@ -151,7 +151,9 @@ func evaluate(set RuleSet, q Query, rulesFolder bool) Outcome {
 		if (r.AppliesTo == "decision") != (q.Action == "answer_decision") {
 			continue
 		}
-		if r.When.matches(q.Facts, classes, q.Now) && !slices.Contains(classes, r.Class) {
+		// Classifiers see the facts only, never each other's classes, so the result does
+		// not depend on the order they are read in (a class matcher in one is a load error).
+		if r.When.matches(q.Facts, nil, q.Now) && !slices.Contains(classes, r.Class) {
 			classes = append(classes, r.Class)
 		}
 	}
