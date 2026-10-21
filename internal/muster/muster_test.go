@@ -595,3 +595,25 @@ func TestAboutLinks(t *testing.T) {
 		t.Errorf("next label = %q", got)
 	}
 }
+
+func TestDecisionWithUnreadableRunStaysInTheDigest(t *testing.T) {
+	f := newFixture(t)
+	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", State: store.RunSucceeded})
+	d, _ := f.st.CreateDecision(f.ctx, store.Decision{RunID: run.ID, Question: "Which one?"})
+	f.p.Store = unreadableRun{f.st}
+	f.now = time.Now().UTC().Add(4 * 24 * time.Hour)
+	f.p.Run(f.ctx)
+	dg := f.kind(store.MusterOpen, KindInboxDigest)
+	if dg == nil || !strings.Contains(dg.Reason, fmt.Sprintf("decision %d", d.ID)) {
+		t.Fatalf("digest = %+v", dg)
+	}
+	if got, _ := f.st.Decision(f.ctx, d.ID); got.State != store.DecisionOpen {
+		t.Errorf("decision = %s", got.State)
+	}
+}
+
+type unreadableRun struct{ *sqlite.DB }
+
+func (unreadableRun) Run(context.Context, int64) (store.Run, error) {
+	return store.Run{}, errors.New("row unreadable")
+}

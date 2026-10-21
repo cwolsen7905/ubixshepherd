@@ -92,6 +92,12 @@ func checkInbox(ctx context.Context, r *run) (int, error) {
 	for _, d := range ds {
 		run, err := p.Store.Run(ctx, d.RunID)
 		if err != nil {
+			// Its lane is unknown, so it cannot be called out of date; an agent may still be
+			// waiting, so it stays in the digest when it has waited long enough.
+			p.log().Warn("muster: read the run of a decision", "decision", d.ID, "run", d.RunID, "err", err)
+			if mc.Digest() > 0 && now.Sub(d.Created) >= time.Duration(mc.Digest())*day {
+				old = append(old, waiter{"decision", d.ID, d.Question, d.Created})
+			}
 			continue
 		}
 		if l, err := p.Store.Lane(ctx, run.LaneID); err == nil && l.State == store.LaneClosed {
