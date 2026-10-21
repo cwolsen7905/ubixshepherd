@@ -61,3 +61,11 @@ func TestGitLabJobByNameAndRetry(t *testing.T) {
 		t.Errorf("found %+v", j)
 	}
 }
+
+// The watcher finds the review job by this name, and its tests use the constant, so only a
+// literal here catches the name drifting from the one Kelpie's template creates.
+func TestAIReviewJobIsKelpiesJobName(t *testing.T) {
+	if AIReviewJob != "kelpie-review" {
+		t.Fatalf("AIReviewJob = %q, want the job name Kelpie's review template creates", AIReviewJob)
+	}
+}
