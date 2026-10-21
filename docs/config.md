@@ -35,6 +35,45 @@ or a SIGHUP) applies a change to the next check.
 one session. The daily budget is `daemon.budget`: crossing it turns the mode off when the
 budget's cap is hard.
 
+## Follow-through owner
+
+By default Shepherd follows a merge request through: a failed pipeline and unresolved review
+threads go back to the lane's agent, up to `watch.fix_tries`. A repo can instead name an
+external owner, another service that fixes failures and answers threads. Shepherd then stands
+back, and takes an item over if the owner does not act. Set it under `defaults:` or a repo's
+`watch:`; a repo's fields override the defaults' one by one.
+
+```yaml
+repos:
+  app:
+    watch:
+      follow_through:
+        owner: external
+        name: reviewbot
+        patience: 30m
+        author: [review-bot]
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `owner` | `shepherd` | `shepherd` or `external`. |
+| `name` | `external` | One word used for the owner in the thread. |
+| `patience` | `30m` | How long the owner may be silent on an item before Shepherd takes it over. At least a minute. |
+| `author` | none | Forge usernames whose review threads are the owner's. Required with `owner: external`, and allowed only then. |
+
+With an external owner:
+
+- A failed pipeline is reported but not handed to the agent. If the head pipeline is still
+  failed after `patience`, Shepherd hands it to the agent as it would have. A new pipeline
+  restarts the wait.
+- A review thread opened by an `author` is left to the owner. Threads by anyone else go
+  to the agent as usual. A reply by anyone restarts that thread's wait, and a resolved
+  thread drops out. After `patience` with no reply, or at once when the owner's own note
+  on it begins `Unfixed:`, Shepherd takes the thread over.
+- Taking over is per item and final for it. Takeovers spend the same `fix_tries` budget.
+- The AI review job retry, merge detection and the rule that Shepherd never approves or
+  merges are unchanged.
+
 ## Update
 
 The release check (see [update-check.md](update-check.md)): the daemon asks GitHub about

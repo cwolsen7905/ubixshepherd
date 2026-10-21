@@ -257,7 +257,9 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane,
 		case "success":
 			w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d passed for !%d (lane %s)", p.ID, mr.IID, lane.Name)
 		case "failed":
-			next.FixTries = w.pipelineFailed(ctx, f, lane, mr, p, next.FixTries, wc.Tries())
+			if !wc.FollowThrough.External() {
+				next.FixTries = w.pipelineFailed(ctx, f, lane, mr, p, next.FixTries, wc.Tries())
+			}
 		case "canceled":
 			w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d was canceled for !%d (lane %s)", p.ID, mr.IID, lane.Name)
 		}
@@ -269,6 +271,8 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane,
 	if p := mr.Pipeline; p != nil && p.ID == next.Pipeline {
 		next.PipelineStarted, next.PipelineFinished = p.Started.UTC(), p.Finished.UTC()
 	}
+
+	next.FixTries = w.ownerPipeline(ctx, f, lane, mr, next.FixTries, wc)
 
 	w.approval(ctx, f, lane, mr, prev, &next)
 	w.aiReview(ctx, f, lane, mr)
