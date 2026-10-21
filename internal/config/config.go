@@ -589,6 +589,96 @@ type Watch struct {
 	// ReviewThreads hands unresolved review threads on the merge request back to the
 	// agent. Unset is on.
 	ReviewThreads *bool `yaml:"review_threads,omitempty" json:"review_threads,omitempty"`
+	// FollowThrough says who follows a merge request through its failures: Shepherd (the
+	// default) or an external owner that Shepherd stands back for.
+	FollowThrough FollowThrough `yaml:"follow_through,omitempty" json:"follow_through,omitempty"`
+}
+
+// Who follows a merge request through.
+const (
+	// OwnerShepherd: Shepherd hands failures back to the lane's agent.
+	OwnerShepherd = "shepherd"
+	// OwnerExternal: another service acts on the failures. Shepherd waits for it and takes
+	// over when it does not act.
+	OwnerExternal = "external"
+)
+
+// DefaultPatience is how long an external owner may take to act before Shepherd does.
+const DefaultPatience = 30 * time.Minute
+
+// FollowThrough names who follows merge requests through. With an external owner,
+// Shepherd leaves a failed pipeline and the owner's review threads alone for Patience,
+// then takes the item over. The core knows no product: the owner is named here.
+type FollowThrough struct {
+	// Owner is shepherd (the default) or external.
+	Owner string `yaml:"owner,omitempty" json:"owner,omitempty"`
+	// Name is what the owner is called in the thread; "external" when unset.
+	Name string `yaml:"name,omitempty" json:"name,omitempty"`
+	// Patience is how long the owner may be silent, as a duration ("30m"); unset is 30m.
+	Patience string `yaml:"patience,omitempty" json:"patience,omitempty"`
+	// Author lists the forge usernames whose review threads are the owner's. Required
+	// with an external owner.
+	Author []string `yaml:"author,omitempty" json:"author,omitempty"`
+}
+
+// External says whether an external owner follows through.
+func (f FollowThrough) External() bool { return f.Owner == OwnerExternal }
+
+// Label is the owner's name for the thread.
+func (f FollowThrough) Label() string {
+	if f.Name == "" {
+		return "external"
+	}
+	return f.Name
+}
+
+// Wait is how long the owner may be silent. A bad value (validation refuses one) takes
+// the default.
+func (f FollowThrough) Wait() time.Duration {
+	if d, err := time.ParseDuration(f.Patience); err == nil && d > 0 {
+		return d
+	}
+	return DefaultPatience
+}
+
+// OwnsAuthor says whether a forge username is one of the owner's.
+func (f FollowThrough) OwnsAuthor(user string) bool {
+	for _, a := range f.Author {
+		if strings.EqualFold(a, user) {
+			return true
+		}
+	}
+	return false
+}
+
+func (f FollowThrough) validate(at string) []error {
+	var errs []error
+	switch f.Owner {
+	case "", OwnerShepherd, OwnerExternal:
+	default:
+		errs = append(errs, fmt.Errorf("%s.owner: %q is not shepherd or external", at, f.Owner))
+	}
+	if f.Patience != "" {
+		if d, err := time.ParseDuration(f.Patience); err != nil || d < time.Minute {
+			errs = append(errs, fmt.Errorf("%s.patience: %q is not a duration of a minute or more (for example 30m)", at, f.Patience))
+		}
+	}
+	if f.Name != "" && (strings.ContainsAny(f.Name, " \t\n") || len(f.Name) > 40) {
+		errs = append(errs, fmt.Errorf("%s.name: %q must be one short word", at, f.Name))
+	}
+	if f.External() {
+		if len(f.Author) == 0 {
+			errs = append(errs, fmt.Errorf("%s.author: an external owner needs the forge usernames whose threads are its own", at))
+		}
+		for i, a := range f.Author {
+			if strings.TrimSpace(a) == "" {
+				errs = append(errs, fmt.Errorf("%s.author[%d]: is empty", at, i))
+			}
+		}
+	} else if len(f.Author) > 0 {
+		errs = append(errs, fmt.Errorf("%s.author: set only with owner: external", at))
+	}
+	return errs
 }
 
 // Tries is the effective try cap.
@@ -977,6 +1067,7 @@ func (p Profile) validate(at string) []error {
 	if p.Watch.FixTries != nil && *p.Watch.FixTries < 0 {
 		errs = append(errs, fmt.Errorf("%s.watch.fix_tries: %d is negative; 0 turns handing back off", at, *p.Watch.FixTries))
 	}
+	errs = append(errs, p.Watch.FollowThrough.validate(at+".watch.follow_through")...)
 	if p.Autonomy.Push == Shepherd && strings.TrimSpace(p.Gate) == "" {
 		errs = append(errs, fmt.Errorf("%s.autonomy.push: shepherd pushes only after the gate passes, and no gate is set", at))
 	}
@@ -1127,6 +1218,23 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Watch.ReviewThreads != nil {
 		out.Watch.ReviewThreads = over.Watch.ReviewThreads
+	}
+	if ft := over.Watch.FollowThrough; ft.Owner != "" || ft.Name != "" || ft.Patience != "" || ft.Author != nil {
+		if ft.Owner != "" {
+			out.Watch.FollowThrough.Owner = ft.Owner
+			if ft.Owner != OwnerExternal && ft.Author == nil {
+				out.Watch.FollowThrough.Author = nil // authors are the external owner's only
+			}
+		}
+		if ft.Name != "" {
+			out.Watch.FollowThrough.Name = ft.Name
+		}
+		if ft.Patience != "" {
+			out.Watch.FollowThrough.Patience = ft.Patience
+		}
+		if ft.Author != nil {
+			out.Watch.FollowThrough.Author = ft.Author
+		}
 	}
 	if over.MaxRuns != 0 {
 		out.MaxRuns = over.MaxRuns

@@ -73,6 +73,9 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 		w.Log.Debug("watch: review threads", "lane", lane.Name, "err", err)
 		return
 	}
+	if ft := wc.FollowThrough; ft.External() {
+		threads = w.ownerThreads(ctx, lane, mr, threads, ft)
+	}
 	have := map[string]seenThread{}
 	for _, s := range parseSeen(next.ThreadsSeen) {
 		have[s.id] = s
