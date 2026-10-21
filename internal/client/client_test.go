@@ -176,3 +176,33 @@ func TestProjectWorkCallsMatchTheRoutes(t *testing.T) {
 		t.Errorf("paths: %v", paths)
 	}
 }
+
+// StopRun sends no body (a person's stop); StopRunForRestart sends for_restart.
+func TestStopRunSendsTheRestartFlagOnlyWhenAsked(t *testing.T) {
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		if r.URL.Path != api.PathRunStop(7) {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		bodies = append(bodies, string(b))
+		w.WriteHeader(http.StatusAccepted)
+		w.Write([]byte("{}"))
+	}))
+	defer ts.Close()
+	c := New(ts.URL, "tok")
+	ctx := context.Background()
+	if err := c.StopRun(ctx, 7); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StopRunForRestart(ctx, 7); err != nil {
+		t.Fatal(err)
+	}
+	if len(bodies) != 2 || bodies[0] != "" && bodies[0] != "null" {
+		t.Fatalf("bodies = %q", bodies)
+	}
+	var got api.StopRun
+	if err := json.Unmarshal([]byte(bodies[1]), &got); err != nil || !got.ForRestart {
+		t.Errorf("restart stop body = %q", bodies[1])
+	}
+}
