@@ -85,6 +85,8 @@ func TestBypassesHooks(t *testing.T) {
 		"git -c core.hooksPath=/dev/null push origin HEAD": true,
 		"git config core.hooksPath /tmp/none":              true,
 		"git push origin HEAD --no-verify":                 true,
+		"git push origin HEAD:main --no-verify":            true,
+		"git push origin HEAD:refs/heads/x --no-verify":    true,
 		"git commit -n -m x":                               true,
 		"git commit -an -m x":                              true,
 		"git commit -m x":                                  false,
@@ -95,6 +97,30 @@ func TestBypassesHooks(t *testing.T) {
 	} {
 		if BypassesHooks(line) != want {
 			t.Errorf("BypassesHooks(%q) = %v, want %v", line, !want, want)
+		}
+	}
+}
+
+// The Claude deny rules are anchored to the flag, so a commit message that merely
+// contains -n is not refused, and Copilot's git -c deny is limited to core.hooksPath.
+func TestBypassDenyRulesAreAnchored(t *testing.T) {
+	for _, r := range BypassDenied {
+		if strings.Contains(r, "commit*") {
+			t.Errorf("rule %q matches -n anywhere in a commit", r)
+		}
+	}
+	for _, r := range CopilotBypassDenied {
+		if r == "shell(git -c)" {
+			t.Errorf("rule %q denies every git -c", r)
+		}
+	}
+	for _, want := range []string{"Bash(git commit -n*)", "Bash(git commit -an*)"} {
+		found := false
+		for _, r := range BypassDenied {
+			found = found || r == want
+		}
+		if !found {
+			t.Errorf("no rule %q", want)
 		}
 	}
 }

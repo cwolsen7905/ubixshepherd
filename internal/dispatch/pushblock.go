@@ -50,7 +50,7 @@ func pushBlock(ctx context.Context, dir string) []string {
 // hooks: --no-verify on a push or commit (or commit's -n), or core.hooksPath set on the command line or
 // with git config. It is a cooperative check on what an agent printed, not a boundary:
 // the pre-push hook is a guard, and the forge's rules are the enforcement.
-var hookBypass = regexp.MustCompile("\\bgit\\b[^\\n*:`]*(--no-verify\\b|\\bcore\\.hooksPath\\b|\\bcommit\\b[^\\n*:`]*\\s-[a-zA-Z]*n[a-zA-Z]*(\\s|$))")
+var hookBypass = regexp.MustCompile("\\bgit\\b[^\\n*`]*(--no-verify\\b|\\bcore\\.hooksPath\\b|\\bcommit\\b[^\\n*`]*\\s-[a-zA-Z]*n[a-zA-Z]*(\\s|$))")
 
 // BypassesHooks reports whether a line of agent output shows a git command that skips
 // hooks, as a push with --no-verify does.
@@ -59,9 +59,10 @@ func BypassesHooks(line string) bool { return hookBypass.MatchString(line) }
 // BypassDenied are the Claude Code deny rules that refuse a command skipping hooks,
 // whatever the permission mode; they hold whether or not the agent may push.
 // The globs match the flag at any position, including before the subcommand, and
-// commit's -n alias. They are a cooperative layer: the CLI's own matching decides.
-var BypassDenied = []string{"Bash(git*--no-verify*)", "Bash(git*core.hooksPath*)", "Bash(git commit*-n*)"}
+// commit's -n alias right after the subcommand (anchored, so a message containing -n is
+// not refused; `git commit -m x -n` is left to the brief and the feed flag). They are a cooperative layer: the CLI's own matching decides.
+var BypassDenied = []string{"Bash(git*--no-verify*)", "Bash(git*core.hooksPath*)", "Bash(git commit -n*)", "Bash(git commit -a -n*)", "Bash(git commit -an*)"}
 
 // CopilotBypassDenied are Copilot's deny rules for the same. Copilot matches a command
-// prefix, so these catch the flag only right after the subcommand, and git -c at all.
-var CopilotBypassDenied = []string{"shell(git push --no-verify)", "shell(git commit --no-verify)", "shell(git commit -n)", "shell(git --no-verify)", "shell(git -c)"}
+// prefix, so these catch the flag only right after the subcommand, and git -c core.hooksPath.
+var CopilotBypassDenied = []string{"shell(git push --no-verify)", "shell(git commit --no-verify)", "shell(git commit -n)", "shell(git --no-verify)", "shell(git -c core.hooksPath)"}
