@@ -470,15 +470,15 @@ func TestAgentPowersArgsAndBrief(t *testing.T) {
 			t.Errorf("claude args lack %q: %s", want, j)
 		}
 	}
-	if strings.Contains(j, "--disallowedTools") {
-		t.Errorf("claude denies push to an agent allowed to: %s", j)
+	if _, denied, _ := strings.Cut(j, "--disallowedTools"); strings.Contains(denied, "git push") || !strings.Contains(denied, "--no-verify") {
+		t.Errorf("claude denies push to an agent allowed to, or lets it skip hooks: %s", j)
 	}
 	if j := strings.Join(a.Args(Opts{}), " "); strings.Contains(j, "glab") {
 		t.Errorf("claude may merge without the repo allowing it: %s", j)
 	}
 	c, _ := AdapterFor("copilot")
-	if j := strings.Join(c.Args(Opts{Push: true}), " "); strings.Contains(j, "--deny-tool") {
-		t.Errorf("copilot denies push to an agent allowed to: %s", j)
+	if j := strings.Join(c.Args(Opts{Push: true}), " "); strings.Contains(j, "shell(git push)") || !strings.Contains(j, "shell(git push --no-verify)") {
+		t.Errorf("copilot denies push to an agent allowed to, or lets it skip hooks: %s", j)
 	}
 
 	shep := Brief("t", "l", "r", "feat/x", "dev", "/w", []string{"x"}, "make check", Powers{Push: config.Shepherd}, false, "", "")
@@ -514,7 +514,8 @@ func TestAgentPushLiftsTheBlock(t *testing.T) {
 	}
 	done := f.wait(t, run.ID)
 	log, _ := os.ReadFile(done.Log)
-	if !strings.Contains(string(log), "PUSH WORKED") || strings.Contains(string(log), "--disallowedTools") {
+	_, denied, _ := strings.Cut(argsOf(t, done), "--disallowedTools")
+	if !strings.Contains(string(log), "PUSH WORKED") || strings.Contains(denied, "git push") {
 		t.Errorf("agent push was blocked:\n%s", log)
 	}
 }
