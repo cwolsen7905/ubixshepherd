@@ -251,9 +251,11 @@ var adapters = map[string]Adapter{
 			if o.Merge {
 				a = append(a, "Bash(glab mr view:*)", "Bash(glab mr merge:*)")
 			}
+			a = append(a, "--disallowedTools")
 			if !o.Push {
-				a = append(a, "--disallowedTools", "Bash(git push:*)")
+				a = append(a, "Bash(git push:*)")
 			}
+			a = append(a, BypassDenied...)
 			if o.Model != "" {
 				a = append(a, "--model", o.Model)
 			}
@@ -296,6 +298,7 @@ var adapters = map[string]Adapter{
 			if !o.Push {
 				a = append(a, "--deny-tool", "shell(git push)")
 			}
+			a = append(a, "--deny-tool", "shell(git push --no-verify)", "--deny-tool", "shell(git commit --no-verify)")
 			if o.Worker != "" {
 				a = append(a, "--additional-mcp-config", mustJSON(workerServer(o.Worker, map[string]any{"type": "local", "tools": []string{"*"}})),
 					"--allow-tool", "shepherd")
@@ -588,6 +591,7 @@ func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate
 	default:
 		b.WriteString("When the work is done, commit it with clear commit messages. Do not push: pushing is blocked, and the person reviews and pushes.\n")
 	}
+	b.WriteString("Never bypass git hooks: no `--no-verify` on a push or commit, no `-c core.hooksPath=...`, and do not edit, remove or disable a hook. If a hook refuses, fix what it names or stop and ask.\n")
 	if may.Merge {
 		fmt.Fprintf(&b, "You may merge your own lane's merge request once its pipeline passes: when it is open with your latest commit, arm it with `glab mr merge <iid> --when-pipeline-succeeds --sha <that commit> --remove-source-branch --yes` (`glab mr view %s` shows the iid). GitLab's approvals, pipelines and threads still decide whether it merges. Never approve a merge request, and never merge any other.\n", branch)
 	} else {

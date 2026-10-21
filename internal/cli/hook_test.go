@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,5 +170,18 @@ func TestHookPrePushPrefersTheRunsToken(t *testing.T) {
 	t.Setenv(dispatch.EnvURL, "")
 	if code := push(); code != 0 {
 		t.Errorf("runtime file fallback: %d %s", code, h.err)
+	}
+}
+
+// The hook offers the --no-verify bypass to the person, never to an agent's run.
+func TestCheckErrWithholdsTheBypassFromAgents(t *testing.T) {
+	clearRunEnv(t)
+	err := errors.New("daemon down")
+	if got := checkErr(err).Error(); !strings.Contains(got, "git push --no-verify") {
+		t.Errorf("the person is not told the bypass: %s", got)
+	}
+	t.Setenv(dispatch.EnvRun, "7")
+	if got := checkErr(err).Error(); strings.Contains(got, "--no-verify") || !strings.Contains(got, "daemon down") {
+		t.Errorf("an agent is offered the bypass: %s", got)
 	}
 }

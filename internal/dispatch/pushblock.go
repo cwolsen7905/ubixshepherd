@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/git"
@@ -44,3 +45,17 @@ func pushBlock(ctx context.Context, dir string) []string {
 	}
 	return env
 }
+
+// hookBypass is what a command line must contain, with git in it, to skip a repo's
+// hooks: --no-verify on a push or commit, or core.hooksPath set on the command line or
+// with git config. It is a cooperative check on what an agent printed, not a boundary:
+// the pre-push hook is a guard, and the forge's rules are the enforcement.
+var hookBypass = regexp.MustCompile("\\bgit\\b[^\\n*:`]*(--no-verify\\b|\\bcore\\.hooksPath\\b)")
+
+// BypassesHooks reports whether a line of agent output shows a git command that skips
+// hooks, as a push with --no-verify does.
+func BypassesHooks(line string) bool { return hookBypass.MatchString(line) }
+
+// BypassDenied are the Claude Code deny rules that refuse a command skipping hooks,
+// whatever the permission mode; they hold whether or not the agent may push.
+var BypassDenied = []string{"Bash(git * --no-verify*)", "Bash(git * core.hooksPath*)"}

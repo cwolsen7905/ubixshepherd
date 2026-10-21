@@ -34,6 +34,7 @@ case "$MODE" in stream) cat "$STREAM_FILE"; exit 0 ;; esac
 case "$MODE" in sleep) sleep 30 ;; esac
 case "$MODE" in limit) echo "ActionRequiredError: You've hit your usage limit. Upgrade to continue."; exit 1 ;; esac
 case "$MODE" in mention) echo "fixing: You've hit your usage limit in the error text"; seq 1 30; exit 1 ;; esac
+case "$MODE" in bypass) echo "running: git push --no-verify origin HEAD"; exit 0 ;; esac
 case "$MODE" in refused) echo "shepherd: push refused for lane work"; echo "  changes outside lane work's scope (stray.txt)"; exit 1 ;; esac
 case "$MODE" in forbidden) echo "shepherd: push refused for lane work"; echo "  commit abc123's message contains \"x\", which this repo does not allow"; exit 1 ;; esac
 case "$MODE" in turns) echo '{"type":"result","subtype":"error_max_turns","is_error":true}'; exit 1 ;; esac
@@ -1014,5 +1015,31 @@ func TestCursorModelCarriesEffort(t *testing.T) {
 	args := adapters["cursor"].Args(Opts{Model: "gpt-5", Effort: "low", Worktree: "/w"})
 	if !strings.Contains(strings.Join(args, " "), "--model gpt-5[effort=low]") {
 		t.Errorf("args: %v", args)
+	}
+}
+
+// An agent seen skipping git hooks is flagged in the feed, once, and an ordinary run is not.
+func TestRunFlagsAHookBypass(t *testing.T) {
+	f := newFixture(t, "bypass")
+	run, _ := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	f.wait(t, run.ID)
+	items, _ := f.st.Feed(context.Background(), 0, 100)
+	n := 0
+	for _, it := range items {
+		if it.Kind == store.FeedGate && strings.Contains(it.Text, "skip git hooks") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("hook bypass flagged %d times, want 1: %+v", n, items)
+	}
+	ok := newFixture(t, "ok")
+	r2, _ := ok.runner.Start(context.Background(), StartRequest{LaneID: ok.lane.ID, Agent: "claude", Prompt: "x"})
+	ok.wait(t, r2.ID)
+	items, _ = ok.st.Feed(context.Background(), 0, 100)
+	for _, it := range items {
+		if strings.Contains(it.Text, "skip git hooks") {
+			t.Errorf("an ordinary run was flagged: %+v", it)
+		}
 	}
 }

@@ -9,6 +9,14 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Added
+
+- Agents are told in every brief never to skip git hooks. Claude Code and Copilot runs
+  deny `--no-verify` and `core.hooksPath` overrides on the command line, the pre-push
+  hook no longer suggests `git push --no-verify` to an agent's run, and a run seen
+  skipping hooks is flagged once in the feed. These stay cooperative guards, not a
+  boundary.
+
 ## [0.5.0-beta.2] - 2026-10-19
 
 A fix release for 0.5.0-beta.1. The web UI no longer shows a blank page when a merged

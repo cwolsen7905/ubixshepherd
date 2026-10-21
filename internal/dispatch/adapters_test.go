@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"strings"
 	"testing"
 	"time"
@@ -65,5 +66,25 @@ func TestStandingRedactsTheBrief(t *testing.T) {
 	got := Standing("", "", &ProjectContext{Name: "p", Brief: "use glpat-AbCdEfGhIjKlMnOpQrStUv here"}, "")
 	if strings.Contains(got, "glpat-") {
 		t.Errorf("brief not redacted:\n%s", got)
+	}
+}
+
+// Every brief tells the agent not to skip hooks, whoever pushes; Claude denies the bypass
+// even when the repo lets the agent push.
+func TestBriefAndClaudeForbidHookBypass(t *testing.T) {
+	for _, push := range []string{config.Agent, config.Shepherd, ""} {
+		b := Brief("t", "l", "r", "b", "main", "/w", []string{"x"}, "", Powers{Push: push}, true, "", "")
+		if !strings.Contains(b, "Never bypass git hooks") || !strings.Contains(b, "--no-verify") {
+			t.Errorf("push %q: brief does not forbid skipping hooks:\n%s", push, b)
+		}
+	}
+	args := strings.Join(adapters["claude"].Args(Opts{Push: true}), "\x00")
+	for _, rule := range BypassDenied {
+		if !strings.Contains(args, "--disallowedTools") || !strings.Contains(args, rule) {
+			t.Errorf("claude args lack deny rule %q: %q", rule, args)
+		}
+	}
+	if strings.Contains(args, "Bash(git push:*)\x00Bash(git *") && strings.Index(args, "--disallowedTools") > strings.Index(args, "Bash(git push:*)\x00Bash(git *") {
+		t.Errorf("a pushing agent is denied push: %q", args)
 	}
 }

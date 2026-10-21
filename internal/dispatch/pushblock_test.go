@@ -58,6 +58,7 @@ func TestPushBlockIsScopedToTheLaneRepo(t *testing.T) {
 	must(lane, "commit", "-q", "--allow-empty", "-m", "agent work")
 	for _, args := range [][]string{
 		{"push", "-q", "--no-verify", "origin", "HEAD:main"},
+		{"-c", "core.hooksPath=/dev/null", "push", "-q", "origin", "HEAD:main"},
 		{"push", "-q", "origin", "HEAD:refs/heads/side"},
 		{"push", "-q", origin, "HEAD:main"},
 		{"push", "-q", "mirror", "HEAD:main"},
@@ -75,4 +76,20 @@ func TestPushBlockIsScopedToTheLaneRepo(t *testing.T) {
 	// Fetching the lane's origin still works, and so does pushing another repo.
 	must(lane, "fetch", "-q", "origin")
 	must(other, "push", "-q", "origin", "main")
+}
+
+func TestBypassesHooks(t *testing.T) {
+	for line, want := range map[string]bool{
+		"git push --no-verify origin HEAD":                 true,
+		"▸ Bash: git commit -m x --no-verify":              true,
+		"git -c core.hooksPath=/dev/null push origin HEAD": true,
+		"git config core.hooksPath /tmp/none":              true,
+		"git push -u origin feat/x":                        false,
+		"--disallowedTools Bash(git * --no-verify*)":       false,
+		"the hook was not run with --no-verify":            false,
+	} {
+		if BypassesHooks(line) != want {
+			t.Errorf("BypassesHooks(%q) = %v, want %v", line, !want, want)
+		}
+	}
 }
