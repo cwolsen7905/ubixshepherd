@@ -2,6 +2,7 @@ package fold
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -422,4 +423,111 @@ func TestRescopeFailsWhenFilesCannotBeListed(t *testing.T) {
 	if got, _ := f.fold.Store.Lane(ctx, l.ID); len(got.Scope) != 1 {
 		t.Errorf("scope changed: %v", got.Scope)
 	}
+}
+
+// failingItems is a store whose next-up lookups fail, as a transient error would.
+type failingItems struct {
+	store.Store
+	err error
+}
+
+func (s failingItems) NextItem(context.Context, int64) (store.NextItem, error) {
+	return store.NextItem{}, s.err
+}
+
+// A release goes ahead without the open-lane check only when there is no item to look
+// at; a lookup that fails for any other reason stops it.
+func TestReleaseStopsWhenTheItemLookupFails(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.land(map[string]string{"src/a_test.go": "package src\n", "src/impl.go": "package src\n"})
+	it, err := f.fold.Store.AddNextItem(ctx, store.NextItem{Title: "build it", State: store.NextApproved, Source: "person"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.fold.ApproveChecks(ctx, ApproveRequest{RepoID: f.repo.ID, Paths: []string{"src/a_test.go"}, ItemID: it.ID, By: "person (cli)"}); err != nil {
+		t.Fatal(err)
+	}
+	real := f.fold.Store
+	f.fold.Store = failingItems{Store: real, err: errors.New("database is locked")}
+	_, err = f.fold.ReleaseChecks(ctx, ReleaseRequest{RepoID: f.repo.ID, Paths: []string{"src/a_test.go"}, Why: "wrong"})
+	if err == nil || errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "database is locked") {
+		t.Fatalf("release with a failing lookup: %v", err)
+	}
+	if live, _ := real.CheckFiles(ctx, f.repo.ID, true); len(live) != 1 {
+		t.Errorf("the mark was lifted: %+v", live)
+	}
+	// An item that is gone does not hold a release back.
+	f.fold.Store = failingItems{Store: real, err: store.ErrNotFound}
+	if _, err := f.fold.ReleaseChecks(ctx, ReleaseRequest{RepoID: f.repo.ID, Paths: []string{"src/a_test.go"}, Why: "wrong"}); err != nil {
+		t.Errorf("release with the item gone: %v", err)
+	}
+}
+
+// Names with characters git would quote are matched as they are.
+func TestUnusualPathsAreProtected(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	name := "src/café test.go"
+	f.land(map[string]string{name: "package src\n", "src/impl.go": "package src\n"})
+	files, err := listFiles(ctx, f.repo.Path, "origin/main")
+	if err != nil || !contains(files, name) {
+		t.Fatalf("listFiles = %q %v", files, err)
+	}
+	f.approve(name)
+	l := f.open("work")
+	os.WriteFile(filepath.Join(l.Worktree, name), []byte("package src\n// weakened\n"), 0o644)
+	gitT(t, l.Worktree, "commit", "-q", "-am", "edit")
+	if v := pushProblems(t, f, l); v.OK || !strings.Contains(strings.Join(v.Problems, "\n"), name) {
+		t.Fatalf("push: %+v", v)
+	}
+	if p, err := f.fold.CheckShip(ctx, l); err != nil || len(p) != 1 || !strings.Contains(p[0], name) {
+		t.Fatalf("ship: %v %v", p, err)
+	}
+}
+
+// A git that fails is an error, not a file that is absent.
+func TestTreeEntryErrorIsNotAbsent(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, _, _, found, err := treeEntry(ctx, f.repo.Path, "origin/main", "README.md"); err != nil || !found {
+		t.Fatalf("present: %v %v", found, err)
+	}
+	if _, _, _, found, err := treeEntry(ctx, f.repo.Path, "origin/main", "nope.txt"); err != nil || found {
+		t.Fatalf("absent: %v %v", found, err)
+	}
+	if _, _, _, _, err := treeEntry(ctx, f.repo.Path, "no-such-rev", "README.md"); err == nil {
+		t.Fatal("a failing git was read as an absent file")
+	}
+	f.land(map[string]string{"src/a_test.go": "package src\n", "src/impl.go": "package src\n"})
+	f.approve("src/a_test.go")
+	l := f.open("work")
+	gitT(t, l.Worktree, "update-ref", "-d", "refs/heads/work") // HEAD now names nothing
+	if _, err := f.fold.CheckShip(ctx, l); err == nil {
+		t.Error("ship passed although git could not read the lane's head")
+	}
+}
+
+// Status is a read of the last fetch: it works with the remote unreachable.
+func TestCheckStatusOffline(t *testing.T) {
+	f := newFixture(t)
+	f.land(map[string]string{"src/a_test.go": "package src\n"})
+	f.approve("src/a_test.go")
+	gitT(t, f.repo.Path, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+	st, err := f.fold.CheckStatus(context.Background(), f.repo.ID)
+	if err != nil || len(st) != 1 || st[0].State != CheckCurrent {
+		t.Fatalf("offline status: %+v %v", st, err)
+	}
+}
+
+// A closed lane's old scope does not stand in the way of an approval.
+func TestApproveIgnoresClosedLanes(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.land(map[string]string{"src/a_test.go": "package src\n"})
+	l := f.open("revise")
+	if _, err := f.fold.Close(ctx, l.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	f.approve("src/a_test.go")
 }

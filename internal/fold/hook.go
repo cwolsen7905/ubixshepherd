@@ -130,7 +130,7 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 		if note != "" {
 			v.Notes = append(v.Notes, note)
 		}
-		out, err := git.Run(ctx, dir, "diff", "--name-only", "--no-renames", from, r.LocalSHA)
+		out, err := git.Run(ctx, dir, "diff", "--name-only", "-z", "--no-renames", from, r.LocalSHA)
 		if err != nil {
 			return v, err
 		}
@@ -142,9 +142,8 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 		}
 		mark := CheckPaths(protected)
 		var outside, changed []string
-		for _, file := range strings.Split(out, "\n") {
+		for _, file := range splitNUL(out) {
 			switch {
-			case file == "":
 			case contains(mark, file):
 				changed = append(changed, file)
 			case !scope.Any(lane.Scope, file):

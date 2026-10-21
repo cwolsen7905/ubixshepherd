@@ -186,7 +186,8 @@ func (f *Fold) ApproveChecks(ctx context.Context, req ApproveRequest) ([]store.C
 			return nil, refuse("%s is already an approved check file", p)
 		}
 		for _, l := range lanes {
-			if scope.Any(l.Scope, p) {
+			// Store.Lanes leaves closed lanes out; a closed lane never blocks an approval.
+			if l.State != store.LaneClosed && scope.Any(l.Scope, p) {
 				return nil, refuse("%s is inside the scope of open lane %s (%s): a revision may be in flight. Close the lane or merge it first, then approve", p, l.Name, strings.Join(l.Scope, ", "))
 			}
 		}
@@ -206,16 +207,13 @@ func (f *Fold) ApproveChecks(ctx context.Context, req ApproveRequest) ([]store.C
 
 // blobOnBase returns the blob id of a regular file at rev, or a refusal saying why not.
 func blobOnBase(ctx context.Context, repo, rev, p string) (string, error) {
-	out, err := git.Run(ctx, repo, "ls-tree", rev, "--", p)
+	mode, typ, sha, found, err := treeEntry(ctx, repo, rev, p)
 	if err != nil {
 		return "", err
 	}
-	meta, _, _ := strings.Cut(out, "\t")
-	fields := strings.Fields(meta)
-	if len(fields) != 3 {
+	if !found {
 		return "", refuse("%s is not on %s: merge it first, then approve it", p, rev)
 	}
-	mode, typ, sha := fields[0], fields[1], fields[2]
 	switch {
 	case typ == "tree":
 		return "", refuse("%s is a directory: name each check file", p)
@@ -223,6 +221,21 @@ func blobOnBase(ctx context.Context, repo, rev, p string) (string, error) {
 		return "", refuse("%s is not a regular file on %s", p, rev)
 	}
 	return sha, nil
+}
+
+// treeEntry reads one path's entry at rev. found is false when the path is not there; any
+// other failure of git is an error, never "absent".
+func treeEntry(ctx context.Context, repo, rev, p string) (mode, typ, sha string, found bool, err error) {
+	out, err := git.Run(ctx, repo, "ls-tree", "-z", rev, "--", p)
+	if err != nil {
+		return "", "", "", false, err
+	}
+	meta, _, _ := strings.Cut(out, "\t")
+	fields := strings.Fields(meta)
+	if len(fields) != 3 {
+		return "", "", "", false, nil
+	}
+	return fields[0], fields[1], fields[2], true, nil
 }
 
 // ReleaseRequest asks to lift the marks on files.
@@ -270,11 +283,26 @@ func (f *Fold) ReleaseChecks(ctx context.Context, req ReleaseRequest) ([]store.C
 		if req.Force || c.ItemID == 0 {
 			continue
 		}
+		// Only "no such item" and "no lane" let a release through; a lookup that fails
+		// for any other reason must not, or the guard is skipped when it is needed.
 		it, err := f.Store.NextItem(ctx, c.ItemID)
-		if err != nil || it.LaneID == 0 {
+		if errors.Is(err, store.ErrNotFound) {
 			continue
 		}
-		if l, err := f.Store.Lane(ctx, it.LaneID); err == nil && l.State != store.LaneClosed {
+		if err != nil {
+			return nil, fmt.Errorf("check for a lane open for next-up item %d: %w", c.ItemID, err)
+		}
+		if it.LaneID == 0 {
+			continue
+		}
+		l, err := f.Store.Lane(ctx, it.LaneID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("check for a lane open for next-up item %d: %w", c.ItemID, err)
+		}
+		if l.State != store.LaneClosed {
 			return nil, refuse("lane %s is open for next-up item %d, which %s belongs to. Release once it closes, or release with force if that is what you mean", l.Name, c.ItemID, p)
 		}
 	}
@@ -300,7 +328,9 @@ type CheckState struct {
 	BaseBlob string `json:"base_blob,omitempty"`
 }
 
-// CheckStatus reads each live mark against the freshly fetched base branch.
+// CheckStatus reads each live mark against the base branch as of the repo's last fetch
+// (origin/<base>, else the local base): a read does not reach for the network, and it
+// works offline.
 func (f *Fold) CheckStatus(ctx context.Context, repoID int64) ([]CheckState, error) {
 	repo, err := f.Store.Repo(ctx, repoID)
 	if err != nil {
@@ -310,12 +340,11 @@ func (f *Fold) CheckStatus(ctx context.Context, repoID int64) ([]CheckState, err
 	if err != nil || len(live) == 0 {
 		return nil, err
 	}
-	lock := f.repoLock(repo.ID)
-	lock.Lock()
-	defer lock.Unlock()
-	base, err := freshBase(ctx, repo.Path, f.Conf().Profile(repo.Name).BaseBranch)
-	if err != nil {
-		return nil, err
+	base := f.Conf().Profile(repo.Name).BaseBranch
+	if git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+base) {
+		base = "origin/" + base
+	} else if !git.RefExists(ctx, repo.Path, "refs/heads/"+base) {
+		return nil, refuse("no branch %s to read the approved checks against", base)
 	}
 	var out []CheckState
 	for _, c := range live {
@@ -346,30 +375,35 @@ func ShipProblems(ctx context.Context, st store.Store, lane store.Lane) ([]strin
 	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+lane.Base) {
 		base = "origin/" + lane.Base
 	}
-	out, err := git.Run(ctx, lane.Worktree, "diff", "--name-only", "--no-renames", base+"...HEAD")
+	out, err := git.Run(ctx, lane.Worktree, "diff", "--name-only", "-z", "--no-renames", base+"...HEAD")
 	if err != nil {
 		return nil, err
 	}
-	changed := protectedAmong(strings.Split(out, "\n"), live)
+	changed := protectedAmong(splitNUL(out), live)
 	var problems []string
 	if len(changed) > 0 {
 		problems = append(problems, ChecksProblem(changed))
 	}
 	var drift []string
 	for _, c := range live {
-		blob, err := git.Run(ctx, lane.Worktree, "rev-parse", "HEAD:"+c.Path)
+		mode, typ, blob, found, err := treeEntry(ctx, lane.Worktree, "HEAD", c.Path)
 		if err != nil {
+			// A git that fails cannot show the file is unchanged.
+			return nil, err
+		}
+		if !found {
 			// Absent at the lane's head: a deletion the diff reported, unless the lane
 			// forked before the file existed.
 			continue
 		}
-		if blob != c.Blob && !contains(changed, c.Path) {
+		if (blob != c.Blob || typ != "blob" || mode == "120000") && !contains(changed, c.Path) {
 			drift = append(drift, c.Path)
 		}
 	}
 	if len(drift) > 0 {
-		problems = append(problems, "approved check files differ from the approved copy at the lane's head (a rebase or merge carried an edit in?); "+
-			"raise a decision to change them:\n    "+strings.Join(firstLinesN(drift, 20), "\n    "))
+		problems = append(problems, "approved check files differ from the approved copy at the lane's head. Either a rebase or merge carried an edit in, "+
+			"or the lane is behind "+base+" and the files changed there: rebase the lane onto "+base+", and if they still differ raise a decision to change them:\n    "+
+			strings.Join(firstLinesN(drift, 20), "\n    "))
 	}
 	return problems, nil
 }

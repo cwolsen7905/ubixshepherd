@@ -201,3 +201,35 @@ func TestChecksApproveFromWebAndCLI(t *testing.T) {
 		t.Fatalf("operator approve: %d %+v", code, out)
 	}
 }
+
+// The decision the desk cites must have been raised in the repo the checks are in.
+func TestChecksDecisionMustBeFromTheRepo(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	_, repo := checksRepo(t, s)
+	root := t.TempDir()
+	ws2, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws2", Path: root}, []store.Repo{{Name: "elsewhere", Path: filepath.Join(root, "elsewhere")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos2, _ := s.Store.Repos(ctx, ws2.ID)
+	l, err := s.Store.CreateLane(ctx, store.Lane{RepoID: repos2[0].ID, Name: "x", Branch: "x", Base: "main", Worktree: filepath.Join(root, "x"), Scope: []string{"x/**"}, State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := s.Store.CreateRun(ctx, store.Run{LaneID: l.ID, Agent: "claude", Prompt: "x", State: store.RunRunning, Log: filepath.Join(root, "l")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: run.ID, Question: "a different repo's question", State: store.DecisionOpen})
+	if _, err := s.Store.AnswerDecision(ctx, dec.ID, "yes"); err != nil {
+		t.Fatal(err)
+	}
+	human, _ := s.MintDesk(true, "")
+	if code := call(t, ts, human, "POST", api.PathChecksApprove, api.ApproveChecks{RepoID: repo.ID, Paths: []string{"src/a_test.go"}, Decision: dec.ID}, nil); code != http.StatusConflict {
+		t.Errorf("a decision from another repo: %d", code)
+	}
+	if live, _ := s.Store.CheckFiles(ctx, repo.ID, true); len(live) != 0 {
+		t.Errorf("marked anyway: %+v", live)
+	}
+}

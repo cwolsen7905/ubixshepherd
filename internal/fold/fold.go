@@ -705,11 +705,23 @@ func (f *Fold) GC(ctx context.Context, workspaceID int64) ([]Stale, error) {
 
 // listFiles lists the files at a commit, repo-relative with "/" separators.
 func listFiles(ctx context.Context, repo, rev string) ([]string, error) {
-	out, err := git.Run(ctx, repo, "ls-tree", "-r", "--name-only", rev)
-	if err != nil || out == "" {
+	out, err := git.Run(ctx, repo, "ls-tree", "-r", "-z", "--name-only", rev)
+	if err != nil {
 		return nil, err
 	}
-	return strings.Split(out, "\n"), nil
+	return splitNUL(out), nil
+}
+
+// splitNUL splits git's -z output into names, which are then exact: without -z git
+// quotes a name with unusual characters and it no longer matches a stored path or glob.
+func splitNUL(out string) []string {
+	var names []string
+	for _, n := range strings.Split(out, "\x00") {
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	return names
 }
 
 // sharedTouched returns the shared-path globs a scope claims any file of (or would, for

@@ -2,8 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -88,7 +89,7 @@ func (s *DB) ReleaseCheckFiles(ctx context.Context, repoID int64, paths []string
 	for _, p := range paths {
 		c, err := scanCheck(tx.QueryRowContext(ctx, `SELECT `+checkCols+` FROM check_files WHERE repo_id = ? AND path = ? AND released = ''`, repoID, p))
 		if err != nil {
-			if strings.Contains(err.Error(), "no rows") {
+			if errors.Is(err, sql.ErrNoRows) {
 				return nil, fmt.Errorf("%w: %s is not an approved check file", store.ErrNotFound, p)
 			}
 			return nil, err
