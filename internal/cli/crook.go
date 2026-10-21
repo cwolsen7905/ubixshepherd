@@ -13,7 +13,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// runCrook is `shepherd crook why|log|rules`: a read of Crook's verdict log
+// runCrook is `shepherd crook why|log|rules|shadow`: a read of Crook's verdict log
 // (docs/crook-why.md). It is a client of the daemon's /v1/crook routes.
 func runCrook(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
@@ -35,6 +35,10 @@ func runCrook(ctx context.Context, env Env, args []string) error {
 		}
 	case "rules":
 		since = fs.String("since", "", "from when: RFC 3339 or a number of days like 7d (default 7d)")
+	case "shadow":
+		rule = fs.String("rule", "", "only this rule id")
+		since = fs.String("since", "", "from when: RFC 3339 or a number of days like 7d (default 14d)")
+		limit = fs.Int("limit", 0, "how many would-have verdicts to list (default all)")
 	default:
 		return errUsage
 	}
@@ -72,15 +76,16 @@ func runCrook(ctx context.Context, env Env, args []string) error {
 		if err != nil {
 			return err
 		}
-		out, err := c.CrookRules(ctx, *since)
+		return crookRules(ctx, env, c, *since, *asJSON)
+	case "shadow":
+		if len(pos) > 0 {
+			return errUsage
+		}
+		c, err := dial(ctx, env)
 		if err != nil {
 			return err
 		}
-		if *asJSON {
-			return printJSON(env, out)
-		}
-		writeCrookRules(env.Stdout, out)
-		return nil
+		return crookShadow(ctx, env, c, *rule, *since, *limit, *asJSON)
 	case "log":
 		if len(pos) > 0 {
 			return errUsage
