@@ -324,9 +324,6 @@ func (f *Fold) planArtifacts(ctx context.Context, lane store.Lane, repoPath stri
 			plan[a.ID] = store.ArtifactKept
 		default:
 			plan[a.ID] = store.ArtifactGone
-			if wantsSnapshot(a) {
-				f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy: it was missing, unreadable or over the snapshot size cap", a.Path, lane.Name), a.ID)
-			}
 		}
 	}
 	return plan
@@ -338,10 +335,21 @@ func fileExists(p string) bool {
 }
 
 // settleArtifacts applies a close's plan. A scratch file nobody pinned has no snapshot
-// to drop; it is simply gone.
+// to drop; it is simply gone. It runs once the lane is closed, so the feed line for an
+// artifact that was worth a copy and has none is written only for a close that happened.
 func (f *Fold) settleArtifacts(ctx context.Context, plan artifactPlan) {
 	for id, state := range plan {
 		f.Store.SetArtifactState(ctx, id, state, true)
+		if state != store.ArtifactGone {
+			continue
+		}
+		if a, err := f.Store.Artifact(ctx, id); err == nil && wantsSnapshot(a) {
+			name := ""
+			if lane, err := f.Store.Lane(ctx, a.LaneID); err == nil {
+				name = lane.Name
+			}
+			f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy: it was missing, unreadable or over the snapshot size cap", a.Path, name), id)
+		}
 	}
 }
 
