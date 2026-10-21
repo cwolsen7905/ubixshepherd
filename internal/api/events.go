@@ -22,6 +22,8 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	plan               a next-up item was added, approved, deferred, dropped or finished
 //	mr_approve         the person approved a merge request from the web
 //	artifact           a run produced a file to read, or changed one (Ref is the artifact)
+//	checks_approved    the person approved check files (Ref is the next-up item, if any)
+//	checks_released    the person released approved check files, with the reason
 //	keep_going         keep-going mode went on or off (with its reason), or took an
 //	                   autonomous action, or handed a lane back
 //	mr, budget, tag, release, config, desk_rotated
@@ -48,8 +50,10 @@ const (
 	EventBudget           = "budget"
 	EventTag              = "tag"
 	EventRelease          = "release"
-	EventPlan             = "plan"     // a next-up item added, approved, deferred, dropped or done
-	EventArtifact         = "artifact" // a run produced a file to read, or a new version of one
+	EventPlan             = "plan"            // a next-up item added, approved, deferred, dropped or done
+	EventArtifact         = "artifact"        // a run produced a file to read, or a new version of one
+	EventChecksApproved   = "checks_approved" // the person approved check files
+	EventChecksReleased   = "checks_released" // the person released approved check files
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
 	EventKeepGoing        = "keep_going"   // keep-going mode on, off, or an autonomous action
@@ -84,6 +88,8 @@ var eventKinds = map[string]string{
 	store.FeedPlan:           EventPlan,
 	store.FeedMRApprove:      EventMRApprove,
 	store.FeedArtifact:       EventArtifact,
+	store.FeedChecksApproved: EventChecksApproved,
+	store.FeedChecksReleased: EventChecksReleased,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
 	"keep_going":             EventKeepGoing,   // the daemon's own kind (daemon.FeedKeepGoing)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)

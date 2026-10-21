@@ -37,3 +37,12 @@ func TestLaneViewExcluded(t *testing.T) {
 		t.Errorf("excluded = %s", with)
 	}
 }
+
+func TestCheckFeedKindsAreEvents(t *testing.T) {
+	if EventKind(store.FeedChecksApproved) != EventChecksApproved || EventKind(store.FeedChecksReleased) != EventChecksReleased {
+		t.Errorf("kinds: %q %q", EventKind(store.FeedChecksApproved), EventKind(store.FeedChecksReleased))
+	}
+	if EventChecksApproved != "checks_approved" || EventChecksReleased != "checks_released" {
+		t.Error("an event value changed its meaning")
+	}
+}
