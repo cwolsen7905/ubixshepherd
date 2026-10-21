@@ -48,10 +48,19 @@ func TestNextCLIAndMCP(t *testing.T) {
 	if code := h.run("topic", "set", "release work", "--item", "2"); code != 0 {
 		t.Fatalf("topic set: %s", h.err)
 	}
-	for _, spec := range []string{"1", "#1", "RELEASE"} {
+	for _, spec := range []string{"1", "#1", "RELEASE WORK", "work"} {
 		if code := h.run("next", "list", "--topic", spec, "--matrix", "none"); code != 0 || strings.Contains(h.out.String(), "Step two") || !strings.Contains(h.out.String(), "Step three") {
 			t.Errorf("list --topic %s: %s%s", spec, h.out, h.err)
 		}
+	}
+	if code := h.run("topic", "new", "release notes"); code != 0 {
+		t.Fatalf("topic new: %s", h.err)
+	}
+	if code := h.run("next", "list", "--topic", "release"); code == 0 || !strings.Contains(h.err.String(), "matches 2 topics") {
+		t.Errorf("an ambiguous topic title was accepted: %d %s", code, h.err)
+	}
+	if code := h.run("next", "list", "--topic", "release work", "--matrix", "none"); code != 0 || !strings.Contains(h.out.String(), "Step three") {
+		t.Errorf("list --topic by full title: %s%s", h.out, h.err)
 	}
 	if code := h.run("next", "list", "--topic", "nonesuch"); code == 0 {
 		t.Error("an unknown topic was accepted")
@@ -129,7 +138,7 @@ func TestNextCLIAndMCP(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"next_list","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3,"state":"deferred","move":"top"}}}`,
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"next_update","arguments":{"id":3}}}`,
-		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["started","approved"],"compact":true,"topic":"release","repo":"app","text":"three","matrix":"none"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["started","approved"],"compact":true,"topic":"release work","repo":"app","text":"three","matrix":"none"}}}`,
 		`{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"next_list","arguments":{"state":["deferred"],"text":"desk"}}}`,
 	)
 	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "added") {

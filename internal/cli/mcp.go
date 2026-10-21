@@ -417,7 +417,7 @@ func mcpTools() []mcpTool {
 			InputSchema: obj(map[string]any{
 				"all":     map[string]any{"type": "boolean", "description": "Include done and dropped items."},
 				"repo":    map[string]any{"type": "string", "description": "Only items for this repo."},
-				"topic":   map[string]any{"type": "string", "description": "Only items in this conversation topic: its id (83 or #83) or part of its title."},
+				"topic":   map[string]any{"type": "string", "description": "Only items in this conversation topic: its id (83 or #83) or its title, or part of a title that names one topic."},
 				"state":   map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"approved", "started", "planned", "proposed", "deferred", "dropped", "done", "todo", "blocked"}}, "description": "Only items in these states (proposed is an unapproved item; todo and blocked are matrix rows)."},
 				"text":    map[string]any{"type": "string", "description": "Only items whose title, note or done-when contains this."},
 				"matrix":  map[string]any{"type": "string", "description": "The read-only matrix rows to show: \"none\", or one repo's name. Default all."},

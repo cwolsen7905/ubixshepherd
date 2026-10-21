@@ -35,7 +35,7 @@ func runNext(ctx context.Context, env Env, args []string) error {
 	note := fs.String("note", "", "a note")
 	title := fs.String("title", "", "update: a new title")
 	state := fs.String("state", "", "update: planned, approved, deferred, dropped or done; list: states to show, comma separated (approved, started, planned, proposed, deferred, todo, blocked)")
-	topic := fs.String("topic", "", "list: only items in this conversation topic, by id (83 or #83) or title substring")
+	topic := fs.String("topic", "", "list: only items in this conversation topic, by id (83 or #83) or a title substring that names one topic")
 	text := fs.String("text", "", "list: only items whose title, note or done-when contains this")
 	matrix := fs.String("matrix", "", "list: the read-only matrix rows to show: none, or a repo's name (default all)")
 	compact := fs.Bool("compact", false, "list: one line per item")
@@ -307,13 +307,23 @@ func topicItems(ctx context.Context, c *client.Client, spec string) (map[int64]b
 		if err != nil {
 			return nil, err
 		}
+		var titles []string
 		for _, t := range l.Topics {
-			if strings.Contains(strings.ToLower(t.Title), strings.ToLower(spec)) {
+			low := strings.ToLower(t.Title)
+			if low == strings.ToLower(spec) {
+				topics, titles = []api.TopicView{t}, nil
+				break
+			}
+			if strings.Contains(low, strings.ToLower(spec)) {
 				topics = append(topics, t)
+				titles = append(titles, fmt.Sprintf("#%d %s", t.ID, t.Title))
 			}
 		}
 		if len(topics) == 0 {
 			return nil, fmt.Errorf("no topic title contains %q", spec)
+		}
+		if len(topics) > 1 {
+			return nil, fmt.Errorf("%q matches %d topics (%s): use an id or the full title", spec, len(topics), strings.Join(titles, "; "))
 		}
 	}
 	ids := map[int64]bool{}
