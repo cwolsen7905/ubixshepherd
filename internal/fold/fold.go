@@ -331,9 +331,13 @@ func (f *Fold) RescopeExcluding(ctx context.Context, laneID int64, add, remove [
 		return lane, nil, err
 	}
 	if len(add) > 0 {
-		files, err := listFiles(ctx, repo.Path, "HEAD")
-		if err != nil {
-			return lane, nil, err
+		// A repo whose directory is gone has no files to judge by; the globs still are.
+		// Any other failure to list is an error, never an empty listing.
+		var files []string
+		if exists(repo.Path) {
+			if files, err = listFiles(ctx, repo.Path, "HEAD"); err != nil {
+				return lane, nil, err
+			}
 		}
 		if _, err := judgeScope(add, files, protected); err != nil {
 			return lane, nil, err
