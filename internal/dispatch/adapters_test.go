@@ -78,13 +78,46 @@ func TestBriefAndClaudeForbidHookBypass(t *testing.T) {
 			t.Errorf("push %q: brief does not forbid skipping hooks:\n%s", push, b)
 		}
 	}
-	args := strings.Join(adapters["claude"].Args(Opts{Push: true}), "\x00")
-	for _, rule := range BypassDenied {
-		if !strings.Contains(args, "--disallowedTools") || !strings.Contains(args, rule) {
-			t.Errorf("claude args lack deny rule %q: %q", rule, args)
+	denied := func(args []string, flag string) []string {
+		for i, a := range args {
+			if a == flag {
+				return args[i+1:]
+			}
 		}
+		return nil
 	}
-	if strings.Contains(args, "Bash(git push:*)\x00Bash(git *") && strings.Index(args, "--disallowedTools") > strings.Index(args, "Bash(git push:*)\x00Bash(git *") {
-		t.Errorf("a pushing agent is denied push: %q", args)
+	has := func(list []string, want string) bool {
+		for _, a := range list {
+			if a == want {
+				return true
+			}
+		}
+		return false
+	}
+	for _, push := range []bool{true, false} {
+		list := denied(adapters["claude"].Args(Opts{Push: push}), "--disallowedTools")
+		for _, rule := range BypassDenied {
+			if !has(list, rule) {
+				t.Errorf("push %v: claude does not deny %q: %q", push, rule, list)
+			}
+		}
+		if has(list, "Bash(git push:*)") == push {
+			t.Errorf("push %v: claude push deny = %v", push, !push)
+		}
+		var cop []string
+		args := adapters["copilot"].Args(Opts{Push: push})
+		for i, a := range args {
+			if a == "--deny-tool" && i+1 < len(args) {
+				cop = append(cop, args[i+1])
+			}
+		}
+		for _, rule := range CopilotBypassDenied {
+			if !has(cop, rule) {
+				t.Errorf("push %v: copilot does not deny %q: %q", push, rule, cop)
+			}
+		}
+		if has(cop, "shell(git push)") == push {
+			t.Errorf("push %v: copilot push deny = %v", push, !push)
+		}
 	}
 }

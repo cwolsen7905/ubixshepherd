@@ -689,7 +689,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 		if out.Show != "" {
 			if !flagged && BypassesHooks(out.Show) {
 				flagged = true
-				r.feed(context.Background(), store.FeedGate, run.ID, "run %d: %s tried to skip git hooks (%s). The push guard is not a boundary: check the lane's branch before approving.", run.ID, lane.Name, clip(strings.TrimSpace(out.Show), 120))
+				r.feed(context.Background(), store.FeedGate, run.ID, "run %d: %s tried to skip git hooks (%s). The push guard is not a boundary: check the lane's branch before approving.", run.ID, lane.Name, clip(strings.TrimSpace(scrub(out.Show, p.token)), 120))
 			}
 			shown := scrub(out.Show, p.token)
 			fmt.Fprintln(logf, shown)

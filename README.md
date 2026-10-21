@@ -146,8 +146,8 @@ installs the hook when that is safe (no `pre-push` hook yet, hooks inside `.git`
 otherwise it says what to do. `shepherd hook install | uninstall | status` manage it by
 hand; it never replaces another hook, and prints the line to add to one instead. Pushes
 from outside a lane are left alone, and `git push --no-verify` skips the check once for
-the person. Agents are told never to skip hooks: Shepherd's brief says so, Claude Code and
-Copilot runs deny the flag, the hook withholds the hint from a run, and a run seen
+the person. Agents are told never to skip hooks: Shepherd's brief says so, Claude Code runs
+deny the flag by pattern, Copilot runs deny it after the subcommand, the hook withholds the hint from a run, and a run seen
 skipping hooks is flagged in the feed. That is a cooperative guard; the forge's rules are
 the boundary.
 

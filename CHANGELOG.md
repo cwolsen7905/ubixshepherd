@@ -11,8 +11,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
-- Agents are told in every brief never to skip git hooks. Claude Code and Copilot runs
-  deny `--no-verify` and `core.hooksPath` overrides on the command line, the pre-push
+- Agents are told in every brief never to skip git hooks. Claude Code runs
+  deny `--no-verify`, `commit -n` and `core.hooksPath` overrides by pattern, and Copilot
+  runs deny them where they follow the subcommand (Copilot matches command prefixes, so
+  a flag placed last gets through); the pre-push
   hook no longer suggests `git push --no-verify` to an agent's run, and a run seen
   skipping hooks is flagged once in the feed. These stay cooperative guards, not a
   boundary.

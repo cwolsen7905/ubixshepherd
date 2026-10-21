@@ -298,7 +298,9 @@ var adapters = map[string]Adapter{
 			if !o.Push {
 				a = append(a, "--deny-tool", "shell(git push)")
 			}
-			a = append(a, "--deny-tool", "shell(git push --no-verify)", "--deny-tool", "shell(git commit --no-verify)")
+			for _, rule := range CopilotBypassDenied {
+				a = append(a, "--deny-tool", rule)
+			}
 			if o.Worker != "" {
 				a = append(a, "--additional-mcp-config", mustJSON(workerServer(o.Worker, map[string]any{"type": "local", "tools": []string{"*"}})),
 					"--allow-tool", "shepherd")
