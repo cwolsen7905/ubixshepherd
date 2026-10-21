@@ -70,6 +70,9 @@ var upgradeSeeds = []upgradeSeed{
 		`INSERT INTO topics (title, source, created, updated) VALUES ('t', 'person', '2026-03-02T00:00:00Z', '2026-03-02T00:00:00Z')`,
 		`INSERT INTO topic_links (topic_id, kind, ref, by, created) VALUES (1, 'lane', 'live', 'person', '2026-03-02T00:00:00Z')`,
 	}},
+	{37, []string{
+		`INSERT INTO check_files (repo_id, path, blob, base_commit, approved, approved_by) VALUES (1, 't/a_test.go', 'b1', 'c1', '2026-03-03T00:00:00Z', 'person (cli)')`,
+	}},
 }
 
 // upgradeCheck reads one row, as columns joined by '|' (NULL as "<null>"), from rows that
@@ -109,6 +112,8 @@ var upgradeChecks = []upgradeCheck{
 	{25, `SELECT on_ || '|' || by || '|' || since || '|' || cap_usd || '|' || max_runs FROM keep_going WHERE workspace_id = 1`, `1|me||0.0|0`},
 	{26, `SELECT t.title || '|' || t.status || '|' || t.summary || '|' || t.cleared_at || '|' || t.merged_into || '|' || l.kind || '|' || l.ref FROM topics t JOIN topic_links l ON l.topic_id = t.id`,
 		`t|open|||0|lane|live`},
+	{37, `SELECT path || '|' || blob || '|' || base_commit || '|' || item_id || '|' || set_name || '|' || approved_by || '|' || released || '|' || release_why FROM check_files WHERE id = 1`,
+		`t/a_test.go|b1|c1|0|||person (cli)||`},
 }
 
 func schemaRows(t *testing.T, db *sql.DB) []string {
