@@ -323,3 +323,126 @@ func TestArtifactGCCapEvictsOldestFirst(t *testing.T) {
 		t.Errorf("left = %v (ids %v)", e, ids)
 	}
 }
+
+// declaredImage records a screenshot an agent declared, the way a run's end does.
+func (f *fixture) declaredImage(l store.Lane, p, intent string, size int) store.Artifact {
+	f.t.Helper()
+	ctx := context.Background()
+	writeFile(f.t, l.Worktree, p, strings.Repeat("x", size))
+	_, sum, err := readLive(l.Worktree, p, 64<<20)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	a, _, err := f.fold.Store.UpsertArtifact(ctx, store.Artifact{WorkspaceID: f.repo.WorkspaceID, RepoID: f.repo.ID, LaneID: l.ID,
+		Path: p, Kind: store.ArtifactImage, Source: store.ArtifactDeclared, Intent: intent, IntentBy: store.IntentByAgent, SHA256: sum, Size: int64(size)})
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.fold.Store.AddArtifactVersion(ctx, store.ArtifactVersion{ArtifactID: a.ID, SHA256: sum, Size: int64(size), RunID: 1})
+	f.fold.SnapshotKnown(ctx, l.ID)
+	return a
+}
+
+func TestCloseKeepsDeclaredScreenshots(t *testing.T) {
+	for _, tc := range []struct {
+		name, path string
+		size       int
+		want       string
+	}{
+		{"in the Shepherd directory", ".shepherd/artifacts/shot.png", 100, store.ArtifactKept},
+		{"elsewhere in the worktree", "docs/shot.png", 100, store.ArtifactKept},
+		{"over the live view's cap", ".shepherd/artifacts/full-page.png", ArtifactMaxImage + 1, store.ArtifactKept},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.withSnapshots()
+			ctx := context.Background()
+			l := f.open("feat/shot")
+			f.commit(l.Worktree, "src/a.go")
+			f.merge(l)
+			a := f.declaredImage(l, tc.path, store.ArtifactKeep, tc.size)
+			if _, err := f.fold.Close(ctx, l.ID, false); err != nil {
+				t.Fatal(err)
+			}
+			if got := f.artifact(l.ID, tc.path); got.State != tc.want {
+				t.Fatalf("state = %s, want %s", got.State, tc.want)
+			}
+			c, err := f.fold.ArtifactSnapshot(ctx, a.ID, "")
+			if err != nil || len(c.Data) != tc.size || !strings.HasPrefix(c.Mime, "image/") {
+				t.Fatalf("snapshot = %d bytes, %q, %v", len(c.Data), c.Mime, err)
+			}
+		})
+	}
+}
+
+func TestCloseSaysWhenAWantedArtifactHasNoCopy(t *testing.T) {
+	f := newFixture(t)
+	f.withSnapshots()
+	ctx := context.Background()
+	l := f.open("feat/nocopy")
+	f.commit(l.Worktree, "src/a.go")
+	f.merge(l)
+	// A declared image whose file went before any copy was taken, and an unpinned
+	// scratch file in the same state: only the first was worth a copy.
+	// Also: a declared image just over the snapshot cap (a sparse file), and a
+	// discovered text file that is not valid UTF-8, which is never copied.
+	cases := []struct{ p, intent, source string }{
+		{"shots/lost.png", store.ArtifactKeep, store.ArtifactDeclared},
+		{"shots/scratch.png", store.ArtifactScratch, store.ArtifactDeclared},
+		{"shots/huge.png", store.ArtifactKeep, store.ArtifactDeclared},
+		{"notes/binary.txt", store.ArtifactKeep, store.ArtifactDiscovered},
+	}
+	for _, c := range cases {
+		p := c.p
+		kind := store.ArtifactKindOf(p)
+		sum := strings.Repeat("a", 64)
+		switch p {
+		case "shots/huge.png":
+			writeFile(t, l.Worktree, p, "")
+			if err := os.Truncate(filepath.Join(l.Worktree, p), MaxSnapshotImage+1); err != nil {
+				t.Fatal(err)
+			}
+		case "notes/binary.txt":
+			writeFile(t, l.Worktree, p, "\xff\xfe not utf-8")
+			_, sum, _ = readLive(l.Worktree, p, 64<<20)
+		default:
+			writeFile(t, l.Worktree, p, "x")
+			_, sum, _ = readLive(l.Worktree, p, 64<<20)
+		}
+		a, _, err := f.fold.Store.UpsertArtifact(ctx, store.Artifact{WorkspaceID: f.repo.WorkspaceID, RepoID: f.repo.ID, LaneID: l.ID,
+			Path: p, Kind: kind, Source: c.source, Intent: c.intent, IntentBy: store.IntentByAgent, SHA256: sum, Size: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.fold.Store.AddArtifactVersion(ctx, store.ArtifactVersion{ArtifactID: a.ID, SHA256: sum, Size: 1, RunID: 1})
+		if p == "shots/lost.png" || p == "shots/scratch.png" {
+			if err := os.Remove(filepath.Join(l.Worktree, p)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if _, err := f.fold.Close(ctx, l.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"shots/lost.png", "shots/scratch.png", "shots/huge.png", "notes/binary.txt"} {
+		if a := f.artifact(l.ID, p); a.State != store.ArtifactGone {
+			t.Fatalf("%s state = %s", p, a.State)
+		}
+	}
+	feed, err := f.fold.Store.Feed(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, it := range feed {
+		if it.Kind == store.FeedArtifact && strings.Contains(it.Text, "no stored copy") {
+			lines = append(lines, it.Text)
+		}
+	}
+	// One line each for the two declared images; none for the scratch file or the
+	// discovered text file.
+	if len(lines) != 2 || !strings.Contains(strings.Join(lines, "\n"), "shots/lost.png") || !strings.Contains(strings.Join(lines, "\n"), "shots/huge.png") ||
+		strings.Contains(strings.Join(lines, "\n"), "scratch") || strings.Contains(strings.Join(lines, "\n"), "binary") || !strings.Contains(lines[0], "feat/nocopy") {
+		t.Errorf("feed lines = %q", lines)
+	}
+}

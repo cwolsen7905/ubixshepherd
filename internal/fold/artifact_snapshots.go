@@ -29,6 +29,12 @@ const (
 	DefaultSnapshotCap = 500 << 20
 )
 
+// MaxSnapshotImage is the largest image a snapshot keeps. It is wider than the live
+// view's ArtifactMaxImage: a full-page or high-density screenshot can pass 10 MiB, and
+// the copy is the only one the person has once the lane closes. It matches the cap on
+// what is hashed at all; the total cap (DefaultSnapshotCap) still bounds the store.
+const MaxSnapshotImage = 64 << 20
+
 // ExcludeLine is what Shepherd adds to a repo's info/exclude.
 const ExcludeLine = "/" + store.ArtifactDir
 
@@ -207,7 +213,7 @@ func (f *Fold) recordUnseen(ctx context.Context, lane store.Lane, repo store.Rep
 func (f *Fold) snapshotArtifact(ctx context.Context, a store.Artifact, worktree string) error {
 	limit := int64(ArtifactMaxText)
 	if a.Kind == store.ArtifactImage {
-		limit = ArtifactMaxImage
+		limit = MaxSnapshotImage
 	}
 	data, sum, err := readLive(worktree, a.Path, 64<<20)
 	if err != nil {
@@ -329,10 +335,23 @@ func fileExists(p string) bool {
 }
 
 // settleArtifacts applies a close's plan. A scratch file nobody pinned has no snapshot
-// to drop; it is simply gone.
+// to drop; it is simply gone. It runs once the lane is closed, so the feed line for an
+// artifact that was worth a copy and has none is written only for a close that happened.
 func (f *Fold) settleArtifacts(ctx context.Context, plan artifactPlan) {
 	for id, state := range plan {
 		f.Store.SetArtifactState(ctx, id, state, true)
+		if state != store.ArtifactGone {
+			continue
+		}
+		// Only what the agent declared or the person pinned: a discovered file that
+		// was too big or not text is not news.
+		if a, err := f.Store.Artifact(ctx, id); err == nil && wantsSnapshot(a) && (a.Source == store.ArtifactDeclared || a.Pinned) {
+			name := ""
+			if lane, err := f.Store.Lane(ctx, a.LaneID); err == nil {
+				name = lane.Name
+			}
+			f.Store.AddFeed(ctx, store.FeedArtifact, fmt.Sprintf("%s in lane %s closed with no stored copy: the file was gone or unreadable, over the size cap, or a copy could not be written", a.Path, name), id)
+		}
 	}
 }
 
