@@ -414,11 +414,36 @@ func mcpTools() []mcpTool {
 			Name: "next_list",
 			Description: "The next-up list: work that is planned but not being acted on, in the person's order (approved, then planned, then deferred), each with its plan doc and, once a lane is open for it, the lane and MR. " +
 				"The item marked next is the first approved one with no lane. Use it to say what is next up; items marked proposed are not approved. The matrix list is each repo's docs/WORK.md rows with status todo or blocked, read-only (no id), edited in the file.",
-			InputSchema: obj(map[string]any{"all": map[string]any{"type": "boolean", "description": "Include done and dropped items."}}),
+			InputSchema: obj(map[string]any{
+				"all":     map[string]any{"type": "boolean", "description": "Include done and dropped items."},
+				"repo":    map[string]any{"type": "string", "description": "Only items for this repo."},
+				"topic":   map[string]any{"type": "string", "description": "Only items in this conversation topic: its id (83 or #83) or its title, or part of a title that names one topic."},
+				"state":   map[string]any{"type": "array", "items": map[string]any{"type": "string", "enum": []string{"approved", "started", "planned", "proposed", "deferred", "dropped", "done", "todo", "blocked"}}, "description": "Only items in these states (proposed is an unapproved item; todo and blocked are matrix rows)."},
+				"text":    map[string]any{"type": "string", "description": "Only items whose title, note or done-when contains this."},
+				"matrix":  map[string]any{"type": "string", "description": "The read-only matrix rows to show: \"none\", or one repo's name. Default all."},
+				"compact": map[string]any{"type": "boolean", "description": "One line per item, without lane, blocker and suggestion lines. Use it to see a long backlog within the output cap."},
+			}),
 			args: func(a map[string]any) ([]string, error) {
 				out := []string{"next", "list"}
 				if all, _ := a["all"].(bool); all {
 					out = append(out, "--all")
+				}
+				if compact, _ := a["compact"].(bool); compact {
+					out = append(out, "--compact")
+				}
+				for _, k := range []string{"repo", "topic", "text", "matrix"} {
+					if v := str(a, k); v != "" {
+						out = append(out, "--"+k, v)
+					}
+				}
+				if _, ok := a["state"]; ok {
+					states, err := strs(a, "state")
+					if err != nil {
+						return nil, err
+					}
+					if len(states) > 0 {
+						out = append(out, "--state", strings.Join(states, ","))
+					}
 				}
 				return out, nil
 			},
