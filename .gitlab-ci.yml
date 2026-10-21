@@ -1,34 +1,15 @@
-# AI review of merge requests, from a reusable template in a sibling project (advisory:
-# threads are posted, the job never fails). Both refs are pinned to the commit of tag
-# v0.1.0-beta.1 so the job that holds the secrets cannot change under us; the template
-# fetches its scripts at AI_REVIEW_REF, so the two must be bumped together.
-# Needs the OPENROUTER_API_KEY and AI_REVIEW_GITLAB_TOKEN group variables; without them the
-# job exits 75 ("unreviewed"). Template docs: docs/ai-review.md in that project.
+# Kelpie's review (kelpie-review), run from Kelpie's image, advisory. It replaced the
+# old ai-review-mr template job: it posts threads on a merge request into dev (this repo's
+# default branch, the job's default target, so AI_REVIEW_BASE_BRANCH stays unset). The ref
+# is the commit of Kelpie's dev that holds ci/kelpie.yml; bump it on purpose. Needs
+# OPENROUTER_API_KEY and AI_REVIEW_GITLAB_TOKEN, plus KELPIE_REGISTRY_USER and
+# KELPIE_REGISTRY_TOKEN (read_registry) as group variables to pull the image from another
+# project. Without them it exits 75, "unreviewed", and is allowed to fail: never red.
+# Docs: docs/ai-review.md in that project.
 include:
-  - project: ubixsys/ubixkelpie
-    ref: ff9e4b78a91b006303d09ddcddba5e4bb18d4c87 # v0.1.0-beta.1
-    file: ci/ai-review/ai-review.yml
-  # Kelpie's own review (kelpie-review), run from Kelpie's image, advisory. It runs beside
-  # ai-review-mr, not instead of it: the two are different reviewers and both post threads on
-  # a merge request into dev (this repo's default branch, the job's default target, so
-  # AI_REVIEW_BASE_BRANCH stays unset). The ref is the commit of Kelpie's dev that holds
-  # ci/kelpie.yml; bump it on purpose. Needs OPENROUTER_API_KEY and AI_REVIEW_GITLAB_TOKEN,
-  # plus KELPIE_REGISTRY_USER and KELPIE_REGISTRY_TOKEN (read_registry) as group variables to
-  # pull the image from another project. Without them it exits 75, "unreviewed", and is allowed
-  # to fail: never red. Docs: docs/ai-review.md in that project.
   - project: ubixsys/ubixkelpie
     ref: 788c9416214a6bdf4ceaffd851eaf34ac7850a38 # dev
     file: ci/kelpie.yml
-
-variables:
-  AI_REVIEW_REF: ff9e4b78a91b006303d09ddcddba5e4bb18d4c87 # v0.1.0-beta.1
-  AI_REVIEW_MODE: advisory
-
-# Advisory means never red: allow_failure here makes that visible in this repo. The template
-# decides where it runs (merge request pipelines targeting dev, not drafts).
-ai-review-mr:
-  stage: test # the template's stage, one of the stages below
-  allow_failure: true
 
 # The default stages plus approval and promote. The checks stay in the default test stage.
 # approval only runs in merge request pipelines and promote only in dev push pipelines, so
