@@ -3,6 +3,7 @@ package muster
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -317,6 +318,52 @@ func TestDeadRunBecomesInterruptedOnSecondSighting(t *testing.T) {
 	if _, err := f.p.Undo(f.ctx, it.ID); err != ErrNotUndoable {
 		t.Errorf("undo = %v", err)
 	}
+}
+
+func TestRunWithNoPidIsAskedAboutAfterTheGrace(t *testing.T) {
+	f := newFixture(t)
+	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", State: store.RunRunning})
+	f.p.Run(f.ctx)
+	if f.kind(store.MusterOpen, KindRunNoPID) != nil {
+		t.Fatal("asked inside the grace")
+	}
+	f.now = f.now.Add(time.Hour)
+	f.p.Run(f.ctx)
+	it := f.kind(store.MusterOpen, KindRunNoPID)
+	if it == nil || it.Auto {
+		t.Fatalf("finding = %+v", it)
+	}
+	if got, _ := f.st.Run(f.ctx, run.ID); got.State != store.RunRunning {
+		t.Fatalf("interrupted unasked: %s", got.State)
+	}
+	if _, err := f.p.Apply(f.ctx, it.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := f.st.Run(f.ctx, run.ID); got.State != store.RunInterrupted {
+		t.Errorf("run = %s", got.State)
+	}
+}
+
+func TestKeepAllReturnsStoreErrors(t *testing.T) {
+	f := newFixture(t)
+	a := f.artifact("a.md", store.ArtifactUndecided)
+	it, _, _ := f.st.AddMuster(f.ctx, store.MusterItem{Key: "k", Kind: KindArtifactUndecided, SubjectKind: "artifact", SubjectID: a.ID,
+		Fix: FixArtifactKeepAll, FixArg: fmt.Sprintf(`{"IDs":[%d,999]}`, a.ID)})
+	if _, err := f.p.Apply(f.ctx, it.ID); err != nil {
+		t.Fatalf("a vanished artifact must be skipped: %v", err)
+	}
+	f.p.Store = brokenArtifact{f.st}
+	it2, _, _ := f.st.AddMuster(f.ctx, store.MusterItem{Key: "k2", Kind: KindArtifactUndecided, SubjectKind: "artifact", SubjectID: a.ID,
+		Fix: FixArtifactKeepAll, FixArg: fmt.Sprintf(`{"IDs":[%d]}`, a.ID)})
+	if _, err := f.p.Apply(f.ctx, it2.ID); err == nil {
+		t.Error("a store failure was reported as success")
+	}
+}
+
+type brokenArtifact struct{ *sqlite.DB }
+
+func (brokenArtifact) Artifact(context.Context, int64) (store.Artifact, error) {
+	return store.Artifact{}, errors.New("database is locked")
 }
 
 func TestLiveRunIsLeftAlone(t *testing.T) {

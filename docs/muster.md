@@ -29,6 +29,7 @@ being true on its own is marked cleared.
 | | Identical content in one lane | Shown once (`muster.Collapse`, for the list to use) |
 | Board | A lane whose worktree or branch is gone | Flagged |
 | | A run marked running whose process is dead | Marked interrupted, after two passes in a row see it dead; cannot be undone |
+| | A run marked running that never recorded a process | Finding that asks whether to mark it interrupted |
 | | A lane with no activity for `muster.stale_days` | Flagged stale |
 | | A lane whose merge request was closed without merging | Flagged, to reopen or close the lane |
 | | An approved scope change the lane never got | Finding; the fix adds the paths to the lane's scope |

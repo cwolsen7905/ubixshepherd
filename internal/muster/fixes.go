@@ -3,6 +3,7 @@ package muster
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -69,8 +70,14 @@ func (p *Pass) do(ctx context.Context, it store.MusterItem) (string, error) {
 		b := artifactBefore{Intents: map[int64][2]string{}}
 		for _, id := range arg.IDs {
 			a, err := st.Artifact(ctx, id)
-			if err != nil || a.Intent != store.ArtifactUndecided {
-				continue // gone since, or the person decided it meanwhile
+			if errors.Is(err, store.ErrNotFound) {
+				continue // gone since
+			}
+			if err != nil {
+				return "", err
+			}
+			if a.Intent != store.ArtifactUndecided {
+				continue // the person decided it meanwhile
 			}
 			if err := st.SetArtifactIntent(ctx, id, store.ArtifactKeep, store.IntentByPerson); err != nil {
 				return "", err

@@ -17,6 +17,7 @@ const (
 	KindLaneMRClosed = "lane.mr-closed"
 	KindLaneScope    = "lane.scope"
 	KindRunDead      = "run.dead"
+	KindRunNoPID     = "run.no-pid"
 )
 
 // graceNewRun is how long a run is left alone before its process is judged dead: its pid
@@ -137,8 +138,23 @@ func (r *run) checkLane(ctx context.Context, rp store.Repo, l store.Lane, activi
 		return n, err
 	}
 	for _, rn := range runs {
-		if rn.PID <= 0 || now.Sub(rn.Started) < graceNewRun {
-			running = true
+		if now.Sub(rn.Started) < graceNewRun {
+			running = true // the pid may not be recorded yet
+			continue
+		}
+		if rn.PID <= 0 {
+			// Still no pid after the grace: nothing says the run is alive, and nothing
+			// can say it is dead, so the person is asked.
+			got, err := r.raise(ctx, candidate{
+				key: fmt.Sprintf("%s:%d", KindRunNoPID, rn.ID), kind: KindRunNoPID,
+				subjectKind: "run", subjectID: rn.ID, repo: rp.Name,
+				reason: fmt.Sprintf("run %d in lane %s is marked running but never recorded a process: mark it interrupted?", rn.ID, l.Name),
+				fix:    FixRunInterrupt,
+			})
+			n += got
+			if err != nil {
+				return n, err
+			}
 			continue
 		}
 		if p.Probe.Alive != nil && p.Probe.Alive(rn.PID) {

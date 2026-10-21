@@ -178,7 +178,7 @@ func (p *Pass) Run(ctx context.Context) int {
 		check func(context.Context, *run) (int, error)
 	}{
 		{"artifacts", []string{KindArtifactMissing, KindArtifactSettle, KindArtifactUndecided}, checkArtifacts},
-		{"board", []string{KindLaneGone, KindLaneStale, KindLaneMRClosed, KindLaneScope, KindRunDead}, checkBoard},
+		{"board", []string{KindLaneGone, KindLaneStale, KindLaneMRClosed, KindLaneScope, KindRunDead, KindRunNoPID}, checkBoard},
 		{"next", []string{KindNextNoRepo, KindNextLaneClosed, KindNextImplemented, KindNextDuplicate}, checkNext},
 		{"inbox", []string{KindQuestionOutdated, KindDecisionOutdated, KindQuestionSkip, KindInboxDigest, KindQuestionNoAbout}, checkInbox},
 	} {
