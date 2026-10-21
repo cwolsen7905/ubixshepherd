@@ -148,3 +148,20 @@ func TestEveryVerdictHasARule(t *testing.T) {
 		t.Fatalf("%+v", v)
 	}
 }
+
+func TestChecksActionsArePersonOnly(t *testing.T) {
+	for _, a := range []Action{ActionChecksApprove, ActionChecksRelease} {
+		if PersonOnlyReason(a) == "" {
+			t.Errorf("%s is not person-only", a)
+		}
+		for _, actor := range []Actor{ActorWorker, ActorDesk, ActorDaemon} {
+			v := Decide(context.Background(), Request{Action: a, Actor: actor})
+			if v.Kind != Refuse || v.Rule != RulePersonAnswers {
+				t.Errorf("%s by %s: %+v", a, actor, v)
+			}
+		}
+		if v := Decide(context.Background(), Request{Action: a, Actor: ActorPerson}); !v.OK() {
+			t.Errorf("%s by the person: %+v", a, v)
+		}
+	}
+}

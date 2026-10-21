@@ -76,6 +76,8 @@ const (
 	ActionWidenScope     Action = "lane.widen"
 	ActionKeepGoingOn    Action = "keep-going.on"
 	ActionBriefApprove   Action = "brief.approve"
+	ActionChecksApprove  Action = "checks.approve"
+	ActionChecksRelease  Action = "checks.release"
 )
 
 // RouteAction is the action for calling the route a mux pattern names.
@@ -234,6 +236,8 @@ var personOnly = map[Action]string{
 	ActionWidenScope:     "the front desk may widen a lane's scope only in a turn the person started; bring the request to them",
 	ActionKeepGoingOn:    "keep-going is turned on by the person: not by an agent, and by the front desk only in a turn the person started; off is always allowed",
 	ActionBriefApprove:   "the front desk may approve a brief only in a turn the person started; bring the draft to them",
+	ActionChecksApprove:  "approving check files is the person's call: an agent never does, and the front desk only in a turn the person started, citing the decision in which they said so",
+	ActionChecksRelease:  "releasing approved check files is the person's call: an agent raises a decision (ask_human) saying which check is wrong and why; the front desk releases only in a turn the person started, citing the decision in which they said so",
 }
 
 // PersonOnlyReason is the text said when anyone but the person takes a person-only
