@@ -27,6 +27,7 @@ const (
 //   - a question made before questions carried a link is flagged.
 func checkInbox(ctx context.Context, r *run) (int, error) {
 	p := r.p
+	p.fillProbe() // a Pass built by hand may leave probes nil
 	mc := p.conf().Muster
 	now := p.now()
 	day := 24 * time.Hour

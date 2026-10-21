@@ -28,6 +28,7 @@ const DuplicateThreshold = 0.8
 //   - items with near-identical titles are proposed as duplicates.
 func checkNext(ctx context.Context, r *run) (int, error) {
 	p := r.p
+	p.fillProbe() // a Pass built by hand may leave probes nil
 	items, err := p.Store.NextItems(ctx)
 	if err != nil {
 		return 0, err

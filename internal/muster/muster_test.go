@@ -617,3 +617,31 @@ type unreadableRun struct{ *sqlite.DB }
 func (unreadableRun) Run(context.Context, int64) (store.Run, error) {
 	return store.Run{}, errors.New("row unreadable")
 }
+
+func TestScopeQuestionNeedsAVerbAndSafePaths(t *testing.T) {
+	for q, want := range map[string]bool{
+		"May I widen scope to internal/x/y.go?":                   true,
+		"Is work outside the scope of this task fine? see a/b.go": false,
+		"Please extend the lane's scope":                          true,
+	} {
+		if got := asksToWidenScope(q); got != want {
+			t.Errorf("%q = %v", q, got)
+		}
+	}
+	got := safePaths([]string{"a/b.go", "../x.go", "/etc/passwd", "a/../b"})
+	if len(got) != 1 || got[0] != "a/b.go" {
+		t.Errorf("safe = %v", got)
+	}
+}
+
+func TestPassWithNoProbesDoesNotPanic(t *testing.T) {
+	f := newFixture(t)
+	f.artifact("a.md", store.ArtifactKeep)
+	p := &Pass{Store: f.st, Conf: func() config.Config { return f.cfg }}
+	(&run{p: p, seen: map[string]bool{}, ran: map[string]bool{}}).p.fillProbe()
+	for _, c := range []func(context.Context, *run) (int, error){checkArtifacts, checkBoard, checkNext, checkInbox} {
+		if _, err := c(f.ctx, &run{p: &Pass{Store: f.st}, seen: map[string]bool{}, ran: map[string]bool{}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

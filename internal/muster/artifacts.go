@@ -24,6 +24,7 @@ const (
 //   - the ones undecided for too long join one batched finding.
 func checkArtifacts(ctx context.Context, r *run) (int, error) {
 	p := r.p
+	p.fillProbe() // a Pass built by hand may leave probes nil
 	wss, err := p.Store.Workspaces(ctx)
 	if err != nil {
 		return 0, err
