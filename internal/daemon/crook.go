@@ -193,7 +193,14 @@ func (s *Server) crookRules(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, api.CrookRules{Since: since.UTC().Format(time.RFC3339), Rules: rules})
 }
 
+// shadowRecorder writes each row to the store as it is recorded, with no queue.
+type shadowRecorder struct{ w *crookRecorder }
+
+func (r shadowRecorder) Record(ctx context.Context, e crook.Entry) error { return r.w.write(ctx, e) }
+
 // ShadowRecorder writes the merge rules' shadow rows straight to the store. The shadow
 // pass runs apart from the poll and is one write per change, so it needs no queue; a
 // failed write is returned and tried again on the next poll.
-func ShadowRecorder(st store.Store) crook.Recorder { return &crookRecorder{st: st} }
+func ShadowRecorder(st store.Store) crook.Recorder {
+	return shadowRecorder{&crookRecorder{st: st}}
+}

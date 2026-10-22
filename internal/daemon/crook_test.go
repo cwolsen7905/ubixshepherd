@@ -137,3 +137,17 @@ func TestCrookLogWritesInTheBackgroundAndRestores(t *testing.T) {
 		t.Fatalf("nothing is logged once stopped: %d", len(vs))
 	}
 }
+
+func TestShadowRecorderWritesTheRowAtOnce(t *testing.T) {
+	s, _ := newServer(t)
+	err := ShadowRecorder(s.Store).Record(context.Background(), crook.Entry{
+		Action: "merge", Actor: crook.ActorDaemon, Kind: crook.Ask, Rule: "r1", Stage: "shadow", Reason: "x", Repo: "app", Lane: "l",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	vs, err := s.Store.CrookVerdicts(context.Background(), store.CrookFilter{})
+	if err != nil || len(vs) != 1 || vs[0].Stage != "shadow" || vs[0].Rule != "r1" || vs[0].Repo != "app" {
+		t.Fatalf("rows = %+v, %v", vs, err)
+	}
+}
