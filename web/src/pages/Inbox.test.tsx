@@ -95,10 +95,11 @@ describe('InboxPage', () => {
     expect(decodeURIComponent(window.location.hash)).toContain('open=mr:3')
   })
 
-  it('shows how to route a request that has no lane', async () => {
+  it('opens a request to route in the side panel', async () => {
     await show()
-    expect(screen.getByText(/shepherd request route 9/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Needs a lane/ })).toBeNull()
+    expect(screen.queryByText(/shepherd request route 9/)).toBeNull()
+    await userEvent.click(screen.getByText('Needs a lane'))
+    expect(window.location.hash).toContain('open=request%3A9')
   })
 
   it('scrolls a decision deep link to the middle and marks it', async () => {
@@ -304,8 +305,9 @@ describe('MR approval panel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve !12' }))
     await userEvent.click(screen.getByRole('button', { name: /^Approve at / }))
     expect(approve).toHaveBeenCalledWith(3, '4be7d19c0000')
-    // The item after it is a next-up proposal, which the thread shows: the step is asked for.
-    await waitFor(() => expect(stepped).toHaveBeenCalled())
+    // The item after it is a next-up proposal, which has its own pane.
+    await waitFor(() => expect(window.location.hash).toContain('open=next%3A5'))
+    expect(stepped).not.toHaveBeenCalled()
     window.removeEventListener(STEP_EVENT, stepped)
   })
 

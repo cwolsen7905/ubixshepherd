@@ -2,6 +2,8 @@ import { useEffect, useRef, type ReactNode } from 'react'
 import { go, useRoute, withOpen, type Open } from '../router'
 import { DecisionPane } from './decisionPane'
 import { QuestionPane } from './questionPane'
+import { RequestPane } from './requestPane'
+import { NextPane } from './nextPane'
 import { useMode, type Mode } from './useMode'
 import { closeInspector, leaveFull, useFullChrome } from './fullChrome'
 import { PageBack, PageHeader } from '../ui/PageHeader'
@@ -45,6 +47,10 @@ function InspectorBody({ open }: { open: Open }) {
       return <DecisionPane key={open.id} id={open.id} />
     case 'question':
       return <QuestionPane key={open.id} id={open.id} />
+    case 'request':
+      return <RequestPane key={open.id} id={open.id} />
+    case 'next':
+      return <NextPane key={open.id} id={open.id} />
     case 'artifact':
       return <ArtifactInspector key={open.id} id={open.id} />
     case 'run':
@@ -69,6 +75,8 @@ function parentLane(open: Open, snap: ReturnType<typeof useSnapshot>): string | 
   if (open.kind === 'lane' || open.kind === 'mr') return snap.lanes.find((l) => l.id === open.id)?.branch
   if (open.kind === 'decision') return snap.decisions.find((d) => d.id === open.id)?.lane
   if (open.kind === 'run') return snap.runs.find((r) => r.id === open.id)?.lane
+  if (open.kind === 'request') return snap.requests.find((r) => r.id === open.id)?.from_lane
+  if (open.kind === 'next') return snap.next.find((n) => n.id === open.id)?.lane_name
   return undefined
 }
 

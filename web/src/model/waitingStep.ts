@@ -76,10 +76,12 @@ export function showInThread(it: WaitingItem) {
   requestStep(it)
 }
 
-/** The inspector item that shows a waiting item in full, or null for kinds with no pane yet. */
+/** The inspector item that shows a waiting item in full, or null for kinds with no pane. */
 export function openTarget(it: WaitingItem): Open | null {
   if (it.kind === 'decision' && it.decision_id) return { kind: 'decision', id: it.decision_id }
   if (it.kind === 'question' && it.question_id) return { kind: 'question', id: it.question_id }
+  if (it.kind === 'request' && it.request_id) return { kind: 'request', id: it.request_id }
+  if (it.kind === 'next' && it.next_id) return { kind: 'next', id: it.next_id }
   return null
 }
 

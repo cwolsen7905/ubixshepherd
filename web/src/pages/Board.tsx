@@ -212,7 +212,7 @@ export function BoardPage({
                   age={since(it.at, now)}
                   selected={op ? isOpenNow(op) : i === clamped}
                   onSelect={() => setSel(i)}
-                  href={op ? openHref(op) : it.request ? href.decisions() : undefined}
+                  href={op ? openHref(op) : undefined}
                 />
               )
               return (

@@ -66,14 +66,10 @@ function startOfDay(now: number): Date {
 export function inboxOpen(it: WaitingItem): Open | null {
   if (it.kind === 'decision' && it.decision_id) return { kind: 'decision', id: it.decision_id }
   if (it.kind === 'question' && it.question_id) return { kind: 'question', id: it.question_id }
+  if (it.kind === 'request' && it.request_id) return { kind: 'request', id: it.request_id }
+  if (it.kind === 'next' && it.next_id) return { kind: 'next', id: it.next_id }
   if (it.kind === 'mr' && it.lane_id) return { kind: 'mr', id: it.lane_id }
   if (it.lane_id) return { kind: 'lane', id: it.lane_id }
-  return null
-}
-
-/** The page that holds an item the inspector has no pane for. */
-function pageFor(it: WaitingItem): string | null {
-  if (it.kind === 'next' && it.next_id) return href.next(it.next_id)
   return null
 }
 
@@ -84,9 +80,6 @@ function show(it: WaitingItem) {
     // The row already open fires no hashchange: bring the inspector's heading into focus instead.
     if (now && now.kind === o.kind && now.id === o.id) document.getElementById('inspector-title')?.focus()
     else go(withOpen(window.location.hash, o))
-  } else {
-    const to = pageFor(it)
-    if (to) go(to)
   }
 }
 
@@ -229,7 +222,7 @@ export function InboxPage({ kind }: { kind?: string }) {
   const row = (it: WaitingItem) => {
     const key = waitingKey(it) + (it.request_id ? `:r${it.request_id}` : '')
     const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
-    const actionable = inboxOpen(it) !== null || pageFor(it) !== null
+    const actionable = inboxOpen(it) !== null
     const note = notes[waitingKey(it)]
     const mark = MARK[it.kind] ?? UNKNOWN_MARK
     const sub = (

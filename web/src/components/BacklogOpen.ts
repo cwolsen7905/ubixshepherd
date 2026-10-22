@@ -50,9 +50,10 @@ export function openRow(o: Open | undefined) {
   }
 }
 
-/** What a board or rail item opens: a decision's pane, else its lane (a request has no pane yet). */
-export function itemOpen(it: { decision?: { id: number }; laneId?: number }): Open | null {
+/** What a board or rail item opens: a decision's or request's pane, else its lane. */
+export function itemOpen(it: { decision?: { id: number }; request?: { id: number }; laneId?: number }): Open | null {
   if (it.decision) return { kind: 'decision', id: it.decision.id }
+  if (it.request) return { kind: 'request', id: it.request.id }
   if (it.laneId !== undefined) return { kind: 'lane', id: it.laneId }
   return null
 }

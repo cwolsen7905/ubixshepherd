@@ -519,14 +519,14 @@ function PrimaryButton({ lane, action }: { lane: LaneView; action: LanePrimary }
       // Read in the main body, with the topic thread beside it: the swap layout's own route.
       return <Button variant="attention" onClick={() => go(withOpen(href.chat(), { kind: 'decision', id: action.decision.id }))}>Answer decision</Button>
     case 'route':
-      return <Button variant="attention" onClick={() => go(href.decisions())}>Route request</Button>
+      return <Button variant="attention" onClick={() => go(withOpen(window.location.hash, { kind: 'request', id: action.request.id }))}>Route request</Button>
     case 'open':
       return <Button variant="primary" onClick={() => go(href.log(action.run.id))}>Open run</Button>
     case 'follow':
       // The live log in the side panel, so the lane stays in view beside it.
       return <Button variant="primary" onClick={() => go(withOpen(window.location.hash, { kind: 'run', id: action.run.id, tab: 'log' }))}>Follow run</Button>
     case 'next':
-      return <Button variant="primary" onClick={() => go(href.next(action.item.id))}>Open next up</Button>
+      return <Button variant="primary" onClick={() => go(withOpen(window.location.hash, { kind: 'next', id: action.item.id }))}>Open next up</Button>
     case 'approve':
       return <Button variant="primary" onClick={() => go(withOpen(window.location.hash, { kind: 'lane', id: lane.id, tab: 'changes' }))}>Open changes</Button>
     case 'failure':

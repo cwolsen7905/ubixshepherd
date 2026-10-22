@@ -18,6 +18,7 @@ export function pageFor(open: Open): string | undefined {
   if (open.kind === 'lane' || open.kind === 'mr') return href.lane(open.id)
   if (open.kind === 'run') return href.log(open.id)
   if (open.kind === 'decision') return withOpen(href.chat(), { kind: 'decision', id: open.id })
+  if (open.kind === 'next') return href.next(open.id)
   if (open.kind === 'artifact') return `#/artifacts?view=${open.id}`
   return undefined
 }

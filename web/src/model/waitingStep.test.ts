@@ -51,9 +51,11 @@ describe('openTarget and openKey', () => {
   const dec: WaitingItem = { kind: 'decision', action: 'answer', decision_id: 5, title: 'd' }
   const ques = q(2)
   const mr: WaitingItem = { kind: 'mr', action: 'approve', lane_id: 1, mr: 9, title: 'm' }
-  it('maps decisions and questions, and nothing else', () => {
+  it('maps decisions, questions, requests and next-up items, and nothing else', () => {
     expect(openTarget(dec)).toEqual({ kind: 'decision', id: 5 })
     expect(openTarget(ques)).toEqual({ kind: 'question', id: 2 })
+    expect(openTarget({ kind: 'request', action: 'route', request_id: 9, title: 'r' })).toEqual({ kind: 'request', id: 9 })
+    expect(openTarget({ kind: 'next', action: 'review', next_id: 4, title: 'n' })).toEqual({ kind: 'next', id: 4 })
     expect(openTarget(mr)).toBeNull()
   })
   it('finds the key of the open item', () => {
