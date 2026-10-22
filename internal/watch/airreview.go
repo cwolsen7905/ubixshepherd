@@ -10,8 +10,9 @@ import (
 // reviewRead is what the watcher has done about a lane's AI review job on one pipeline.
 type reviewRead struct {
 	pipeline int64
-	retried  bool // the job was retried once
-	done     bool // settled: reviewed, absent, or given up on
+	retried  bool  // the job was retried once
+	done     bool  // settled: reviewed, absent, or given up on
+	ok       int64 // the pipeline whose review job passed, for the shadow merge rule
 }
 
 // aiReview watches the head pipeline's AI review job. When it did not review (its log
@@ -67,6 +68,9 @@ func (w *Watcher) aiReview(ctx context.Context, f forge.Forge, lane store.Lane, 
 		}
 	case job.Status == "success" || job.Status == "canceled" || job.Status == "skipped":
 		cur.done = true
+		if job.Status == "success" {
+			cur.ok = p.ID
+		}
 	}
 	if w.reviewRead == nil {
 		w.reviewRead = map[int64]reviewRead{}

@@ -18,6 +18,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
+	"github.com/ubixsys/ubixshepherd/internal/mergerule"
 	"github.com/ubixsys/ubixshepherd/internal/muster"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -44,6 +45,12 @@ type Watcher struct {
 	// NoAutoClose turns off closing a finished lane by itself (autoclose.go). It is
 	// off by default; the daemon does not yet expose it as a setting.
 	NoAutoClose bool
+
+	// shadow is the merge rules' shadow pass (shadow.go). Nil: off.
+	shadow      *mergerule.Observer
+	shadowMu    sync.Mutex
+	shadowLanes map[int64]*shadowLane
+	shadowWG    sync.WaitGroup
 
 	mu      sync.Mutex
 	skipped map[int64]bool        // repos with no readable forge, logged once
@@ -276,6 +283,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane,
 
 	w.approval(ctx, f, lane, mr, prev, &next)
 	w.aiReview(ctx, f, lane, mr)
+	w.shadowObserve(ctx, lane, mr, w.reviewPassed(lane.ID, mr))
 	w.reviewThreads(ctx, f, lane, mr, &next, wc)
 
 	// Act only on a merge seen happening. A request already merged the first time
@@ -289,6 +297,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane,
 	case mr.State == "merged" && prev.MRState != "merged":
 		next.MergeSHA = mr.MergeSHA
 		w.merged(ctx, lane, mr)
+		w.shadowMerged(ctx, lane, mr)
 	}
 	if mr.State == "closed" && prev.MRState != "closed" && mr.IID == prev.MR {
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d was closed without merging; lane %s stays open", mr.IID, lane.Name)

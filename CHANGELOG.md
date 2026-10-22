@@ -11,6 +11,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- A running Shepherd now records merge-rule shadow verdicts: the forge watcher runs the
+  shadow pass for each open lane merge request, apart from the poll, and records an
+  outcome row when the person merges. It only records: it never merges, approves or
+  comments, and a failed pass records nothing. See [docs/merge-rules.md](docs/merge-rules.md).
 - Agents are told in every brief never to skip git hooks. Claude Code runs
   deny `--no-verify`, `commit -n` and `core.hooksPath` overrides by pattern, and Copilot
   runs deny them where they follow the subcommand (Copilot matches command prefixes, so
