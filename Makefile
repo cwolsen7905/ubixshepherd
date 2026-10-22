@@ -63,14 +63,18 @@ check: core-boundary script-check web-check
 	go test $(GO_PKGS)
 
 # The web checks: typecheck, lint and tests (`npm --prefix web run check`). Without
-# npm there is nothing to run them with, so they are skipped with a message, the same
-# way the build target skips the web build: the Go check job runs in a Go image with
-# no Node, and CI runs the web checks in its own web job instead.
+# npm there is nothing to run them with. In CI the Go check job runs in a Go image
+# with no Node, so skip there with a message (CI runs the web checks in its own web
+# job instead); on a local machine a missing npm fails the gate loudly, so the local
+# gate never quietly passes without the web checks.
 web-check:
 	@if command -v npm >/dev/null 2>&1; then \
 		(cd web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run check) || exit 1; \
+	elif [ -n "$$CI" ]; then \
+		echo "npm not found: skipping the web checks (CI runs them in its web job)"; \
 	else \
-		echo "npm not found: skipping the web checks (they need Node 22 or later; CI runs them in its web job)"; \
+		echo "npm not found: the web checks need Node 22 or later"; \
+		exit 1; \
 	fi
 
 # The keep-going checks (KEEP-C-01 to C-12 in the keep-going spec) are tests behind a
