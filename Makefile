@@ -17,7 +17,7 @@ GO_PKGS := ./cmd/... ./internal/...
 # The built web UI is embedded from here (internal/webui). Only its .gitignore is tracked.
 WEBUI_DIR := internal/webui/app
 
-.PHONY: build web install test check check-keep-going core-boundary script-check web-check cross dist release-notes clean
+.PHONY: build web install test check check-go check-keep-going core-boundary script-check web-check cross dist release-notes clean
 
 # Build the web UI (web/) into the binary. It needs Node 22 or later; without npm, or
 # with NO_WEB=1, the binary builds without a fresh UI and serves whatever is in
@@ -57,7 +57,15 @@ install: build
 test:
 	go test $(GO_PKGS)
 
-check: core-boundary script-check web-check
+# The full local gate: the Go checks plus the web checks. The npm-less CI jobs
+# (GitLab go-check, GitHub old-git) run `check-go` instead, with the web covered by
+# the web jobs there.
+check: check-go web-check
+
+# The Go checks on their own: core-boundary, the install script, gofmt, vet, tests.
+# CI jobs without Node (GitLab go-check, GitHub old-git) run this, never the web
+# checks: the Go gate must never be skipped or broken by a missing npm.
+check-go: core-boundary script-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
 	go test $(GO_PKGS)
