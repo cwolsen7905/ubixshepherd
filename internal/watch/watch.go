@@ -47,10 +47,11 @@ type Watcher struct {
 	NoAutoClose bool
 
 	// shadow is the merge rules' shadow pass (shadow.go). Nil: off.
-	shadow      *mergerule.Observer
-	shadowMu    sync.Mutex
-	shadowLanes map[int64]*shadowLane
-	shadowWG    sync.WaitGroup
+	shadow       *mergerule.Observer
+	shadowMu     sync.Mutex
+	shadowLanes  map[int64]*shadowLane
+	shadowLinked map[int64]bool // lanes with a next-up item, read once per poll
+	shadowWG     sync.WaitGroup
 
 	mu      sync.Mutex
 	skipped map[int64]bool        // repos with no readable forge, logged once
@@ -140,6 +141,7 @@ func (w *Watcher) Check(ctx context.Context) {
 	if w.Muster != nil {
 		w.Muster.Run(ctx)
 	}
+	w.loadShadowLinks(ctx)
 	closedByRepo, linked := w.closedItemLanes(ctx) // once per pass, not per repo
 	w.pruneClosedRead(linked)
 	for _, ws := range wss {

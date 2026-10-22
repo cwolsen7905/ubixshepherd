@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/mergerule"
@@ -14,7 +15,7 @@ import (
 )
 
 // shadowTimeout bounds one lane's shadow pass: a few git reads and one store write.
-const shadowTimeout = 2 * time.Minute
+var shadowTimeout = 2 * time.Minute
 
 // shadowLane is the shadow pass's state for one lane. mu is held while a pass runs, so a
 // pass for a lane never overlaps the next one for it; seen is what the last pass looked at.
@@ -40,10 +41,54 @@ func (w *Watcher) shadowFeed(ctx context.Context, _, msg string) {
 // read cannot hold up a poll. Call it before Run.
 func (w *Watcher) EnableShadow(o *mergerule.Observer) {
 	o.Feed = w.shadowFeed
+	o.Rec = boundedRecorder{o.Rec}
 	if o.Log == nil {
 		o.Log = w.Log
 	}
 	w.shadow = o
+}
+
+// boundedRecorder gives each write the pass's time limit. The observer detaches a write
+// from its pass's context so a shutdown does not lose a row, which also drops the pass's
+// deadline: this puts a deadline back and stops waiting for a write that ignores it, so a
+// stuck store cannot keep a lane's pass (and its lock) forever.
+type boundedRecorder struct{ crook.Recorder }
+
+func (b boundedRecorder) Record(ctx context.Context, e crook.Entry) error {
+	if b.Recorder == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, shadowTimeout)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- b.Recorder.Record(ctx, e) }()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return fmt.Errorf("record shadow verdict: %w", ctx.Err())
+	}
+}
+
+// loadShadowLinks reads the next-up items once for the poll and keeps the ids of the
+// lanes they are linked to, so a pass does not read the whole list for each lane.
+func (w *Watcher) loadShadowLinks(ctx context.Context) {
+	if w.shadow == nil {
+		return
+	}
+	items, err := w.Store.NextItems(ctx)
+	if err != nil {
+		return // keep the last list: a failed read changes nothing
+	}
+	linked := map[int64]bool{}
+	for _, it := range items {
+		if it.LaneID != 0 && it.State != store.NextDropped {
+			linked[it.LaneID] = true
+		}
+	}
+	w.shadowMu.Lock()
+	w.shadowLinked = linked
+	w.shadowMu.Unlock()
 }
 
 // WaitShadow waits for the shadow passes in flight, for tests and shutdown.
@@ -146,14 +191,9 @@ func (w *Watcher) shadowRun(ctx context.Context, s *shadowLane, lane store.Lane,
 	if reviewOK {
 		in.AIReview = "ok"
 	}
-	if items, err := w.Store.NextItems(ctx); err == nil {
-		for _, it := range items {
-			if it.LaneID == lane.ID && it.State != store.NextDropped {
-				in.ItemLinked = true // requirements and approved checks are not recorded yet: the rule cannot be met
-				break
-			}
-		}
-	}
+	w.shadowMu.Lock()
+	in.ItemLinked = w.shadowLinked[lane.ID] // requirements and approved checks are not recorded yet: the rule cannot be met
+	w.shadowMu.Unlock()
 	if g, err := w.Store.LastGateResult(ctx, lane.ID); err == nil && g != nil {
 		in.GateSHA, in.GatePassed = g.SHA, g.Passed
 	}

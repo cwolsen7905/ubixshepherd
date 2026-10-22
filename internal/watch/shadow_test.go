@@ -200,3 +200,33 @@ func TestSlowShadowPassDoesNotHoldUpThePoll(t *testing.T) {
 		t.Errorf("recorded %d times", rec.calls)
 	}
 }
+
+// stuckRec never returns and ignores its context, as a hung store write would.
+type stuckRec struct{ stop chan struct{} }
+
+func (r stuckRec) Record(context.Context, crook.Entry) error {
+	<-r.stop
+	return nil
+}
+
+func TestStuckWriteEndsAtTheTimeLimitAndFreesTheLane(t *testing.T) {
+	old := shadowTimeout
+	shadowTimeout = 300 * time.Millisecond
+	t.Cleanup(func() { shadowTimeout = old })
+	f, head := shadowFixture(t, shadowRule)
+	rec := stuckRec{stop: make(chan struct{})}
+	t.Cleanup(func() { close(rec.stop) })
+	f.w.EnableShadow(&mergerule.Observer{Rec: rec})
+	f.f.mr = &forge.MR{IID: 7, State: "opened", SHA: head, Pipeline: &forge.Pipeline{ID: 1, Status: "success", SHA: head}}
+	f.w.Check(f.ctx)
+	done := make(chan struct{})
+	go func() { f.w.WaitShadow(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a stuck write kept the pass running")
+	}
+	if !f.w.shadowState(f.lane.ID).mu.TryLock() {
+		t.Fatal("the lane stayed locked")
+	}
+}
