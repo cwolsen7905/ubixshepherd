@@ -11,10 +11,48 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
-- A running Shepherd now records merge-rule shadow verdicts: the forge watcher runs the
-  shadow pass for each open lane merge request, apart from the poll, and records an
-  outcome row when the person merges. It only records: it never merges, approves or
-  comments, and a failed pass records nothing. See [docs/merge-rules.md](docs/merge-rules.md).
+- Keep-going mode starts approved work itself. The daemon continues approved items whose
+  lane never ran or whose last run a crash interrupted, then starts approved items with no
+  lane, in rank order, until the run slots are full. A new lane takes the scope named by
+  its item's plan document; an item whose plan names no scope, or that has neither a plan
+  nor an acceptance line, is held and the feed says so. Every start passes the same gate as
+  the desk's, and `shepherd keep-going status` ends with a summary of what the mode did.
+  The drive never answers a decision, approves, merges, pushes for a person, tags,
+  releases or deploys. See [docs/keep-going.md](docs/keep-going.md).
+- Crook keeps a verdict log. Every verdict a call site acts on is stored with the rule that
+  decided, its stage, the actor and a redacted reason. `shepherd crook why <id>`,
+  `crook why run <id>`, `crook why lane <name>`, `crook log` and `crook rules` read it, and
+  all take `--json`. Crook also loads rule files and layers. See
+  [docs/crook-why.md](docs/crook-why.md).
+- Merge rules in shadow mode. A repo can have a merge rule in `.shepherd/rules/<id>.md`;
+  in shadow mode Shepherd works out what the rule would have done for each open lane merge
+  request and records it, and the person still merges. `shepherd crook shadow` and the
+  `crook_shadow` tool read the record, and `crook rules` counts shadow rows apart. Shadow
+  mode never merges, approves, retries a job or posts. The daemon's forge watcher runs the
+  pass for each open lane merge request, apart from the poll, and records an outcome row
+  when the person merges; a failed pass records nothing. Going live is not built. See
+  [docs/merge-rules.md](docs/merge-rules.md).
+- Checks first. A lane can set approved check files apart: the person approves them with
+  `checks.approve`, they are left out of a build lane's scope, and `checks.release` frees
+  them. Opening, rescoping, pushing and shipping respect the set, and `lane ship` refuses a
+  branch that changes approved check files. Lane views list the excluded files, and
+  approving or releasing checks appears in the feed.
+- Muster, an upkeep pass on the watcher's tick. It looks over artifacts, lanes, runs,
+  next-up items, questions and decisions for what has gone stale, tidies what is safe and
+  can be undone, and raises a finding for the rest. Each finding and fix is a row in the
+  muster log, and an applied fix can be undone for a number of days. Its routes, CLI and
+  web screens are not built yet. See [docs/muster.md](docs/muster.md).
+- Follow-through by an external owner. A repo can name another service as the owner of a
+  merge request's failed pipelines and review threads. Shepherd stands back, and takes the
+  work over if the owner stays silent past `patience` or says `Unfixed:`.
+- `shepherd next list` filters by repo, topic, state and text. `--topic` matches a
+  conversation topic and refuses an ambiguous title, and `--state` fetches dropped and
+  done items.
+- The desk's `run_stop` tool takes `for_restart`, which hurries a drain. A run stopped that
+  way is continued after the restart; the CLI says when `--for-restart` is used with no
+  drain under way and falls back to a plain stop.
+- Web UI: one error, loading and empty state across the views, with a working Retry on the
+  reads that can reload and a back link on the error state.
 - Agents are told in every brief never to skip git hooks. Claude Code runs
   deny `--no-verify`, `commit -n` and `core.hooksPath` overrides by pattern, and Copilot
   runs deny them where they follow the subcommand (Copilot matches command prefixes, so
@@ -22,6 +60,51 @@ protocol) is listed under **Interface changes** in the release that makes it.
   hook no longer suggests `git push --no-verify` to an agent's run, and a run seen
   skipping hooks is flagged once in the feed. These stay cooperative guards, not a
   boundary.
+
+### Changed
+
+- Approving and releasing checks, and lane rescoping, fail closed on lookup and git errors,
+  and the feed text for check approvals and releases is redacted.
+- The forge reader looks for the renamed AI review job when it retries an approval.
+- Documentation: merging follows each repo's merge rule.
+
+### Fixed
+
+- A thread reply to a desk question closes it, in order with skips and answers.
+- Crook writes verdicts in the background, logs an identical hold or refusal at most once a
+  minute, and ends a path at its stage. Rule loading refuses class matchers where classes
+  are unknown, folds case in the rules-folder floor, and skips symlinked rule files and
+  folders.
+- Keep-going: a lane whose item link failed is taken up, a start counts only after the run
+  starts, drive lanes are scoped by plan, and a refused start closes its lane.
+- Artifacts: declared screenshots over 10 MiB survive a lane closing, and the no-copy feed
+  line is written only after a close succeeds and is worded neutrally.
+- Muster asks about a running run with no pid, keeps a decision whose run cannot be read,
+  clears findings only for checks that finished, and leaves artifacts alone when the
+  worktree is missing. Scope offers need a widening verb and safe paths.
+- Rescope works for a repo whose directory is gone, and returns the error when the repo's
+  files cannot be listed.
+- Shadow reads say when they hit the row cap and count `merged_after` for any verdict, and
+  a shadow row whose write failed is retried, with one feed line per head.
+- Follow-through: an owner's `Unfixed:` thread is taken at once on first sight, and the
+  authors clear when a repo returns to `shepherd`.
+
+### Interface changes
+
+- Config: a `muster:` section with `stale_days` (3, 0 turns the check off), `batch_days`
+  (3), `digest_days` (3), `skip_days` (7) and `undo_days` (7); negative values are refused.
+  Under `defaults:` or a repo's `watch:`, `follow_through:` with `owner` (`shepherd` or
+  `external`), `name`, `patience` (30m) and `author` (required with `owner: external`).
+- Rule files: `.shepherd/rules/<id>.md` with `kind: merge`, `mode: shadow` and `require:`
+  conditions.
+- HTTP API: new routes `/v1/checks`, `/v1/crook/verdicts` and `/v1/crook/rules`.
+- CLI: `shepherd crook why`, `crook log`, `crook rules` and `crook shadow`; `shepherd next
+  list` filters; `run stop --for-restart` falls back to a plain stop with no drain.
+- MCP tools: new `crook_why` and `crook_shadow`; `run_stop` gains `for_restart`.
+- Feed: new kinds `checks_approved` and `checks_released`.
+- Store: three appended migrations add the Crook verdict log, the Muster log and the
+  approved check files. An older binary refuses a store migrated by a newer one, so going
+  back a version can mean a fresh store.
 
 ## [0.5.0-beta.2] - 2026-10-19
 
