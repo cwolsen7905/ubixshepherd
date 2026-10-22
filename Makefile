@@ -17,7 +17,7 @@ GO_PKGS := ./cmd/... ./internal/...
 # The built web UI is embedded from here (internal/webui). Only its .gitignore is tracked.
 WEBUI_DIR := internal/webui/app
 
-.PHONY: build web install test check check-keep-going core-boundary script-check cross dist release-notes clean
+.PHONY: build web install test check check-keep-going core-boundary script-check web-check cross dist release-notes clean
 
 # Build the web UI (web/) into the binary. It needs Node 22 or later; without npm, or
 # with NO_WEB=1, the binary builds without a fresh UI and serves whatever is in
@@ -57,10 +57,20 @@ install: build
 test:
 	go test $(GO_PKGS)
 
-check: core-boundary script-check
+check: core-boundary script-check web-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
 	go test $(GO_PKGS)
+
+# The web checks: typecheck, lint and tests (`npm --prefix web run check`). Unlike the
+# build target, this must not silently pass without them: when npm is missing, fail.
+web-check:
+	@if command -v npm >/dev/null 2>&1; then \
+		(cd web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run check) || exit 1; \
+	else \
+		echo "npm not found: the web checks need Node 22 or later"; \
+		exit 1; \
+	fi
 
 # The keep-going checks (KEEP-C-01 to C-12 in the keep-going spec) are tests behind a
 # build tag. They fail until the daemon-side drive lands, so this is not part of check.
