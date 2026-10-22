@@ -71,14 +71,16 @@ check-go: core-boundary script-check
 	go test $(GO_PKGS)
 
 # The web checks: typecheck, lint and tests (`npm --prefix web run check`). Without
-# npm there is nothing to run them with. In CI the Go check job runs in a Go image
+# npm there is nothing to run them with. In CI the Go check jobs run in containers
 # with no Node, so skip there with a message (CI runs the web checks in its own web
 # job instead); on a local machine a missing npm fails the gate loudly, so the local
-# gate never quietly passes without the web checks.
+# gate never quietly passes without the web checks. The container test matters
+# because the Go job's container does not forward CI into make, so CI alone would
+# never match there; local machines are not containers.
 web-check:
 	@if command -v npm >/dev/null 2>&1; then \
 		(cd web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run check) || exit 1; \
-	elif [ -n "$$CI" ]; then \
+	elif [ -n "$$CI" ] || [ -f /.dockerenv ]; then \
 		echo "npm not found: skipping the web checks (CI runs them in its web job)"; \
 	else \
 		echo "npm not found: the web checks need Node 22 or later"; \
