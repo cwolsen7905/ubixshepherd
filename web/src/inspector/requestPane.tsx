@@ -24,11 +24,24 @@ const STATE_WORDS: Record<string, string> = {
   closed: 'closed',
 }
 
-/** The lanes a request can go to: open ones, the asker's repo first, never the asker itself. */
-export function routeTargets(q: RequestView, lanes: { id: number; name: string; repo: string; state: string }[]) {
-  return lanes
-    .filter((l) => l.state === 'open' && !(l.repo === q.repo && l.name === q.from_lane))
-    .sort((a, b) => Number(b.repo === q.repo) - Number(a.repo === q.repo) || a.repo.localeCompare(b.repo) || a.name.localeCompare(b.name))
+type Target = { id: number; name: string; repo: string; state: string }
+
+/**
+ * The lanes a request can go to, split by whether the daemon can find them by name alone: it
+ * takes the asker's repo first, else the one open lane of that name elsewhere. A name held by
+ * several other repos, or shadowed by the asker's repo, cannot be chosen from here.
+ */
+export function routeTargets(q: RequestView, lanes: Target[]): { ok: Target[]; ambiguous: Target[] } {
+  const open = lanes.filter((l) => l.state === 'open' && !(l.repo === q.repo && l.name === q.from_lane))
+  const ok: Target[] = []
+  const ambiguous: Target[] = []
+  for (const l of open) {
+    const same = open.filter((x) => x.name === l.name)
+    const reachable = l.repo === q.repo || (same.length === 1 && !lanes.some((x) => x.state === 'open' && x.repo === q.repo && x.name === l.name))
+    ;(reachable ? ok : ambiguous).push(l)
+  }
+  const order = (a: Target, b: Target) => Number(b.repo === q.repo) - Number(a.repo === q.repo) || a.repo.localeCompare(b.repo) || a.name.localeCompare(b.name)
+  return { ok: ok.sort(order), ambiguous: ambiguous.sort(order) }
 }
 
 /**
@@ -41,7 +54,7 @@ export function RequestPane({ id }: { id: number }) {
   const now = useNow()
   const offline = useOffline()
   const q = snap.requests.find((x) => x.id === id)
-  const targets = useMemo(() => (q ? routeTargets(q, snap.lanes) : []), [q, snap.lanes])
+  const { ok: targets, ambiguous } = useMemo(() => (q ? routeTargets(q, snap.lanes) : { ok: [], ambiguous: [] }), [q, snap.lanes])
   const [lane, setLane] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState('')
@@ -121,6 +134,11 @@ export function RequestPane({ id }: { id: number }) {
             {busy ? 'Routing…' : 'Route request'}
           </Button>
         </div>
+      )}
+      {ambiguous.length > 0 && (
+        <p className="sh-faint">
+          Not offered, because the daemon routes by lane name and the name is in more than one repo: {ambiguous.map((l) => `${l.repo}:${l.name}`).join(', ')}. Route it after one of them closes, or close this request.
+        </p>
       )}
       {target && target.repo !== q.repo && <p className="sh-faint">That lane is in another repo: {target.repo}.</p>}
       {problem && <p className="tone-bad" role="alert">{problem}</p>}

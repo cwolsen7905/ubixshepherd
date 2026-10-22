@@ -5,7 +5,7 @@ import type { Api, Clock } from '../state/live'
 import { LiveProvider } from '../state/context'
 import { Live } from '../state/live'
 import { lane, nextItem, request, spend, status } from '../test/fixtures'
-import { RequestPane } from './requestPane'
+import { RequestPane, routeTargets } from './requestPane'
 import { NextPane } from './nextPane'
 
 vi.mock('../api/client', async (orig) => ({
@@ -47,6 +47,13 @@ describe('RequestPane', () => {
     expect(screen.getByRole('link', { name: 'acme-api:feat/login' })).toBeInTheDocument()
     const options = screen.getAllByRole('option').map((o) => o.textContent)
     expect(options).toEqual(['Choose a lane…', 'acme-api:feat/billing'])
+  })
+  it('does not offer a lane whose name is in several repos', () => {
+    const q = request({ repo: 'a', from_lane: 'x' })
+    const l = (id: number, repo: string, name: string) => ({ id, repo, name, state: 'open' })
+    const { ok, ambiguous } = routeTargets(q, [l(1, 'a', 'x'), l(2, 'b', 'dup'), l(3, 'c', 'dup'), l(4, 'b', 'solo'), l(5, 'a', 'same'), l(6, 'b', 'same')])
+    expect(ok.map((t) => t.id)).toEqual([5, 4])
+    expect(ambiguous.map((t) => t.id)).toEqual([2, 6, 3])
   })
   it('routes to the chosen lane', async () => {
     const user = userEvent.setup()

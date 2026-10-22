@@ -302,13 +302,13 @@ export const topics = {
   update: (id: number, body: TopicUpdateBody) => patch<TopicView>(`/v1/topics/${id}`, body),
 }
 
-/** The next-up list: work planned but not being acted on. Changing a state or the order is the person's click only. */
 /** A request between lanes that needs routing: send it to a lane, or close it as stale. Only from the person's own click. */
 export const requestActions = {
   route: (id: number, body: { lane: string; agent?: string }) => post<Request>(`/v1/requests/${id}/route`, body),
   close: (id: number, why: string) => post<Request>(`/v1/requests/${id}/close`, why ? { why } : {}),
 }
 
+/** The next-up list: work planned but not being acted on. Changing a state or the order is the person's click only. */
 export const nextUp = {
   /** all adds dropped and done items. */
   list: (all = false) => get<unknown>(all ? '/v1/next?all=1' : '/v1/next').then(normalizeNext),
