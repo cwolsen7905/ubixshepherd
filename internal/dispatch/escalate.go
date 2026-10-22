@@ -33,8 +33,8 @@ func EscalationTarget(cfg config.Config, repo string, last store.Run) (agent, mo
 
 // escalate rewrites a follow-up start that asked to escalate: when the continued run
 // was cheaper than Claude on the repo's default model, the round runs on Claude
-// instead. It resumes the lane's Claude conversation when there is one, else begins
-// one; the prompt already carries what is open, so it only gains a line saying why the
+// instead. It resumes the lane's Claude conversation when there is one (start finds the lane's latest Claude session
+// when no run is continued), else begins one; the prompt already carries what is open, so it only gains a line saying why the
 // agent changed. A start that cannot escalate (the repo turned it off, Claude is not
 // installed or is out of quota, the previous run is already Claude on its default)
 // goes on as asked. The returned note says why it did not, or "".
@@ -43,15 +43,15 @@ func (r *Runner) escalate(ctx context.Context, req StartRequest) (StartRequest, 
 	cfg := r.Conf()
 	last, err := r.Store.Run(ctx, req.Continue)
 	if err != nil {
-		return req, ""
+		return req, "could not read run: " + err.Error()
 	}
 	lane, err := r.Store.Lane(ctx, last.LaneID)
 	if err != nil {
-		return req, ""
+		return req, "could not read lane: " + err.Error()
 	}
 	repo, err := r.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
-		return req, ""
+		return req, "could not read repo: " + err.Error()
 	}
 	if !cfg.Profile(repo.Name).Watch.Escalates() {
 		return req, ""

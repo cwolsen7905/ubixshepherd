@@ -79,6 +79,22 @@ func TestEscalatedFollowUpRunsOnClaude(t *testing.T) {
 	}
 }
 
+func TestEscalationResumesTheLanesClaudeSession(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	first, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "first"})
+	first = f.wait(t, first.ID)
+	cheap, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "second"})
+	cheap = f.wait(t, cheap.ID)
+	up, err := f.runner.Start(ctx, StartRequest{Continue: cheap.ID, Prompt: "threads", Auto: true, Escalate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if up = f.wait(t, up.ID); up.Agent != "claude" || up.Session != first.Session || up.Parent != first.ID {
+		t.Errorf("escalated run = %+v, want the lane's claude session %s of run %d", up, first.Session, first.ID)
+	}
+}
+
 func TestEscalationStaysPutWhenItCannot(t *testing.T) {
 	ctx := context.Background()
 
