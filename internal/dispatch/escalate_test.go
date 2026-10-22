@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -125,5 +126,42 @@ func TestEscalationStaysPutWhenItCannot(t *testing.T) {
 	}
 	if next = held.wait(t, next.ID); next.Agent != "cursor" {
 		t.Errorf("a claude quota hold moved the round to %s", next.Agent)
+	}
+}
+
+func TestEscalationKeepsContinueRefusals(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	cheap, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Still going: refused as a plain continue is, not held by the lane check.
+	_, err = f.runner.Start(ctx, StartRequest{Continue: cheap.ID, Prompt: "y", Auto: true, Escalate: true})
+	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "still going") {
+		t.Errorf("escalating a running run: %v", err)
+	}
+	f.runner.Stop(ctx, cheap.ID)
+	f.wait(t, cheap.ID)
+}
+
+func TestEscalationStaysPutWithoutClaude(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	cheap, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "cursor", Prompt: "x"})
+	cheap = f.wait(t, cheap.ID)
+	agent := f.runner.lookPath
+	f.runner.lookPath = func(bin string) (string, error) {
+		if bin == "claude" {
+			return "", errors.New("not found")
+		}
+		return agent(bin)
+	}
+	next, err := f.runner.Start(ctx, StartRequest{Continue: cheap.ID, Prompt: "y", Auto: true, Escalate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next = f.wait(t, next.ID); next.Agent != "cursor" || next.Parent != cheap.ID {
+		t.Errorf("without claude the round ran as %+v", next)
 	}
 }

@@ -45,6 +45,10 @@ func (r *Runner) escalate(ctx context.Context, req StartRequest) (StartRequest, 
 	if err != nil {
 		return req, "could not read run: " + err.Error()
 	}
+	if last.State == store.RunRunning || last.Session == "" {
+		// Let start refuse it as it would a plain continue.
+		return req, "run cannot be continued"
+	}
 	lane, err := r.Store.Lane(ctx, last.LaneID)
 	if err != nil {
 		return req, "could not read lane: " + err.Error()
