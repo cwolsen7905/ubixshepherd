@@ -669,6 +669,90 @@ func TestAnswerContinuesTheAsker(t *testing.T) {
 	}
 }
 
+func TestAnswerToASupersededRunGoesToTheLatest(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	old, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	old = f.wait(t, old.ID)
+	d, _ := f.runner.Ask(ctx, store.Decision{RunID: old.ID, Question: "Raise the price?", Recommendation: "no"})
+	latest, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "other", NewSession: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	latest = f.wait(t, latest.ID)
+	if latest.Session == old.Session {
+		t.Fatalf("fixture: both runs share session %q", old.Session)
+	}
+	d, err = f.runner.Answer(ctx, d.ID, "no, keep it")
+	if err != nil || d.AnswerRun == 0 {
+		t.Fatalf("answer: %+v %v", d, err)
+	}
+	next := f.wait(t, d.AnswerRun)
+	if next.Parent != latest.ID || next.Session != latest.Session {
+		t.Errorf("answer run = %+v, want a continuation of run %d", next, latest.ID)
+	}
+	if a := argsOf(t, next); !strings.Contains(a, "--resume "+latest.Session) || strings.Contains(a, old.Session) {
+		t.Errorf("answer args: %s", a)
+	}
+	if in := stdinOf(t, next); !strings.Contains(in, "no, keep it") || !strings.Contains(in, "superseded") {
+		t.Errorf("answer prompt: %s", in)
+	}
+	feedKind(t, f, "was superseded by run")
+}
+
+func TestAnswerToASupersededRunWaitsForTheLatest(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	old, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	old = f.wait(t, old.ID)
+	d, _ := f.runner.Ask(ctx, store.Decision{RunID: old.ID, Question: "Delete the table?", Recommendation: "no"})
+	t.Setenv("MODE", "sleep")
+	latest, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "other", NewSession: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err = f.runner.Answer(ctx, d.ID, "no")
+	if err != nil || d.AnswerRun != 0 {
+		t.Fatalf("answer while the latest run is going: %+v %v", d, err)
+	}
+	t.Setenv("MODE", "quick")
+	f.runner.Stop(ctx, latest.ID)
+	f.wait(t, latest.ID)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, _ := f.st.Decision(ctx, d.ID); got.AnswerRun != 0 {
+			if next := f.wait(t, got.AnswerRun); next.Parent != latest.ID {
+				t.Errorf("held answer went to run %d, want %d", next.Parent, latest.ID)
+			}
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Error("the held answer was never delivered")
+}
+
+func TestAnswerInAClosedLaneIsOnlyRecorded(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	run = f.wait(t, run.ID)
+	d, _ := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Raise the price?", Recommendation: "no"})
+	if err := f.st.SetLaneState(ctx, f.lane.ID, store.LaneClosed); err != nil {
+		t.Fatal(err)
+	}
+	d, err := f.runner.Answer(ctx, d.ID, "no")
+	if err != nil || d.AnswerRun != 0 {
+		t.Fatalf("answer in a closed lane: %+v %v", d, err)
+	}
+	if got, _ := f.st.Decision(ctx, d.ID); got.State != store.DecisionAnswered || got.Answer != "no" {
+		t.Errorf("decision = %+v", got)
+	}
+	if runs, _ := f.st.Runs(ctx, f.lane.ID, "", 10); len(runs) != 1 {
+		t.Errorf("a run was started: %+v", runs)
+	}
+	feedKind(t, f, "so nothing was started")
+}
+
 func TestAnswerWaitsForTheRunToEnd(t *testing.T) {
 	f := newFixture(t, "sleep")
 	ctx := context.Background()
