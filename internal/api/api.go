@@ -407,6 +407,14 @@ type QuotaHold struct {
 type ForgeWatch struct {
 	LastPoll time.Time `json:"last_poll,omitzero"`
 	Error    string    `json:"error,omitempty"`
+	// Off is set when the watcher is not running (daemon.poll is off); then there is no
+	// last poll or interval to report.
+	Off bool `json:"off,omitempty"`
+	// PollSeconds is how often the watcher polls, from the config the daemon started
+	// with (a changed interval takes a restart). Forges names the forges the watcher
+	// can read for the workspace's repos, sorted: "gitlab".
+	PollSeconds int      `json:"poll_seconds,omitempty"`
+	Forges      []string `json:"forges,omitempty"`
 }
 
 // WorkspaceSummary is one workspace in Status.

@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -435,4 +437,16 @@ func firstLine(s string) string {
 		return s[:i]
 	}
 	return s
+}
+
+// ForgeNames is the sorted, distinct names of the forges the watcher can read for these
+// remotes; a remote it cannot read adds none.
+func ForgeNames(remotes []string) []string {
+	seen := map[string]bool{}
+	for _, r := range remotes {
+		if f, err := forge.For(r); err == nil {
+			seen[f.Name()] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
 }
