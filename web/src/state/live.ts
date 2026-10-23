@@ -278,6 +278,11 @@ export class Live {
     return run
   }
 
+  /** Reloads the lists and the waiting list after the person acted on something (routed a request, moved a next-up item). */
+  async settle() {
+    await Promise.all([this.refresh(), this.readWaiting()])
+  }
+
   /** Everything finished so far is seen. */
   clearDone() {
     const seen = { until: new Date(this.clock.now()).toISOString(), keys: new Set<string>() }

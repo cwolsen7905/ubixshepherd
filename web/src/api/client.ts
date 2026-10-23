@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, DeskQuestion, LaneFileNode, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
+  ConfigChange, ConfigDoc, DeskQuestion, LaneFileNode, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, Request, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -300,6 +300,12 @@ export const topics = {
     get<unknown>(all ? '/v1/topics?all=1' : '/v1/topics').then((v): TopicList => ({ ...asObject(v), topics: asList(asObject(v).topics) })),
   add: (title: string) => post<TopicView>('/v1/topics', { title }),
   update: (id: number, body: TopicUpdateBody) => patch<TopicView>(`/v1/topics/${id}`, body),
+}
+
+/** A request between lanes that needs routing: send it to a lane, or close it as stale. Only from the person's own click. */
+export const requestActions = {
+  route: (id: number, body: { lane: string; agent?: string }) => post<Request>(`/v1/requests/${id}/route`, body),
+  close: (id: number, why: string) => post<Request>(`/v1/requests/${id}/close`, why ? { why } : {}),
 }
 
 /** The next-up list: work planned but not being acted on. Changing a state or the order is the person's click only. */

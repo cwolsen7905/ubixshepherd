@@ -5,7 +5,8 @@ import type { Open } from '../router'
 
 /** A stable key for an item: the daemon's list has no ids of its own. */
 export function waitingKey(it: WaitingItem): string {
-  return `${it.kind}:${it.question_id ?? it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}`
+  // A request carries its lane's id too, so requests from one lane need their own id to differ.
+  return `${it.kind}:${it.question_id ?? it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}${it.request_id ? `:r${it.request_id}` : ''}`
 }
 
 /**
@@ -76,10 +77,12 @@ export function showInThread(it: WaitingItem) {
   requestStep(it)
 }
 
-/** The inspector item that shows a waiting item in full, or null for kinds with no pane yet. */
+/** The inspector item that shows a waiting item in full, or null for kinds with no pane. */
 export function openTarget(it: WaitingItem): Open | null {
   if (it.kind === 'decision' && it.decision_id) return { kind: 'decision', id: it.decision_id }
   if (it.kind === 'question' && it.question_id) return { kind: 'question', id: it.question_id }
+  if (it.kind === 'request' && it.request_id) return { kind: 'request', id: it.request_id }
+  if (it.kind === 'next' && it.next_id) return { kind: 'next', id: it.next_id }
   return null
 }
 

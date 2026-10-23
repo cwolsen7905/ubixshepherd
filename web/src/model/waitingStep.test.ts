@@ -1,5 +1,5 @@
 import type { WaitingItem } from '../api/types'
-import { isSuggestion, openKey, openTarget, stepAnchor, stepIndex, suggestionChoices, suggestionPatch, waitingKey } from './waitingStep'
+import { neighbour, isSuggestion, openKey, openTarget, stepAnchor, stepIndex, suggestionChoices, suggestionPatch, waitingKey } from './waitingStep'
 
 const q = (id: number, turn = 2): WaitingItem => ({ kind: 'question', action: 'reply', question_id: id, turn, title: 'Ship it?' })
 
@@ -47,13 +47,24 @@ describe('stepAnchor', () => {
   })
 })
 
+describe('requests from one lane', () => {
+  const r = (id: number): WaitingItem => ({ kind: 'request', action: 'route', request_id: id, lane_id: 4, title: `r${id}` })
+  it('have distinct keys, so stepping past one keeps the others', () => {
+    expect(waitingKey(r(1))).not.toBe(waitingKey(r(2)))
+    expect(neighbour([r(1), r(2), r(3)], waitingKey(r(1)), 'down', waitingKey(r(1)))).toEqual(r(2))
+    expect(openKey([r(1), r(2)], { kind: 'request', id: 2 })).toBe(waitingKey(r(2)))
+  })
+})
+
 describe('openTarget and openKey', () => {
   const dec: WaitingItem = { kind: 'decision', action: 'answer', decision_id: 5, title: 'd' }
   const ques = q(2)
   const mr: WaitingItem = { kind: 'mr', action: 'approve', lane_id: 1, mr: 9, title: 'm' }
-  it('maps decisions and questions, and nothing else', () => {
+  it('maps decisions, questions, requests and next-up items, and nothing else', () => {
     expect(openTarget(dec)).toEqual({ kind: 'decision', id: 5 })
     expect(openTarget(ques)).toEqual({ kind: 'question', id: 2 })
+    expect(openTarget({ kind: 'request', action: 'route', request_id: 9, title: 'r' })).toEqual({ kind: 'request', id: 9 })
+    expect(openTarget({ kind: 'next', action: 'review', next_id: 4, title: 'n' })).toEqual({ kind: 'next', id: 4 })
     expect(openTarget(mr)).toBeNull()
   })
   it('finds the key of the open item', () => {

@@ -507,3 +507,15 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 
 /* The decision page: the header sits over the main column's own scroller, with the column's side padding. */
 .sh-swap-main > .sh-page-head { flex: none; padding-inline: var(--sh-s9); }
+
+/* RequestPane and NextPane: a routing request or a next-up item in the side panel. */
+.sh-request-pane,
+.sh-next-pane { min-width: 0; overflow-wrap: anywhere; }
+.sh-request-h { font-size: var(--sh-t-small); margin: var(--sh-s6) 0 var(--sh-s3); }
+.sh-request-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s3); margin: 0 0 var(--sh-s4); }
+.sh-request-facts { display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: var(--sh-s2) var(--sh-s4); font-size: var(--sh-t-small); margin: 0 0 var(--sh-s4); }
+.sh-request-facts dt { color: var(--sh-muted); }
+.sh-request-facts dd { margin: 0; }
+.sh-request-route,
+.sh-next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s4); }
+.sh-next-actions { margin-top: var(--sh-s6); }

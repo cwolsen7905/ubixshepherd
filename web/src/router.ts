@@ -18,7 +18,7 @@ export type TimelineRange = 'today' | '24h' | 'week'
 export type Open = { kind: string; id: number; tab?: string; full?: boolean }
 
 /** The kinds the inspector can hold. A bare unknown kind is ignored rather than shown. */
-export const OPEN_KINDS = ['decision', 'question', 'request', 'lane', 'run', 'topic', 'artifact', 'mr'] as const
+export const OPEN_KINDS = ['decision', 'question', 'request', 'next', 'lane', 'run', 'topic', 'artifact', 'mr'] as const
 
 type Page =
   | { page: 'board'; range?: Range }
