@@ -71,6 +71,15 @@ describe('RequestPane', () => {
     await user.click(screen.getByRole('button', { name: 'Close request' }))
     expect(requestActions.close).toHaveBeenCalledWith(3, 'stale')
   })
+  it('offers no route or close for a request the daemon would refuse', async () => {
+    const api = { status: async () => status(), lanes: async () => [], runs: async () => [], decisions: async () => [], requests: async () => [request({ id: 3, state: 'replied' })], spend: async () => spend(), feedLatest: async () => ({ items: [], events: [], last: 0 }), feed: async (a: number) => ({ items: [], events: [], last: a }) } as unknown as Api
+    const live = new Live(api, still)
+    await act(async () => { await live.refresh() })
+    render(<LiveProvider live={live}><RequestPane id={3} /></LiveProvider>)
+    expect(screen.getByText(/can no longer be routed or closed/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Route request' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close without routing' })).toBeNull()
+  })
   it('says so when the request is gone', async () => {
     await shown(<RequestPane id={99} />)
     expect(screen.getByText(/not waiting on you any more/)).toBeInTheDocument()

@@ -131,7 +131,6 @@ export function NextPane({ id }: { id: number }) {
         )}
       </div>
       {problem && <p className="tone-bad" role="alert">{problem}</p>}
-      <p><a href={href.next(id)}>Open as page</a></p>
     </div>
   )
 }

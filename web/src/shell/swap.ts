@@ -19,6 +19,8 @@ export function pageFor(open: Open): string | undefined {
   if (open.kind === 'run') return href.log(open.id)
   if (open.kind === 'decision') return withOpen(href.chat(), { kind: 'decision', id: open.id })
   if (open.kind === 'next') return href.next(open.id)
+  // A request has no page of its own: the Inbox's request rows are where it lives.
+  if (open.kind === 'request') return href.inbox('request')
   if (open.kind === 'artifact') return `#/artifacts?view=${open.id}`
   return undefined
 }

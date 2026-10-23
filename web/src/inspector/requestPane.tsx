@@ -87,6 +87,8 @@ export function RequestPane({ id }: { id: number }) {
       setBusy(false)
     }
   }
+  // The daemon routes a needs-routing or queued request; it refuses one already replied to, failed or closed.
+  const actionable = q.state === 'needs_routing' || q.state === 'pending'
   const target = targets.find((l) => String(l.id) === lane)
   const off = offline.offline ? OFFLINE_SEND : undefined
   const asker = snap.lanes.find((l) => l.repo === q.repo && l.name === q.from_lane)
@@ -116,35 +118,41 @@ export function RequestPane({ id }: { id: number }) {
       <Markdown text={q.message} />
       {q.note && <p className="sh-faint">{q.note}</p>}
 
-      <h3 className="sh-request-h">Route it</h3>
-      {targets.length === 0 ? (
-        <p className="sh-faint">No other open lane to send it to. Open one first, or close the request.</p>
-      ) : (
-        <div className="sh-request-route">
-          <label>
-            <span className="visually-hidden">Lane to route to</span>
-            <select className="sh-input" value={target ? lane : ''} disabled={busy} onChange={(e) => setLane(e.target.value)} aria-label="Lane to route to">
-              <option value="">Choose a lane…</option>
-              {targets.map((l) => (
-                <option key={l.id} value={l.id}>{l.repo}:{l.name}</option>
-              ))}
-            </select>
-          </label>
-          <Button variant="attention" disabled={busy || !target || !!off} title={off} onClick={() => void act(() => requestActions.route(id, { lane: target?.name ?? '' }))}>
-            {busy ? 'Routing…' : 'Route request'}
-          </Button>
-        </div>
-      )}
-      {ambiguous.length > 0 && (
-        <p className="sh-faint">
-          Not offered, because the daemon routes by lane name and the name is in more than one repo: {ambiguous.map((l) => `${l.repo}:${l.name}`).join(', ')}. Route it after one of them closes, or close this request.
+      {actionable ? (
+        <>
+        <h3 className="sh-request-h">Route it</h3>
+        {targets.length === 0 ? (
+          <p className="sh-faint">No other open lane to send it to. Open one first, or close the request.</p>
+        ) : (
+          <div className="sh-request-route">
+            <label>
+              <span className="visually-hidden">Lane to route to</span>
+              <select className="sh-input" value={target ? lane : ''} disabled={busy} onChange={(e) => setLane(e.target.value)} aria-label="Lane to route to">
+                <option value="">Choose a lane…</option>
+                {targets.map((l) => (
+                  <option key={l.id} value={l.id}>{l.repo}:{l.name}</option>
+                ))}
+              </select>
+            </label>
+            <Button variant="attention" disabled={busy || !target || !!off} title={off} onClick={() => void act(() => requestActions.route(id, { lane: target?.name ?? '' }))}>
+              {busy ? 'Routing…' : 'Route request'}
+            </Button>
+          </div>
+        )}
+        {ambiguous.length > 0 && (
+          <p className="sh-faint">
+            Not offered, because the daemon routes by lane name and the name is in more than one repo: {ambiguous.map((l) => `${l.repo}:${l.name}`).join(', ')}. Route it after one of them closes, or close this request.
+          </p>
+        )}
+        {target && target.repo !== q.repo && <p className="sh-faint">That lane is in another repo: {target.repo}.</p>}
+        {problem && <p className="tone-bad" role="alert">{problem}</p>}
+        <p>
+          <Button variant="ghost" disabled={busy} onClick={() => setClosing(true)}>Close without routing</Button>
         </p>
+        </>
+      ) : (
+        <p className="sh-faint">This request is {STATE_WORDS[q.state] ?? q.state}, so it can no longer be routed or closed from here.</p>
       )}
-      {target && target.repo !== q.repo && <p className="sh-faint">That lane is in another repo: {target.repo}.</p>}
-      {problem && <p className="tone-bad" role="alert">{problem}</p>}
-      <p>
-        <Button variant="ghost" disabled={busy} onClick={() => setClosing(true)}>Close without routing</Button>
-      </p>
       <Confirm
         open={closing}
         title={`Close request ${id}`}
