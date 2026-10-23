@@ -8,11 +8,22 @@ still merges. After a record they trust, the person makes the rule live.
 This page describes what is built. Shadow mode only reads and records: it never merges,
 approves, retries a job or posts to the forge.
 
-**Status.** The shadow pass, its fact gathering and the commands that read its record are
-built and tested (`internal/mergerule`, `shepherd crook shadow`). The daemon does not call
-the pass yet, so a running Shepherd records no shadow rows until it is connected to the
-watcher. Going live (the forge merge call, the revert after a red base branch and the
-switch that makes a rule live) is not built.
+**Status.** The shadow pass, its fact gathering, the commands that read its record and
+the daemon's call to it are built and tested (`internal/mergerule`, `internal/watch`,
+`shepherd crook shadow`). Going live (the forge merge call, the revert after a red base
+branch and the switch that makes a rule live) is not built.
+
+## When it runs
+
+The daemon's forge watcher runs the pass each time it reads an open lane's merge request.
+The pass runs apart from the poll: one at a time per lane, never queued, with a time limit,
+so a slow git read or store write cannot hold up the poll. If a pass fails, it logs a
+warning and records nothing, and the repo stays person-merged. It reads the base branch as
+`origin/<base>`, so a repo's rules are as current as its last fetch. When the person merges
+the request the watcher records the outcome row.
+
+Two facts are not recorded yet, so a rule that needs them is *ask*: the requirements a
+next-up item cites, and the approved check files. A lane with no next-up item is not linked.
 
 ## The rule file
 
