@@ -899,45 +899,86 @@ func (r *Runner) Answer(ctx context.Context, id int64, answer string) (store.Dec
 	if err != nil {
 		return d, err
 	}
-	run, err := r.Store.Run(ctx, d.RunID)
-	if err != nil {
-		return d, err
-	}
-	if run.State == store.RunRunning {
-		r.Log.Info("answer held until the run ends", "decision", d.ID, "run", run.ID)
-		return d, nil
-	}
 	return r.deliver(ctx, d)
 }
 
 func (r *Runner) deliverAnswers(ctx context.Context, runID int64) {
+	ended, err := r.Store.Run(ctx, runID)
+	if err != nil {
+		r.Log.Error("load ended run", "run", runID, "err", err)
+		return
+	}
 	answered, err := r.Store.Decisions(ctx, store.DecisionAnswered)
 	if err != nil {
 		r.Log.Error("load answered decisions", "err", err)
 		return
 	}
 	for _, d := range answered {
-		if d.RunID == runID && d.AnswerRun == 0 {
-			if _, err := r.deliver(ctx, d); err != nil {
-				r.Log.Error("deliver answer", "decision", d.ID, "err", err)
+		if d.AnswerRun != 0 {
+			continue
+		}
+		if d.RunID != runID {
+			// An answer to a superseded run waits on the lane's latest run.
+			if asker, err := r.Store.Run(ctx, d.RunID); err != nil || asker.LaneID != ended.LaneID {
+				continue
 			}
+		}
+		if _, err := r.deliver(ctx, d); err != nil {
+			r.Log.Error("deliver answer", "decision", d.ID, "err", err)
 		}
 	}
 }
 
-// deliver continues the asking run's session with the answer.
+// deliver carries the answer into the lane's conversation. The target is the asking
+// run's session while that run is the lane's latest; once a later run has superseded
+// it, the answer goes to the latest run's session instead, so the old conversation is
+// not revived. It is held while that run is going, and only recorded (and said so in
+// the feed) when the lane is closed or has no session to continue.
 func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision, error) {
-	prompt := fmt.Sprintf("The person answered your question (decision %d): %q\nAnswer: %s\nContinue the work with that.", d.ID, d.Question, d.Answer)
-	next, err := r.Start(ctx, StartRequest{Continue: d.RunID, Prompt: prompt})
+	asker, err := r.Store.Run(ctx, d.RunID)
 	if err != nil {
-		return d, fmt.Errorf("answer recorded, but continuing run %d failed: %w", d.RunID, err)
+		return d, err
+	}
+	target := asker
+	if latest, err := r.Store.Runs(ctx, asker.LaneID, "", 1); err != nil {
+		return d, err
+	} else if len(latest) > 0 {
+		target = latest[0]
+	}
+	if target.State == store.RunRunning {
+		r.Log.Info("answer held until the run ends", "decision", d.ID, "run", target.ID)
+		return d, nil
+	}
+	lane, err := r.Store.Lane(ctx, asker.LaneID)
+	if err != nil {
+		return d, err
+	}
+	if lane.State != store.LaneOpen {
+		r.Log.Info("answer recorded; the lane is not open", "decision", d.ID, "lane", lane.Name)
+		r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered and recorded; lane %s is %s, so nothing was started", d.ID, lane.Name, lane.State)
+		return d, nil
+	}
+	if target.Session == "" {
+		r.Log.Info("answer recorded; no session to continue", "decision", d.ID, "run", target.ID)
+		r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered and recorded; run %d has no session to continue, so nothing was started", d.ID, target.ID)
+		return d, nil
+	}
+	prompt := fmt.Sprintf("The person answered your question (decision %d): %q\nAnswer: %s\nContinue the work with that.", d.ID, d.Question, d.Answer)
+	where := fmt.Sprintf("the agent carries on as run %%d")
+	if target.ID != asker.ID {
+		prompt = fmt.Sprintf("Run %d asked a question (decision %d) that the person has now answered: %q\nAnswer: %s\nThat run has since been superseded, so this reaches you instead. Take the answer into account if it still applies to your work, and carry on.", asker.ID, d.ID, d.Question, d.Answer)
+		where = fmt.Sprintf("run %d was superseded by run %d; the answer goes to run %d's session as run %%d", asker.ID, target.ID, target.ID)
+	}
+	next, err := r.Start(ctx, StartRequest{Continue: target.ID, Prompt: prompt})
+	if err != nil {
+		return d, fmt.Errorf("answer recorded, but continuing run %d failed: %w", target.ID, err)
 	}
 	if err := r.Store.SetDecisionRun(ctx, d.ID, next.ID); err != nil {
 		return d, err
 	}
 	d.AnswerRun = next.ID
-	r.Log.Info("answer delivered", "decision", d.ID, "run", next.ID)
-	r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered; the agent carries on as run %d", d.ID, next.ID)
+	r.Log.Info("answer delivered", "decision", d.ID, "run", next.ID, "asker", asker.ID, "target", target.ID)
+	r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered; "+where, d.ID, next.ID)
 	return d, nil
 }
 
