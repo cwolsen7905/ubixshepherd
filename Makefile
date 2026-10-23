@@ -17,7 +17,7 @@ GO_PKGS := ./cmd/... ./internal/...
 # The built web UI is embedded from here (internal/webui). Only its .gitignore is tracked.
 WEBUI_DIR := internal/webui/app
 
-.PHONY: build web install test check check-keep-going core-boundary script-check cross dist release-notes clean
+.PHONY: build web install test check check-go check-keep-going core-boundary script-check web-check cross dist release-notes clean
 
 # Build the web UI (web/) into the binary. It needs Node 22 or later; without npm, or
 # with NO_WEB=1, the binary builds without a fresh UI and serves whatever is in
@@ -57,10 +57,33 @@ install: build
 test:
 	go test $(GO_PKGS)
 
-check: core-boundary script-check
+# The full gate: the Go checks plus the web checks. The GitLab go-check job and the GitHub
+# old-git job run this inside containers with no Node, where web-check skips with a
+# message. The web checks themselves run only where Node is present: the GitHub check
+# job (typecheck, lint and tests) and the GitLab web-typecheck job (typecheck only).
+check: check-go web-check
+
+# The Go checks on their own: core-boundary, the install script, gofmt, vet, tests.
+# Nothing in CI calls this yet; it is for a quick local run without the web checks.
+check-go: core-boundary script-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
 	go test $(GO_PKGS)
+
+# The web checks: typecheck, lint and tests (`npm --prefix web run check`), which need
+# Node 22 or later. Without npm there is nothing to run them with. In CI or a container
+# (the Go jobs run in containers with no Node, and a container does not forward CI into
+# make) skip with a message; on a local machine a missing npm fails the gate loudly, so
+# the local gate never quietly passes without the web checks.
+web-check:
+	@if command -v npm >/dev/null 2>&1; then \
+		(cd web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run check) || exit 1; \
+	elif [ -n "$$CI" ] || [ -f /.dockerenv ]; then \
+		echo "npm not found: skipping the web checks (the CI web jobs run them where Node is present)"; \
+	else \
+		echo "npm not found: the web checks need Node 22 or later"; \
+		exit 1; \
+	fi
 
 # The keep-going checks (KEEP-C-01 to C-12 in the keep-going spec) are tests behind a
 # build tag. They fail until the daemon-side drive lands, so this is not part of check.
