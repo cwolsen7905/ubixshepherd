@@ -49,7 +49,8 @@ export interface StatusDetail {
   quota_holds?: { agent: string; until: string }[]
   spend_usd: number
   budget_usd?: number
-  forge?: { last_poll?: string; error?: string }
+  /** `off` when the watcher is not running; `poll_seconds` and `forges` are as the daemon started it. */
+  forge?: { last_poll?: string; error?: string; off?: boolean; poll_seconds?: number; forges?: string[] }
 }
 
 /** GET /v1/web/session: this browser's session. */

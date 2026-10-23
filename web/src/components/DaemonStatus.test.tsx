@@ -197,6 +197,19 @@ describe('DaemonDetail', () => {
     }
   })
 
+  it('shows the forge watcher\'s forge and interval, or that it is off', () => {
+    const on = show({ data: loaded(detail({ forge: { last_poll: '2026-10-10T11:59:00Z', forges: ['gitlab'], poll_seconds: 90 } }), null) })
+    expect(on.container.textContent).toContain('gitlab')
+    expect(on.container.textContent).toContain('every 90s')
+    on.unmount()
+    const none = show({ data: loaded(detail({ forge: { forges: [], poll_seconds: 60 } }), null) })
+    expect(none.container.textContent).toContain('none readable for these remotes')
+    none.unmount()
+    const off = show({ data: loaded(detail({ forge: { off: true } }), null) })
+    expect(off.container.textContent).toContain('off (daemon.poll is off)')
+    expect(off.container.textContent).not.toContain('Interval')
+  })
+
   it('says a failed reload and unreported fields plainly', () => {
     const d = detail({ reload_error: 'config.yaml: line 3: bad', reload_failed_at: '2026-10-10T11:45:00Z', quota_holds: undefined, forge: undefined })
     const { container } = show({ data: loaded(d, null) })

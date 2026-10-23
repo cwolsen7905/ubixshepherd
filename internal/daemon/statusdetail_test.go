@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 const detailPath = api.PathStatus + "?" + api.StatusDetailQuery
@@ -146,5 +149,35 @@ func TestStatusDetailAccess(t *testing.T) {
 	var ws api.Status
 	if err := json.NewDecoder(wresp.Body).Decode(&ws); wresp.StatusCode != http.StatusOK || err != nil || ws.Detail != nil {
 		t.Errorf("worker: %d, %v, detail %+v", wresp.StatusCode, err, ws.Detail)
+	}
+}
+
+func TestStatusDetailForgeWatcher(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	if _, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, []store.Repo{
+		{Name: "a", Path: filepath.Join(root, "a"), Remote: "git@gl.example.com:g/a.git"},
+		{Name: "b", Path: filepath.Join(root, "b"), Remote: "git@gl.example.com:g/b.git"},
+		{Name: "c", Path: filepath.Join(root, "c")},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s.Config.Daemon.Poll = "90s"
+	s.ForgeWatch = func() api.ForgeWatch { return api.ForgeWatch{} }
+	var st api.Status
+	call(t, ts, s.Token, "GET", detailPath, nil, &st)
+	f := st.Detail.Forge
+	if f == nil || f.Off || f.PollSeconds != 90 || !slices.Equal(f.Forges, []string{"gitlab"}) {
+		t.Errorf("forge = %+v", f)
+	}
+
+	// With polling off there is no watcher to report on, and it says so.
+	s.Config.Daemon.Poll = "off"
+	s.ForgeWatch = nil
+	st = api.Status{}
+	call(t, ts, s.Token, "GET", detailPath, nil, &st)
+	if f := st.Detail.Forge; f == nil || !f.Off || f.PollSeconds != 0 || len(f.Forges) != 0 {
+		t.Errorf("forge with polling off = %+v", f)
 	}
 }

@@ -260,12 +260,17 @@ export function DaemonDetail({ down, error, downSince, lastEvent, chat, data, fa
           </Group>
           <Group title="Forge watcher">
             {!d.forge && <Row k="Poll"><span className="faint">not reported</span></Row>}
-            {d.forge?.error ? (
-              <Row k="Error"><span className="tone-bad">{d.forge.error}</span></Row>
-            ) : (
-              d.forge && (
-                <Row k="Last poll">{d.forge.last_poll ? `${since(d.forge.last_poll, now) || 'now'} ago` : 'not yet'}</Row>
-              )
+            {d.forge?.off && <Row k="Watcher"><span className="faint">off (daemon.poll is off)</span></Row>}
+            {d.forge && !d.forge.off && (
+              <>
+                <Row k="Forge by remote">{d.forge.forges?.length ? d.forge.forges.join(', ') : <span className="faint">none readable for these remotes</span>}</Row>
+                <Row k="Interval">{d.forge.poll_seconds ? every(d.forge.poll_seconds) : <span className="faint">not reported</span>}</Row>
+                {d.forge.error ? (
+                  <Row k="Error"><span className="tone-bad">{d.forge.error}</span></Row>
+                ) : (
+                  <Row k="Last poll">{d.forge.last_poll ? `${since(d.forge.last_poll, now) || 'now'} ago` : 'not yet'}</Row>
+                )}
+              </>
             )}
           </Group>
         </>
@@ -298,6 +303,11 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
       <dl>{children}</dl>
     </section>
   )
+}
+
+/** A poll interval in seconds as words: "every 90s", "every 2m". */
+function every(sec: number): string {
+  return sec % 60 === 0 ? `every ${sec / 60}m` : `every ${sec}s`
 }
 
 function Row({ k, children }: { k: string; children: ReactNode }) {

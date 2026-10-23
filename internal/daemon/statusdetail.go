@@ -12,6 +12,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/watch"
 )
 
 // reloadState is how the last config reload went: loaded is when one took, and failed
@@ -78,12 +79,14 @@ func (s *Server) statusDetail(ctx context.Context) (api.StatusDetail, error) {
 	if err != nil {
 		return d, err
 	}
+	var remotes []string
 	for _, ws := range wss {
 		repos, err := s.Store.Repos(ctx, ws.ID)
 		if err != nil {
 			return d, err
 		}
 		for _, rp := range repos {
+			remotes = append(remotes, rp.Remote)
 			lanes, err := s.Store.Lanes(ctx, rp.ID)
 			if err != nil {
 				return d, err
@@ -108,9 +111,17 @@ func (s *Server) statusDetail(ctx context.Context) (api.StatusDetail, error) {
 		}
 		d.QuotaHolds = &holds
 	}
-	if s.ForgeWatch != nil {
+	// The watcher starts with the config the daemon started with, so its interval and
+	// whether it runs at all come from s.Config, not the live one.
+	if s.Config.Daemon.Poll == "off" {
+		d.Forge = &api.ForgeWatch{Off: true}
+	} else if s.ForgeWatch != nil {
 		fw := s.ForgeWatch()
 		fw.Error = oneLine(fw.Error)
+		if every, err := time.ParseDuration(s.Config.Daemon.Poll); err == nil {
+			fw.PollSeconds = int(every / time.Second)
+		}
+		fw.Forges = watch.ForgeNames(remotes)
 		d.Forge = &fw
 	}
 	return d, nil
