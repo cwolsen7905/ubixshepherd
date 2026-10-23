@@ -45,6 +45,12 @@ protocol) is listed under **Interface changes** in the release that makes it.
 - Follow-through by an external owner. A repo can name another service as the owner of a
   merge request's failed pipelines and review threads. Shepherd stands back, and takes the
   work over if the owner stays silent past `patience` or says `Unfixed:`.
+- Follow-through escalates to Claude. When a follow-up round on a merge request, run by a
+  cheaper model or another agent, does not close the open items, the next round runs on
+  Claude Code, resuming the lane's Claude session when there is one. The first round is
+  never escalated. If Claude Code is not installed, the round stays with the usual agent,
+  and a skipped escalation says why. Set `watch.escalate: false` to keep every round on
+  the same agent. See [docs/follow-through.md](docs/follow-through.md).
 - `shepherd next list` filters by repo, topic, state and text. `--topic` matches a
   conversation topic and refuses an ambiguous title, and `--state` fetches dropped and
   done items.
