@@ -183,3 +183,21 @@ repos:
     widen_max_files: 2
     widen_protected: ["internal/billing/**"]
 ```
+
+## Escalating a follow-up to Claude
+
+When a follow-up round on a merge request (review threads or a failed pipeline) ran on a
+cheaper agent or model and left the same items open, the next round runs on Claude Code. See
+[follow-through.md](follow-through.md). It is on by default; turn it off under `defaults:` or a
+repo's `watch:`.
+
+```yaml
+repos:
+  app:
+    watch:
+      escalate: false
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `escalate` | `true` | Hand the next round to Claude when the round before it, on another agent or a Claude model other than the repo's default, did not close. |

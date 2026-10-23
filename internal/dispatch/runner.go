@@ -86,6 +86,10 @@ type StartRequest struct {
 	// Auto marks a run Shepherd starts on its own (a fix, a routed request); the daily
 	// budget holds these.
 	Auto bool `json:"-"`
+	// Escalate, with Continue, says the continued run's round did not close what it was
+	// sent to close: when that run was cheaper than Claude on the repo's default model,
+	// the start runs on Claude instead (see EscalationTarget).
+	Escalate bool `json:"-"`
 }
 
 // Runner starts agents and watches them until they exit.
@@ -320,6 +324,12 @@ func (r *Runner) Start(ctx context.Context, req StartRequest) (store.Run, error)
 // start is Start; fromQueue says the start is one that was held, so a hold for the
 // drain is only a hold and is not queued a second time.
 func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (store.Run, error) {
+	if req.Escalate && req.Continue != 0 {
+		var why string
+		if req, why = r.escalate(ctx, req); why != "" {
+			r.Log.Info("follow-up not escalated", "run", req.Continue, "why", why)
+		}
+	}
 	asked := req
 	cfg := r.Conf()
 	var parent store.Run

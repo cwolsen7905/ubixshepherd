@@ -589,6 +589,9 @@ type Watch struct {
 	// ReviewThreads hands unresolved review threads on the merge request back to the
 	// agent. Unset is on.
 	ReviewThreads *bool `yaml:"review_threads,omitempty" json:"review_threads,omitempty"`
+	// Escalate runs the next round on Claude when the round before it, on a cheaper
+	// agent or model, did not close what it was sent to close. Unset is on.
+	Escalate *bool `yaml:"escalate,omitempty" json:"escalate,omitempty"`
 	// FollowThrough says who follows a merge request through its failures: Shepherd (the
 	// default) or an external owner that Shepherd stands back for.
 	FollowThrough FollowThrough `yaml:"follow_through,omitempty" json:"follow_through,omitempty"`
@@ -691,6 +694,9 @@ func (w Watch) Tries() int {
 
 // Threads says whether review threads go back to the agent.
 func (w Watch) Threads() bool { return w.ReviewThreads == nil || *w.ReviewThreads }
+
+// Escalates says whether a round that did not close hands the next one to Claude.
+func (w Watch) Escalates() bool { return w.Escalate == nil || *w.Escalate }
 
 // When a follow acts on a release.
 const (
@@ -1218,6 +1224,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Watch.ReviewThreads != nil {
 		out.Watch.ReviewThreads = over.Watch.ReviewThreads
+	}
+	if over.Watch.Escalate != nil {
+		out.Watch.Escalate = over.Watch.Escalate
 	}
 	if ft := over.Watch.FollowThrough; ft.Owner != "" || ft.Name != "" || ft.Patience != "" || ft.Author != nil {
 		if ft.Owner != "" {
