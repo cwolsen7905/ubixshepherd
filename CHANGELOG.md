@@ -9,6 +9,15 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+## [0.6.0-beta.1] - 2026-10-23
+
+Keep-going mode now starts approved work itself, Crook keeps a log of every verdict that
+you can query, a new upkeep pass (Muster) tidies what has gone stale, lanes can set
+approved check files aside, and merge rules can run in shadow mode. Follow-through can
+defer to an external owner and escalates to Claude when a round does not close. Nothing is
+removed and no existing use breaks; the new config keys, routes, commands and tools are
+additive. The longer form is in [docs/releases/0.6.0-beta.1.md](docs/releases/0.6.0-beta.1.md).
+
 ### Added
 
 - Keep-going mode starts approved work itself. The daemon continues approved items whose
@@ -59,6 +68,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
   drain under way and falls back to a plain stop.
 - Web UI: one error, loading and empty state across the views, with a working Retry on the
   reads that can reload and a back link on the error state.
+- Web UI: the side panel has panes for a routing request and a next-up item, and the
+  Forge watcher card on the daemon status page names the forges the watcher can read and
+  how often it polls, or says polling is off.
 - Agents are told in every brief never to skip git hooks. Claude Code runs
   deny `--no-verify`, `commit -n` and `core.hooksPath` overrides by pattern, and Copilot
   runs deny them where they follow the subcommand (Copilot matches command prefixes, so
@@ -73,9 +85,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
   and the feed text for check approvals and releases is redacted.
 - The forge reader looks for the renamed AI review job when it retries an approval.
 - Documentation: merging follows each repo's merge rule.
+- `make check` runs the web checks as well as the Go checks, skipping them where npm is
+  missing or CI runs them apart.
 
 ### Fixed
 
+- An answer to a decision whose asking run has been superseded continues the lane's
+  latest run's session instead of reviving the old conversation.
 - A thread reply to a desk question closes it, in order with skips and answers.
 - Crook writes verdicts in the background, logs an identical hold or refusal at most once a
   minute, and ends a path at its stage. Rule loading refuses class matchers where classes
@@ -108,6 +124,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
   list` filters; `run stop --for-restart` falls back to a plain stop with no drain.
 - MCP tools: new `crook_why` and `crook_shadow`; `run_stop` gains `for_restart`.
 - Feed: new kinds `checks_approved` and `checks_released`.
+- Config: `watch.escalate` (default on) keeps follow-through rounds on one agent when set
+  to `false`.
+- Status detail (HTTP API and web): the forge watcher reports `poll_seconds`, `forges` and
+  `off`.
 - Store: three appended migrations add the Crook verdict log, the Muster log and the
   approved check files. An older binary refuses a store migrated by a newer one, so going
   back a version can mean a fresh store.
