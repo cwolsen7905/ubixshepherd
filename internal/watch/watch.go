@@ -439,8 +439,9 @@ func firstLine(s string) string {
 	return s
 }
 
-// ForgeNames is the sorted, distinct names of the forges the watcher can read for these
-// remotes; a remote it cannot read adds none.
+// ForgeNames is the sorted, distinct names of the forges these remotes point at, by host
+// as forge.For decides it. A malformed remote, or one on a forge the watcher does not
+// support (GitHub), adds none; whether the watcher can sign in there is not checked.
 func ForgeNames(remotes []string) []string {
 	seen := map[string]bool{}
 	for _, r := range remotes {

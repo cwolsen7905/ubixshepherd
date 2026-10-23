@@ -411,8 +411,10 @@ type ForgeWatch struct {
 	// last poll or interval to report.
 	Off bool `json:"off,omitempty"`
 	// PollSeconds is how often the watcher polls, from the config the daemon started
-	// with (a changed interval takes a restart). Forges names the forges the watcher
-	// can read for the workspace's repos, sorted: "gitlab".
+	// with (a changed interval takes a restart). Forges names the forges the repos'
+	// remotes point at, across every workspace, sorted: "gitlab". It goes by remote host
+	// (any host but github.com is taken as GitLab), not by whether the watcher is signed
+	// in there.
 	PollSeconds int      `json:"poll_seconds,omitempty"`
 	Forges      []string `json:"forges,omitempty"`
 }

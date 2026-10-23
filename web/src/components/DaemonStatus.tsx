@@ -263,7 +263,7 @@ export function DaemonDetail({ down, error, downSince, lastEvent, chat, data, fa
             {d.forge?.off && <Row k="Watcher"><span className="faint">off (daemon.poll is off)</span></Row>}
             {d.forge && !d.forge.off && (
               <>
-                <Row k="Forge">{d.forge.forges?.length ? d.forge.forges.join(', ') : <span className="faint">none readable for these remotes</span>}</Row>
+                <Row k="Forge by remote">{d.forge.forges?.length ? d.forge.forges.join(', ') : <span className="faint">none readable for these remotes</span>}</Row>
                 <Row k="Interval">{d.forge.poll_seconds ? every(d.forge.poll_seconds) : <span className="faint">not reported</span>}</Row>
                 {d.forge.error ? (
                   <Row k="Error"><span className="tone-bad">{d.forge.error}</span></Row>
