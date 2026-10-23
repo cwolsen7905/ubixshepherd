@@ -1,5 +1,5 @@
 import type { WaitingItem } from '../api/types'
-import { isSuggestion, openKey, openTarget, stepAnchor, stepIndex, suggestionChoices, suggestionPatch, waitingKey } from './waitingStep'
+import { neighbour, isSuggestion, openKey, openTarget, stepAnchor, stepIndex, suggestionChoices, suggestionPatch, waitingKey } from './waitingStep'
 
 const q = (id: number, turn = 2): WaitingItem => ({ kind: 'question', action: 'reply', question_id: id, turn, title: 'Ship it?' })
 
@@ -44,6 +44,15 @@ describe('stepAnchor', () => {
     expect(stepAnchor({ kind: 'mr', action: 'approve', lane_id: 2, mr: 3, title: 't' }, ctx)).toBe('f40')
     expect(stepAnchor({ kind: 'ship', action: 'ship', lane_id: 3, title: 't' }, ctx)).toBeNull()
     expect(stepAnchor({ kind: 'next', action: 'review', next_id: 1, title: 't' }, ctx)).toBeNull()
+  })
+})
+
+describe('requests from one lane', () => {
+  const r = (id: number): WaitingItem => ({ kind: 'request', action: 'route', request_id: id, lane_id: 4, title: `r${id}` })
+  it('have distinct keys, so stepping past one keeps the others', () => {
+    expect(waitingKey(r(1))).not.toBe(waitingKey(r(2)))
+    expect(neighbour([r(1), r(2), r(3)], waitingKey(r(1)), 'down', waitingKey(r(1)))).toEqual(r(2))
+    expect(openKey([r(1), r(2)], { kind: 'request', id: 2 })).toBe(waitingKey(r(2)))
   })
 })
 

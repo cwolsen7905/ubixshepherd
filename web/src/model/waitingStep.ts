@@ -5,7 +5,8 @@ import type { Open } from '../router'
 
 /** A stable key for an item: the daemon's list has no ids of its own. */
 export function waitingKey(it: WaitingItem): string {
-  return `${it.kind}:${it.question_id ?? it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}`
+  // A request carries its lane's id too, so requests from one lane need their own id to differ.
+  return `${it.kind}:${it.question_id ?? it.decision_id ?? it.next_id ?? it.lane_id ?? 0}:${it.mr ?? 0}${it.request_id ? `:r${it.request_id}` : ''}`
 }
 
 /**

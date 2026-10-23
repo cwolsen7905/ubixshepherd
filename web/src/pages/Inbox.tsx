@@ -220,7 +220,7 @@ export function InboxPage({ kind }: { kind?: string }) {
   )
 
   const row = (it: WaitingItem) => {
-    const key = waitingKey(it) + (it.request_id ? `:r${it.request_id}` : '')
+    const key = waitingKey(it)
     const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
     const actionable = inboxOpen(it) !== null
     const note = notes[waitingKey(it)]
