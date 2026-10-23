@@ -57,31 +57,29 @@ install: build
 test:
 	go test $(GO_PKGS)
 
-# The full local gate: the Go checks plus the web checks. The npm-less CI jobs
-# (GitLab go-check, GitHub old-git) run `check-go` instead, with the web covered by
-# the web jobs there.
+# The full gate: the Go checks plus the web checks. The GitLab go-check job and the GitHub
+# old-git job run this inside containers with no Node, where web-check skips with a
+# message. The web checks themselves run only where Node is present: the GitHub check
+# job (typecheck, lint and tests) and the GitLab web-typecheck job (typecheck only).
 check: check-go web-check
 
 # The Go checks on their own: core-boundary, the install script, gofmt, vet, tests.
-# CI jobs without Node (GitLab go-check, GitHub old-git) run this, never the web
-# checks: the Go gate must never be skipped or broken by a missing npm.
+# Nothing in CI calls this yet; it is for a quick local run without the web checks.
 check-go: core-boundary script-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
 	go test $(GO_PKGS)
 
-# The web checks: typecheck, lint and tests (`npm --prefix web run check`). Without
-# npm there is nothing to run them with. In CI the Go check jobs run in containers
-# with no Node, so skip there with a message (CI runs the web checks in its own web
-# job instead); on a local machine a missing npm fails the gate loudly, so the local
-# gate never quietly passes without the web checks. The container test matters
-# because the Go job's container does not forward CI into make, so CI alone would
-# never match there; local machines are not containers.
+# The web checks: typecheck, lint and tests (`npm --prefix web run check`), which need
+# Node 22 or later. Without npm there is nothing to run them with. In CI or a container
+# (the Go jobs run in containers with no Node, and a container does not forward CI into
+# make) skip with a message; on a local machine a missing npm fails the gate loudly, so
+# the local gate never quietly passes without the web checks.
 web-check:
 	@if command -v npm >/dev/null 2>&1; then \
 		(cd web && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run check) || exit 1; \
 	elif [ -n "$$CI" ] || [ -f /.dockerenv ]; then \
-		echo "npm not found: skipping the web checks (CI runs them in its web job)"; \
+		echo "npm not found: skipping the web checks (the CI web jobs run them where Node is present)"; \
 	else \
 		echo "npm not found: the web checks need Node 22 or later"; \
 		exit 1; \
