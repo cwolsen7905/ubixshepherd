@@ -37,6 +37,13 @@ jobs:
           go-version-file: go.mod
           check-latest: true
 
+      # The web checks in make check need Node 22 or later.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Make
         if: runner.os == 'Windows'
         run: command -v make || choco install make --no-progress -y
