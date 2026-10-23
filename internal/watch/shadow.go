@@ -148,7 +148,10 @@ func (w *Watcher) shadowMerged(ctx context.Context, lane store.Lane, mr *forge.M
 	})
 }
 
-// shadowGo runs fn apart from the poll with a time limit. Whatever goes wrong is logged
+// shadowGo runs fn apart from the poll with a time limit. The pass lives on the context
+// Check was given, which Run takes from the daemon and cancels only at shutdown, not on a
+// context that ends when the poll returns; a caller that gave Check such a context would
+// cancel its passes with it. Whatever goes wrong is logged
 // and records nothing: a shadow pass that fails leaves the repo person-merged.
 func (w *Watcher) shadowGo(ctx context.Context, lane store.Lane, fn func(context.Context) error) {
 	ctx = context.WithValue(ctx, shadowLaneKey{}, lane.ID)
