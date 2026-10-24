@@ -1128,3 +1128,40 @@ func TestRunFlagsAHookBypass(t *testing.T) {
 		}
 	}
 }
+
+func TestRepoAgentAllowList(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	repo, err := f.st.Repo(ctx, f.lane.RepoID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	only := config.Default()
+	only.Repos = map[string]config.Profile{repo.Name: {Agents: []string{"claude"}}}
+	f.runner.SetConfig(only)
+	_, err = f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "x"})
+	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), repo.Name) || !strings.Contains(err.Error(), "allows only claude") {
+		t.Errorf("agent off the list: %v", err)
+	}
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	if err != nil {
+		t.Fatalf("agent on the list: %v", err)
+	}
+	f.runner.Stop(ctx, run.ID)
+	f.wait(t, run.ID)
+	// A continued run is held to the list too: a narrowed list refuses it.
+	old, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Session: "s", Log: "l"})
+	only.Repos = map[string]config.Profile{repo.Name: {Agents: []string{"cursor"}}}
+	f.runner.SetConfig(only)
+	if _, err := f.runner.Start(ctx, StartRequest{Continue: old.ID, Prompt: "y"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "allows only cursor") {
+		t.Errorf("continue off the list: %v", err)
+	}
+	// Unset allows every agent.
+	f.runner.SetConfig(config.Default())
+	run, err = f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
+	if err != nil {
+		t.Fatalf("unset list: %v", err)
+	}
+	f.runner.Stop(ctx, run.ID)
+	f.wait(t, run.ID)
+}

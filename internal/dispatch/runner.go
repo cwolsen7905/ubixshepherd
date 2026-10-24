@@ -383,6 +383,9 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	if err != nil {
 		return store.Run{}, err
 	}
+	if prof := cfg.Profile(repo.Name); !prof.AgentAllowed(ad.Name) {
+		return store.Run{}, refuse("repo %s allows only %s; %s is not on its agents list", repo.Name, strings.Join(prof.Agents, ", "), ad.Name)
+	}
 	// The model: the one asked for, else the continued run's, else the repo's
 	// agent.model for this agent, else models.<agent>.default, else the agent's own
 	// default. The policy refuses a model it does not permit, naming the rule. A run

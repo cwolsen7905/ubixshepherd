@@ -9,6 +9,12 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ## [Unreleased]
 
+### Added
+
+- A repo can set `agents: [claude]` to limit which agent CLIs may start runs in it. The
+  daemon refuses any other agent, including on a continued run, with an error naming the
+  repo and its allowed agents. Unset allows all; unknown names are rejected at load.
+
 ## [0.6.0-beta.1] - 2026-10-23
 
 Keep-going mode now starts approved work itself, Crook keeps a log of every verdict that

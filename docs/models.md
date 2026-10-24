@@ -128,3 +128,18 @@ next run.
 
 - [config.md](config.md): the whole config file.
 - [opencode.md](opencode.md): the OpenCode adapter and its model host.
+
+## Limiting a repo to some agents
+
+`agents` on a repo profile lists the agent CLIs allowed to start runs there, any of
+`claude`, `copilot`, `cursor` and `opencode`:
+
+```yaml
+repos:
+  myrepo:
+    agents: [claude]
+```
+
+The daemon checks the list wherever a run starts (`lane run`, continuing a run, runs
+Shepherd starts itself), and refuses any other agent with an error naming the repo and
+its allowed agents. Unset or empty allows every agent. An unknown name fails config load.

@@ -453,6 +453,12 @@ const (
 // PermissionModes are the values agent.permission_mode takes.
 var PermissionModes = []string{PermAuto, PermAcceptEdits, PermDefault, PermBypass}
 
+// AgentAllowed says whether the profile lets the named agent start runs: an empty
+// Agents list allows every agent.
+func (p Profile) AgentAllowed(agent string) bool {
+	return len(p.Agents) == 0 || slices.Contains(p.Agents, agent)
+}
+
 // Profile says how a repo works. In Repos, an empty field inherits from Defaults.
 type Profile struct {
 	BaseBranch  string   `yaml:"base_branch,omitempty" json:"base_branch,omitempty"`
@@ -475,6 +481,8 @@ type Profile struct {
 	// Tags is "free" (the default) or "reserved": every release tag pushed from the repo
 	// must be reserved first (shepherd tag reserve), and contain its lane's merge.
 	Tags string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// Agents limits which agent CLIs may start runs in the repo; empty allows all.
+	Agents []string `yaml:"agents,omitempty" json:"agents,omitempty"`
 	// MaxRuns is how many agents may run at once in the repo; 0 leaves only the
 	// machine's daemon.max_runs.
 	MaxRuns int `yaml:"max_runs,omitempty" json:"max_runs,omitempty"`
@@ -1039,6 +1047,11 @@ func (p Profile) validate(at string) []error {
 	if p.Tags != TagsFree && p.Tags != TagsReserved {
 		errs = append(errs, fmt.Errorf("%s.tags: %q is not %s or %s", at, p.Tags, TagsFree, TagsReserved))
 	}
+	for i, a := range p.Agents {
+		if !slices.Contains(Agents, a) {
+			errs = append(errs, fmt.Errorf("%s.agents[%d]: %q is not claude, copilot, cursor or opencode", at, i, a))
+		}
+	}
 	for agent, m := range p.Agent.Model {
 		if !slices.Contains(Agents, agent) {
 			errs = append(errs, fmt.Errorf("%s.agent.model: %q is not claude, copilot, cursor or opencode", at, agent))
@@ -1182,6 +1195,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Forbid != nil {
 		out.Forbid = over.Forbid
+	}
+	if over.Agents != nil {
+		out.Agents = over.Agents
 	}
 	if over.Standards != nil {
 		out.Standards = over.Standards
