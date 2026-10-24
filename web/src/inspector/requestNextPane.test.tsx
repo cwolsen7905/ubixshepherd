@@ -44,6 +44,7 @@ describe('RequestPane', () => {
     await shown(<RequestPane id={3} />)
     expect(screen.getByText('What should we do about authentication?')).toBeInTheDocument()
     expect(screen.getByText('needs routing')).toBeInTheDocument()
+    expect(screen.getByText('request 3')).toHaveAttribute('data-component', 'IdChip')
     expect(screen.getByRole('link', { name: 'acme-api:feat/login' })).toBeInTheDocument()
     const options = screen.getAllByRole('option').map((o) => o.textContent)
     expect(options).toEqual(['Choose a lane…', 'acme-api:feat/billing'])

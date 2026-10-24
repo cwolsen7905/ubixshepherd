@@ -24,7 +24,7 @@ export interface DecisionPlan {
 export interface DecisionViewProps {
   /** `page`: the main column at the shared width. `mobile`: the 390px page, options and buttons at least 44px tall. */
   layout?: DecisionViewLayout
-  /** The faint line over the question: "Decision 5, claude on feat/export-csv, asked 8m ago". */
+  /** The faint line over the question: the decision chip, the agent on the lane, asked-ago. */
   kind: ReactNode
   question: ReactNode
   /** Why this is the person's call. */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { DeskQuestion } from '../api/types'
 import { deskQuestions } from '../api/client'
 import { DeskThread } from '../state/desk'
-import { Button } from '../ui'
+import { Button, IdChip } from '../ui'
 
 /**
  * Reply here and Skip under a desk message that asked the person something. Reply opens an
@@ -59,6 +59,7 @@ function QuestionActions({
   return (
     <div className="sh-question" role="group" aria-label={`Question ${q.id} is waiting on you`}>
       <span className="sh-question-flag">? Waiting on you</span>
+      <IdChip kind="question" id={q.id} />
       {!replying && (
         <>
           <Button size="small" onClick={() => setReplying(true)} disabled={busy}>

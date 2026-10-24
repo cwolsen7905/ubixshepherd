@@ -33,6 +33,8 @@ describe('QuestionPane', () => {
     shown()
     expect(await screen.findByText('Which branch should I cut from?')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
+    // The reply row's action carries the question's typed-ID chip.
+    expect(screen.getByText('question 4')).toHaveAttribute('data-component', 'IdChip')
   })
   it('says so when the question is no longer open', async () => {
     vi.mocked(deskQuestions.list).mockResolvedValue([])

@@ -4,6 +4,7 @@ import { waitingKey } from '../model/waitingStep'
 import { href } from '../router'
 import { useSnapshot } from '../state/context'
 import { useShellMode } from '../shell/useMedia'
+import { IdChip } from '../ui'
 
 /**
  * The full view of one decision: question, why it is the person's, context, options, the plan
@@ -17,7 +18,7 @@ export function DecisionPane({ id }: { id: number }) {
   if (!d) {
     return (
       <p className="inspector-body" role="status">
-        Decision {id} is not waiting on you any more. It was answered or closed. <a href={href.decisions(id)}>Open it on the Decisions page</a>.
+        <IdChip kind="decision" id={id} /> is not waiting on you any more. It was answered or closed. <a href={href.decisions(id)}>Open it on the Decisions page</a>.
       </p>
     )
   }

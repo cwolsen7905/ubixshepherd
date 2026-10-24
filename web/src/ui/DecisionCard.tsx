@@ -7,7 +7,7 @@ import { useOffline } from './offline'
 import './Decision.css'
 
 export interface DecisionCardProps {
-  /** Who asked: "Decision 5", the lane (a link), the agent and run, and how long it has waited. */
+  /** Who asked: the decision chip, the lane (a link), the agent and run, and how long it has waited. */
   meta: ReactNode
   /** The one-line question. */
   question: ReactNode

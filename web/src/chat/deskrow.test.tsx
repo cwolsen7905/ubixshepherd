@@ -17,7 +17,8 @@ describe('desk rows: reply references', () => {
   it('links a reply to the question it names', () => {
     const onReplyRef = vi.fn()
     row({ e: ev({ text: '[Replying to your question 7: which?]\n\nthe app' }), now: Date.now(), onReplyRef })
-    fireEvent.click(screen.getByRole('button', { name: 'Replying to your question 7' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Replying to question 7' }))
+    expect(screen.getByText('question 7')).toHaveAttribute('data-component', 'IdChip')
     expect(onReplyRef).toHaveBeenCalledWith(7)
   })
 

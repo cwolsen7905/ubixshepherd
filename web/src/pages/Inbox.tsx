@@ -8,7 +8,7 @@ import { useKeys, useNow } from '../hooks'
 import { isSuggestion, neighbour, openKey, SUGGESTION_LABEL, suggestionChoices, suggestionPatch, waitingKey, type SuggestionChoice } from '../model/waitingStep'
 import { go, href, parse, useFocusTarget, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
-import { Button, Chip, Count, EmptyState, GroupHeader, Kbd, ListRow, LoadingRows } from '../ui'
+import { Button, Chip, Count, EmptyState, GroupHeader, IdChip, Kbd, ListRow, LoadingRows } from '../ui'
 import type { GlyphTone } from '../ui'
 import './Inbox.css'
 
@@ -228,6 +228,17 @@ export function InboxPage({ kind }: { kind?: string }) {
     const sub = (
       <>
         {[KIND_LABEL[it.kind] ?? it.kind, where].filter(Boolean).join(' · ')}
+        {it.kind === 'decision' && it.decision_id ? (
+          <> <IdChip kind="decision" id={it.decision_id} /></>
+        ) : null}
+        {it.kind === 'question' && it.question_id ? (
+          <> <IdChip kind="question" id={it.question_id} /></>
+        ) : null}
+        {it.kind === 'request' && it.request_id ? (
+          <>
+            {' '}<IdChip kind="request" id={it.request_id} />
+          </>
+        ) : null}
         {it.kind === 'request' && it.request_id && !actionable ? (
           <>
             {' · route it with '}

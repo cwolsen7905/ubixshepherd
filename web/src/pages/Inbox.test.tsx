@@ -61,6 +61,9 @@ describe('InboxPage', () => {
     expect(screen.getByRole('heading', { name: /Approve/ })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /Broken/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Waiting on you/ })).toBeInTheDocument()
+    // Each waiting question, decision and request carries its typed-ID chip.
+    expect(screen.getByText('decision 7')).toHaveAttribute('data-component', 'IdChip')
+    expect(screen.getByText('request 9')).toHaveAttribute('data-component', 'IdChip')
     expect(screen.getByText(/move/)).toBeInTheDocument()
   })
 
@@ -84,8 +87,7 @@ describe('InboxPage', () => {
 
   it('opens a decision row in the inspector', async () => {
     await show()
-    const group = screen.getByRole('heading', { name: /Answer/ }).closest('section') as HTMLElement
-    await userEvent.click(within(group).getByRole('button', { name: /Which store/ }))
+    await userEvent.click(screen.getByRole('button', { name: (_, el) => el instanceof HTMLElement && el.querySelector('.sh-row-title')?.textContent === 'Which store?' }))
     expect(decodeURIComponent(window.location.hash)).toContain('open=decision:7')
   })
 

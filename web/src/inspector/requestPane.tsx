@@ -9,7 +9,7 @@ import { waitingKey } from '../model/waitingStep'
 import { go, withOpen } from '../router'
 import { openHref } from '../components/BacklogOpen'
 import { useLive, useSnapshot } from '../state/context'
-import { Button, Confirm, OFFLINE_SEND, StatusGlyph, useOffline } from '../ui'
+import { Button, Confirm, IdChip, OFFLINE_SEND, StatusGlyph, useOffline } from '../ui'
 
 const reason = (e: unknown) => (e instanceof ApiError || e instanceof Error ? e.message : String(e))
 
@@ -64,7 +64,7 @@ export function RequestPane({ id }: { id: number }) {
   if (!q) {
     return (
       <p className="inspector-body" role="status">
-        {snap.ready ? `Request ${id} is not waiting on you any more. It was routed, answered or closed.` : 'Reading the request…'}
+        {snap.ready ? <><IdChip kind="request" id={id} /> is not waiting on you any more. It was routed, answered or closed.</> : 'Reading the request…'}
       </p>
     )
   }
@@ -97,7 +97,7 @@ export function RequestPane({ id }: { id: number }) {
     <div className="inspector-body sh-request-pane" data-component="RequestPane">
       <p className="sh-request-state">
         <StatusGlyph glyph="!" tone="warn" label="request" /> <b>{STATE_WORDS[q.state] ?? q.state}</b>
-        <span className="sh-faint"> · {q.kind} · {since(q.created, now) || 'now'}</span>
+        <span className="sh-faint"> · <IdChip kind="request" id={q.id} /> · {q.kind} · {since(q.created, now) || 'now'}</span>
       </p>
       <dl className="sh-request-facts">
         <dt>From</dt>

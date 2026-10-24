@@ -7,7 +7,7 @@ import { useKeys, useNow } from '../hooks'
 import { answerKey, clearDraft, readDraft, writeDraft } from '../model/chatDraft'
 import { go, href, withOpen } from '../router'
 import { useLive } from '../state/context'
-import { StatusGlyph, useToast } from '../ui'
+import { IdChip, StatusGlyph, useToast } from '../ui'
 import { DecisionCard as CardView } from '../ui/DecisionCard'
 import { DecisionView as PageView } from '../ui/DecisionView'
 
@@ -169,7 +169,7 @@ export function DecisionCard({
           onOpen={() => go(withOpen(window.location.hash, { kind: 'decision', id: d.id }))}
           meta={
             <>
-              <span>{label}</span>
+              <IdChip kind="decision" id={d.id} />
               {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : <span>{d.lane}</span>}
               <span>
                 {d.agent}, <a href={href.log(d.run_id)}>run {d.run_id}</a>
@@ -216,7 +216,7 @@ export function DecisionCard({
         label={label}
         kind={
           <>
-            {label}, {d.agent} on {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : d.lane} (<a href={href.log(d.run_id)}>run {d.run_id}</a>
+            <IdChip kind="decision" id={d.id} />, {d.agent} on {laneId !== undefined ? <a href={href.lane(laneId)}>{d.lane}</a> : d.lane} (<a href={href.log(d.run_id)}>run {d.run_id}</a>
             , {d.repo}), waiting {since(d.created, now)}
           </>
         }

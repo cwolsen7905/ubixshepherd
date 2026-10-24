@@ -9,6 +9,10 @@ const q: DeskQuestion = { id: 5, workspace_id: 1, turn: 2, text: 'Which repo?', 
 afterEach(cleanup)
 
 describe('QuestionActions after a reply', () => {
+  it('names the question with a chip beside the waiting flag', () => {
+    render(<QuestionActions q={q} thread={{ send: async () => true } as unknown as DeskThread} onCleared={() => {}} />)
+    expect(screen.getByText('question 5')).toHaveAttribute('data-component', 'IdChip')
+  })
   it('keeps Reply here and Skip and does not clear it, so a follow-up can be sent', async () => {
     const send = vi.fn(async () => true)
     const cleared = vi.fn()
