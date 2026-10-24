@@ -8,6 +8,7 @@ import { waitingKey } from '../model/waitingStep'
 import { href } from '../router'
 import { useSnapshot } from '../state/context'
 import { DeskThread } from '../state/desk'
+import { IdChip } from '../ui'
 
 const defaultMake = (w: number) => new DeskThread(w)
 
@@ -45,7 +46,7 @@ export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (w
   if (q === null || !thread) {
     return (
       <p className="inspector-body" role="status">
-        Question {id} is not waiting on you any more. <a href={href.chat()}>Back to the conversation</a>.
+        <IdChip kind="question" id={id} /> is not waiting on you any more. <a href={href.chat()}>Back to the conversation</a>.
       </p>
     )
   }

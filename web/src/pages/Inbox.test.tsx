@@ -87,7 +87,8 @@ describe('InboxPage', () => {
 
   it('opens a decision row in the inspector', async () => {
     await show()
-    await userEvent.click(screen.getByRole('button', { name: (_, el) => el instanceof HTMLElement && el.querySelector('.sh-row-title')?.textContent === 'Which store?' }))
+    const group = screen.getByRole('heading', { name: /Answer/ }).closest('section') as HTMLElement
+    await userEvent.click(within(group).getByRole('button', { name: (_, el) => el instanceof HTMLElement && el.querySelector('.sh-row-title')?.textContent === 'Which store?' }))
     expect(decodeURIComponent(window.location.hash)).toContain('open=decision:7')
   })
 
