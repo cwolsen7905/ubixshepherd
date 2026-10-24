@@ -225,20 +225,18 @@ export function InboxPage({ kind }: { kind?: string }) {
     const actionable = inboxOpen(it) !== null
     const note = notes[waitingKey(it)]
     const mark = MARK[it.kind] ?? UNKNOWN_MARK
+    const typed: { kind: 'decision' | 'question' | 'request'; id: number | undefined } | null =
+      it.kind === 'decision'
+        ? { kind: 'decision', id: it.decision_id }
+        : it.kind === 'question'
+          ? { kind: 'question', id: it.question_id }
+          : it.kind === 'request'
+            ? { kind: 'request', id: it.request_id }
+            : null
     const sub = (
       <>
-        {[KIND_LABEL[it.kind] ?? it.kind, where].filter(Boolean).join(' · ')}
-        {it.kind === 'decision' && it.decision_id ? (
-          <> <IdChip kind="decision" id={it.decision_id} /></>
-        ) : null}
-        {it.kind === 'question' && it.question_id ? (
-          <> <IdChip kind="question" id={it.question_id} /></>
-        ) : null}
-        {it.kind === 'request' && it.request_id ? (
-          <>
-            {' '}<IdChip kind="request" id={it.request_id} />
-          </>
-        ) : null}
+        {typed?.id ? <IdChip kind={typed.kind} id={typed.id} /> : (KIND_LABEL[it.kind] ?? it.kind)}
+        {where ? ` · ${where}` : ''}
         {it.kind === 'request' && it.request_id && !actionable ? (
           <>
             {' · route it with '}
