@@ -97,7 +97,7 @@ export function RequestPane({ id }: { id: number }) {
     <div className="inspector-body sh-request-pane" data-component="RequestPane">
       <p className="sh-request-state">
         <StatusGlyph glyph="!" tone="warn" label="request" /> <b>{STATE_WORDS[q.state] ?? q.state}</b>
-        <span className="sh-faint"> · <IdChip kind="request" id={q.id} /> · {q.kind} · {since(q.created, now) || 'now'}</span>
+        <span className="sh-faint"> · {q.kind} · {since(q.created, now) || 'now'}</span>
       </p>
       <dl className="sh-request-facts">
         <dt>From</dt>
