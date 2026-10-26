@@ -15,7 +15,7 @@ import { ArtifactInspector } from './artifactPane'
 import { ContextComposer } from './ContextComposer'
 import { isAboutKind } from '../state/deskAbout'
 import { useSnapshot } from '../state/context'
-import { Button, Kbd, StatusGlyph } from '../ui'
+import { Button, IdChip, Kbd, StatusGlyph } from '../ui'
 import { SwapThread } from '../chat/SwapSide'
 import { neighbour, openKey, waitingKey } from '../model/waitingStep'
 import { showWaiting } from '../chat/strip'
@@ -124,7 +124,7 @@ function InspectorHead({ open, heading }: { open: Open; heading: React.RefObject
   const parent = parentLane(open, snap)
   const page = pageFor(open)
   const tab = section(open.tab)
-  const title = open.kind === 'artifact' ? <ArtifactName id={open.id} fallback={titleOf(open, snap)} /> : titleOf(open, snap)
+  const title = open.kind === 'artifact' ? <ArtifactName id={open.id} fallback={titleOf(open, snap)} /> : (open.kind === 'decision' || open.kind === 'question' || open.kind === 'request') ? <IdChip kind={open.kind} id={open.id} /> : titleOf(open, snap)
   if (open.full) {
     return (
       <PageHeader
@@ -206,7 +206,7 @@ function SwapBar({ open, keys }: { open: Open; keys: boolean }) {
       back={<PageBack onClick={closeInspector}>← Conversation</PageBack>}
       onClose={closeInspector}
       glyph={<StatusGlyph glyph="?" tone="warn" label="decision" />}
-      title={`Decision ${open.id}`}
+      title={<IdChip kind="decision" id={open.id} />}
       meta={
         d && (
           <>

@@ -31,7 +31,7 @@ export type ThreadEntry =
       age: ReactNode
       /** The topic pill. */
       pill?: ReactNode
-      /** "Replying to your question 3". */
+      /** The typed-ID chip of the question this answers ("question 3"). */
       reply?: ReactNode
       children: ReactNode
     })

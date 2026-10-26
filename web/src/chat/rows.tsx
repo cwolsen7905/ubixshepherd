@@ -7,6 +7,7 @@ import { since } from '../format'
 import { href } from '../router'
 import type { DeskThread } from '../state/desk'
 import { glyphTone } from '../ui/StatusGlyph'
+import { IdChip } from '../ui'
 import type { ThreadEntry, WorkStep } from '../ui/Thread'
 import { QuestionActions } from './questions'
 import { replyRef } from './reply'
@@ -114,7 +115,7 @@ export function deskEntry({
         reply:
           ref !== null && onReplyRef ? (
             <button type="button" className="sh-link sh-replyref" onClick={() => onReplyRef(ref)}>
-              Replying to your question {ref}
+              Replying to <IdChip kind="question" id={ref} />
             </button>
           ) : null,
         children: text,

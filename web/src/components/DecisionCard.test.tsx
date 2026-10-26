@@ -81,6 +81,7 @@ describe('DecisionCard', () => {
   it('renders the question as markdown under its summary, inert', () => {
     show(decision({ question: PLAN + '\n\n<script>window.x=1</script>' }))
     expect(screen.getByRole('heading', { name: 'Add the decision card to the chat thread' })).toBeInTheDocument()
+    expect(screen.getByText('decision 5')).toHaveAttribute('data-component', 'IdChip')
     expect(screen.getByText('Steps')).toBeInTheDocument()
     expect(screen.getByText('web/src/components/DecisionCard.tsx').tagName).toBe('CODE')
     expect(screen.getByText('Chat.tsx').tagName).toBe('STRONG')
