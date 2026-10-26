@@ -538,3 +538,20 @@ func TestArtifactRetention(t *testing.T) {
 		t.Error("a negative cap_mb was accepted")
 	}
 }
+
+func TestRepoAgentsList(t *testing.T) {
+	c, err := Parse([]byte("repos:\n  a:\n    agents: [claude, opencode]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := c.Profile("a")
+	if !p.AgentAllowed("claude") || p.AgentAllowed("copilot") {
+		t.Errorf("listed profile: %v", p.Agents)
+	}
+	if !c.Profile("other").AgentAllowed("copilot") {
+		t.Error("unset list should allow every agent")
+	}
+	if _, err := Parse([]byte("repos:\n  a:\n    agents: [gpt-9]\n")); err == nil || !strings.Contains(err.Error(), "agents[0]") {
+		t.Errorf("unknown agent: %v", err)
+	}
+}

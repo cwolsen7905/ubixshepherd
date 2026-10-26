@@ -176,6 +176,9 @@
 #   ## Extra `when` tags active in every lane (commit and ship always are; test, docs and
 #   ## migration follow the lane's scope).
 #   standards_when: []
+#   ## Which agents may start runs in the repo: any of claude, copilot, cursor, opencode.
+#   ## Unset allows all. The daemon refuses a run with any other agent.
+#   agents: [claude]
 #   ## How the agents Shepherd starts run.
 #   agent:
 #     ## Claude Code permission mode: auto (your own auto mode and settings, as in your
