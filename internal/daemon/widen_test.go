@@ -8,6 +8,7 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -130,5 +131,35 @@ func TestAnswerWidensOnApproval(t *testing.T) {
 	}
 	if f := feed(); !strings.Contains(f, "scope not widened by the answer to decision "+itoa(d.ID)) {
 		t.Errorf("no refusal line in feed:\n%s", f)
+	}
+}
+
+// Crook may allow the answer and refuse the widening: the answer stands, the scope stays.
+func TestAnswerWidenRefusedByCrook(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, _, la, _ := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	old := widenVerdict
+	widenVerdict = func(context.Context, crook.Action) crook.Verdict {
+		return crook.Verdict{Kind: crook.Refuse, Rule: "test", Reason: "test refusal"}
+	}
+	defer func() { widenVerdict = old }()
+	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: "May I widen the scope to add docs/y.md?", State: store.DecisionOpen})
+	var out store.Decision
+	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "Yes"}, &out); code != http.StatusOK || out.State != store.DecisionAnswered {
+		t.Fatalf("answer: %d %s", code, out.State)
+	}
+	if l, _ := s.Store.Lane(ctx, la.ID); strings.Join(l.Scope, ",") != "a/**" {
+		t.Errorf("scope %v", l.Scope)
+	}
+	items, _ := s.Store.Feed(ctx, 0, 100)
+	found := false
+	for _, it := range items {
+		found = found || strings.Contains(it.Text, "test refusal")
+	}
+	if !found {
+		t.Error("no refusal line in feed")
 	}
 }
