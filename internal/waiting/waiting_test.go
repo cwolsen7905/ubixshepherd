@@ -326,7 +326,7 @@ func TestApprovedWidenKeepsOnlyRepoPaths(t *testing.T) {
 		name, question string
 		want           []string
 	}{
-		{"cluster", "May I widen the scope to add 10.50.18.32, gitlab.brainchurts.com, https://gitlab.brainchurts.com/x/y and lib/new.yaml?", []string{"lib/new.yaml"}},
+		{"cluster", "May I widen the scope to add 192.0.2.32, git.example.com, https://git.example.com/x/y and lib/new.yaml?", []string{"lib/new.yaml"}},
 		{"branch", "May I widen the scope to add origin/dev, lib/notifications.ts and refs/heads/main?", []string{"lib/notifications.ts"}},
 		{"missing dir", "May I widen the scope to add nowhere/at/all.go?", nil},
 	}
@@ -339,7 +339,7 @@ func TestApprovedWidenKeepsOnlyRepoPaths(t *testing.T) {
 	if got := LanePaths(lane, []string{"lib/**", "nowhere/deep/**", "lib/*.ts"}); strings.Join(got, ",") != "lib/**,lib/*.ts" {
 		t.Errorf("LanePaths globs: %v", got)
 	}
-	for _, bad := range []string{"10.50.18.32", "10.0.0.1:8080/x", "gitlab.brainchurts.com", "gitlab.brainchurts.com/a/b", "origin/dev", "refs/heads/x", "https://h/x", "git@h:x/y"} {
+	for _, bad := range []string{"192.0.2.32", "10.0.0.1:8080/x", "git.example.com", "git.example.com/a/b", "origin/dev", "refs/heads/x", "https://h/x", "git@h:x/y"} {
 		if got := SafePaths([]string{bad}); len(got) != 0 {
 			t.Errorf("SafePaths kept %q", bad)
 		}

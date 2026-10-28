@@ -430,14 +430,14 @@ func TestScopeOfferSkipsAddressesHostsAndRefs(t *testing.T) {
 	lane := scopeLane(t, f, "internal/muster/**")
 	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded})
 	d, _ := f.st.CreateDecision(f.ctx, store.Decision{RunID: run.ID,
-		Question: "May I widen scope to add internal/store/x.go? The cluster at 10.50.18.32 and gitlab.brainchurts.com serve it, and I compared against origin/dev."})
+		Question: "May I widen scope to add internal/store/x.go? The cluster at 192.0.2.32 and git.example.com serve it, and I compared against origin/dev."})
 	f.st.AnswerDecision(f.ctx, d.ID, "yes")
 	f.p.Run(f.ctx)
 	it := f.kind(store.MusterOpen, KindLaneScope)
 	if it == nil {
 		t.Fatalf("no scope finding: %+v", f.items(""))
 	}
-	for _, bad := range []string{"10.50.18.32", "gitlab.brainchurts.com", "origin/dev"} {
+	for _, bad := range []string{"192.0.2.32", "git.example.com", "origin/dev"} {
 		if strings.Contains(it.Reason, bad) {
 			t.Errorf("offer names %q: %s", bad, it.Reason)
 		}
