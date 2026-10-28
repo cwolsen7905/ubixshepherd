@@ -118,7 +118,7 @@ func TestAutoWidenCap(t *testing.T) {
 		commitInLane(t, f, file, "feat: "+name)
 		run := endedRun(t, f)
 		lane, _ := f.st.Lane(ctx, f.lane.ID)
-		_, _, got := f.runner.autoWiden(ctx, run, lane, []string{file})
+		_, _, _, got := f.runner.autoWiden(ctx, run, lane, []string{file})
 		if want := name != "d"; got != want {
 			t.Fatalf("%s: widened = %v, want %v\n%s", name, got, want, allFeed(f))
 		}
@@ -217,7 +217,7 @@ func TestWidenCountSurvivesARestart(t *testing.T) {
 	f := widenFixture(t, widens)
 	ctx := context.Background()
 	commitInLane(t, f, "src/b.go", "feat: b")
-	if _, _, ok := f.runner.autoWiden(ctx, endedRun(t, f), f.lane, []string{"src/b.go"}); !ok {
+	if _, _, _, ok := f.runner.autoWiden(ctx, endedRun(t, f), f.lane, []string{"src/b.go"}); !ok {
 		t.Fatal("did not widen")
 	}
 	if n := f.runner.widenCount(ctx, f.lane); n != 1 {
@@ -226,5 +226,40 @@ func TestWidenCountSurvivesARestart(t *testing.T) {
 	f.runner.widens = nil // a new process reads the feed again
 	if n := f.runner.widenCount(ctx, f.lane); n != 1 {
 		t.Errorf("count after restart = %d", n)
+	}
+}
+
+func TestAutoWidenPartialNamesWhatItLeftOut(t *testing.T) {
+	f := widenFixture(t, widens)
+	ctx := context.Background()
+	commitInLane(t, f, "src/b.go", "feat: b")
+	commitInLane(t, f, "src/.env", "feat: env")
+	run := endedRun(t, f)
+	run.Outside = []string{"src/b.go", "src/.env"}
+	if f.runner.autoWidenOutside(ctx, run, f.lane) {
+		t.Fatal("carried the lane on with a protected file still outside scope")
+	}
+	if got := laneScope(t, f); !slices.Equal(got, []string{"src/a.go", "src/b.go"}) {
+		t.Errorf("scope = %v", got)
+	}
+	waitFeed(t, f, "left out, needs an explicit widen: src/.env is protected (**/.env: environment file)")
+	runs, _ := f.st.Runs(ctx, f.lane.ID, "", 5)
+	for _, r := range runs {
+		if strings.Contains(r.Prompt, "scope now includes") {
+			t.Errorf("continued the run: %q", r.Prompt)
+		}
+	}
+}
+
+func TestWidenNoteNamesRefusedFiles(t *testing.T) {
+	lane := store.Lane{Scope: []string{"src/a.go", "src/b.go"}}
+	if got := widenNote([]string{"src/b.go"}, lane, ""); strings.Contains(got, "Not widened") {
+		t.Errorf("note without refusals mentions them: %q", got)
+	}
+	got := widenNote([]string{"src/b.go"}, lane, "src/.env is protected (**/.env: environment file)")
+	for _, want := range []string{"Not widened", "src/.env is protected", "explicit widen"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("note %q lacks %q", got, want)
+		}
 	}
 }
