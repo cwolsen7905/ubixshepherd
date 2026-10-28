@@ -327,9 +327,27 @@ func Save(d *Doc, data []byte) (string, error) {
 }
 
 func backup(path string, cur []byte, mode os.FileMode) error {
-	name := fmt.Sprintf("%s.bak.%s", path, time.Now().UTC().Format("20060102T150405.000"))
-	if err := os.WriteFile(name, cur, mode); err != nil {
-		return err
+	// A save within the same millisecond gets a zero-padded counter suffix, which
+	// sorts after the bare stamp, so names stay unique and sort oldest first.
+	stamp := fmt.Sprintf("%s.bak.%s", path, time.Now().UTC().Format("20060102T150405.000"))
+	name := stamp
+	for n := 1; ; n++ {
+		f, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+		if err == nil {
+			_, werr := f.Write(cur)
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				os.Remove(name)
+				return werr
+			}
+			break
+		}
+		if !os.IsExist(err) {
+			return err
+		}
+		name = fmt.Sprintf("%s.%04d", stamp, n)
 	}
 	old, _ := filepath.Glob(path + ".bak.*")
 	sort.Strings(old)
