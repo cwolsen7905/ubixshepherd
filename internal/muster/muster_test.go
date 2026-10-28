@@ -687,3 +687,21 @@ func TestPassWithNoProbesDoesNotPanic(t *testing.T) {
 		}
 	}
 }
+
+// A sensitive path the question names is not offered; the normal path beside it is.
+func TestScopeOfferHoldsBackSensitivePaths(t *testing.T) {
+	f := newFixture(t)
+	lane := scopeLane(t, f, "internal/muster/**")
+	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded})
+	d, _ := f.st.CreateDecision(f.ctx, store.Decision{RunID: run.ID,
+		Question: "May I widen scope to add internal/store/x.go and internal/store/secrets.go?"})
+	f.st.AnswerDecision(f.ctx, d.ID, "yes")
+	f.p.Run(f.ctx)
+	it := f.kind(store.MusterOpen, KindLaneScope)
+	if it == nil {
+		t.Fatalf("no scope finding: %+v", f.items(""))
+	}
+	if strings.Contains(it.Reason, "secrets.go") || !strings.Contains(it.Reason, "internal/store/x.go") {
+		t.Errorf("offer: %s", it.Reason)
+	}
+}

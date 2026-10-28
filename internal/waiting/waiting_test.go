@@ -350,3 +350,28 @@ func TestApprovedWidenKeepsOnlyRepoPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestSensitivePathsAreHeldBack(t *testing.T) {
+	for _, p := range []string{".gitlab-ci.yml", ".github/workflows/ci.yml", ".github/**", ".git/hooks/pre-push", ".git/**",
+		".githooks/pre-commit", ".husky/pre-push", ".env", ".env.local", "config/.env.prod", "config/secrets.yaml",
+		"lib/aws_credentials.go", "certs/server.pem", "deploy/tls.key"} {
+		if Sensitive(p) == "" {
+			t.Errorf("%q not held back", p)
+		}
+	}
+	for _, p := range []string{"lib/ci.go", "docs/github.md", "lib/keyboard.go", "internal/env/env.go", "README.md", "web/src/key.ts"} {
+		if why := Sensitive(p); why != "" {
+			t.Errorf("%q held back: %s", p, why)
+		}
+	}
+	wt := t.TempDir()
+	for _, d := range []string{"lib", ".github/workflows"} {
+		os.MkdirAll(filepath.Join(wt, d), 0o755)
+	}
+	lane := store.Lane{Worktree: wt, Scope: []string{"cmd/**"}}
+	add, held := WidenPlan(lane, store.Decision{
+		Question: "May I widen the scope to add .github/workflows/ci.yml, lib/secrets.yaml and lib/ok.go?", Answer: "yes"})
+	if strings.Join(add, ",") != "lib/ok.go" || len(held) != 2 || held[0].Path != ".github/workflows/ci.yml" || held[1].Path != "lib/secrets.yaml" {
+		t.Errorf("plan: add %v held %v", add, held)
+	}
+}

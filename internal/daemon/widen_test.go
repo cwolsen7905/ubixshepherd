@@ -242,3 +242,34 @@ type failingLane struct{ store.Store }
 func (failingLane) Lane(context.Context, int64) (store.Lane, error) {
 	return store.Lane{}, errors.New("lane unreadable")
 }
+
+// A sensitive path the question names stays out of the scope and the feed names it and
+// why; the normal path beside it is added.
+func TestAnswerHoldsBackSensitivePaths(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, _, la, _ := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	os.MkdirAll(filepath.Join(la.Worktree, "docs"), 0o755)
+	os.MkdirAll(filepath.Join(la.Worktree, ".github", "workflows"), 0o755)
+	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, State: store.DecisionOpen,
+		Question: "May I widen the scope to add .github/workflows/ci.yml, docs/secrets.md and docs/ok.md?"})
+	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "ok"}, nil); code != http.StatusOK {
+		t.Fatalf("answer: %d", code)
+	}
+	if l, _ := s.Store.Lane(ctx, la.ID); strings.Join(l.Scope, ",") != "a/**,docs/ok.md" {
+		t.Errorf("scope %v", l.Scope)
+	}
+	items, _ := s.Store.Feed(ctx, 0, 100)
+	var feed []string
+	for _, it := range items {
+		feed = append(feed, it.Text)
+	}
+	f := strings.Join(feed, "\n")
+	for _, want := range []string{".github/workflows/ci.yml (CI configuration)", "docs/secrets.md (a secrets-like name)", "+docs/ok.md"} {
+		if !strings.Contains(f, want) {
+			t.Errorf("feed lacks %q:\n%s", want, f)
+		}
+	}
+}

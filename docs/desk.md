@@ -143,7 +143,11 @@ widen the scope (from the web, the CLI or the desk in a turn they started), and 
 whole answer is a bare "yes" or "approve" (a hedged answer such as "yes, except ..." or a
 question that offers a choice is not taken), the daemon adds, before the answer reaches the
 agent, the paths the question names that the lane does not yet cover and that look like repo paths (not an address, host, URL or branch ref, and in a directory the lane's worktree has), as part of the same
-answer, and puts the same feed line in ("scope widened by person: ..."). If another open
+answer, and puts the same feed line in ("scope widened by person: ...").
+
+The one-click widening never adds CI configuration (`.gitlab-ci*`, `.github/`, `.gitlab/`), git internals and hooks (`.git/`, `.githooks/`, `.husky/`), environment files (`.env*`), or names containing `secret` or `credential` or ending in `.pem` or `.key`. Such a path stays out, the other approved paths are still added, and the feed names the path and the reason; use `lane_widen` for it. Muster's scope offers apply the same rule.
+
+If another open
 lane holds an overlapping glob, the answer is still recorded, the lane stays as it was, and
 the feed says why; `lane_widen` is then the way to retry once that lane lets go. Only a
 person's answer triggers this: an agent's token cannot answer a decision.

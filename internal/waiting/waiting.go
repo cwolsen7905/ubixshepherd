@@ -492,14 +492,66 @@ func ApprovesWiden(d store.Decision) bool {
 	return len(words) == 1 && affirmative(words[0])
 }
 
-// ApprovedWiden is the paths the person's answer to a scope-widening decision approved
-// for the lane: those the question names that the scope does not cover and that are safe
-// to add. None when ApprovesWiden is false.
-func ApprovedWiden(l store.Lane, d store.Decision) []string {
-	if !ApprovesWiden(d) {
-		return nil
+// Held is a path a one-click widening leaves out, and why.
+type Held struct{ Path, Reason string }
+
+// Sensitive says why a path is never added by a one-click widening, or "" when it may
+// be: CI configuration, git internals and hooks, and names that look like secrets. Those
+// are widened only by the explicit widen action, where the person sees the paths.
+func Sensitive(p string) string {
+	low := strings.ToLower(strings.TrimPrefix(p, "./"))
+	segs := strings.Split(low, "/")
+	base := segs[len(segs)-1]
+	for i, seg := range segs {
+		switch {
+		case seg == ".git":
+			return "git internals"
+		case seg == ".githooks" || seg == ".husky":
+			return "git hooks"
+		case i == 0 && (seg == ".github" || seg == ".gitlab"):
+			return "CI configuration"
+		}
 	}
-	return LanePaths(l, ScopeMissing(l, d))
+	switch {
+	case strings.HasPrefix(base, ".gitlab-ci"):
+		return "CI configuration"
+	case strings.HasPrefix(base, ".env"):
+		return "an environment file"
+	case strings.Contains(low, "secret"), strings.Contains(low, "credential"):
+		return "a secrets-like name"
+	case strings.HasSuffix(base, ".pem"), strings.HasSuffix(base, ".key"):
+		return "a key file"
+	}
+	return ""
+}
+
+// DropSensitive splits paths into those a one-click widening may add and those it holds.
+func DropSensitive(paths []string) (keep []string, held []Held) {
+	for _, p := range paths {
+		if why := Sensitive(p); why != "" {
+			held = append(held, Held{Path: p, Reason: why})
+			continue
+		}
+		keep = append(keep, p)
+	}
+	return keep, held
+}
+
+// WidenPlan is what the person's approval of a scope-widening decision adds to the lane
+// and the paths it holds back: those the question names that the scope does not cover
+// and that are real repo paths (LanePaths), less the sensitive ones. Nothing is added
+// when ApprovesWiden is false.
+func WidenPlan(l store.Lane, d store.Decision) (add []string, held []Held) {
+	if !ApprovesWiden(d) {
+		return nil, nil
+	}
+	return DropSensitive(LanePaths(l, ScopeMissing(l, d)))
+}
+
+// ApprovedWiden is the paths WidenPlan adds.
+func ApprovedWiden(l store.Lane, d store.Decision) []string {
+	add, _ := WidenPlan(l, d)
+	return add
 }
 
 var negations = []string{"no", "n", "don't", "dont", "deny", "denied", "reject", "rejected", "decline", "never", "keep", "stay", "not"}

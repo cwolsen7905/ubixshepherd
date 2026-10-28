@@ -120,7 +120,16 @@ func (s *Server) widenOnAnswer(r *http.Request, d store.Decision) {
 		s.Log.Warn("scope not widened on approval: lane lookup", "decision", d.ID, "err", err)
 		return
 	}
-	add := waiting.ApprovedWiden(lane, d)
+	add, held := waiting.WidenPlan(lane, d)
+	if len(held) > 0 {
+		var parts []string
+		for _, h := range held {
+			parts = append(parts, h.Path+" ("+h.Reason+")")
+		}
+		s.Log.Warn("scope paths held back on approval", "lane", lane.Name, "decision", d.ID, "paths", parts)
+		s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope not widened by the answer to decision %d for %s: widen those explicitly if you mean them",
+			lane.Name, d.ID, strings.Join(parts, ", ")), lane.ID)
+	}
 	if len(add) == 0 {
 		return
 	}

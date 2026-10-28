@@ -88,7 +88,7 @@ func checkBoard(ctx context.Context, r *run) (int, error) {
 					if l.ID != lid || l.State != store.LaneOpen {
 						continue
 					}
-					missing := waiting.LanePaths(l, waiting.ScopeMissing(l, d))
+					missing, _ := waiting.DropSensitive(waiting.LanePaths(l, waiting.ScopeMissing(l, d)))
 					if len(missing) == 0 {
 						continue
 					}
