@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -60,5 +62,73 @@ func TestWidenLane(t *testing.T) {
 	got, _ := s.Store.Lane(ctx, la.ID)
 	if strings.Join(got.Scope, ",") != "a/**,docs/y.md" {
 		t.Errorf("stored scope %v", got.Scope)
+	}
+}
+
+// Answering a scope decision: the person's approval widens the lane in the same call,
+// an overlap keeps the answer and says why in the feed, and any other answer leaves the
+// scope alone.
+func TestAnswerWidensOnApproval(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, _, la, _ := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	ask := func(q string) store.Decision {
+		d, err := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: q, State: store.DecisionOpen})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	answer := func(d store.Decision, text string) store.Decision {
+		var out store.Decision
+		if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: text}, &out); code != http.StatusOK {
+			t.Fatalf("answer: %d", code)
+		}
+		return out
+	}
+	scope := func() string {
+		l, _ := s.Store.Lane(ctx, la.ID)
+		return strings.Join(l.Scope, ",")
+	}
+	feed := func() string {
+		items, _ := s.Store.Feed(ctx, 0, 100)
+		var all []string
+		for _, it := range items {
+			all = append(all, it.Text)
+		}
+		return strings.Join(all, "\n")
+	}
+
+	// Not an approval: the scope stays.
+	d := ask("May I widen the scope to add docs/n.md?")
+	answer(d, "No, keep it narrow")
+	if got := scope(); got != "a/**" {
+		t.Errorf("declined answer widened the lane: %s", got)
+	}
+
+	// Approval: the lane widens by exactly the named paths, with a feed line.
+	d = ask("May I widen the scope to add docs/y.md?")
+	if got := answer(d, "Yes"); got.State != store.DecisionAnswered {
+		t.Errorf("state %s", got.State)
+	}
+	if got := scope(); got != "a/**,docs/y.md" {
+		t.Errorf("scope after approval: %s", got)
+	}
+	if f := feed(); !strings.Contains(f, "scope widened by person: +docs/y.md (decision "+itoa(d.ID)+")") {
+		t.Errorf("no widen line in feed:\n%s", f)
+	}
+
+	// Another open lane holds the glob: the answer stands, the lane stays, the feed says why.
+	d = ask("May I widen the scope to add b/x.go?")
+	if got := answer(d, "Yes"); got.State != store.DecisionAnswered {
+		t.Errorf("state %s", got.State)
+	}
+	if got := scope(); got != "a/**,docs/y.md" {
+		t.Errorf("overlap widened the lane: %s", got)
+	}
+	if f := feed(); !strings.Contains(f, "scope not widened by the answer to decision "+itoa(d.ID)) {
+		t.Errorf("no refusal line in feed:\n%s", f)
 	}
 }

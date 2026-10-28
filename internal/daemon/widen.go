@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
 
 // widenLane adds globs to an open lane's scope when the person approved them in a
@@ -68,20 +70,55 @@ func (s *Server) widenLane(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Errorf("decision %d was not raised in lane %s", dec.ID, lane.Name))
 		return
 	}
-	lane, err = s.Fold.Rescope(ctx, lane.ID, add, nil)
-	if err != nil {
-		s.foldError(w, err)
-		return
-	}
 	by := "person"
 	if principalOf(ctx).Role == RoleDesk {
 		by = "desk"
 	}
-	s.Log.Info("lane scope widened", "lane", lane.Name, "add", add, "decision", dec.ID, "by", by, "client", clientName(r))
-	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope widened by %s: +%s (decision %d); scope is now %s",
-		lane.Name, by, strings.Join(add, ", "), dec.ID, strings.Join(lane.Scope, ", ")), lane.ID)
-	s.refreshView(lane.RepoID)
+	lane, err = s.applyWiden(ctx, lane, add, dec.ID, by, clientName(r))
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, lane)
+}
+
+// applyWiden widens the lane through the Fold, which judges the overlap with other open
+// lanes, and records the feed line that ties the change to the decision.
+func (s *Server) applyWiden(ctx context.Context, lane store.Lane, add []string, decision int64, by, client string) (store.Lane, error) {
+	lane, err := s.Fold.Rescope(ctx, lane.ID, add, nil)
+	if err != nil {
+		return lane, err
+	}
+	s.Log.Info("lane scope widened", "lane", lane.Name, "add", add, "decision", decision, "by", by, "client", client)
+	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope widened by %s: +%s (decision %d); scope is now %s",
+		lane.Name, by, strings.Join(add, ", "), decision, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.refreshView(lane.RepoID)
+	return lane, nil
+}
+
+// widenOnAnswer widens the asking lane by the paths the person just approved, as part of
+// the answer. A refusal (another open lane holds an overlapping glob) leaves the answer
+// recorded and says why in the feed. Only a person's answer reaches it: answerDecision
+// sits behind personsAnswer.
+func (s *Server) widenOnAnswer(r *http.Request, d store.Decision) {
+	ctx := r.Context()
+	run, err := s.Store.Run(ctx, d.RunID)
+	if err != nil {
+		return
+	}
+	lane, err := s.Store.Lane(ctx, run.LaneID)
+	if err != nil || lane.State != store.LaneOpen {
+		return
+	}
+	add := waiting.ApprovedWiden(lane, d)
+	if len(add) == 0 {
+		return
+	}
+	if _, err := s.applyWiden(ctx, lane, add, d.ID, "person", clientName(r)); err != nil {
+		s.Log.Warn("scope not widened on approval", "lane", lane.Name, "decision", d.ID, "err", err)
+		s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope not widened by the answer to decision %d (+%s): %v; the answer stands",
+			lane.Name, d.ID, strings.Join(add, ", "), err), lane.ID)
+	}
 }
 
 // wireAutoWiden lets the Runner widen a lane's scope by rule through the Fold, which

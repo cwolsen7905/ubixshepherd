@@ -390,6 +390,45 @@ func ScopeMissing(l store.Lane, d store.Decision) []string {
 	return missing
 }
 
+// AsksToWidenScope reads a question as a request to widen a lane's scope only when it
+// says so: it names the scope and a verb that changes it. A question that merely mentions
+// the scope ("is this outside the scope of the task?") is not one.
+func AsksToWidenScope(q string) bool {
+	q = strings.ToLower(q)
+	if !strings.Contains(q, "scope") {
+		return false
+	}
+	for _, v := range []string{"widen", "extend", "expand", "add ", "include", "allow", "grow"} {
+		if strings.Contains(q, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// SafePaths keeps the paths a one-click widening may add: inside the repo, with no
+// parent steps.
+func SafePaths(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// ApprovedWiden is the paths the person's answer to a scope-widening decision approved
+// for the lane: those the question names that the scope does not cover and that are safe
+// to add. None when the question does not ask to widen, or the answer is not an approval.
+func ApprovedWiden(l store.Lane, d store.Decision) []string {
+	if !AsksToWidenScope(d.Question) {
+		return nil
+	}
+	return SafePaths(ScopeMissing(l, d))
+}
+
 var negations = []string{"no", "n", "don't", "dont", "deny", "denied", "reject", "rejected", "decline", "never", "keep", "stay", "not"}
 var affirmatives = []string{"yes", "y", "yep", "yeah", "approve", "approved", "ok", "okay", "go", "widen", "allow", "allowed", "agreed", "agree", "sure", "granted", "accept", "accepted", "do-it", "proceed"}
 

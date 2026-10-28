@@ -1699,6 +1699,7 @@ func (s *Server) answerDecision(w http.ResponseWriter, r *http.Request) {
 		s.foldError(w, err)
 		return
 	}
+	s.widenOnAnswer(r, d)
 	writeJSON(w, http.StatusOK, d)
 }
 

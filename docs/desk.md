@@ -138,6 +138,14 @@ operator's. Each widening is logged by the daemon and put in the feed as "lane X
 widened by desk: +globs (decision N); scope is now ...". The desk should pass only the
 paths the person's answer approved, and the person can check them against the feed.
 
+The person's own answer needs no separate step. When they approve a question that asks to
+widen the scope (from the web, the CLI or the desk in a turn they started), the daemon adds
+the safe paths the question names that the lane does not yet cover, as part of the same
+answer, and puts the same feed line in ("scope widened by person: ..."). If another open
+lane holds an overlapping glob, the answer is still recorded, the lane stays as it was, and
+the feed says why; `lane_widen` is then the way to retry once that lane lets go. Only a
+person's answer triggers this: an agent's token cannot answer a decision.
+
 ## Keep going
 
 [keep-going.md](keep-going.md) describes a mode that lets the desk carry on with what is
