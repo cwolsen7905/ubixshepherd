@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
+	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
 
 // widenLane adds globs to an open lane's scope when the person approved them in a
@@ -68,21 +70,85 @@ func (s *Server) widenLane(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Errorf("decision %d was not raised in lane %s", dec.ID, lane.Name))
 		return
 	}
-	lane, err = s.Fold.Rescope(ctx, lane.ID, add, nil)
-	if err != nil {
-		s.foldError(w, err)
-		return
-	}
 	by := "person"
 	if principalOf(ctx).Role == RoleDesk {
 		by = "desk"
 	}
-	s.Log.Info("lane scope widened", "lane", lane.Name, "add", add, "decision", dec.ID, "by", by, "client", clientName(r))
-	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope widened by %s: +%s (decision %d); scope is now %s",
-		lane.Name, by, strings.Join(add, ", "), dec.ID, strings.Join(lane.Scope, ", ")), lane.ID)
-	s.refreshView(lane.RepoID)
+	lane, err = s.applyWiden(ctx, lane, add, dec.ID, by, clientName(r))
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, lane)
 }
+
+// applyWiden widens the lane through the Fold, which judges the overlap with other open
+// lanes, and records the feed line that ties the change to the decision.
+func (s *Server) applyWiden(ctx context.Context, lane store.Lane, add []string, decision int64, by, client string) (store.Lane, error) {
+	lane, err := s.Fold.Rescope(ctx, lane.ID, add, nil)
+	if err != nil {
+		return lane, err
+	}
+	s.Log.Info("lane scope widened", "lane", lane.Name, "add", add, "decision", decision, "by", by, "client", client)
+	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope widened by %s: +%s (decision %d); scope is now %s",
+		lane.Name, by, strings.Join(add, ", "), decision, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.refreshView(lane.RepoID)
+	return lane, nil
+}
+
+// widenOnAnswer widens the asking lane by the paths the person just approved, as part of
+// the answer. A refusal (another open lane holds an overlapping glob) leaves the answer
+// recorded and says why in the feed. Only a person's answer reaches it: answerDecision
+// sits behind personsAnswer.
+func (s *Server) widenOnAnswer(r *http.Request, d store.Decision) {
+	ctx := r.Context()
+	skip := func(laneName string, laneID int64, add []string, why any) {
+		s.Log.Warn("scope not widened on approval", "lane", laneName, "decision", d.ID, "err", why)
+		s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope not widened by the answer to decision %d (+%s): %v; the answer stands",
+			laneName, d.ID, strings.Join(add, ", "), why), laneID)
+	}
+	if !waiting.ApprovesWiden(d) {
+		return
+	}
+	run, err := s.Store.Run(ctx, d.RunID)
+	if err != nil {
+		s.Log.Warn("scope not widened on approval: run lookup", "decision", d.ID, "err", err)
+		return
+	}
+	lane, err := s.Store.Lane(ctx, run.LaneID)
+	if err != nil {
+		s.Log.Warn("scope not widened on approval: lane lookup", "decision", d.ID, "err", err)
+		return
+	}
+	add, held := waiting.WidenPlan(lane, d)
+	if len(held) > 0 {
+		var parts []string
+		for _, h := range held {
+			parts = append(parts, h.Path+" ("+h.Reason+")")
+		}
+		s.Log.Warn("scope paths held back on approval", "lane", lane.Name, "decision", d.ID, "paths", parts)
+		s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope not widened by the answer to decision %d for %s: widen those explicitly if you mean them",
+			lane.Name, d.ID, strings.Join(parts, ", ")), lane.ID)
+	}
+	if len(add) == 0 {
+		return
+	}
+	if lane.State != store.LaneOpen {
+		skip(lane.Name, lane.ID, add, "the lane is not open")
+		return
+	}
+	// Widening is its own Crook action, as for lane_widen: the verdict must allow both.
+	if v := widenVerdict(ctx, crook.ActionWidenScope); !v.OK() {
+		skip(lane.Name, lane.ID, add, v.Reason)
+		return
+	}
+	if _, err := s.applyWiden(ctx, lane, add, d.ID, "person", clientName(r)); err != nil {
+		skip(lane.Name, lane.ID, add, err)
+	}
+}
+
+// widenVerdict is Crook's verdict on a widening; a variable so a test can refuse one.
+var widenVerdict = personVerdict
 
 // wireAutoWiden lets the Runner widen a lane's scope by rule through the Fold, which
 // judges the overlap with other open lanes. It does so only when the config in force

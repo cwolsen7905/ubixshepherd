@@ -2,11 +2,17 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -60,5 +66,210 @@ func TestWidenLane(t *testing.T) {
 	got, _ := s.Store.Lane(ctx, la.ID)
 	if strings.Join(got.Scope, ",") != "a/**,docs/y.md" {
 		t.Errorf("stored scope %v", got.Scope)
+	}
+}
+
+// Answering a scope decision: the person's approval widens the lane in the same call,
+// an overlap keeps the answer and says why in the feed, and any other answer leaves the
+// scope alone.
+func TestAnswerWidensOnApproval(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, _, la, _ := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	for _, d := range []string{"docs", "b"} {
+		os.MkdirAll(filepath.Join(la.Worktree, d), 0o755)
+	}
+	ask := func(q string) store.Decision {
+		d, err := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: q, State: store.DecisionOpen})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	answer := func(d store.Decision, text string) store.Decision {
+		var out store.Decision
+		if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: text}, &out); code != http.StatusOK {
+			t.Fatalf("answer: %d", code)
+		}
+		return out
+	}
+	scope := func() string {
+		l, _ := s.Store.Lane(ctx, la.ID)
+		return strings.Join(l.Scope, ",")
+	}
+	feed := func() string {
+		items, _ := s.Store.Feed(ctx, 0, 100)
+		var all []string
+		for _, it := range items {
+			all = append(all, it.Text)
+		}
+		return strings.Join(all, "\n")
+	}
+
+	// Not an approval: the scope stays.
+	d := ask("May I widen the scope to add docs/n.md?")
+	answer(d, "No, keep it narrow")
+	if got := scope(); got != "a/**" {
+		t.Errorf("declined answer widened the lane: %s", got)
+	}
+
+	// Hedged, or a question that offers a choice: no widening.
+	d = ask("May I widen the scope to add docs/h.md?")
+	answer(d, "Yes, except docs/h.md")
+	d = ask("Keep the scope at a/** or allow docs/o.md too?")
+	answer(d, "Yes")
+	if got := scope(); got != "a/**" {
+		t.Errorf("hedged or choice widened the lane: %s", got)
+	}
+
+	// Approval: the lane widens by exactly the named paths, with a feed line.
+	d = ask("May I widen the scope to add docs/y.md?")
+	if got := answer(d, "Yes"); got.State != store.DecisionAnswered {
+		t.Errorf("state %s", got.State)
+	}
+	if got := scope(); got != "a/**,docs/y.md" {
+		t.Errorf("scope after approval: %s", got)
+	}
+	if f := feed(); !strings.Contains(f, "scope widened by person: +docs/y.md (decision "+itoa(d.ID)+")") {
+		t.Errorf("no widen line in feed:\n%s", f)
+	}
+
+	// Another open lane holds the glob: the answer stands, the lane stays, the feed says why.
+	d = ask("May I widen the scope to add b/x.go?")
+	if got := answer(d, "Yes"); got.State != store.DecisionAnswered {
+		t.Errorf("state %s", got.State)
+	}
+	if got := scope(); got != "a/**,docs/y.md" {
+		t.Errorf("overlap widened the lane: %s", got)
+	}
+	if f := feed(); !strings.Contains(f, "scope not widened by the answer to decision "+itoa(d.ID)) {
+		t.Errorf("no refusal line in feed:\n%s", f)
+	}
+}
+
+// Crook may allow the answer and refuse the widening: the answer stands, the scope stays.
+func TestAnswerWidenRefusedByCrook(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, _, la, _ := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	old := widenVerdict
+	widenVerdict = func(context.Context, crook.Action) crook.Verdict {
+		return crook.Verdict{Kind: crook.Refuse, Rule: "test", Reason: "test refusal"}
+	}
+	defer func() { widenVerdict = old }()
+	os.MkdirAll(filepath.Join(la.Worktree, "docs"), 0o755)
+	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: "May I widen the scope to add docs/y.md?", State: store.DecisionOpen})
+	var out store.Decision
+	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "Yes"}, &out); code != http.StatusOK || out.State != store.DecisionAnswered {
+		t.Fatalf("answer: %d %s", code, out.State)
+	}
+	if l, _ := s.Store.Lane(ctx, la.ID); strings.Join(l.Scope, ",") != "a/**" {
+		t.Errorf("scope %v", l.Scope)
+	}
+	items, _ := s.Store.Feed(ctx, 0, 100)
+	found := false
+	for _, it := range items {
+		found = found || strings.Contains(it.Text, "test refusal")
+	}
+	if !found {
+		t.Error("no refusal line in feed")
+	}
+}
+
+// A scope approval the daemon cannot act on: the lane is closed (the feed says so), or the
+// run cannot be read (only logged; the question never was shown to be about a lane). The
+// answer stands in both.
+func TestAnswerWidenSkips(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, b, la, lb := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	os.MkdirAll(filepath.Join(la.Worktree, "docs"), 0o755)
+	os.MkdirAll(filepath.Join(lb.Worktree, "docs"), 0o755)
+	feed := func() string {
+		items, _ := s.Store.Feed(ctx, 0, 100)
+		var all []string
+		for _, it := range items {
+			all = append(all, it.Text)
+		}
+		return strings.Join(all, "\n")
+	}
+	q := "May I widen the scope to add docs/y.md?"
+
+	// Lane not open.
+	if err := s.Store.SetLaneState(ctx, la.ID, store.LaneClosed); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: q, State: store.DecisionOpen})
+	var out store.Decision
+	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "yes"}, &out); code != http.StatusOK || out.State != store.DecisionAnswered {
+		t.Fatalf("answer: %d %s", code, out.State)
+	}
+	if l, _ := s.Store.Lane(ctx, la.ID); strings.Join(l.Scope, ",") != "a/**" {
+		t.Errorf("closed lane widened: %v", l.Scope)
+	}
+	if f := feed(); !strings.Contains(f, "the lane is not open") {
+		t.Errorf("no not-open line in feed:\n%s", f)
+	}
+
+	// Lane lookup fails (the daemon's store only; the runner keeps the real one): logged,
+	// no feed line, answer stands.
+	before := feed()
+	real := s.Store
+	s.Store = failingLane{Store: real}
+	d2, _ := real.CreateDecision(ctx, store.Decision{RunID: b.ID, Question: q, State: store.DecisionOpen})
+	call(t, ts, person, "POST", api.PathDecisionAnswer(d2.ID), api.Answer{Answer: "yes"}, nil)
+	s.Store = real
+	if got, _ := real.Decision(ctx, d2.ID); got.State != store.DecisionAnswered {
+		t.Fatalf("answer with a lane lookup failure: %s", got.State)
+	}
+	if got := feed(); got != before {
+		t.Errorf("lookup failure wrote to the feed:\n%s", got)
+	}
+	if l, _ := real.Lane(ctx, lb.ID); strings.Join(l.Scope, ",") != "b/**" {
+		t.Errorf("lane changed: %v", l.Scope)
+	}
+}
+
+// failingLane is a store whose Lane lookup fails.
+type failingLane struct{ store.Store }
+
+func (failingLane) Lane(context.Context, int64) (store.Lane, error) {
+	return store.Lane{}, errors.New("lane unreadable")
+}
+
+// A sensitive path the question names stays out of the scope and the feed names it and
+// why; the normal path beside it is added.
+func TestAnswerHoldsBackSensitivePaths(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, _, la, _ := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	os.MkdirAll(filepath.Join(la.Worktree, "docs"), 0o755)
+	os.MkdirAll(filepath.Join(la.Worktree, ".github", "workflows"), 0o755)
+	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, State: store.DecisionOpen,
+		Question: "May I widen the scope to add .github/workflows/ci.yml, docs/secrets.md and docs/ok.md?"})
+	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "ok"}, nil); code != http.StatusOK {
+		t.Fatalf("answer: %d", code)
+	}
+	if l, _ := s.Store.Lane(ctx, la.ID); strings.Join(l.Scope, ",") != "a/**,docs/ok.md" {
+		t.Errorf("scope %v", l.Scope)
+	}
+	items, _ := s.Store.Feed(ctx, 0, 100)
+	var feed []string
+	for _, it := range items {
+		feed = append(feed, it.Text)
+	}
+	f := strings.Join(feed, "\n")
+	for _, want := range []string{".github/workflows/ci.yml (CI configuration)", "docs/secrets.md (a secrets-like name)", "+docs/ok.md"} {
+		if !strings.Contains(f, want) {
+			t.Errorf("feed lacks %q:\n%s", want, f)
+		}
 	}
 }

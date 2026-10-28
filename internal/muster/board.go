@@ -88,7 +88,7 @@ func checkBoard(ctx context.Context, r *run) (int, error) {
 					if l.ID != lid || l.State != store.LaneOpen {
 						continue
 					}
-					missing := safePaths(waiting.ScopeMissing(l, d))
+					missing, _ := waiting.DropSensitive(waiting.LanePaths(l, waiting.ScopeMissing(l, d)))
 					if len(missing) == 0 {
 						continue
 					}
@@ -211,31 +211,8 @@ func (r *run) checkLane(ctx context.Context, rp store.Repo, l store.Lane, activi
 	return n, nil
 }
 
-// asksToWidenScope reads a question as a request to widen a lane's scope only when it
-// says so: it names the scope and a verb that changes it. A question that merely mentions
-// the scope ("is this outside the scope of the task?") is not one.
-func asksToWidenScope(q string) bool {
-	q = strings.ToLower(q)
-	if !strings.Contains(q, "scope") {
-		return false
-	}
-	for _, v := range []string{"widen", "extend", "expand", "add ", "include", "allow", "grow"} {
-		if strings.Contains(q, v) {
-			return true
-		}
-	}
-	return false
-}
+// asksToWidenScope and safePaths are the waiting package's rules, shared with the
+// daemon's widen-on-approve.
+func asksToWidenScope(q string) bool { return waiting.AsksToWidenScope(q) }
 
-// safePaths keeps the paths a one-click widening may add: inside the repo, with no
-// parent steps.
-func safePaths(paths []string) []string {
-	var out []string
-	for _, p := range paths {
-		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
+func safePaths(paths []string) []string { return waiting.SafePaths(paths) }

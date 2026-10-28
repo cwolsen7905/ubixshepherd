@@ -7,6 +7,9 @@ package waiting
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -388,6 +391,167 @@ func ScopeMissing(l store.Lane, d store.Decision) []string {
 		}
 	}
 	return missing
+}
+
+// AsksToWidenScope reads a question as a request to widen a lane's scope only when it
+// says so: it names the scope and a verb that changes it. A question that merely mentions
+// the scope ("is this outside the scope of the task?") is not one.
+func AsksToWidenScope(q string) bool {
+	q = strings.ToLower(q)
+	if !strings.Contains(q, "scope") {
+		return false
+	}
+	for _, v := range []string{"widen", "extend", "expand", "add ", "include", "allow", "grow"} {
+		if strings.Contains(q, v) {
+			return true
+		}
+	}
+	return false
+}
+
+// SafePaths keeps the paths a one-click widening may add: inside the repo, with no
+// parent steps, and shaped like a repo path or glob. IP addresses, hostnames, URLs and
+// remote or branch refs (origin/dev) are not.
+func SafePaths(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") || !pathShaped(p) {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+var (
+	ipv4    = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}(:\d+)?(/.*)?$`)
+	refRoot = map[string]bool{"origin": true, "upstream": true, "remotes": true, "refs": true, "head": true, "fetch_head": true}
+	// tlds are the endings that make a dotted word a hostname rather than a file name.
+	tlds = map[string]bool{"com": true, "org": true, "net": true, "io": true, "dev": true, "app": true, "local": true,
+		"internal": true, "lan": true, "edu": true, "gov": true, "co": true, "cloud": true, "ai": true}
+)
+
+// pathShaped is false for what a question names that is not a file: an address, a host
+// (alone or leading a path), a URL or a ref.
+func pathShaped(p string) bool {
+	if strings.Contains(p, "://") || strings.Contains(p, "@") || ipv4.MatchString(p) {
+		return false
+	}
+	first, _, slash := strings.Cut(p, "/")
+	if refRoot[strings.ToLower(first)] && slash {
+		return false
+	}
+	if i := strings.LastIndex(first, "."); i > 0 && strings.Count(first, ".") >= 1 && tlds[strings.ToLower(first[i+1:])] && (slash || strings.Count(first, ".") >= 2) {
+		return false
+	}
+	return true
+}
+
+// LanePaths is SafePaths further limited to what is in the lane's repo: the path (or the
+// directory a glob starts in) exists in the worktree, or for a new file its directory
+// does. That drops a name that has the shape of a path but is not one.
+func LanePaths(l store.Lane, paths []string) []string {
+	var out []string
+	for _, p := range SafePaths(paths) {
+		dir := p
+		if i := strings.IndexAny(dir, "*?["); i >= 0 {
+			dir = dir[:i]
+			dir = dir[:strings.LastIndex(dir, "/")+1]
+		}
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" {
+			out = append(out, p)
+			continue
+		}
+		full := filepath.Join(l.Worktree, filepath.FromSlash(dir))
+		if _, err := os.Stat(full); err != nil {
+			if _, err := os.Stat(filepath.Dir(full)); err != nil {
+				continue
+			}
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// ApprovesWiden reads a decision as the person's approval of one explicit widening: the
+// question proposes it without offering an alternative, and the whole answer is one bare
+// affirmative word. A hedged answer ("yes, except ...") or a question that offers a choice
+// is left to the explicit widen action.
+func ApprovesWiden(d store.Decision) bool {
+	if !AsksToWidenScope(d.Question) {
+		return false
+	}
+	q := strings.ToLower(d.Question)
+	for _, alt := range []string{" or ", "instead", "keep "} {
+		if strings.Contains(q, alt) {
+			return false
+		}
+	}
+	words := strings.Fields(strings.ToLower(strings.Trim(d.Answer, " \t\n*_`\"'.!")))
+	return len(words) == 1 && affirmative(words[0])
+}
+
+// Held is a path a one-click widening leaves out, and why.
+type Held struct{ Path, Reason string }
+
+// Sensitive says why a path is never added by a one-click widening, or "" when it may
+// be: CI configuration, git internals and hooks, and names that look like secrets. Those
+// are widened only by the explicit widen action, where the person sees the paths.
+func Sensitive(p string) string {
+	low := strings.ToLower(strings.TrimPrefix(p, "./"))
+	segs := strings.Split(low, "/")
+	base := segs[len(segs)-1]
+	for i, seg := range segs {
+		switch {
+		case seg == ".git":
+			return "git internals"
+		case seg == ".githooks" || seg == ".husky":
+			return "git hooks"
+		case i == 0 && (seg == ".github" || seg == ".gitlab"):
+			return "CI configuration"
+		}
+	}
+	switch {
+	case strings.HasPrefix(base, ".gitlab-ci"):
+		return "CI configuration"
+	case strings.HasPrefix(base, ".env"):
+		return "an environment file"
+	case strings.Contains(low, "secret"), strings.Contains(low, "credential"):
+		return "a secrets-like name"
+	case strings.HasSuffix(base, ".pem"), strings.HasSuffix(base, ".key"):
+		return "a key file"
+	}
+	return ""
+}
+
+// DropSensitive splits paths into those a one-click widening may add and those it holds.
+func DropSensitive(paths []string) (keep []string, held []Held) {
+	for _, p := range paths {
+		if why := Sensitive(p); why != "" {
+			held = append(held, Held{Path: p, Reason: why})
+			continue
+		}
+		keep = append(keep, p)
+	}
+	return keep, held
+}
+
+// WidenPlan is what the person's approval of a scope-widening decision adds to the lane
+// and the paths it holds back: those the question names that the scope does not cover
+// and that are real repo paths (LanePaths), less the sensitive ones. Nothing is added
+// when ApprovesWiden is false.
+func WidenPlan(l store.Lane, d store.Decision) (add []string, held []Held) {
+	if !ApprovesWiden(d) {
+		return nil, nil
+	}
+	return DropSensitive(LanePaths(l, ScopeMissing(l, d)))
+}
+
+// ApprovedWiden is the paths WidenPlan adds.
+func ApprovedWiden(l store.Lane, d store.Decision) []string {
+	add, _ := WidenPlan(l, d)
+	return add
 }
 
 var negations = []string{"no", "n", "don't", "dont", "deny", "denied", "reject", "rejected", "decline", "never", "keep", "stay", "not"}

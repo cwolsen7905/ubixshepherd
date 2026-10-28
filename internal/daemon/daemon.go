@@ -1694,7 +1694,8 @@ func (s *Server) answerDecision(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	d, err := s.Runner.Answer(r.Context(), id, req.Answer)
+	// A scope approval widens the lane before the answer reaches the agent.
+	d, err := s.Runner.AnswerThen(r.Context(), id, req.Answer, func(d store.Decision) { s.widenOnAnswer(r, d) })
 	if err != nil {
 		s.foldError(w, err)
 		return

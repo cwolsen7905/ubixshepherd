@@ -11,6 +11,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- Approving a scope decision widens the lane in the same answer, with no separate
+  `lane_widen` step. The paths the question names are added when the person approves; if
+  another open lane holds an overlapping glob the answer stands, the lane stays narrow and
+  the feed says why. CI configuration, git internals and hooks, and secrets-like paths are
+  never added this way. See [docs/desk.md](docs/desk.md).
 - A repo can set `agents: [claude]` to limit which agent CLIs may start runs in it. The
   daemon refuses any other agent, including on a continued run, with an error naming the
   repo and its allowed agents. Unset allows all; unknown names are rejected at load.

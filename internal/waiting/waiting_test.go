@@ -311,3 +311,67 @@ func TestMergedArtifactItemsAreProducedOnce(t *testing.T) {
 		t.Errorf("after AddItems: %+v / %q", w.Counts, w.Line())
 	}
 }
+
+// What a scope question names that is not a file is never offered as a path: the texts
+// below follow two real decisions that listed an address, a host and a branch ref.
+func TestApprovedWidenKeepsOnlyRepoPaths(t *testing.T) {
+	wt := t.TempDir()
+	for _, d := range []string{"lib", "deploy"} {
+		if err := os.MkdirAll(filepath.Join(wt, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lane := store.Lane{Worktree: wt, Scope: []string{"deploy/**"}}
+	cases := []struct {
+		name, question string
+		want           []string
+	}{
+		{"cluster", "May I widen the scope to add 192.0.2.32, git.example.com, https://git.example.com/x/y and lib/new.yaml?", []string{"lib/new.yaml"}},
+		{"branch", "May I widen the scope to add origin/dev, lib/notifications.ts and refs/heads/main?", []string{"lib/notifications.ts"}},
+		{"missing dir", "May I widen the scope to add nowhere/at/all.go?", nil},
+	}
+	for _, c := range cases {
+		got := ApprovedWiden(lane, store.Decision{Question: c.question, Answer: "yes"})
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	if got := LanePaths(lane, []string{"lib/**", "nowhere/deep/**", "lib/*.ts"}); strings.Join(got, ",") != "lib/**,lib/*.ts" {
+		t.Errorf("LanePaths globs: %v", got)
+	}
+	for _, bad := range []string{"192.0.2.32", "10.0.0.1:8080/x", "git.example.com", "git.example.com/a/b", "origin/dev", "refs/heads/x", "https://h/x", "git@h:x/y"} {
+		if got := SafePaths([]string{bad}); len(got) != 0 {
+			t.Errorf("SafePaths kept %q", bad)
+		}
+	}
+	for _, ok := range []string{"README.md", "foo.test.ts", "lib/a.go", "internal/**", "docs/x.md"} {
+		if got := SafePaths([]string{ok}); len(got) != 1 {
+			t.Errorf("SafePaths dropped %q", ok)
+		}
+	}
+}
+
+func TestSensitivePathsAreHeldBack(t *testing.T) {
+	for _, p := range []string{".gitlab-ci.yml", ".github/workflows/ci.yml", ".github/**", ".git/hooks/pre-push", ".git/**",
+		".githooks/pre-commit", ".husky/pre-push", ".env", ".env.local", "config/.env.prod", "config/secrets.yaml",
+		"lib/aws_credentials.go", "certs/server.pem", "deploy/tls.key"} {
+		if Sensitive(p) == "" {
+			t.Errorf("%q not held back", p)
+		}
+	}
+	for _, p := range []string{"lib/ci.go", "docs/github.md", "lib/keyboard.go", "internal/env/env.go", "README.md", "web/src/key.ts"} {
+		if why := Sensitive(p); why != "" {
+			t.Errorf("%q held back: %s", p, why)
+		}
+	}
+	wt := t.TempDir()
+	for _, d := range []string{"lib", ".github/workflows"} {
+		os.MkdirAll(filepath.Join(wt, d), 0o755)
+	}
+	lane := store.Lane{Worktree: wt, Scope: []string{"cmd/**"}}
+	add, held := WidenPlan(lane, store.Decision{
+		Question: "May I widen the scope to add .github/workflows/ci.yml, lib/secrets.yaml and lib/ok.go?", Answer: "yes"})
+	if strings.Join(add, ",") != "lib/ok.go" || len(held) != 2 || held[0].Path != ".github/workflows/ci.yml" || held[1].Path != "lib/secrets.yaml" {
+		t.Errorf("plan: add %v held %v", add, held)
+	}
+}
