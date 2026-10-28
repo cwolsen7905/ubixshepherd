@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ApiError, config as configApi, daemonInfo, history } from '../api/client'
 import type { RunRecord, ConfigDoc, ConfigField, ConfigPreview, ConfigRefusal, ConfigRisk, StatusDetail } from '../api/types'
 import { clockTime, since, usd } from '../format'
@@ -13,6 +13,8 @@ import { Button, Chip, ErrorState, LoadingRows } from '../ui'
 import { Confirm } from '../ui/Confirm'
 import { Kbd } from '../ui/Kbd'
 import { StatusGlyph } from '../ui/StatusGlyph'
+import { readTheme, setTheme, subscribeTheme, THEMES } from '../theme/theme'
+export { THEME_KEY } from '../theme/theme'
 import './Settings.css'
 
 const RISK_HINT = 'Raising this gives agents more power; saving asks you to confirm.'
@@ -207,27 +209,6 @@ function DeleteProject({ name, repos, onDelete }: { name: string; repos: string[
 }
 
 // ---- The view: sections of staged rows, then the diff bar. ----
-
-export type Theme = 'system' | 'light' | 'dark'
-export const THEME_KEY = 'sh-theme'
-const THEMES: [Theme, string][] = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']]
-
-export function readTheme(): Theme {
-  try {
-    const v = window.localStorage.getItem(THEME_KEY)
-    return v === 'light' || v === 'dark' ? v : 'system'
-  } catch {
-    return 'system'
-  }
-}
-
-/** System leaves the choice to the OS (no attribute); light and dark force it. This browser only. */
-export function applyTheme(t: Theme) {
-  if (t === 'system') document.documentElement.removeAttribute('data-theme')
-  else document.documentElement.setAttribute('data-theme', t)
-}
-// The page that sets a theme is not the page that first shows one: apply the remembered choice as this module loads.
-if (typeof document !== 'undefined') applyTheme(readTheme())
 
 const AGENTS = ['claude', 'copilot', 'cursor', 'opencode']
 
@@ -479,7 +460,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
   const [addedProjects, setAddedProjects] = useState<string[]>([])
   const [newProject, setNewProject] = useState('')
   const [projectProblem, setProjectProblem] = useState<string | null>(null)
-  const [theme, setTheme] = useState<Theme>(readTheme)
+  const theme = useSyncExternalStore(subscribeTheme, readTheme)
   const [forge, setForge] = useState<StatusDetail['forge'] | 'unknown' | undefined>(undefined)
   const [workspaces, setWorkspaces] = useState<{ id: number; name: string }[]>([])
   const [holds, setHolds] = useState<{ agent: string; until: string }[]>([])
@@ -727,15 +708,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
 
           <h2>Appearance</h2>
           <SettingRow name="theme" label="Theme" desc="This browser only. Applies now, outside Save.">
-            <Segmented label="Theme" value={theme} options={THEMES} onPick={(t) => {
-              setTheme(t)
-              applyTheme(t)
-              try {
-                window.localStorage.setItem(THEME_KEY, t)
-              } catch {
-                /* a browser that will not remember keeps the choice for this page only */
-              }
-            }} />
+            <Segmented label="Theme" value={theme} options={THEMES} onPick={setTheme} />
           </SettingRow>
 
           <h2>Keyboard</h2>
