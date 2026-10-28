@@ -19,8 +19,9 @@ const widenMark = " scope auto-widened: "
 // opted in and autowiden.Decide allows it. The Fold does the widening (Runner.Rescope),
 // so scope leases are judged as for the person's widen. It records the widening in the
 // feed and returns the lane, the files added and, in words, the requested files the rule
-// refused as protected (the rest was still widened); ok is false when nothing changed, and
-// then the request goes to the person as before.
+// refused as protected (the rest was still widened, if any); ok is false when nothing
+// changed, and then the request goes to the person as before, with the refusals, if any,
+// in the feed.
 func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, files []string) (store.Lane, []string, string, bool) {
 	if r.Rescope == nil || len(files) == 0 {
 		return lane, nil, "", false
@@ -56,7 +57,14 @@ func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, 
 	})
 	if !v.OK {
 		r.Log.Info("auto-widen declined", "lane", lane.Name, "run", run.ID, "why", v.Reason, "refused", len(v.Refused))
-		return lane, nil, "", false
+		refused := v.Describe()
+		if refused != "" {
+			// Nothing was widened, but the person and the desk are told why, so an explicit
+			// widen can follow. Not widenMark: this is not an auto-widen and must not count as one.
+			r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s: the auto-widen declined (run %d); left out, needs an explicit widen: %s",
+				lane.Name, run.ID, refused)
+		}
+		return lane, nil, refused, false
 	}
 	next, err := r.Rescope(ctx, lane.ID, v.Files, nil)
 	if err != nil {

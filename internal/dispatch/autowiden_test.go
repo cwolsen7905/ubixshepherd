@@ -263,3 +263,24 @@ func TestWidenNoteNamesRefusedFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoWidenDeclineNamesProtectedFiles(t *testing.T) {
+	f := widenFixture(t, widens)
+	ctx := context.Background()
+	commitInLane(t, f, "src/.env", "feat: env")
+	run := endedRun(t, f)
+	_, files, refused, ok := f.runner.autoWiden(ctx, run, f.lane, []string{"src/.env"})
+	if ok || len(files) != 0 {
+		t.Fatalf("widened a protected file: %v", files)
+	}
+	for _, want := range []string{"src/.env is protected", "**/.env", "environment file"} {
+		if !strings.Contains(refused, want) {
+			t.Errorf("refusal %q lacks %q", refused, want)
+		}
+	}
+	waitFeed(t, f, "the auto-widen declined")
+	waitFeed(t, f, "needs an explicit widen: src/.env is protected")
+	if f.runner.widenCount(ctx, f.lane) != 0 {
+		t.Error("a decline counted as an auto-widen")
+	}
+}
