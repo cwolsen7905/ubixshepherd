@@ -228,3 +228,18 @@ func TestRepoProtectedReasonIsNamed(t *testing.T) {
 		t.Errorf("verdict = %+v", v)
 	}
 }
+
+func TestProtectedFilesDoNotCountTowardTheCap(t *testing.T) {
+	in := base()
+	in.MaxFiles = 2
+	in.Files = []string{"internal/foo/a.go", "internal/foo/b.go", "internal/foo/.env", "internal/foo/server.pem"}
+	v := Decide(in)
+	if !v.OK || len(v.Files) != 2 || len(v.Refused) != 2 {
+		t.Fatalf("verdict = %+v", v)
+	}
+	in.Files = append(in.Files, "internal/foo/c.go")
+	v = Decide(in)
+	if v.OK || !strings.Contains(v.Reason, "more than the 2") || len(v.Refused) != 2 {
+		t.Errorf("over the cap on allowed files: %+v", v)
+	}
+}

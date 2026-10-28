@@ -146,9 +146,6 @@ func Decide(in Input) Verdict {
 	if len(need) == 0 {
 		return no("the files are already in scope")
 	}
-	if len(need) > max {
-		return no("%d files is more than the %d an auto-widen may add", len(need), max)
-	}
 	rules := append([]Rule{}, Denylist...)
 	for _, g := range in.Protected {
 		rules = append(rules, Rule{g, "protected by the repo's widen_protected"})
@@ -164,6 +161,12 @@ func Decide(in Input) Verdict {
 	}
 	if len(allowed) == 0 {
 		v := no("%s; they need an explicit widen", describe(refused))
+		v.Refused = refused
+		return v
+	}
+	// The cap counts what would be added; protected files are named, not counted.
+	if len(allowed) > max {
+		v := no("%d files is more than the %d an auto-widen may add", len(allowed), max)
 		v.Refused = refused
 		return v
 	}
