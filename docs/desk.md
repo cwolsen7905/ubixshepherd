@@ -139,8 +139,10 @@ widened by desk: +globs (decision N); scope is now ...". The desk should pass on
 paths the person's answer approved, and the person can check them against the feed.
 
 The person's own answer needs no separate step. When they approve a question that asks to
-widen the scope (from the web, the CLI or the desk in a turn they started), the daemon adds
-the safe paths the question names that the lane does not yet cover, as part of the same
+widen the scope (from the web, the CLI or the desk in a turn they started), and the
+whole answer is a bare "yes" or "approve" (a hedged answer such as "yes, except ..." or a
+question that offers a choice is not taken), the daemon adds, before the answer reaches the
+agent, the safe paths the question names that the lane does not yet cover, as part of the same
 answer, and puts the same feed line in ("scope widened by person: ..."). If another open
 lane holds an overlapping glob, the answer is still recorded, the lane stays as it was, and
 the feed says why; `lane_widen` is then the way to retry once that lane lets go. Only a

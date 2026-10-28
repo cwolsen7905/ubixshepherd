@@ -892,6 +892,12 @@ func (r *Runner) recordUsage(ctx context.Context, run store.Run, p *proc) store.
 // Answer records a person's answer to a decision and carries it back into the asking
 // agent's session: at once if the agent has ended its turn, or when its run ends.
 func (r *Runner) Answer(ctx context.Context, id int64, answer string) (store.Decision, error) {
+	return r.AnswerThen(ctx, id, answer, nil)
+}
+
+// AnswerThen is Answer with a step that runs once the answer is recorded and before it is
+// delivered, so what the answer changes (a widened scope) is in place when the agent acts.
+func (r *Runner) AnswerThen(ctx context.Context, id int64, answer string, before func(store.Decision)) (store.Decision, error) {
 	if strings.TrimSpace(answer) == "" {
 		return store.Decision{}, refuse("an answer cannot be empty")
 	}
@@ -901,6 +907,9 @@ func (r *Runner) Answer(ctx context.Context, id int64, answer string) (store.Dec
 	}
 	if err != nil {
 		return d, err
+	}
+	if before != nil {
+		before(d)
 	}
 	return r.deliver(ctx, d)
 }

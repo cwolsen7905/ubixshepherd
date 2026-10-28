@@ -109,6 +109,15 @@ func TestAnswerWidensOnApproval(t *testing.T) {
 		t.Errorf("declined answer widened the lane: %s", got)
 	}
 
+	// Hedged, or a question that offers a choice: no widening.
+	d = ask("May I widen the scope to add docs/h.md?")
+	answer(d, "Yes, except docs/h.md")
+	d = ask("Keep the scope at a/** or allow docs/o.md too?")
+	answer(d, "Yes")
+	if got := scope(); got != "a/**" {
+		t.Errorf("hedged or choice widened the lane: %s", got)
+	}
+
 	// Approval: the lane widens by exactly the named paths, with a feed line.
 	d = ask("May I widen the scope to add docs/y.md?")
 	if got := answer(d, "Yes"); got.State != store.DecisionAnswered {

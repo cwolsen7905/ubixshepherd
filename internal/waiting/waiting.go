@@ -419,11 +419,29 @@ func SafePaths(paths []string) []string {
 	return out
 }
 
+// ApprovesWiden reads a decision as the person's approval of one explicit widening: the
+// question proposes it without offering an alternative, and the whole answer is one bare
+// affirmative word. A hedged answer ("yes, except ...") or a question that offers a choice
+// is left to the explicit widen action.
+func ApprovesWiden(d store.Decision) bool {
+	if !AsksToWidenScope(d.Question) {
+		return false
+	}
+	q := strings.ToLower(d.Question)
+	for _, alt := range []string{" or ", "instead", "keep "} {
+		if strings.Contains(q, alt) {
+			return false
+		}
+	}
+	words := strings.Fields(strings.ToLower(strings.Trim(d.Answer, " \t\n*_`\"'.!")))
+	return len(words) == 1 && affirmative(words[0])
+}
+
 // ApprovedWiden is the paths the person's answer to a scope-widening decision approved
 // for the lane: those the question names that the scope does not cover and that are safe
-// to add. None when the question does not ask to widen, or the answer is not an approval.
+// to add. None when ApprovesWiden is false.
 func ApprovedWiden(l store.Lane, d store.Decision) []string {
-	if !AsksToWidenScope(d.Question) {
+	if !ApprovesWiden(d) {
 		return nil
 	}
 	return SafePaths(ScopeMissing(l, d))

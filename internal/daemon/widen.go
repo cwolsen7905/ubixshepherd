@@ -107,14 +107,17 @@ func (s *Server) widenOnAnswer(r *http.Request, d store.Decision) {
 		s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope not widened by the answer to decision %d (+%s): %v; the answer stands",
 			laneName, d.ID, strings.Join(add, ", "), why), laneID)
 	}
+	if !waiting.ApprovesWiden(d) {
+		return
+	}
 	run, err := s.Store.Run(ctx, d.RunID)
 	if err != nil {
-		skip("of run "+strconv.FormatInt(d.RunID, 10), 0, nil, err)
+		s.Log.Warn("scope not widened on approval: run lookup", "decision", d.ID, "err", err)
 		return
 	}
 	lane, err := s.Store.Lane(ctx, run.LaneID)
 	if err != nil {
-		skip("of run "+strconv.FormatInt(d.RunID, 10), 0, nil, err)
+		s.Log.Warn("scope not widened on approval: lane lookup", "decision", d.ID, "err", err)
 		return
 	}
 	add := waiting.ApprovedWiden(lane, d)
