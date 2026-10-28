@@ -9,6 +9,13 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preload" href="/fonts/IBMPlexSans-Regular-latin.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/IBMPlexMono-Regular-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <script>
+      // Apply the remembered theme before first paint. System sets nothing: the tokens follow the OS.
+      try {
+        var t = localStorage.getItem('sh-theme')
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    </script>
     <title>Shepherd</title>
   </head>
   <body>

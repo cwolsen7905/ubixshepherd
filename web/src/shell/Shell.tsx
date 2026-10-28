@@ -3,6 +3,7 @@ import { href, type Route } from '../router'
 import type { Status, Waiting } from '../api/types'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SessionBanner } from '../session/SessionBanner'
+import { ThemeMenu } from './ThemeMenu'
 import { Sidebar } from './Sidebar'
 import { StatusCounts, CountList } from './StatusCounts'
 import { type CountKind, type PopItem } from './statusItems'
@@ -146,8 +147,10 @@ export function Shell({
                 {waitingCount} waiting
               </a>
             )}
+            <ThemeMenu />
           </header>
         )}
+        {!compact && <ThemeMenu />}
         {banner}
         <main id="main" className="main sh-main" tabIndex={-1}>
           <ErrorBoundary region="This page" resetKey={window.location.hash}>
