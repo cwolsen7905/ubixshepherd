@@ -18,26 +18,28 @@ const widenMark = " scope auto-widened: "
 // autoWiden widens the run's lane by rule, for the files the run needs, if the repo
 // opted in and autowiden.Decide allows it. The Fold does the widening (Runner.Rescope),
 // so scope leases are judged as for the person's widen. It records the widening in the
-// feed and returns the lane and the files added; ok is false when nothing changed, and
-// then the request goes to the person as before.
-func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, files []string) (store.Lane, []string, bool) {
+// feed and returns the lane, the files added and, in words, the requested files the rule
+// refused as protected (the rest was still widened, if any); ok is false when nothing
+// changed, and then the request goes to the person as before, with the refusals, if any,
+// in the feed.
+func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, files []string) (store.Lane, []string, string, bool) {
 	if r.Rescope == nil || len(files) == 0 {
-		return lane, nil, false
+		return lane, nil, "", false
 	}
 	r.widenStep.Lock()
 	defer r.widenStep.Unlock()
 	repo, err := r.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
-		return lane, nil, false
+		return lane, nil, "", false
 	}
 	prof := r.Conf().Profile(repo.Name)
 	if prof.Widen != "auto" {
-		return lane, nil, false
+		return lane, nil, "", false
 	}
 	var others [][]string
 	lanes, err := r.Store.Lanes(ctx, repo.ID)
 	if err != nil {
-		return lane, nil, false
+		return lane, nil, "", false
 	}
 	for _, o := range lanes {
 		if o.ID != lane.ID && o.State == store.LaneOpen {
@@ -54,19 +56,34 @@ func (r *Runner) autoWiden(ctx context.Context, run store.Run, lane store.Lane, 
 		Mode: prof.Widen, MaxFiles: prof.WidenMaxFiles, Cap: prof.WidenCap, Protected: prof.WidenProtected,
 	})
 	if !v.OK {
-		r.Log.Info("auto-widen declined", "lane", lane.Name, "run", run.ID, "why", v.Reason)
-		return lane, nil, false
+		r.Log.Info("auto-widen declined", "lane", lane.Name, "run", run.ID, "why", v.Reason, "refused", len(v.Refused))
+		refused := v.Describe()
+		if refused != "" {
+			// Nothing was widened, but the person and the desk are told why, so an explicit
+			// widen can follow. Not widenMark: this is not an auto-widen and must not count as one.
+			r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s: the auto-widen declined (run %d); left out, needs an explicit widen: %s",
+				lane.Name, run.ID, refused)
+		}
+		return lane, nil, refused, false
 	}
 	next, err := r.Rescope(ctx, lane.ID, v.Files, nil)
 	if err != nil {
 		// The Fold's own overlap check disagreed, or the lane closed: the person decides.
 		r.Log.Info("auto-widen refused by the fold", "lane", lane.Name, "run", run.ID, "err", err)
-		return lane, nil, false
+		return lane, nil, "", false
 	}
 	r.widenUsed(lane.ID, 1)
-	r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s%s+%s (run %d); checks passed: %s; scope is now %s",
-		lane.Name, widenMark, strings.Join(v.Files, ", "), run.ID, strings.Join(v.Checks, ", "), strings.Join(next.Scope, ", "))
-	return next, v.Files, true
+	refused := v.Describe()
+	left := ""
+	if refused != "" {
+		// Named before the scope, which the merge request's lines cut at, so the person
+		// sees it there too.
+		left = "; left out, needs an explicit widen: " + refused
+		r.Log.Info("auto-widen left files out", "lane", lane.Name, "run", run.ID, "refused", refused)
+	}
+	r.feed(ctx, store.FeedLaneOpened, lane.ID, "lane %s%s+%s (run %d); checks passed: %s%s; scope is now %s",
+		lane.Name, widenMark, strings.Join(v.Files, ", "), run.ID, strings.Join(v.Checks, ", "), left, strings.Join(next.Scope, ", "))
+	return next, v.Files, refused, true
 }
 
 // widenCount is how many auto-widens the lane has had. The feed is the durable record,
@@ -113,14 +130,20 @@ func (r *Runner) autoWidens(ctx context.Context, lane store.Lane) []store.FeedIt
 }
 
 // widenNote is what the agent is told after an auto-widen.
-func widenNote(files []string, lane store.Lane) string {
-	return fmt.Sprintf("[Shepherd] Your lane's scope now includes %s: Shepherd widened it by rule (small, next to your work, not protected, free of other lanes). "+
+// refused, when not empty, names the files the rule left out and why.
+func widenNote(files []string, lane store.Lane, refused string) string {
+	note := fmt.Sprintf("[Shepherd] Your lane's scope now includes %s: Shepherd widened it by rule (small, next to your work, not protected, free of other lanes). "+
 		"Your scope is now %s. You can commit and push those files.", strings.Join(files, ", "), strings.Join(lane.Scope, ", "))
+	if refused != "" {
+		note += " Not widened, still outside your scope: " + refused + ". Do not change them; ask for an explicit widen if you need them."
+	}
+	return note
 }
 
 // autoWidenOutside widens for the files the lane's commits changed outside its scope,
 // and continues the run's session to say so. It reports whether it carried the lane on,
-// in which case the run's end needs nothing more (the continued run ends and ships).
+// in which case the run's end needs nothing more (the continued run ends and ships). When
+// the rule refused some of the files it does not: they are still outside the scope.
 func (r *Runner) autoWidenOutside(ctx context.Context, run store.Run, lane store.Lane) bool {
 	if run.State != store.RunSucceeded || run.Session == "" || len(run.Outside) == 0 {
 		return false
@@ -131,11 +154,17 @@ func (r *Runner) autoWidenOutside(ctx context.Context, run store.Run, lane store
 	if len(outside) == 0 {
 		return false
 	}
-	next, files, ok := r.autoWiden(ctx, run, lane, outside)
+	next, files, refused, ok := r.autoWiden(ctx, run, lane, outside)
 	if !ok {
 		return false
 	}
-	started, err := r.Start(ctx, StartRequest{Continue: run.ID, Prompt: widenNote(files, next), Auto: true})
+	if refused != "" {
+		// Protected files are still outside the scope, so the push would be refused:
+		// continuing the run would only stall. The allowed files are widened and the feed
+		// names the rest, for the person's explicit widen.
+		return false
+	}
+	started, err := r.Start(ctx, StartRequest{Continue: run.ID, Prompt: widenNote(files, next, ""), Auto: true})
 	if err != nil {
 		// The agent cannot be told, so the widening is undone and the person decides as
 		// before; the feed keeps the record of both.
@@ -193,11 +222,11 @@ func (r *Runner) autoWidenDecision(ctx context.Context, d store.Decision) {
 	if err != nil || lane.State != store.LaneOpen {
 		return
 	}
-	next, added, ok := r.autoWiden(ctx, run, lane, files)
+	next, added, refused, ok := r.autoWiden(ctx, run, lane, files)
 	if !ok {
 		return
 	}
-	if _, err := r.Answer(ctx, d.ID, widenNote(added, next)+" (Answered by Shepherd's auto-widen rule, not by the person.)"); err != nil {
+	if _, err := r.Answer(ctx, d.ID, widenNote(added, next, refused)+" (Answered by Shepherd's auto-widen rule, not by the person.)"); err != nil {
 		r.Log.Error("answer an auto-widened decision", "decision", d.ID, "err", err)
 	}
 }
