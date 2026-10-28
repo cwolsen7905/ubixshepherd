@@ -155,8 +155,76 @@ func TestSecretGlobsAreNarrow(t *testing.T) {
 		"internal/secrets/key.go": true, "config/secret": true, "config/secret.yaml": true,
 		"config/secrets.json": true, "internal/secretary.go": false, "lib/secretion.py": false,
 	} {
-		if got := protectedBy(DefaultProtected, file) != ""; got != want {
+		if got := protectedBy(Denylist, file) != nil; got != want {
 			t.Errorf("%s protected = %v, want %v", file, got, want)
 		}
+	}
+}
+
+func TestDenylistCoversSensitivePaths(t *testing.T) {
+	for _, f := range []string{
+		".gitlab-ci.yml", ".github/workflows/ci.yml", ".gitlab/issue_templates/a.md", ".git/config", "sub/.git/hooks/pre-push",
+		".githooks/pre-push", ".husky/pre-commit", ".env", "app/.env.local", "certs/server.pem", "certs/tls.key",
+		"home/id_rsa", "home/id_rsa.pub", "config/app-secret.yaml", "config/db_credentials.json", "config/credential-helper.sh",
+		".npmrc", "web/.npmrc", ".netrc", "deploy/kubeconfig", "kubeconfig", "go.sum", "web/package-lock.json",
+	} {
+		if protectedBy(Denylist, f) == nil {
+			t.Errorf("%s is not protected", f)
+		}
+	}
+	for _, f := range []string{
+		"internal/secretary.go", "internal/keyboard.go", "docs/gitlab-notes.md", "internal/gitutil/git.go",
+		"internal/foo/helper.go", "web/src/monkey.ts", "docs/github.md",
+	} {
+		if r := protectedBy(Denylist, f); r != nil {
+			t.Errorf("%s is protected by %s", f, r.Glob)
+		}
+	}
+}
+
+func TestDenylistRulesHaveReasons(t *testing.T) {
+	for _, r := range Denylist {
+		if r.Glob == "" || r.Why == "" {
+			t.Errorf("rule %+v lacks a glob or a reason", r)
+		}
+	}
+	if len(DefaultProtected) != len(Denylist) {
+		t.Errorf("DefaultProtected has %d globs, Denylist %d", len(DefaultProtected), len(Denylist))
+	}
+}
+
+func TestProtectedFilesAreSkippedAndNamed(t *testing.T) {
+	in := base()
+	in.Files = []string{"internal/foo/helper.go", "internal/foo/.env", "internal/foo/server.pem"}
+	v := Decide(in)
+	if !v.OK || len(v.Files) != 1 || v.Files[0] != "internal/foo/helper.go" {
+		t.Fatalf("verdict = %+v", v)
+	}
+	if len(v.Refused) != 2 {
+		t.Fatalf("refused = %+v", v.Refused)
+	}
+	got := v.Describe()
+	for _, want := range []string{"internal/foo/.env", "**/.env", "environment file", "internal/foo/server.pem", "**/*.pem", "key file"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("description %q lacks %q", got, want)
+		}
+	}
+}
+
+func TestAllProtectedDeclinesAndNamesThem(t *testing.T) {
+	in := base()
+	in.Files = []string{"internal/foo/.npmrc"}
+	v := Decide(in)
+	if v.OK || len(v.Refused) != 1 || !strings.Contains(v.Reason, "explicit widen") || !strings.Contains(v.Reason, "**/.npmrc") {
+		t.Errorf("verdict = %+v", v)
+	}
+}
+
+func TestRepoProtectedReasonIsNamed(t *testing.T) {
+	in := base()
+	in.Protected = []string{"internal/foo/helper.go"}
+	v := Decide(in)
+	if v.OK || len(v.Refused) != 1 || !strings.Contains(v.Refused[0].Why, "widen_protected") {
+		t.Errorf("verdict = %+v", v)
 	}
 }

@@ -17,24 +17,67 @@ const (
 	DefaultCap      = 3
 )
 
-// DefaultProtected are the globs no auto-widen may reach: CI definitions, migrations,
-// dependency manifests and lockfiles, deploy and secret files, the work tracker.
-var DefaultProtected = []string{
-	".gitlab-ci.yml", "**/.gitlab-ci.yml", "ci/**", ".gitlab/**", ".github/**", ".circleci/**",
-	"**/migrations/**", "**/migrate/**", "**/*.sql",
-	"**/go.mod", "**/go.sum", "**/package.json", "**/package-lock.json", "**/npm-shrinkwrap.json",
-	"**/yarn.lock", "**/pnpm-lock.yaml", "**/bun.lock", "**/bun.lockb",
-	"**/Cargo.toml", "**/Cargo.lock", "**/Gemfile", "**/Gemfile.lock", "**/composer.json", "**/composer.lock",
-	"**/poetry.lock", "**/Pipfile.lock", "**/pyproject.toml", "**/requirements*.txt",
-	"deploy/**", "**/deploy/**", "**/secrets/**", "**/secret", "**/secret.*", "**/secrets.*", "**/.env", "**/.env.*",
-	"**/*.pem", "**/*.key", "**/id_rsa*", "**/Dockerfile", "**/docker-compose*.yml",
-	"**/CODEOWNERS", "docs/WORK.md",
-	// What defines the checks a lane's own work must pass: build and gate scripts, hooks,
-	// and lint and test configuration.
-	"**/Makefile", "**/GNUmakefile", "**/*.mk", "bin/**", "scripts/**", ".githooks/**", ".husky/**",
-	".pre-commit-config.yaml", "**/.golangci*", "**/.eslintrc*", "**/eslint.config.*",
-	"**/vitest.config.*", "**/jest.config.*", "**/tsconfig*.json",
+// Rule is a protected glob and the reason it is protected.
+type Rule struct{ Glob, Why string }
+
+// Refusal is a requested file left out of an auto-widen, with the glob that held it and
+// why. The desk uses it to ask the person for an explicit lane_widen.
+type Refusal struct{ File, Glob, Why string }
+
+// Denylist is the built-in set of globs no auto-widen may reach, with the reason for
+// each. It is deliberately conservative: a miss costs the person one explicit widen, a
+// wrong yes can put a lane's hands on CI, credentials or the checks its own work must pass.
+var Denylist = []Rule{
+	// CI definitions.
+	{".gitlab-ci.yml", "CI configuration"}, {"**/.gitlab-ci.yml", "CI configuration"},
+	{".gitlab/**", "CI configuration"}, {".github/**", "CI configuration"},
+	{".circleci/**", "CI configuration"}, {"ci/**", "CI configuration"},
+	// Git internals and hooks.
+	{".git", "git internals"}, {".git/**", "git internals"}, {"**/.git/**", "git internals"},
+	{".gitmodules", "git internals"}, {".gitattributes", "git internals"},
+	{".githooks/**", "git hooks"}, {".husky/**", "git hooks"}, {".pre-commit-config.yaml", "git hooks"},
+	// Secrets and credentials.
+	{"**/secrets/**", "secrets-like name"}, {"**/secret", "secrets-like name"},
+	{"**/secret.*", "secrets-like name"}, {"**/secrets.*", "secrets-like name"},
+	{"**/*[\\-_.]secret[\\-_.]*", "secrets-like name"}, {"**/*[\\-_.]secrets[\\-_.]*", "secrets-like name"},
+	{"**/*[\\-_.]secret", "secrets-like name"}, {"**/*[\\-_.]secrets", "secrets-like name"},
+	{"**/*credential*", "credentials-like name"}, {"**/.env", "environment file"}, {"**/.env.*", "environment file"},
+	{"**/*.pem", "key file"}, {"**/*.key", "key file"}, {"**/id_rsa*", "key file"},
+	{"**/id_ed25519*", "key file"}, {"**/*.p12", "key file"}, {"**/*.pfx", "key file"},
+	{"**/.npmrc", "package registry credentials"}, {"**/.netrc", "network credentials"},
+	{"**/kubeconfig", "cluster credentials"}, {"**/kubeconfig.*", "cluster credentials"},
+	// Deploys and schema changes.
+	{"deploy/**", "deploy files"}, {"**/deploy/**", "deploy files"},
+	{"**/migrations/**", "schema migrations"}, {"**/migrate/**", "schema migrations"}, {"**/*.sql", "schema migrations"},
+	{"**/Dockerfile", "deploy files"}, {"**/docker-compose*.yml", "deploy files"},
+	{"**/CODEOWNERS", "review ownership"}, {"docs/WORK.md", "the work tracker"},
+	// Dependency manifests and lockfiles: they change what the build runs and fetches,
+	// and are reviewed as such, so a lane touching one is a decision, not a side effect.
+	{"**/go.mod", "dependency manifest"}, {"**/go.sum", "lockfile"}, {"**/package.json", "dependency manifest"},
+	{"**/package-lock.json", "lockfile"}, {"**/npm-shrinkwrap.json", "lockfile"},
+	{"**/yarn.lock", "lockfile"}, {"**/pnpm-lock.yaml", "lockfile"}, {"**/bun.lock", "lockfile"}, {"**/bun.lockb", "lockfile"},
+	{"**/Cargo.toml", "dependency manifest"}, {"**/Cargo.lock", "lockfile"},
+	{"**/Gemfile", "dependency manifest"}, {"**/Gemfile.lock", "lockfile"},
+	{"**/composer.json", "dependency manifest"}, {"**/composer.lock", "lockfile"},
+	{"**/poetry.lock", "lockfile"}, {"**/Pipfile.lock", "lockfile"},
+	{"**/pyproject.toml", "dependency manifest"}, {"**/requirements*.txt", "dependency manifest"},
+	// What defines the checks a lane's own work must pass: build and gate scripts and
+	// lint and test configuration.
+	{"**/Makefile", "build and gate script"}, {"**/GNUmakefile", "build and gate script"}, {"**/*.mk", "build and gate script"},
+	{"bin/**", "build and gate script"}, {"scripts/**", "build and gate script"},
+	{"**/.golangci*", "lint or test configuration"}, {"**/.eslintrc*", "lint or test configuration"},
+	{"**/eslint.config.*", "lint or test configuration"}, {"**/vitest.config.*", "lint or test configuration"},
+	{"**/jest.config.*", "lint or test configuration"}, {"**/tsconfig*.json", "lint or test configuration"},
 }
+
+// DefaultProtected are the globs of Denylist.
+var DefaultProtected = func() []string {
+	out := make([]string, len(Denylist))
+	for i, r := range Denylist {
+		out[i] = r.Glob
+	}
+	return out
+}()
 
 // Input is everything the rule looks at.
 type Input struct {
@@ -63,6 +106,9 @@ type Verdict struct {
 	Reason string
 	Files  []string
 	Checks []string
+	// Refused are requested files left out because they are protected. Present on an OK
+	// verdict (the rest was widened) and on a decline (nothing was left to widen).
+	Refused []Refusal
 }
 
 func no(format string, a ...any) Verdict { return Verdict{Reason: fmt.Sprintf(format, a...)} }
@@ -103,12 +149,25 @@ func Decide(in Input) Verdict {
 	if len(need) > max {
 		return no("%d files is more than the %d an auto-widen may add", len(need), max)
 	}
-	protected := append(append([]string{}, DefaultProtected...), in.Protected...)
-	for _, f := range need {
-		if g := protectedBy(protected, f); g != "" {
-			return no("%s is protected (%s)", f, g)
-		}
+	rules := append([]Rule{}, Denylist...)
+	for _, g := range in.Protected {
+		rules = append(rules, Rule{g, "protected by the repo's widen_protected"})
 	}
+	var refused []Refusal
+	var allowed []string
+	for _, f := range need {
+		if r := protectedBy(rules, f); r != nil {
+			refused = append(refused, Refusal{f, r.Glob, r.Why})
+			continue
+		}
+		allowed = append(allowed, f)
+	}
+	if len(allowed) == 0 {
+		v := no("%s; they need an explicit widen", describe(refused))
+		v.Refused = refused
+		return v
+	}
+	need = allowed
 	anchors := anchorsOf(in.Scope, in.Changed)
 	var why []string
 	for _, f := range need {
@@ -120,10 +179,12 @@ func Decide(in Input) Verdict {
 	}
 	for _, o := range in.Others {
 		if both := scope.Overlap(need, o, in.RepoFiles); len(both) > 0 {
-			return no("%s overlaps another open lane's scope", both[0])
+			v := no("%s overlaps another open lane's scope", both[0])
+			v.Refused = refused
+			return v
 		}
 	}
-	return Verdict{OK: true, Files: need, Checks: []string{
+	return Verdict{OK: true, Files: need, Refused: refused, Checks: []string{
 		"repo opts in",
 		"exact files",
 		fmt.Sprintf("%d of at most %d files", len(need), max),
@@ -168,14 +229,25 @@ func exact(files []string) ([]string, error) {
 	return out, nil
 }
 
-func protectedBy(globs []string, file string) string {
+// Describe says which files were refused, by which glob and why, for the desk to relay.
+func (v Verdict) Describe() string { return describe(v.Refused) }
+
+func describe(rs []Refusal) string {
+	var parts []string
+	for _, r := range rs {
+		parts = append(parts, fmt.Sprintf("%s is protected (%s: %s)", r.File, r.Glob, r.Why))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func protectedBy(rules []Rule, file string) *Rule {
 	lower := strings.ToLower(file)
-	for _, g := range globs {
-		if scope.Match(g, file) || scope.Match(strings.ToLower(g), lower) {
-			return g
+	for i, r := range rules {
+		if scope.Match(r.Glob, file) || scope.Match(strings.ToLower(r.Glob), lower) {
+			return &rules[i]
 		}
 	}
-	return ""
+	return nil
 }
 
 // anchorsOf are the files the lane's work is at: those it changed that are in scope,
