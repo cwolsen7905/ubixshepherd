@@ -2,7 +2,10 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -75,6 +78,9 @@ func TestAnswerWidensOnApproval(t *testing.T) {
 	ctx := context.Background()
 	a, _, la, _ := twoRuns(t, s)
 	person, _ := s.MintDesk(true, "")
+	for _, d := range []string{"docs", "b"} {
+		os.MkdirAll(filepath.Join(la.Worktree, d), 0o755)
+	}
 	ask := func(q string) store.Decision {
 		d, err := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: q, State: store.DecisionOpen})
 		if err != nil {
@@ -155,6 +161,7 @@ func TestAnswerWidenRefusedByCrook(t *testing.T) {
 		return crook.Verdict{Kind: crook.Refuse, Rule: "test", Reason: "test refusal"}
 	}
 	defer func() { widenVerdict = old }()
+	os.MkdirAll(filepath.Join(la.Worktree, "docs"), 0o755)
 	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: "May I widen the scope to add docs/y.md?", State: store.DecisionOpen})
 	var out store.Decision
 	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "Yes"}, &out); code != http.StatusOK || out.State != store.DecisionAnswered {
@@ -171,4 +178,67 @@ func TestAnswerWidenRefusedByCrook(t *testing.T) {
 	if !found {
 		t.Error("no refusal line in feed")
 	}
+}
+
+// A scope approval the daemon cannot act on: the lane is closed (the feed says so), or the
+// run cannot be read (only logged; the question never was shown to be about a lane). The
+// answer stands in both.
+func TestAnswerWidenSkips(t *testing.T) {
+	s, ts := newServer(t)
+	s.Runner = &dispatch.Runner{Store: s.Store, Config: config.Default(), Dir: t.TempDir(), Log: s.Log}
+	ctx := context.Background()
+	a, b, la, lb := twoRuns(t, s)
+	person, _ := s.MintDesk(true, "")
+	os.MkdirAll(filepath.Join(la.Worktree, "docs"), 0o755)
+	os.MkdirAll(filepath.Join(lb.Worktree, "docs"), 0o755)
+	feed := func() string {
+		items, _ := s.Store.Feed(ctx, 0, 100)
+		var all []string
+		for _, it := range items {
+			all = append(all, it.Text)
+		}
+		return strings.Join(all, "\n")
+	}
+	q := "May I widen the scope to add docs/y.md?"
+
+	// Lane not open.
+	if err := s.Store.SetLaneState(ctx, la.ID, store.LaneClosed); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.Store.CreateDecision(ctx, store.Decision{RunID: a.ID, Question: q, State: store.DecisionOpen})
+	var out store.Decision
+	if code := call(t, ts, person, "POST", api.PathDecisionAnswer(d.ID), api.Answer{Answer: "yes"}, &out); code != http.StatusOK || out.State != store.DecisionAnswered {
+		t.Fatalf("answer: %d %s", code, out.State)
+	}
+	if l, _ := s.Store.Lane(ctx, la.ID); strings.Join(l.Scope, ",") != "a/**" {
+		t.Errorf("closed lane widened: %v", l.Scope)
+	}
+	if f := feed(); !strings.Contains(f, "the lane is not open") {
+		t.Errorf("no not-open line in feed:\n%s", f)
+	}
+
+	// Lane lookup fails (the daemon's store only; the runner keeps the real one): logged,
+	// no feed line, answer stands.
+	before := feed()
+	real := s.Store
+	s.Store = failingLane{Store: real}
+	d2, _ := real.CreateDecision(ctx, store.Decision{RunID: b.ID, Question: q, State: store.DecisionOpen})
+	call(t, ts, person, "POST", api.PathDecisionAnswer(d2.ID), api.Answer{Answer: "yes"}, nil)
+	s.Store = real
+	if got, _ := real.Decision(ctx, d2.ID); got.State != store.DecisionAnswered {
+		t.Fatalf("answer with a lane lookup failure: %s", got.State)
+	}
+	if got := feed(); got != before {
+		t.Errorf("lookup failure wrote to the feed:\n%s", got)
+	}
+	if l, _ := real.Lane(ctx, lb.ID); strings.Join(l.Scope, ",") != "b/**" {
+		t.Errorf("lane changed: %v", l.Scope)
+	}
+}
+
+// failingLane is a store whose Lane lookup fails.
+type failingLane struct{ store.Store }
+
+func (failingLane) Lane(context.Context, int64) (store.Lane, error) {
+	return store.Lane{}, errors.New("lane unreadable")
 }

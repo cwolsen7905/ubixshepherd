@@ -311,3 +311,42 @@ func TestMergedArtifactItemsAreProducedOnce(t *testing.T) {
 		t.Errorf("after AddItems: %+v / %q", w.Counts, w.Line())
 	}
 }
+
+// What a scope question names that is not a file is never offered as a path: the texts
+// below follow two real decisions that listed an address, a host and a branch ref.
+func TestApprovedWidenKeepsOnlyRepoPaths(t *testing.T) {
+	wt := t.TempDir()
+	for _, d := range []string{"lib", "deploy"} {
+		if err := os.MkdirAll(filepath.Join(wt, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lane := store.Lane{Worktree: wt, Scope: []string{"deploy/**"}}
+	cases := []struct {
+		name, question string
+		want           []string
+	}{
+		{"cluster", "May I widen the scope to add 10.50.18.32, gitlab.brainchurts.com, https://gitlab.brainchurts.com/x/y and lib/new.yaml?", []string{"lib/new.yaml"}},
+		{"branch", "May I widen the scope to add origin/dev, lib/notifications.ts and refs/heads/main?", []string{"lib/notifications.ts"}},
+		{"missing dir", "May I widen the scope to add nowhere/at/all.go?", nil},
+	}
+	for _, c := range cases {
+		got := ApprovedWiden(lane, store.Decision{Question: c.question, Answer: "yes"})
+		if strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	if got := LanePaths(lane, []string{"lib/**", "nowhere/deep/**", "lib/*.ts"}); strings.Join(got, ",") != "lib/**,lib/*.ts" {
+		t.Errorf("LanePaths globs: %v", got)
+	}
+	for _, bad := range []string{"10.50.18.32", "10.0.0.1:8080/x", "gitlab.brainchurts.com", "gitlab.brainchurts.com/a/b", "origin/dev", "refs/heads/x", "https://h/x", "git@h:x/y"} {
+		if got := SafePaths([]string{bad}); len(got) != 0 {
+			t.Errorf("SafePaths kept %q", bad)
+		}
+	}
+	for _, ok := range []string{"README.md", "foo.test.ts", "lib/a.go", "internal/**", "docs/x.md"} {
+		if got := SafePaths([]string{ok}); len(got) != 1 {
+			t.Errorf("SafePaths dropped %q", ok)
+		}
+	}
+}

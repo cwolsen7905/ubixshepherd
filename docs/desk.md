@@ -142,7 +142,7 @@ The person's own answer needs no separate step. When they approve a question tha
 widen the scope (from the web, the CLI or the desk in a turn they started), and the
 whole answer is a bare "yes" or "approve" (a hedged answer such as "yes, except ..." or a
 question that offers a choice is not taken), the daemon adds, before the answer reaches the
-agent, the safe paths the question names that the lane does not yet cover, as part of the same
+agent, the paths the question names that the lane does not yet cover and that look like repo paths (not an address, host, URL or branch ref, and in a directory the lane's worktree has), as part of the same
 answer, and puts the same feed line in ("scope widened by person: ..."). If another open
 lane holds an overlapping glob, the answer is still recorded, the lane stays as it was, and
 the feed says why; `lane_widen` is then the way to retry once that lane lets go. Only a

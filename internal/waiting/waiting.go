@@ -7,6 +7,9 @@ package waiting
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -407,12 +410,64 @@ func AsksToWidenScope(q string) bool {
 }
 
 // SafePaths keeps the paths a one-click widening may add: inside the repo, with no
-// parent steps.
+// parent steps, and shaped like a repo path or glob. IP addresses, hostnames, URLs and
+// remote or branch refs (origin/dev) are not.
 func SafePaths(paths []string) []string {
 	var out []string
 	for _, p := range paths {
-		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") {
+		if p == "" || strings.HasPrefix(p, "/") || strings.Contains(p, "..") || !pathShaped(p) {
 			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+var (
+	ipv4    = regexp.MustCompile(`^\d{1,3}(\.\d{1,3}){3}(:\d+)?(/.*)?$`)
+	refRoot = map[string]bool{"origin": true, "upstream": true, "remotes": true, "refs": true, "head": true, "fetch_head": true}
+	// tlds are the endings that make a dotted word a hostname rather than a file name.
+	tlds = map[string]bool{"com": true, "org": true, "net": true, "io": true, "dev": true, "app": true, "local": true,
+		"internal": true, "lan": true, "edu": true, "gov": true, "co": true, "cloud": true, "ai": true}
+)
+
+// pathShaped is false for what a question names that is not a file: an address, a host
+// (alone or leading a path), a URL or a ref.
+func pathShaped(p string) bool {
+	if strings.Contains(p, "://") || strings.Contains(p, "@") || ipv4.MatchString(p) {
+		return false
+	}
+	first, _, slash := strings.Cut(p, "/")
+	if refRoot[strings.ToLower(first)] && slash {
+		return false
+	}
+	if i := strings.LastIndex(first, "."); i > 0 && strings.Count(first, ".") >= 1 && tlds[strings.ToLower(first[i+1:])] && (slash || strings.Count(first, ".") >= 2) {
+		return false
+	}
+	return true
+}
+
+// LanePaths is SafePaths further limited to what is in the lane's repo: the path (or the
+// directory a glob starts in) exists in the worktree, or for a new file its directory
+// does. That drops a name that has the shape of a path but is not one.
+func LanePaths(l store.Lane, paths []string) []string {
+	var out []string
+	for _, p := range SafePaths(paths) {
+		dir := p
+		if i := strings.IndexAny(dir, "*?["); i >= 0 {
+			dir = dir[:i]
+			dir = dir[:strings.LastIndex(dir, "/")+1]
+		}
+		dir = strings.TrimSuffix(dir, "/")
+		if dir == "" {
+			out = append(out, p)
+			continue
+		}
+		full := filepath.Join(l.Worktree, filepath.FromSlash(dir))
+		if _, err := os.Stat(full); err != nil {
+			if _, err := os.Stat(filepath.Dir(full)); err != nil {
+				continue
+			}
 		}
 		out = append(out, p)
 	}
@@ -444,7 +499,7 @@ func ApprovedWiden(l store.Lane, d store.Decision) []string {
 	if !ApprovesWiden(d) {
 		return nil
 	}
-	return SafePaths(ScopeMissing(l, d))
+	return LanePaths(l, ScopeMissing(l, d))
 }
 
 var negations = []string{"no", "n", "don't", "dont", "deny", "denied", "reject", "rejected", "decline", "never", "keep", "stay", "not"}

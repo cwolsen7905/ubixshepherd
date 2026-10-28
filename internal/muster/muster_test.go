@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -380,10 +381,27 @@ func TestLiveRunIsLeftAlone(t *testing.T) {
 	}
 }
 
+// scopeLane is an open lane whose worktree is a real directory with internal/store in it.
+func scopeLane(t *testing.T, f *fixture, scope string) store.Lane {
+	t.Helper()
+	wt := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wt, "internal", "store"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := f.st.CreateLane(f.ctx, store.Lane{RepoID: f.repo.ID, Name: "feat/s", Branch: "feat/s", Worktree: wt, State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.files[filepath.ToSlash(wt)] = true
+	f.st.SetLaneScope(f.ctx, l.ID, []string{scope})
+	l, _ = f.st.Lane(f.ctx, l.ID)
+	return l
+}
+
 func TestApprovedScopeChangeIsOfferedAndUndone(t *testing.T) {
 	f := newFixture(t)
-	f.st.SetLaneScope(f.ctx, f.lane.ID, []string{"internal/muster/**"})
-	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", State: store.RunSucceeded})
+	lane := scopeLane(t, f, "internal/muster/**")
+	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded})
 	d, _ := f.st.CreateDecision(f.ctx, store.Decision{RunID: run.ID, Question: "May I widen scope to internal/store/muster.go?"})
 	f.st.AnswerDecision(f.ctx, d.ID, "yes")
 	f.p.Run(f.ctx)
@@ -394,14 +412,38 @@ func TestApprovedScopeChangeIsOfferedAndUndone(t *testing.T) {
 	if _, err := f.p.Apply(f.ctx, it.ID); err != nil {
 		t.Fatal(err)
 	}
-	if l, _ := f.st.Lane(f.ctx, f.lane.ID); len(l.Scope) != 2 || l.Scope[1] != "internal/store/muster.go" {
+	if l, _ := f.st.Lane(f.ctx, lane.ID); len(l.Scope) != 2 || l.Scope[1] != "internal/store/muster.go" {
 		t.Errorf("scope = %v", l.Scope)
 	}
 	if _, err := f.p.Undo(f.ctx, it.ID); err != nil {
 		t.Fatal(err)
 	}
-	if l, _ := f.st.Lane(f.ctx, f.lane.ID); len(l.Scope) != 1 {
+	if l, _ := f.st.Lane(f.ctx, lane.ID); len(l.Scope) != 1 {
 		t.Errorf("scope after undo = %v", l.Scope)
+	}
+}
+
+// The scope offer names only real paths: an address, a host and a branch ref the question
+// mentions are not offered.
+func TestScopeOfferSkipsAddressesHostsAndRefs(t *testing.T) {
+	f := newFixture(t)
+	lane := scopeLane(t, f, "internal/muster/**")
+	run, _ := f.st.CreateRun(f.ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunSucceeded})
+	d, _ := f.st.CreateDecision(f.ctx, store.Decision{RunID: run.ID,
+		Question: "May I widen scope to add internal/store/x.go? The cluster at 10.50.18.32 and gitlab.brainchurts.com serve it, and I compared against origin/dev."})
+	f.st.AnswerDecision(f.ctx, d.ID, "yes")
+	f.p.Run(f.ctx)
+	it := f.kind(store.MusterOpen, KindLaneScope)
+	if it == nil {
+		t.Fatalf("no scope finding: %+v", f.items(""))
+	}
+	for _, bad := range []string{"10.50.18.32", "gitlab.brainchurts.com", "origin/dev"} {
+		if strings.Contains(it.Reason, bad) {
+			t.Errorf("offer names %q: %s", bad, it.Reason)
+		}
+	}
+	if !strings.Contains(it.Reason, "internal/store/x.go") {
+		t.Errorf("offer lost the real path: %s", it.Reason)
 	}
 }
 
