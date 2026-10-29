@@ -59,11 +59,12 @@ func TestStampWriterFlush(t *testing.T) {
 
 func TestStripStamp(t *testing.T) {
 	for in, want := range map[string]string{
-		"21:27:03 → Bash {}": "→ Bash {}",
-		"→ Bash {}":          "→ Bash {}",
-		"99:99:99 text":      "99:99:99 text",
-		"21:27:03":           "21:27:03",
-		"":                   "",
+		"21:27:03 → Bash {}":                "→ Bash {}",
+		"21:27:04 10:30:00 is the deadline": "10:30:00 is the deadline",
+		"→ Bash {}":                         "→ Bash {}",
+		"99:99:99 text":                     "99:99:99 text",
+		"21:27:03":                          "21:27:03",
+		"":                                  "",
 	} {
 		if got := StripStamp(in); got != want {
 			t.Errorf("StripStamp(%q) = %q, want %q", in, got, want)
@@ -99,5 +100,14 @@ func TestRunLogLinesCarryATime(t *testing.T) {
 	}
 	if timed == 0 {
 		t.Errorf("no timed agent lines in:\n%s", b)
+	}
+}
+
+func TestStampedAgentClockTextReadsBackWhole(t *testing.T) {
+	var b bytes.Buffer
+	w := NewStampWriter(&b, stampClock())
+	w.Write([]byte("10:30:00 is the deadline\n"))
+	if got, want := StripStamp(strings.TrimSuffix(b.String(), "\n")), "10:30:00 is the deadline"; got != want {
+		t.Errorf("read back %q, want %q", got, want)
 	}
 }

@@ -91,7 +91,9 @@ func (s *StampWriter) stamp(out, line []byte, t time.Time) []byte {
 }
 
 // StripStamp returns line without the time StampWriter put in front of it, so a reader
-// accepts old logs (no time) and new ones alike.
+// accepts old logs (no time) and new ones alike. It strips one time only, and every line
+// StampWriter writes has one, so agent text that itself starts with a clock reads back
+// whole. Only a line from an old log, which has no stamp, can lose a leading clock.
 func StripStamp(line string) string {
 	if len(line) > len(StampLayout) && line[len(StampLayout)] == ' ' {
 		if _, err := time.Parse(StampLayout, line[:len(StampLayout)]); err == nil {
