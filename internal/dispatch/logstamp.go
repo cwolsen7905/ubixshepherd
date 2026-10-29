@@ -16,8 +16,9 @@ var hasClock = regexp.MustCompile(`\b\d{2}:\d{2}:\d{2}\b`)
 // StampWriter writes to w one line at a time, putting the local time at which the line
 // was completed in front of it: "21:27:03 → Bash {...}". A partial write is held until
 // its newline arrives (Flush writes a final unterminated line). Blank lines pass
-// through bare. A header line ("# ...") keeps its form and gets " at 21:27:03" on its
-// end instead, unless it already shows a time. It is safe for concurrent use.
+// through bare. Shepherd's own note ("# shepherd: ...") keeps its form and gets
+// " at 21:27:03" on its end instead, unless it already shows a time. An agent's own
+// "# heading" is agent text and is stamped like any other line. It is safe for concurrent use.
 type StampWriter struct {
 	mu  sync.Mutex
 	w   io.Writer
@@ -77,7 +78,7 @@ func (s *StampWriter) stamp(out, line []byte, t time.Time) []byte {
 	switch {
 	case len(bytes.TrimSpace(line)) == 0:
 		return append(out, line...)
-	case bytes.HasPrefix(line, []byte("# ")):
+	case bytes.HasPrefix(line, []byte("# shepherd:")):
 		out = append(out, line...)
 		if !hasClock.Match(line) {
 			out = append(out, " at "+clock...)

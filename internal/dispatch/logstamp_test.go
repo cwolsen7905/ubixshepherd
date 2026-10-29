@@ -26,7 +26,8 @@ func TestStampWriter(t *testing.T) {
 		{"held tail", []string{"a\nb"}, "21:27:04 a\n"},
 		{"blank lines bare", []string{"a\n\nb\n"}, "21:27:04 a\n\n21:27:06 b\n"},
 		{"header keeps form", []string{"\n# shepherd: run 1 succeeded\n"}, "\n# shepherd: run 1 succeeded at 21:27:05\n"},
-		{"header with a time", []string{"# started 10:00:00\n"}, "# started 10:00:00\n"},
+		{"header with a time", []string{"# shepherd: started 10:00:00\n"}, "# shepherd: started 10:00:00\n"},
+		{"agent heading is agent text", []string{"# Plan\n"}, "21:27:04 # Plan\n"},
 	} {
 		var b bytes.Buffer
 		w := NewStampWriter(&b, stampClock())
@@ -86,7 +87,7 @@ func TestRunLogLinesCarryATime(t *testing.T) {
 		switch {
 		case l == "" || strings.HasPrefix(l, "# shepherd run "), strings.HasPrefix(l, "# task:"), strings.HasPrefix(l, "# model:"), strings.HasPrefix(l, "# policy:"):
 			// the header written before the agent starts
-		case strings.HasPrefix(l, "# "):
+		case strings.HasPrefix(l, "# shepherd:"):
 			if !hasClock.MatchString(l) {
 				t.Errorf("header without a time: %q", l)
 			}
