@@ -6,11 +6,12 @@
   container-type: inline-size;
   display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0;
   width: 100%; max-width: none; margin: 0; padding: 0;
+  --sh-conv-column: 76rem; /* thread column cap: fluid with the window, centred, gutters both sides */
 }
 .main:has(.sh-conv:not(.sh-conv--side)) { padding: 0; }
 
 /* Head: the title, the chips in the shared column, the desk's state. */
-.sh-conv-head { flex: none; flex-wrap: wrap; row-gap: 6px; padding-inline: max(20px, calc((100cqi - var(--sh-column)) / 2)); }
+.sh-conv-head { flex: none; flex-wrap: wrap; row-gap: 6px; padding-inline: max(var(--sh-s9), calc((100cqi - var(--sh-conv-column)) / 2)); }
 .sh-conv-head h1, .sh-conv-title { flex: none; }
 .sh-conv-title { font-size: var(--sh-t-view); margin: 0 8px 0 0; }
 .sh-conv-topic { color: var(--sh-muted); font-size: var(--sh-t-meta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -45,7 +46,7 @@
 /* The thread's notes and the "Since you were away" card. */
 .sh-conv-note { margin: 0; font-size: var(--sh-t-small); color: var(--sh-muted); }
 .sh-conv-empty { margin: 0; color: var(--sh-faint); }
-.sh-conv-problem, .sh-conv-notice { margin: 0; padding: 6px max(20px, calc((100cqi - var(--sh-column)) / 2)); font-size: var(--sh-t-small); }
+.sh-conv-problem, .sh-conv-notice { margin: 0; padding: 6px max(var(--sh-s9), calc((100cqi - var(--sh-conv-column)) / 2)); font-size: var(--sh-t-small); }
 .sh-conv-problem { color: var(--sh-broken); }
 .sh-conv-notice { color: var(--sh-faint); }
 .sh-away { border: 1px solid var(--sh-rule); background: var(--sh-raised); border-radius: var(--sh-r); padding: 10px 14px; }
@@ -80,7 +81,7 @@
 .sh-conv-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
 .sh-conv-body > .sh-scroll { flex: 1 1 auto; min-height: 0; }
 .sh-conv .sh-pending, .sh-conv-composer {
-  box-sizing: border-box; flex: none; width: calc(100% - 40px); max-width: var(--sh-column); margin-inline: auto;
+  box-sizing: border-box; flex: none; width: calc(100% - (var(--sh-s9) * 2)); max-width: var(--sh-conv-column); margin-inline: auto;
 }
 .sh-conv-composer { margin-bottom: 16px; position: relative; }
 .sh-conv-composer .sh-composer { margin: 0; }
@@ -103,18 +104,26 @@
 .sh-pending-next { display: inline-flex; align-items: center; color: var(--sh-faint); font-size: var(--sh-t-meta); }
 
 /* 390px: the chips scroll on one row. */
-.sh-shell[data-mode="sheet"] .sh-conv-head { padding-inline: 12px; }
+/* Chat-only width: the main conversation grows to --sh-conv-column while other thread views
+   keep the shared --sh-column cap from components.css; same 100cqi gutter math as the head.
+   Not the side panel: its thread keeps the 1fr track and 16px padding from Thread.css. */
+.sh-conv:not(.sh-conv--side) .sh-scroll--thread {
+  grid-template-columns: minmax(0, var(--sh-conv-column)); justify-content: center;
+  padding-inline: max(var(--sh-s9), calc((100cqi - var(--sh-conv-column)) / 2));
+  box-sizing: border-box;
+}
+.sh-shell[data-mode="sheet"] .sh-conv-head { padding-inline: var(--sh-s6); }
 .sh-shell[data-mode="sheet"] .sh-conv-head .sh-topics { order: 2; flex: 1 1 100%; }
 .sh-shell[data-mode="sheet"] .sh-conv-head .sh-head-right { order: 0; margin-left: 0; margin-right: auto; }
 .sh-shell[data-mode="sheet"] .sh-conv-tools { order: 1; }
 .sh-shell[data-mode="sheet"] .sh-conv-head h1 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .sh-shell[data-mode="sheet"] .sh-topics-row { overflow-x: auto; scrollbar-width: none; }
 .sh-shell[data-mode="sheet"] .sh-topics-row::-webkit-scrollbar { display: none; }
-.sh-shell[data-mode="sheet"] .sh-scroll--thread { padding-inline: 12px; }
-.sh-shell[data-mode="sheet"] .sh-conv .sh-pending, .sh-shell[data-mode="sheet"] .sh-conv-composer { width: calc(100% - 24px); }
+.sh-shell[data-mode="sheet"] .sh-scroll--thread { padding-inline: var(--sh-s6); }
+.sh-shell[data-mode="sheet"] .sh-conv .sh-pending, .sh-shell[data-mode="sheet"] .sh-conv-composer { width: calc(100% - (var(--sh-s6) * 2)); }
 
 /* Beside a decision: the thread as wide as its panel. */
 .sh-conv--side { background: var(--sh-field); }
-.sh-conv--side .sh-conv-head { padding-inline: 16px; }
-.sh-conv--side .sh-pending, .sh-conv--side .sh-conv-composer { width: calc(100% - 32px); max-width: none; }
+.sh-conv--side .sh-conv-head { padding-inline: var(--sh-s8); }
+.sh-conv--side .sh-pending, .sh-conv--side .sh-conv-composer { width: calc(100% - (var(--sh-s8) * 2)); max-width: none; }
 .sh-conv--side .sh-conv-composer { margin-bottom: 12px; }
