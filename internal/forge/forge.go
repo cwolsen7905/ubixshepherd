@@ -77,6 +77,19 @@ type Thread struct {
 	// Notes is how many notes the thread has, system notes aside: it grows when anyone
 	// replies, so a count above the one handed back says the thread was answered.
 	Notes int `json:"notes,omitempty"`
+	// Entries are the thread's notes in order, system notes aside, each with its own
+	// author. Body is for reading; read authorship from here, since a note's text can
+	// imitate another author's line in Body. Not cut like Body, but each text is trimmed.
+	Entries []Note `json:"entries,omitempty"`
+}
+
+// Note is one note of a Thread with who wrote it, as the forge reports it.
+type Note struct {
+	ID int64 `json:"id,omitempty"`
+	// Author is the username and AuthorID the numeric user id, which survives a rename.
+	Author   string `json:"author,omitempty"`
+	AuthorID int64  `json:"author_id,omitempty"`
+	Text     string `json:"text"`
 }
 
 // Title is a short link text for the thread: its first note's first line, cut.
@@ -465,6 +478,7 @@ type glNote struct {
 	Resolvable bool   `json:"resolvable"`
 	Resolved   bool   `json:"resolved"`
 	Author     struct {
+		ID       int64  `json:"id"`
 		Username string `json:"username"`
 	} `json:"author"`
 	Position *struct {
@@ -540,6 +554,7 @@ func (d glDiscussion) thread() (Thread, bool) {
 		if n.System || strings.TrimSpace(n.Body) == "" {
 			continue
 		}
+		t.Entries = append(t.Entries, Note{ID: n.ID, Author: n.Author.Username, AuthorID: n.Author.ID, Text: strings.TrimSpace(n.Body)})
 		if b.Len() > 0 {
 			b.WriteString("\n")
 		}
