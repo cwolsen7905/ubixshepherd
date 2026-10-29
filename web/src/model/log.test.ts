@@ -154,4 +154,24 @@ World
       { kind: 'text', lines: ['more'] },
     ]);
   });
+
+  it('groups timed tool lines, old and timed alike, and keeps the time on text', () => {
+    const input = `# shepherd run 1: claude in lane x
+→ Bash {"command":"ls"}
+21:27:03 → Bash {"command":"make check"}
+21:27:04 → Read {"file_path":"a.go"}
+21:27:05 all green`
+    expect(parseLog(input)).toEqual([
+      { kind: 'header', lines: ['# shepherd run 1: claude in lane x'] },
+      {
+        kind: 'tools',
+        calls: [
+          { tool: 'Bash', input: '{"command":"ls"}', summary: 'ls' },
+          { tool: 'Bash', input: '{"command":"make check"}', summary: 'make check' },
+          { tool: 'Read', input: '{"file_path":"a.go"}', summary: 'a.go' }
+        ]
+      },
+      { kind: 'text', lines: ['21:27:05 all green'] }
+    ])
+  })
 });

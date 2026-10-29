@@ -47,13 +47,13 @@ export function parseLog(text: string): Block[] {
     const calls: ToolCall[] = []
     for (; i < lines.length; i++) {
       const line = lines[i] ?? ''
-      if (line.startsWith(TOOL)) calls.push(toolCall(line))
+      if (isTool(line)) calls.push(toolCall(unstamp(line)))
       else if (line !== '' || calls.length === 0) break
     }
     if (calls.length > 0) blocks.push({ kind: 'tools', calls })
 
     const text: string[] = []
-    for (; i < lines.length && !(lines[i] ?? '').startsWith(TOOL); i++) text.push(lines[i] ?? '')
+    for (; i < lines.length && !isTool(lines[i] ?? ''); i++) text.push(lines[i] ?? '')
     while (text[0] === '') text.shift()
     while (text.at(-1) === '') text.pop()
     if (text.length > 0) blocks.push({ kind: 'text', lines: text })
@@ -62,6 +62,17 @@ export function parseLog(text: string): Block[] {
 }
 
 const TOOL = '→ '
+
+// A line written after run logs got times starts "21:27:03 "; older logs have none.
+const STAMP = /^\d{2}:\d{2}:\d{2} /
+
+function unstamp(line: string): string {
+  return line.replace(STAMP, '')
+}
+
+function isTool(line: string): boolean {
+  return unstamp(line).startsWith(TOOL)
+}
 
 function toolCall(line: string): ToolCall {
   const rest = line.slice(TOOL.length)
