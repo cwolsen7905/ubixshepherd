@@ -9,13 +9,12 @@ export function ThemeMenu() {
   return (
     <div className="sh-theme-menu" data-component="ThemeMenu">
       <Popover label={<span aria-label="More">⋯</span>}>
-        <div role="radiogroup" aria-label="Theme" className="sh-theme-options">
+        <div role="group" aria-label="Theme" className="sh-theme-options">
           {THEMES.map(([value, name]) => (
             <button
               key={value}
               type="button"
-              role="radio"
-              aria-checked={theme === value}
+              aria-pressed={theme === value}
               className="sh-btn sh-btn--ghost"
               onClick={() => setTheme(value)}
             >

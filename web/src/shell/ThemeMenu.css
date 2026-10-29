@@ -4,6 +4,6 @@
 .sh-theme-menu .ui-popover { left: auto; right: 0; min-width: 8rem; }
 .sh-theme-options { display: flex; flex-direction: column; gap: var(--sh-s2); }
 .sh-theme-options .sh-btn { justify-content: flex-start; }
-.sh-theme-options [aria-checked="true"]::before { content: "✓ "; }
+.sh-theme-options [aria-pressed="true"]::before { content: "✓ "; }
 .sh-mobile-bar .sh-theme-menu { position: static; }
 .sh-mobile-bar .sh-theme-menu .ui-popover { right: 0; }
