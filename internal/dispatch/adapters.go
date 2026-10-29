@@ -215,6 +215,29 @@ func mustJSON(v any) string {
 	return string(b)
 }
 
+// KillDenied are the Claude Code deny rules that stop an agent signalling processes by
+// name, by a lookup in the same command, or by group, which could reach another lane's
+// runs. A plain `kill 1234`, of a PID the agent started, stays allowed.
+//
+// This is a guardrail for the usual case, not isolation between lanes. Claude's rules
+// match the command text: the name tools are denied anywhere in it (so `/usr/bin/pkill`,
+// `sudo pkill` and `sh -c 'pkill x'` are caught), but `sh -c 'kill -1'` and a plain
+// `kill 1234` of a PID the agent read from `ps` in an earlier call are not. Stopping
+// those needs the daemon or the process owner to refuse signals outside the run's own
+// process tree; that gap is accepted here.
+var KillDenied = []string{"Bash(*pkill*)", "Bash(*killall*)", "Bash(*taskkill*)", "Bash(kill*$(*)", "Bash(kill*`*)",
+	"Bash(*kill*pgrep*)", "Bash(*pgrep*kill*)", "Bash(*kill*pidof*)", "Bash(*pidof*kill*)", "Bash(*xargs*kill*)",
+	// Whole-group and all-process forms: kill 0, kill -1, kill -- -PGID, kill -9 -PGID.
+	"Bash(kill 0*)", "Bash(kill* 0)", "Bash(kill* -1)", "Bash(kill* -1 *)", "Bash(kill* -- *)", "Bash(kill -* -*)"}
+
+// CopilotKillDenied are Copilot's rules for the same. Copilot matches a command by its
+// leading words and has no wildcard inside one, so only the by-name tools are denied, and a
+// wrapper such as an absolute path or `sudo` is not; a
+// `kill $(pgrep ...)` runs the pgrep inside a substitution Copilot does not see, and is
+// not covered. Cursor has no per-command deny at all, and OpenCode denies every command
+// not on its allow list, which has no kill.
+var CopilotKillDenied = []string{"shell(pkill)", "shell(killall)", "shell(taskkill)", "shell(pgrep)"}
+
 func always() bool { return true }
 
 var copilotResume = regexp.MustCompile(`copilot --resume=([A-Za-z0-9-]+)`)
@@ -256,6 +279,7 @@ var adapters = map[string]Adapter{
 				a = append(a, "Bash(git push:*)")
 			}
 			a = append(a, BypassDenied...)
+			a = append(a, KillDenied...)
 			if o.Model != "" {
 				a = append(a, "--model", o.Model)
 			}
@@ -299,6 +323,9 @@ var adapters = map[string]Adapter{
 				a = append(a, "--deny-tool", "shell(git push)")
 			}
 			for _, rule := range CopilotBypassDenied {
+				a = append(a, "--deny-tool", rule)
+			}
+			for _, rule := range CopilotKillDenied {
 				a = append(a, "--deny-tool", rule)
 			}
 			if o.Worker != "" {

@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,84 @@ func TestBriefAndClaudeForbidHookBypass(t *testing.T) {
 		}
 		if has(cop, "shell(git push)") == push {
 			t.Errorf("push %v: copilot push deny = %v", push, !push)
+		}
+	}
+}
+
+// Agents cannot signal processes by name, so one lane cannot kill another's runs; a
+// plain kill of a PID is not denied.
+func TestKillByNameDenied(t *testing.T) {
+	for _, rule := range []string{"Bash(*pkill*)", "Bash(*killall*)", "Bash(kill*$(*)", "Bash(kill 0*)", "Bash(kill* -1)", "Bash(kill* -- *)", "Bash(kill -* -*)", "Bash(*pgrep*kill*)", "Bash(*xargs*kill*)"} {
+		found := false
+		for _, r := range KillDenied {
+			found = found || r == rule
+		}
+		if !found {
+			t.Errorf("KillDenied lacks %q", rule)
+		}
+	}
+	for _, r := range KillDenied {
+		if r == "Bash(kill*)" || r == "Bash(kill:*)" {
+			t.Errorf("KillDenied %q would deny a plain kill of the agent's own PID", r)
+		}
+	}
+	for _, push := range []bool{true, false} {
+		j := strings.Join(adapters["claude"].Args(Opts{Push: push}), " ")
+		_, list, _ := strings.Cut(j, "--disallowedTools")
+		for _, rule := range KillDenied {
+			if !strings.Contains(list, rule) {
+				t.Errorf("push %v: claude does not deny %q", push, rule)
+			}
+		}
+		cj := strings.Join(adapters["copilot"].Args(Opts{Push: push}), " ")
+		for _, rule := range CopilotKillDenied {
+			if !strings.Contains(cj, "--deny-tool "+rule) {
+				t.Errorf("push %v: copilot does not deny %q", push, rule)
+			}
+		}
+	}
+	oc := openCodeConfig(Opts{}, config.OpenCode{})
+	if strings.Contains(oc, "kill") {
+		t.Errorf("opencode config allows kill: %s", oc)
+	}
+}
+
+// killGlob reads a Bash(...) rule as a glob where * matches any text, which is how the
+// rules are written to match.
+func killGlob(rule string) *regexp.Regexp {
+	body := strings.TrimSuffix(strings.TrimPrefix(rule, "Bash("), ")")
+	parts := strings.Split(body, "*")
+	for i, p := range parts {
+		parts[i] = regexp.QuoteMeta(p)
+	}
+	return regexp.MustCompile("^" + strings.Join(parts, ".*") + "$")
+}
+
+// This models Claude's matcher (a * matches any text) and does not verify it: it shows the
+// rule strings agree with the commands listed, not that the CLI denies them. Check a rule
+// change against the real claude CLI by hand, as for any adapter change.
+func TestKillDeniedMatchesCommands(t *testing.T) {
+	denies := func(cmd string) bool {
+		for _, r := range KillDenied {
+			if killGlob(r).MatchString(cmd) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, cmd := range []string{
+		"pkill x", "pkill -f lane", "/usr/bin/pkill x", "sudo killall x", "timeout 5 pkill x", "sh -c 'pkill x'",
+		"taskkill /F /IM x.exe", "kill $(pgrep x)", "kill `pidof x`", "kill -9 $(pgrep -f lane)",
+		"for p in $(pgrep -f lane); do kill $p; done", "pgrep -f lane; kill $p", "pidof x | xargs kill",
+		"kill 0", "kill -9 0", "kill -1", "kill -9 -1", "kill -- -123", "kill -9 -123", "kill -s TERM -123",
+	} {
+		if !denies(cmd) {
+			t.Errorf("no kill rule denies %q", cmd)
+		}
+	}
+	for _, cmd := range []string{"kill 1234", "kill -9 1234", "kill -TERM 1234", "kill -15 1234", "git status", "echo skill"} {
+		if denies(cmd) {
+			t.Errorf("a kill rule denies %q", cmd)
 		}
 	}
 }
