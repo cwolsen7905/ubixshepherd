@@ -2,6 +2,9 @@ package dispatch
 
 import (
 	"bytes"
+	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,5 +67,36 @@ func TestStripStamp(t *testing.T) {
 		if got := StripStamp(in); got != want {
 			t.Errorf("StripStamp(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestRunLogLinesCarryATime(t *testing.T) {
+	f := newFixture(t, "quick")
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run = f.wait(t, run.ID)
+	b, err := os.ReadFile(run.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timed := 0
+	for _, l := range strings.Split(strings.TrimRight(string(b), "\n"), "\n") {
+		switch {
+		case l == "" || strings.HasPrefix(l, "# shepherd run "), strings.HasPrefix(l, "# task:"), strings.HasPrefix(l, "# model:"), strings.HasPrefix(l, "# policy:"):
+			// the header written before the agent starts
+		case strings.HasPrefix(l, "# "):
+			if !hasClock.MatchString(l) {
+				t.Errorf("header without a time: %q", l)
+			}
+		case StripStamp(l) == l:
+			t.Errorf("line without a time: %q", l)
+		default:
+			timed++
+		}
+	}
+	if timed == 0 {
+		t.Errorf("no timed agent lines in:\n%s", b)
 	}
 }

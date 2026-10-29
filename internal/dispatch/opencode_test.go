@@ -88,7 +88,11 @@ func logOf(t *testing.T, run store.Run) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	lines := strings.Split(string(b), "\n")
+	for i, l := range lines {
+		lines[i] = StripStamp(l)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestOpenCodeRunEndToEnd(t *testing.T) {
