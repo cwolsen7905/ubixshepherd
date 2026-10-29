@@ -327,6 +327,9 @@ func policy(_ context.Context, req Request) (Verdict, bool) {
 		}
 		return proceed(RulePushAutonomy)
 	case ActionMergeArm:
+		if f.Merge == "after_approval" {
+			return refuse(RuleMergeAutonomy, "%s merges after a person approves (autonomy.merge is after_approval): Shepherd merges the request itself, so an agent does not arm a merge", f.Repo)
+		}
 		if f.Merge != AutonomyAgent {
 			return refuse(RuleMergeAutonomy, "%s has not let agents arm a merge (autonomy.merge is %q, not %q)", f.Repo, f.Merge, AutonomyAgent)
 		}

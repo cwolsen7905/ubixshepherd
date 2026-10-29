@@ -15,6 +15,8 @@ See [standards-packs.md](standards-packs.md) for what the fields do.
 | `standards_docs` | `docs/standards`, `docs/architecture`, `AGENTS.md`, `CLAUDE.md` | Paths in the repo holding its own standards. Those that exist are named in the brief and win over a pack rule. Relative, inside the repo. |
 | `standards_pack_dir` | `.shepherd/standards` | The repo's own pack directory. A rule with a Shepherd rule's id replaces it; `disabled: true` switches it off. |
 | `standards_when` | none | Extra `when` tags active in every lane of the repo. |
+| `autonomy.merge` | `human` | Who merges a lane's request: `human`, `after_approval` (Shepherd merges once a person approves, see [merging.md](merging.md)) or `agent` (an agent may arm merge-when-pipeline-succeeds). |
+| `autonomy.merge_bots` | none | Usernames whose approval never counts under `after_approval`, besides accounts the forge marks as bots. |
 | `autonomy.plan_first` | `true` | The brief tells the agent to post its plan as a decision and wait before changing code. |
 
 ## Keep-going

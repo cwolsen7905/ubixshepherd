@@ -28,6 +28,13 @@ type MR struct {
 	MergeSHA string    `json:"merge_sha,omitempty"`
 	URL      string    `json:"url"`
 	Pipeline *Pipeline `json:"pipeline,omitempty"`
+	// Author is the request's author's username; AuthorBot says the forge marks that
+	// account a bot. Draft is a draft request. MergeStatus is the forge's own verdict on
+	// mergeability ("mergeable" on GitLab) and is empty when the forge did not say.
+	Author      string `json:"author,omitempty"`
+	AuthorBot   bool   `json:"author_bot,omitempty"`
+	Draft       bool   `json:"draft,omitempty"`
+	MergeStatus string `json:"merge_status,omitempty"`
 	// Created and Updated are when the forge made the request and last changed it
 	// (comments and pushes count); zero when the forge did not say.
 	Created, Updated time.Time
@@ -275,6 +282,12 @@ type glMR struct {
 	CreatedAt    string      `json:"created_at"`
 	UpdatedAt    string      `json:"updated_at"`
 	HeadPipeline *glPipeline `json:"head_pipeline"`
+	Draft        bool        `json:"draft"`
+	MergeStatus  string      `json:"detailed_merge_status"`
+	Author       struct {
+		Username string `json:"username"`
+		Bot      bool   `json:"bot"`
+	} `json:"author"`
 }
 
 type glPipeline struct {
@@ -315,7 +328,8 @@ func (g *GitLab) MRForBranch(ctx context.Context, branch string) (*MR, error) {
 		return nil, err
 	}
 	mr := &MR{IID: one.IID, State: one.State, SHA: one.SHA, URL: one.WebURL, MergeSHA: one.SquashCommit,
-		Created: glTime(one.CreatedAt), Updated: glTime(one.UpdatedAt)}
+		Created: glTime(one.CreatedAt), Updated: glTime(one.UpdatedAt),
+		Author: one.Author.Username, AuthorBot: one.Author.Bot, Draft: one.Draft, MergeStatus: one.MergeStatus}
 	if one.MergeCommit != "" {
 		mr.MergeSHA = one.MergeCommit
 	}

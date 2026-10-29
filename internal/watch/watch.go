@@ -63,6 +63,8 @@ type Watcher struct {
 	reviewed map[int64]time.Time
 	// approvalRead is what each lane's approval was last read for (approval.go).
 	approvalRead map[int64]approvalRead
+	// mergeTried is the head each lane's merge was last tried at (merge.go).
+	mergeTried map[int64]mergeTry
 	// reviewRead is what was done about each lane's AI review job (airreview.go).
 	reviewRead map[int64]reviewRead
 	// closedRead is when the forge was last asked about a closed lane's request, by lane
@@ -178,7 +180,7 @@ func (w *Watcher) Check(ctx context.Context) {
 					note(fmt.Errorf("forge host %s is unreachable; skipped while backing off", host))
 					break
 				}
-				err := w.checkLane(ctx, f, lane, wc)
+				err := w.checkLane(ctx, f, repo.Name, lane, wc)
 				if err != nil {
 					note(err)
 				}
@@ -239,7 +241,7 @@ func (w *Watcher) feed(ctx context.Context, kind string, ref int64, format strin
 
 // checkLane reads a lane's merge request and acts on what changed. It returns the
 // forge's error, for the backoff; one from a host that answered is logged here.
-func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane, wc config.Watch) error {
+func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, repoName string, lane store.Lane, wc config.Watch) error {
 	mr, err := f.MRForBranch(ctx, lane.Branch)
 	if err != nil {
 		if !forge.Unreachable(err) {
@@ -287,6 +289,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, lane store.Lane,
 
 	w.approval(ctx, f, lane, mr, prev, &next)
 	w.aiReview(ctx, f, lane, mr)
+	w.mergeAfterApproval(ctx, f, repoName, lane, mr)
 	w.shadowObserve(ctx, lane, mr, w.reviewPassed(lane.ID, mr))
 	w.reviewThreads(ctx, f, lane, mr, &next, wc)
 
