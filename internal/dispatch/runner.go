@@ -662,8 +662,9 @@ func powers(prof config.Profile, remote string) Powers {
 
 // watch copies the agent's output to the log line by line, redacted, then records the
 // outcome when the agent exits.
-func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out io.Reader, logf *os.File) {
+func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out io.Reader, file *os.File) {
 	defer r.wg.Done()
+	logf := NewStampWriter(file, nil) // each line the run writes from here on starts with its time
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	var limit Limit
@@ -816,7 +817,8 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	if why != "" {
 		fmt.Fprintf(logf, "# shepherd: %s\n", why)
 	}
-	logf.Close()
+	logf.Flush()
+	file.Close()
 	if err := r.Store.UpdateRun(ctx, run); err != nil {
 		r.Log.Error("record run outcome", "run", run.ID, "err", err)
 	}
