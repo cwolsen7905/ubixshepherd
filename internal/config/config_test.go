@@ -555,3 +555,16 @@ func TestRepoAgentsList(t *testing.T) {
 		t.Errorf("unknown agent: %v", err)
 	}
 }
+
+func TestMergeAfterApprovalIsAChoice(t *testing.T) {
+	c, err := Parse([]byte("repos:\n  x:\n    autonomy:\n      merge: after_approval\n      merge_bots: [svc]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := c.Profile("x"); p.Autonomy.Merge != AfterApproval || len(p.Autonomy.MergeBots) != 1 {
+		t.Fatalf("autonomy = %+v", p.Autonomy)
+	}
+	if _, err := Parse([]byte("repos:\n  x:\n    autonomy:\n      deploy: after_approval\n")); err == nil {
+		t.Fatal("deploy accepted after_approval")
+	}
+}

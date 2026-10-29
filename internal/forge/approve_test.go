@@ -70,3 +70,60 @@ func TestAIReviewJobValue(t *testing.T) {
 		t.Fatalf("AIReviewJob = %q, want kelpie-review", AIReviewJob)
 	}
 }
+
+func TestPersonApproversSkipAuthorBotsAndListed(t *testing.T) {
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(context.Context, ...string) ([]byte, error) {
+		return []byte(`{"approved":true,"approved_by":[{"user":{"username":"dev"}},{"user":{"username":"svc","bot":true}},{"user":{"username":"project_3_bot_ab"}},{"user":{"username":"helper"}},{"user":{"username":"pat"}}]}`), nil
+	}}
+	a, err := g.Approvals(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(a.PersonApprovers("dev", []string{"helper"}), ","); got != "pat" {
+		t.Fatalf("persons = %q", got)
+	}
+}
+
+func TestGitLabMergeSendsTheHeadAsPut(t *testing.T) {
+	var got []string
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		got = args
+		return []byte(`{}`), nil
+	}}
+	if err := g.Merge(context.Background(), 7, "abc123"); err != nil {
+		t.Fatal(err)
+	}
+	line := strings.Join(got, " ")
+	for _, want := range []string{"--method PUT", "projects/group%2Fapp/merge_requests/7/merge", "--raw-field sha=abc123"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("args %q lack %q", line, want)
+		}
+	}
+}
+
+func TestGitLabApprovedHeadCountsOnlyApprovalsAfterThePush(t *testing.T) {
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		switch path := args[len(args)-1]; {
+		case strings.Contains(path, "/versions"):
+			return []byte(`[{"head_commit_sha":"new","created_at":"2026-10-28T10:00:00Z"},{"head_commit_sha":"old","created_at":"2026-10-28T08:00:00Z"}]`), nil
+		case strings.Contains(path, "/notes"):
+			return []byte(`[
+{"system":true,"body":"approved this merge request","created_at":"2026-10-28T11:00:00Z","author":{"username":"late"}},
+{"system":true,"body":"unapproved this merge request","created_at":"2026-10-28T10:30:00Z","author":{"username":"changed"}},
+{"system":true,"body":"approved this merge request","created_at":"2026-10-28T09:00:00Z","author":{"username":"early"}},
+{"system":true,"body":"approved this merge request","created_at":"2026-10-28T08:30:00Z","author":{"username":"changed"}},
+{"system":false,"body":"approved this merge request","created_at":"2026-10-28T11:30:00Z","author":{"username":"talker"}}]`), nil
+		}
+		return nil, fmt.Errorf("unexpected %v", args)
+	}}
+	got, err := g.ApprovedHead(context.Background(), 7, "new", []string{"late", "changed", "early", "talker"})
+	if err != nil || strings.Join(got, ",") != "late" {
+		t.Fatalf("approved = %v, %v", got, err)
+	}
+	if _, err := g.ApprovedHead(context.Background(), 7, "unknown", []string{"late"}); err == nil {
+		t.Fatal("an unknown head was accepted")
+	}
+	if err := g.Merge(context.Background(), 7, ""); err == nil {
+		t.Fatal("merged with no head")
+	}
+}

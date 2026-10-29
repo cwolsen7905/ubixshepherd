@@ -433,6 +433,9 @@ const (
 const (
 	Human = "human"
 	Agent = "agent"
+	// AfterApproval, for merge: Shepherd merges the lane's request once a person other
+	// than its author has approved it and the forge's checks hold (internal/watch/merge.go).
+	AfterApproval = "after_approval"
 	// Shepherd: Shepherd itself, deterministically (for push: after the gate passes).
 	Shepherd = "shepherd"
 )
@@ -778,9 +781,15 @@ func badModel(m string) bool {
 type Autonomy struct {
 	// Merge: "agent" lets an agent arm merge-when-pipeline-succeeds on its own lane's
 	// merge request; the forge's approvals, pipelines and threads still gate it.
-	Merge  string `yaml:"merge,omitempty" json:"merge,omitempty"`
-	Tag    string `yaml:"tag,omitempty" json:"tag,omitempty"`
-	Deploy string `yaml:"deploy,omitempty" json:"deploy,omitempty"`
+	// "after_approval" has Shepherd merge the request once a person other than its
+	// author (and not a bot) has approved its current head, its pipeline passed on that
+	// head and no review thread is open; agents never arm a merge under it.
+	Merge string `yaml:"merge,omitempty" json:"merge,omitempty"`
+	// MergeBots are forge usernames whose approval never counts under after_approval,
+	// besides the accounts the forge marks as bots.
+	MergeBots []string `yaml:"merge_bots,omitempty" json:"merge_bots,omitempty"`
+	Tag       string   `yaml:"tag,omitempty" json:"tag,omitempty"`
+	Deploy    string   `yaml:"deploy,omitempty" json:"deploy,omitempty"`
 	// Push: who pushes a lane's branch and opens its merge request. "shepherd" lets
 	// Shepherd do it after an agent's run, once the repo's gate passes in the lane;
 	// "agent" lets the agent push its own lane's branch during its run.
@@ -1030,8 +1039,17 @@ func (p Profile) validate(at string) []error {
 		errs = append(errs, fmt.Errorf("%s.branch_model: %q is not %s or %s", at, p.BranchModel, Trunk, Promotion))
 	}
 	for field, v := range map[string]string{"merge": p.Autonomy.Merge, "tag": p.Autonomy.Tag, "deploy": p.Autonomy.Deploy} {
-		if v != Human && v != Agent {
+		if v != Human && v != Agent && (field != "merge" || v != AfterApproval) {
+			if field == "merge" {
+				errs = append(errs, fmt.Errorf("%s.autonomy.merge: %q is not %s or %s (merge also takes %s)", at, v, Human, Agent, AfterApproval))
+				continue
+			}
 			errs = append(errs, fmt.Errorf("%s.autonomy.%s: %q is not %s or %s", at, field, v, Human, Agent))
+		}
+	}
+	for _, b := range p.Autonomy.MergeBots {
+		if strings.TrimSpace(b) == "" {
+			errs = append(errs, fmt.Errorf("%s.autonomy.merge_bots: empty username", at))
 		}
 	}
 	for _, f := range p.Forbid {
@@ -1222,6 +1240,9 @@ func merge(base, over Profile) Profile {
 	}
 	if over.Autonomy.Merge != "" {
 		out.Autonomy.Merge = over.Autonomy.Merge
+	}
+	if len(over.Autonomy.MergeBots) > 0 {
+		out.Autonomy.MergeBots = over.Autonomy.MergeBots
 	}
 	if over.Autonomy.Tag != "" {
 		out.Autonomy.Tag = over.Autonomy.Tag

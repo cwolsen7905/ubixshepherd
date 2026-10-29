@@ -23,7 +23,7 @@ func power(who string) int {
 	switch who {
 	case config.Agent:
 		return 2
-	case config.Shepherd:
+	case config.Shepherd, config.AfterApproval:
 		return 1
 	}
 	return 0

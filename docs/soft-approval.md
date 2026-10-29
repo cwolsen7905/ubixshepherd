@@ -201,7 +201,10 @@ item the desk thinks of; keep-going starts it only after the person approves it.
 **A consequence to state plainly.** A repo whose rules require one or more human
 approvals still needs a human's click: a soft approval does not satisfy that rule and is
 not meant to. Soft approval is for repos where merging is gated by pipelines and threads,
-as `autonomy.merge: agent` already assumes.
+as `autonomy.merge: agent` already assumes. A repo that wants a person's approval before
+anything merges can set `autonomy.merge: after_approval` instead: Shepherd merges the request
+once a person other than the author has approved it and the checks hold, and an agent's soft
+approval never counts as that person. See [merging.md](merging.md).
 
 Comments and threads are posted by the job's project access token, a bot, so they do not
 look like the person wrote them. The daemon's own comments (a handoff, an issue link) use

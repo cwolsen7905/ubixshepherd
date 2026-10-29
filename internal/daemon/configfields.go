@@ -22,8 +22,9 @@ type fieldMeta struct {
 }
 
 var (
-	whoChoices  = []string{config.Human, config.Agent}
-	pushChoices = []string{config.Human, config.Shepherd, config.Agent}
+	whoChoices   = []string{config.Human, config.Agent}
+	mergeChoices = []string{config.Human, config.AfterApproval, config.Agent}
+	pushChoices  = []string{config.Human, config.Shepherd, config.Agent}
 )
 
 // profileMeta, by field path inside a profile.
@@ -45,7 +46,7 @@ var profileMeta = map[string]fieldMeta{
 	"standards_pack_dir":    {label: "Standards pack directory", help: "The repo's own pack directory, relative to the repo.", group: "Standards"},
 	"standards_when":        {label: "Standards tags", help: "Extra `when` tags active in every lane of the repo.", group: "Standards"},
 	"autonomy.push":         {label: "Push", help: "Who pushes a lane's branch and opens its merge request: human, shepherd (after the gate passes) or agent.", group: "Autonomy", choices: pushChoices, risk: true},
-	"autonomy.merge":        {label: "Merge", help: "agent lets an agent arm merge-when-pipeline-succeeds on its own lane's merge request; the forge still gates it.", group: "Autonomy", choices: whoChoices, risk: true},
+	"autonomy.merge":        {label: "Merge", help: "after_approval has Shepherd merge once a person other than the author approves the current head and the checks hold; agent lets an agent arm merge-when-pipeline-succeeds on its own lane's merge request; the forge still gates both.", group: "Autonomy", choices: mergeChoices, risk: true},
 	"autonomy.tag":          {label: "Tag", help: "Who may cut a release tag.", group: "Autonomy", choices: whoChoices, risk: true},
 	"autonomy.deploy":       {label: "Deploy", help: "Who may deploy.", group: "Autonomy", choices: whoChoices, risk: true},
 	"autonomy.plan_first":   {label: "Plan first", help: "An agent proposes a plan and waits before changing anything.", group: "Autonomy", risk: true},
