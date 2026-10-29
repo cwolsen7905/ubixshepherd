@@ -42,8 +42,9 @@ type Row struct {
 	// PR is the pull or merge request number, or 0 when the cell was `-`.
 	PR int `json:"pr,omitempty"`
 	// PRRef is the PR cell as written (`#N` or `!N`), empty when the cell was
-	// `-`. It keeps the author's marker so callers can tell a GitLab MR (`!N`)
-	// from a GitHub PR (`#N`); PR holds the number for links.
+	// `-`. It is display-only: callers show it so a GitLab MR (`!N`) reads as
+	// written. Links still come from PR and the repo's remote host, so a `!N`
+	// cell on a GitHub remote links to `/pull/N`.
 	PRRef string `json:"pr_ref,omitempty"`
 	Notes string `json:"notes,omitempty"`
 }
