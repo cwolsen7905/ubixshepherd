@@ -25,8 +25,7 @@ func TestStampWriter(t *testing.T) {
 		{"multi-line write", []string{"a\nb\nc\n"}, "21:27:04 a\n21:27:05 b\n21:27:06 c\n"},
 		{"held tail", []string{"a\nb"}, "21:27:04 a\n"},
 		{"blank lines bare", []string{"a\n\nb\n"}, "21:27:04 a\n\n21:27:06 b\n"},
-		{"header keeps form", []string{"\n# shepherd: run 1 succeeded\n"}, "\n# shepherd: run 1 succeeded at 21:27:05\n"},
-		{"header with a time", []string{"# shepherd: started 10:00:00\n"}, "# shepherd: started 10:00:00\n"},
+		{"agent text that looks like a note", []string{"# shepherd: not mine\n"}, "21:27:04 # shepherd: not mine\n"},
 		{"agent heading is agent text", []string{"# Plan\n"}, "21:27:04 # Plan\n"},
 	} {
 		var b bytes.Buffer
@@ -39,6 +38,17 @@ func TestStampWriter(t *testing.T) {
 		if got := b.String(); got != c.want {
 			t.Errorf("%s: %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestStampWriterNote(t *testing.T) {
+	var b bytes.Buffer
+	w := NewStampWriter(&b, stampClock())
+	w.Write([]byte("partial"))
+	w.Note("# shepherd: run 1 succeeded (exit 0)\n")
+	w.Note("# shepherd: started 10:00:00")
+	if want := "21:27:04 partial\n# shepherd: run 1 succeeded (exit 0) at 21:27:05\n# shepherd: started 10:00:00\n"; b.String() != want {
+		t.Errorf("%q, want %q", b.String(), want)
 	}
 }
 
