@@ -99,9 +99,10 @@ check-keep-going:
 	if [ $$status -ne 0 ] && ! grep -q -E '^--- ' .keepgoing-checks.log; then cat .keepgoing-checks.log; fi; \
 	rm -f .keepgoing-checks.log; exit $$status
 
-# The install script is not Go: parse it, so it cannot rot unseen.
+# The install script and the CI check script are not Go: parse them, so it cannot rot unseen.
 script-check:
 	@sh -n bin/install.sh && echo "install.sh parses."
+	@bash -n .github/scripts/run-check.sh && echo "run-check.sh parses."
 
 core-boundary:
 	@if grep -rniE '$(PRODUCT_PATTERN)' $(CORE_DIRS); then \

@@ -60,7 +60,7 @@ jobs:
       - name: make check
         env:
           GO_TEST_SKIP: ${{ runner.os == 'Windows' && 'TestLaneOpenListCloseFromCLI|TestConnectRunningTellsNoDaemonFromAnUnansweringOne|TestDaemonGoneIsFalseForAnAnsweringDaemon|TestSaveConflictAndBackup|TestScanAndRead|TestMissingUnreadableAndUnsupported|TestOpenCodeBinaryLookup|TestSetupCursorKeepsOtherServers|TestLaneSetup|TestCommandLines' || '' }}
-        run: .github/scripts/run-check.sh
+        run: bash .github/scripts/run-check.sh
 
   # The oldest git Shepherd supports (README: 2.31). Ubuntu 22.04 ships 2.34.1, so the
   # suite runs against a real old git, not only the runner's current one. Tests that need
@@ -91,7 +91,7 @@ jobs:
 
       - name: make check
         shell: bash
-        run: .github/scripts/run-check.sh
+        run: bash .github/scripts/run-check.sh
 
   # The gitleaks binary, run directly: the gitleaks-action needs a licence for
   # organisations. Pinned to a release and checked against that release's published
