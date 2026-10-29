@@ -53,6 +53,11 @@ describe('Markdown lists', () => {
     expect(lists('  1. a\n- b\n   - c')).toEqual(['ol(a)', 'ul(b ul(c))'])
   })
 
+  it('closes a list at an unindented line, so the next marker starts a new list', () => {
+    const root = html('- one\nnote\n- two').firstElementChild
+    expect(Array.from(root?.children ?? []).map((e) => e.tagName)).toEqual(['UL', 'P', 'UL'])
+  })
+
   it('keeps continuation lines inside the item and returns to the outer level', () => {
     expect(lists('1. one\n   more of one\n   - nested\n2. two')).toEqual(['ol(one\nmore of one ul(nested) two)'])
   })

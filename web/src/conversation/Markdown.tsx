@@ -219,7 +219,8 @@ export function blocks(src: string): Block[] {
       open.text += '\n' + line.trim()
       continue
     }
-    // Regular text
+    // Regular text ends any open list, so a later marker starts a new one after it
+    flushList()
     para.push(line)
   }
   flush()
