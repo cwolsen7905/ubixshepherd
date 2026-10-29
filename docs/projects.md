@@ -315,7 +315,7 @@ and this document supplies the first and last pieces of that chain.
 | `follows` | A release of a followed repo opens a lane and starts an agent. | Unchanged; the way a released dependency feeds a consumer, in or across projects. |
 | Requests (`internal/dispatch/route.go`) | `question`, `handoff`, `review`, `person`, addressed to a lane; depth capped. | Adds a project as a target, three kinds and typed fields; the same state machine, depth cap and reply path. |
 | Decisions | `ask_human`, routed `person` requests, quota holds. | A held request is a decision; so is a brief approval and a widened scope. |
-| Autonomy | Per repo: `push`, `merge`, `tag`, `deploy`. | Unchanged. A project grants no autonomy; intake `auto` only starts work. |
+| Autonomy | Per repo: `push`, `merge`, `tag`, `deploy`. | Unchanged. A project grants no autonomy; intake `auto` and the keep-going drive only start work, and the agents they start are bound by the repo's `autonomy` as for any lane. |
 | Budget | `daemon.budget`, daily, holds Shepherd's own runs. | Per-project budgets under it, a separate desk line, each cap `soft` or `hard` (default `hard`, today's semantics). |
 | Leases and scope | Per repo; workspace-wide still outstanding. | Unchanged. Cross-project writes are never direct, so none are needed. |
 | Config | `daemon`, `desk`, `defaults`, `repos`. | Adds `projects` (with `repos`, `budget`, `caches`, `intake`), validated like the rest, reloaded on SIGHUP. |
