@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { WaitingItem } from '../api/types'
 import { useKeys } from '../hooks'
-import { neighbour, openKey, openTarget, requestStep, waitingKey } from '../model/waitingStep'
+import { neighbour, openKey, openTarget, requestStep, waitingId, waitingKey } from '../model/waitingStep'
 import { go, parse, withOpen } from '../router'
 import { cutAtWord, fitCount } from '../components/TopicBar'
 import { Kbd } from '../ui'
@@ -16,6 +16,9 @@ const LABEL: Partial<Record<WaitingItem['kind'], string>> = {
   next: 'Next up',
   request: 'Request',
 }
+
+/** "D410 Decision" for the strip: the id leads when there is one. */
+const chipLabel = (it: WaitingItem) => [waitingId(it), LABEL[it.kind] ?? it.kind].filter(Boolean).join(' ')
 
 /** The longest an item's title gets in the strip; the full text is the tooltip. */
 export const ITEM_MAX = 24
@@ -97,10 +100,10 @@ export function PendingStrip({ keys = true }: { keys?: boolean }) {
             <li key={key}>
               <button
                 type="button" className={`sh-pending-item${over ? ' is-over' : ''}`} aria-current={key === at ? 'true' : undefined}
-                title={`${LABEL[it.kind] ?? it.kind}: ${it.title}`} tabIndex={over ? -1 : undefined} onClick={() => showWaiting(it)}
+                title={`${chipLabel(it)}: ${it.title}`} tabIndex={over ? -1 : undefined} onClick={() => showWaiting(it)}
               >
                 {isUnseen(seen, it) ? <span className="sh-unseen" role="img" aria-label="unseen" /> : null}
-                {LABEL[it.kind] ?? it.kind}: {shortTitle(it.title)}
+                {chipLabel(it)}: {shortTitle(it.title)}
               </button>
             </li>
           )
@@ -114,8 +117,8 @@ export function PendingStrip({ keys = true }: { keys?: boolean }) {
           {menu && (
             <div className="sh-tmore-pop sh-tmore-pop--up" role="group" aria-label="More waiting items">
               {items.slice(fit).map((it) => (
-                <button key={waitingKey(it)} type="button" className="sh-tmore-item" title={it.title} onClick={() => { setMenu(false); showWaiting(it) }}>
-                  <span>{LABEL[it.kind] ?? it.kind}: {shortTitle(it.title, 40)}</span>
+                <button key={waitingKey(it)} type="button" className="sh-tmore-item" title={`${chipLabel(it)}: ${it.title}`} onClick={() => { setMenu(false); showWaiting(it) }}>
+                  <span>{chipLabel(it)}: {shortTitle(it.title, 40)}</span>
                 </button>
               ))}
             </div>

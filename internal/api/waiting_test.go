@@ -72,3 +72,40 @@ func TestShortenAtWord(t *testing.T) {
 		t.Errorf("plainText kept no comparison signs: %q", got)
 	}
 }
+
+func TestWaitingStableIDs(t *testing.T) {
+	w := Waiting{Items: []WaitingItem{
+		{Kind: WaitingDecision, DecisionID: 410},
+		{Kind: WaitingQuestion, QuestionID: 271},
+		{Kind: WaitingRequest, RequestID: 111},
+		{Kind: WaitingNext, NextID: 255},
+		{Kind: WaitingMR, Repo: "app", MR: 175, LaneID: 4},
+		{Kind: WaitingMR, Repo: "lib", MR: 175, LaneID: 5},
+		{Kind: WaitingShip, LaneID: 42},
+		{Kind: WaitingBlocked, LaneID: 42, RunID: 318},
+		{Kind: WaitingScope, DecisionID: 410, LaneID: 42},
+		{Kind: WaitingArtifact, LaneID: 42},
+		{Kind: WaitingDecision},
+	}}
+	w.Seal()
+	want := []string{"D410", "Q271", "R111", "N255", "app!175", "lib!175", "S42", "B318", "W410", "F42", ""}
+	seen := map[string]bool{}
+	for i, it := range w.Items {
+		if it.ID != want[i] {
+			t.Errorf("item %d (%s): id %q, want %q", i, it.Kind, it.ID, want[i])
+		}
+		if it.ID != "" && seen[it.ID] {
+			t.Errorf("id %q appears twice", it.ID)
+		}
+		seen[it.ID] = true
+	}
+	// The id does not depend on anything that changes between reads.
+	a := w.Items[0]
+	a.Title, a.Detail = "later words", "more"
+	if a.StableID() != "D410" {
+		t.Error("id moved with the text")
+	}
+	if line := w.Line(); !strings.HasPrefix(line, "[Waiting on you (11)] D410 decision 410; Q271 question 271; R111 request 111") {
+		t.Errorf("line does not lead each item with its id: %s", line)
+	}
+}

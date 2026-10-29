@@ -16,8 +16,8 @@ const waiting: Waiting = {
   count: 6,
   counts: { decisions: 1, mrs: 1, ship: 0, next: 1, blocked: 1 },
   items: [
-    { kind: 'decision', action: 'answer', decision_id: 7, lane: 'a', title: 'Which store?' },
-    { kind: 'mr', action: 'approve', lane_id: 3, lane: 'b', title: 'Add retries', mr: 12 },
+    { kind: 'decision', id: 'D7', action: 'answer', decision_id: 7, lane: 'a', title: 'Which store?' },
+    { kind: 'mr', id: 'app!12', action: 'approve', lane_id: 3, lane: 'b', title: 'Add retries', mr: 12 },
     { kind: 'next', action: 'review', next_id: 5, title: 'Proposed item' },
     { kind: 'ship', action: 'ship', lane_id: 6, lane: 'd', title: 'Ship lane d' },
     { kind: 'blocked', action: 'open', lane_id: 4, lane: 'c', title: 'Lane c is blocked' },
@@ -65,6 +65,13 @@ describe('InboxPage', () => {
     expect(screen.getByText('decision 7')).toHaveAttribute('data-component', 'IdChip')
     expect(screen.getByText('request 9')).toHaveAttribute('data-component', 'IdChip')
     expect(screen.getByText(/move/)).toBeInTheDocument()
+  })
+
+  it('shows each item\'s stable id, as the daemon sent it', async () => {
+    await show()
+    const ids = Array.from(document.querySelectorAll('[data-component="StableId"]')).map((e) => e.textContent)
+    expect(ids.length).toBeGreaterThan(0)
+    for (const it of waiting.items) if (it.id) expect(ids).toContain(it.id)
   })
 
   it('lists a merged lane with undecided files, and a kind it does not know, under To tidy', async () => {

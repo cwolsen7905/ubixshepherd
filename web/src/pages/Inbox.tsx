@@ -5,7 +5,7 @@ import { splitQuestion } from '../components/DecisionCard'
 import { inline } from '../conversation/Markdown'
 import { since } from '../format'
 import { useKeys, useNow } from '../hooks'
-import { isSuggestion, neighbour, openKey, SUGGESTION_LABEL, suggestionChoices, suggestionPatch, waitingKey, type SuggestionChoice } from '../model/waitingStep'
+import { isSuggestion, neighbour, openKey, SUGGESTION_LABEL, suggestionChoices, suggestionPatch, waitingId, waitingKey, type SuggestionChoice } from '../model/waitingStep'
 import { go, href, parse, useFocusTarget, withOpen, type Open } from '../router'
 import { useLive, useSnapshot } from '../state/context'
 import { Button, Chip, Count, EmptyState, GroupHeader, IdChip, Kbd, ListRow, LoadingRows } from '../ui'
@@ -235,6 +235,12 @@ export function InboxPage({ kind }: { kind?: string }) {
             : null
     const sub = (
       <>
+        {waitingId(it) ? (
+          <>
+            <span className="ui-idchip" data-component="StableId" title="Answer by this id">{waitingId(it)}</span>
+            {' · '}
+          </>
+        ) : null}
         {typed?.id ? <IdChip kind={typed.kind} id={typed.id} /> : (KIND_LABEL[it.kind] ?? it.kind)}
         {where ? ` · ${where}` : ''}
         {it.kind === 'request' && it.request_id && !actionable ? (
