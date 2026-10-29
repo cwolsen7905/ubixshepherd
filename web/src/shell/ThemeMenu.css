@@ -1,7 +1,0 @@
-/* The ⋯ menu: a slim row at the top right of the main column, so it never covers a page's own
-   header controls; in the mobile bar it sits in the flow. */
-.sh-main-col > .sh-theme-menu { flex: none; display: flex; justify-content: flex-end; padding: var(--sh-s2) var(--sh-s6); }
-.sh-theme-menu .ui-popover { left: auto; right: 0; min-width: 8rem; }
-.sh-theme-options { display: flex; flex-direction: column; gap: var(--sh-s2); }
-.sh-theme-options .sh-btn { justify-content: flex-start; }
-.sh-theme-options [aria-pressed="true"]::before { content: "✓ "; }

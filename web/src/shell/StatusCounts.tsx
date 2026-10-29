@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { StatusCounts as Counts } from '../state/attention'
 import { cx, StatusGlyph } from '../ui'
+import { Flyout } from './Flyout'
 import { COUNT_KINDS, POP_MAX, SPEC, type CountKind, type PopItem } from './statusItems'
 
 /** How long the popover stays after the pointer leaves, so it can reach the card. */
@@ -40,8 +41,8 @@ export function CountList({ kind, n, items, onPick }: { kind: CountKind; n: numb
 
 /**
  * The four status counts: running, waiting on you, broken, needing routing. Each is a glyph and
- * a number and is never hidden; zero is faint. Hover or Tab opens a popover beside the sidebar
- * (Esc or leaving closes it); the count itself links to Board or Inbox. With `sheet`, a count
+ * a number and is never hidden; zero is faint. Hover or Tab opens a popover on a layer above the columns, beside the icon
+ * (flipped inward at the window's edge; Esc or leaving closes it); the count itself links to Board or Inbox. With `sheet`, a count
  * calls `onSheet` instead, for the bottom sheet at 390.
  */
 export function StatusCounts({
@@ -57,6 +58,8 @@ export function StatusCounts({
 }) {
   const [open, setOpen] = useState<CountKind | null>(null)
   const timer = useRef<number | undefined>(undefined)
+  const [item, setItem] = useState<HTMLElement | null>(null)
+  const pop = useRef<HTMLDivElement>(null)
   const show = useCallback((k: CountKind) => {
     window.clearTimeout(timer.current)
     setOpen(k)
@@ -83,6 +86,7 @@ export function StatusCounts({
         return (
           <div
             key={k}
+            ref={open === k ? setItem : undefined}
             className="sh-counts-item"
             onMouseEnter={sheet ? undefined : () => show(k)}
             onMouseLeave={sheet ? undefined : hide}
@@ -91,7 +95,8 @@ export function StatusCounts({
               sheet
                 ? undefined
                 : (e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) hide()
+                    const to = e.relatedTarget as Node | null
+                    if (!e.currentTarget.contains(to) && !pop.current?.contains(to)) hide()
                   }
             }
           >
@@ -108,14 +113,40 @@ export function StatusCounts({
                     }
                   : undefined
               }
+              onKeyDown={(e) => {
+                // The card is drawn in the body, so Tab would skip it: carry focus in.
+                if (e.key !== 'Tab' || e.shiftKey || sheet || open !== k) return
+                const first = pop.current?.querySelector<HTMLElement>('a')
+                if (!first) return
+                e.preventDefault()
+                first.focus()
+              }}
             >
               <StatusGlyph glyph={s.glyph} tone={n === 0 ? 'idle' : s.tone} />
               {n}
             </a>
             {!sheet && open === k && (
-              <div className="sh-count-pop" onMouseEnter={() => show(k)}>
+              <Flyout
+                ref={pop}
+                anchor={item}
+                className="sh-count-pop"
+                onMouseEnter={() => show(k)}
+                onMouseLeave={hide}
+                onFocus={() => show(k)}
+                onBlur={(e) => {
+                  const to = e.relatedTarget as Node | null
+                  if (!pop.current?.contains(to) && !item?.contains(to)) hide()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'Tab' || !e.shiftKey) return
+                  if (document.activeElement === pop.current?.querySelector('a')) {
+                    e.preventDefault()
+                    item?.querySelector<HTMLElement>('a')?.focus()
+                  }
+                }}
+              >
                 <CountList kind={k} n={n} items={lists[k]} onPick={() => setOpen(null)} />
-              </div>
+              </Flyout>
             )}
           </div>
         )

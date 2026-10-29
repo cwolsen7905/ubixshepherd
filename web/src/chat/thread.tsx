@@ -26,6 +26,7 @@ import { isUnseen, useSeen } from '../state/seen'
 import { Announcer, AwayBlock, useSeenWatch } from './seen'
 import { DecisionCard } from '../components/DecisionCard'
 import { NotifyToggle } from './notify'
+import { usePageMenu } from '../shell/pageMenu'
 import './convo.css'
 
 /** Three or more events between messages as one row: their glyphs, expandable. */
@@ -86,26 +87,12 @@ function ChatThread({
   const live = useSnapshot()
   const now = useNow()
   const [confirming, setConfirming] = useState(false)
-  const [menu, setMenu] = useState(false)
   const [topics, setTopics] = useState(false)
-  const moreRoot = useRef<HTMLSpanElement>(null)
-  useEffect(() => {
-    if (!menu) return
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      setMenu(false)
-      moreRoot.current?.querySelector('button')?.focus()
-    }
-    const away = (e: MouseEvent) => {
-      if (moreRoot.current && !moreRoot.current.contains(e.target as Node)) setMenu(false)
-    }
-    document.addEventListener('keydown', key)
-    document.addEventListener('mousedown', away)
-    return () => {
-      document.removeEventListener('keydown', key)
-      document.removeEventListener('mousedown', away)
-    }
-  }, [menu])
+  usePageMenu([
+    { key: 'notify', node: <NotifyToggle /> },
+    ...(side ? [] : [{ key: 'topics', label: topics ? 'Hide topics' : 'All topics', pressed: topics, onSelect: () => setTopics(!topics) }]),
+    { key: 'new', label: 'New conversation', onSelect: () => setConfirming(true) },
+  ])
   const wasConfirming = useRef(false)
   const confirmRoot = useRef<HTMLSpanElement>(null)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
@@ -291,8 +278,8 @@ function ChatThread({
   const follow = useFollowBottom(scroller, [d.loaded, items.length, d.partial, unplaced.length])
   useEffect(() => {
     if (confirming) confirmRoot.current?.querySelector('button')?.focus()
-    // The More button remounts when the confirmation closes; focus it once it is there.
-    else if (wasConfirming.current) moreRoot.current?.querySelector('button')?.focus()
+    // Closing the confirmation returns focus to the shell's one More button.
+    else if (wasConfirming.current) document.querySelector<HTMLElement>('[data-component="MoreMenu"] > button')?.focus()
     wasConfirming.current = confirming
   }, [confirming])
 
@@ -446,26 +433,7 @@ function ChatThread({
                 Cancel
               </Button>
             </span>
-          ) : (
-            <span className="sh-conv-more" ref={moreRoot}>
-              <Button size="small" variant="ghost" aria-label="More" aria-haspopup="true" aria-expanded={menu} onClick={() => setMenu(!menu)}>
-                &hellip;
-              </Button>
-              {menu && (
-                <div className="sh-conv-menu" role="group" aria-label="Conversation options">
-                  <NotifyToggle />
-                  {!side && (
-                    <Button size="small" aria-pressed={topics} onClick={() => { setMenu(false); setTopics(!topics) }}>
-                      {topics ? 'Hide topics' : 'All topics'}
-                    </Button>
-                  )}
-                  <Button size="small" onClick={() => { setMenu(false); setConfirming(true) }}>
-                    New conversation
-                  </Button>
-                </div>
-              )}
-            </span>
-          )}
+          ) : null}
         </span>
       </header>
 

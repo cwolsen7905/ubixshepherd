@@ -3,7 +3,8 @@ import { href, type Route } from '../router'
 import type { Status, Waiting } from '../api/types'
 import { ErrorBoundary } from '../components/ErrorBoundary'
 import { SessionBanner } from '../session/SessionBanner'
-import { ThemeMenu } from './ThemeMenu'
+import { MoreMenu } from './MoreMenu'
+import { PageMenuProvider } from './pageMenu'
 import { Sidebar } from './Sidebar'
 import { StatusCounts, CountList } from './StatusCounts'
 import { type CountKind, type PopItem } from './statusItems'
@@ -113,6 +114,7 @@ export function Shell({
   const style = { '--sh-side-w': `${w.width}px` } as CSSProperties
 
   return (
+    <PageMenuProvider>
     <div className={cx('sh-shell', !side && 'sh-shell--wide')} data-component="AppShell" data-mode={mode} style={panel ? style : undefined}>
       <a className="skip-link" href="#main" onClick={(e) => {
         e.preventDefault()
@@ -147,10 +149,10 @@ export function Shell({
                 {waitingCount} waiting
               </a>
             )}
-            <ThemeMenu />
+            <MoreMenu />
           </header>
         )}
-        {!compact && <ThemeMenu />}
+        {!compact && <MoreMenu />}
         {banner}
         <main id="main" className="main sh-main" tabIndex={-1}>
           <ErrorBoundary region="This page" resetKey={window.location.hash}>
@@ -205,5 +207,6 @@ export function Shell({
         </Dialog>
       )}
     </div>
+    </PageMenuProvider>
   )
 }

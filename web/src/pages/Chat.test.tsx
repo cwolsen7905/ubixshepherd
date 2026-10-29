@@ -1,3 +1,5 @@
+import { MoreMenu } from '../shell/MoreMenu'
+import { PageMenuProvider } from '../shell/pageMenu'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
@@ -50,7 +52,10 @@ async function show(api: DeskApi, live = liveWith(), offline = false) {
   render(
     <OfflineContext.Provider value={{ offline, retryIn: offline ? 5 : null }}>
       <LiveProvider live={live}>
-        <ChatPage make={(id) => new DeskThread(id, { api, open: (u) => new FakeSource(u) })} />
+        <PageMenuProvider>
+          <MoreMenu />
+          <ChatPage make={(id) => new DeskThread(id, { api, open: (u) => new FakeSource(u) })} />
+        </PageMenuProvider>
       </LiveProvider>
     </OfflineContext.Provider>,
   )
