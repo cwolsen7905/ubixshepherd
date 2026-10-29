@@ -62,7 +62,7 @@ var (
 	headingRe = regexp.MustCompile(`^#{2}\s+Work\s*#*\s*$`)
 	anyHeadRe = regexp.MustCompile(`^#{1,6}\s`)
 	alignCell = regexp.MustCompile(`^:?-{1,}:?$`)
-	prRe      = regexp.MustCompile(`^#(\d+)$`)
+	prRe      = regexp.MustCompile(`^[#!](\d+)$`)
 )
 
 // Parse reads the matrix from a WORK.md's text. Rows are in file order. Prose before the
@@ -200,11 +200,11 @@ func parseRow(cs []string) (Row, string) {
 	case prRe.MatchString(pr):
 		n, err := strconv.Atoi(prRe.FindStringSubmatch(pr)[1])
 		if err != nil || n == 0 {
-			return Row{}, fmt.Sprintf("pr %q is not #N or -", pr)
+			return Row{}, fmt.Sprintf("pr %q is not #N, !N or -", pr)
 		}
 		r.PR = n
 	default:
-		return Row{}, fmt.Sprintf("pr %q is not #N or -", pr)
+		return Row{}, fmt.Sprintf("pr %q is not #N, !N or -", pr)
 	}
 	return r, ""
 }

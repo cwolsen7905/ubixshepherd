@@ -62,6 +62,35 @@ func TestParseWarnings(t *testing.T) {
 	}
 }
 
+func TestParsePR(t *testing.T) {
+	head := "## Work\n\n| ID | Area | Item | Status | Lane | PR | Notes |\n|---|---|---|---|---|---|---|\n"
+	cases := []struct {
+		name   string
+		cell   string
+		wantPR int
+		wantOK bool
+	}{
+		{"github ref", "#12", 12, true},
+		{"gitlab ref", "!123", 123, true},
+		{"none", "-", 0, true},
+		{"bare number", "12", 0, false},
+		{"malformed ref", "#x", 0, false},
+		{"zero", "#0", 0, false},
+	}
+	for _, c := range cases {
+		r := Parse(head + "| A | a | i | todo | - | " + c.cell + " | |\n")
+		if !c.wantOK {
+			if len(r.Rows) != 0 || len(r.Warnings) != 1 {
+				t.Errorf("%s: want one warning, got %+v", c.name, r)
+			}
+			continue
+		}
+		if len(r.Warnings) != 0 || len(r.Rows) != 1 || r.Rows[0].PR != c.wantPR {
+			t.Errorf("%s: %+v", c.name, r)
+		}
+	}
+}
+
 func TestParseDuplicateKeepsFirst(t *testing.T) {
 	r := Parse("## Work\n| ID | Area | Item | Status | Lane | PR | Notes |\n|--|--|--|--|--|--|--|\n| A | a | one | todo | - | - | |\n| A | a | two | todo | - | - | |\n")
 	if len(r.Rows) != 1 || r.Rows[0].Item != "one" || len(r.Warnings) != 1 {
