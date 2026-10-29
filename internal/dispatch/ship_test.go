@@ -375,3 +375,43 @@ func TestShipRecordsAFailedGate(t *testing.T) {
 		t.Errorf("record = %+v", g)
 	}
 }
+
+// File names git would quote (a non-ASCII letter, a space, a newline) are read
+// exactly: one inside the scope is not reported outside it, and ones outside it
+// are named as they are, including one whose leading space a trim would eat.
+func TestChangedFilesReadsExactNames(t *testing.T) {
+	f, _ := shipFixture(t, "ok", pushes)
+	inside := "src/café menu.txt"
+	outside := "odd\nname.txt"
+	leadSpace := " lead.txt"
+	commitInLane(t, f, inside, "feat: inside")
+	commitInLane(t, f, outside, "feat: outside")
+	commitInLane(t, f, leadSpace, "feat: leading space")
+	ctx := context.Background()
+	got := changedFiles(ctx, f.lane)
+	if len(got) != 3 {
+		t.Fatalf("changedFiles = %q, want %q, %q and %q", got, inside, outside, leadSpace)
+	}
+	seen := map[string]bool{got[0]: true, got[1]: true, got[2]: true}
+	if !seen[inside] || !seen[outside] || !seen[leadSpace] {
+		t.Fatalf("changedFiles = %q, want %q, %q and %q", got, inside, outside, leadSpace)
+	}
+	if o := f.runner.outsideScope(ctx, f.lane); len(o) != 2 || o[0] == inside || o[1] == inside || !seen[o[0]] || !seen[o[1]] || o[0] == o[1] {
+		t.Errorf("outsideScope = %q, want %q and %q", o, outside, leadSpace)
+	}
+}
+
+// A diff that fails is an error, not an empty change: the ship refuses instead of
+// pushing with the scope unchecked.
+func TestChangedFilesErrFailsClosed(t *testing.T) {
+	f, _ := shipFixture(t, "ok", pushes)
+	bad := f.lane
+	bad.Worktree = filepath.Join(f.lane.Worktree, "no-such-dir")
+	ctx := context.Background()
+	if _, err := changedFilesErr(ctx, bad); err == nil {
+		t.Error("changedFilesErr = nil error for a worktree git cannot read")
+	}
+	if _, err := f.runner.outsideScopeErr(ctx, bad); err == nil {
+		t.Error("outsideScopeErr = nil error for a worktree git cannot read")
+	}
+}
