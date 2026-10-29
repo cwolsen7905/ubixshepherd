@@ -40,7 +40,11 @@ type Row struct {
 	// Lane is a Shepherd lane name, or empty when the cell was `-`.
 	Lane string `json:"lane,omitempty"`
 	// PR is the pull or merge request number, or 0 when the cell was `-`.
-	PR    int    `json:"pr,omitempty"`
+	PR int `json:"pr,omitempty"`
+	// PRRef is the PR cell as written (`#N` or `!N`), empty when the cell was
+	// `-`. It keeps the author's marker so callers can tell a GitLab MR (`!N`)
+	// from a GitHub PR (`#N`); PR holds the number for links.
+	PRRef string `json:"pr_ref,omitempty"`
 	Notes string `json:"notes,omitempty"`
 }
 
@@ -202,7 +206,7 @@ func parseRow(cs []string) (Row, string) {
 		if err != nil || n == 0 {
 			return Row{}, fmt.Sprintf("pr %q is not #N, !N or -", pr)
 		}
-		r.PR = n
+		r.PR, r.PRRef = n, pr
 	default:
 		return Row{}, fmt.Sprintf("pr %q is not #N, !N or -", pr)
 	}

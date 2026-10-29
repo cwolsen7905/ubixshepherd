@@ -65,17 +65,18 @@ func TestParseWarnings(t *testing.T) {
 func TestParsePR(t *testing.T) {
 	head := "## Work\n\n| ID | Area | Item | Status | Lane | PR | Notes |\n|---|---|---|---|---|---|---|\n"
 	cases := []struct {
-		name   string
-		cell   string
-		wantPR int
-		wantOK bool
+		name    string
+		cell    string
+		wantPR  int
+		wantRef string
+		wantOK  bool
 	}{
-		{"github ref", "#12", 12, true},
-		{"gitlab ref", "!123", 123, true},
-		{"none", "-", 0, true},
-		{"bare number", "12", 0, false},
-		{"malformed ref", "#x", 0, false},
-		{"zero", "#0", 0, false},
+		{"github ref", "#12", 12, "#12", true},
+		{"gitlab ref", "!123", 123, "!123", true},
+		{"none", "-", 0, "", true},
+		{"bare number", "12", 0, "", false},
+		{"malformed ref", "#x", 0, "", false},
+		{"zero", "#0", 0, "", false},
 	}
 	for _, c := range cases {
 		r := Parse(head + "| A | a | i | todo | - | " + c.cell + " | |\n")
@@ -85,7 +86,7 @@ func TestParsePR(t *testing.T) {
 			}
 			continue
 		}
-		if len(r.Warnings) != 0 || len(r.Rows) != 1 || r.Rows[0].PR != c.wantPR {
+		if len(r.Warnings) != 0 || len(r.Rows) != 1 || r.Rows[0].PR != c.wantPR || r.Rows[0].PRRef != c.wantRef {
 			t.Errorf("%s: %+v", c.name, r)
 		}
 	}
