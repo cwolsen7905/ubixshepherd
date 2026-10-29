@@ -11,6 +11,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- Every item in Waiting on you carries a short stable id, shown the same way in the web
+  Inbox, the chat strip and the desk's `[Waiting on you (N)]` line, so a reply such as
+  "D410 yes" or "Q271 a" names one item. It is derived from the item's kind and record id
+  (`D` decision, `Q` question, `R` request, `N` next-up item, `W` approved scope widening,
+  `B` blocked run, `S` lane to ship, `F` merged lane's files, `<repo>!<number>` merge
+  request), so it never changes between reads. The API item gains `id` and, for a blocked
+  lane, `run_id`. See [docs/waiting-on-you.md](docs/waiting-on-you.md).
 - Approving a scope decision widens the lane in the same answer, with no separate
   `lane_widen` step. The paths the question names are added when the person approves; if
   another open lane holds an overlapping glob the answer stands, the lane stays narrow and

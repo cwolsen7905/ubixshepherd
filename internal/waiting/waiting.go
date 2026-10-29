@@ -346,7 +346,7 @@ func blockedItem(ctx context.Context, st store.Store, l store.Lane, rp store.Rep
 		}
 		sum := oneLine(e.Text)
 		return api.WaitingItem{
-			Kind: api.WaitingBlocked, Action: "open", Repo: rp.Name, Lane: l.Name, LaneID: l.ID,
+			Kind: api.WaitingBlocked, Action: "open", Repo: rp.Name, Lane: l.Name, LaneID: l.ID, RunID: runs[0].ID,
 			Title:  fmt.Sprintf("run %d reported blocked: %s", runs[0].ID, sum),
 			Detail: fmt.Sprintf("run %d blocked: %s", runs[0].ID, sum),
 			Since:  firstTime(e.Created, l.Created),

@@ -43,7 +43,7 @@ func TestDeskQuestionsLifecycle(t *testing.T) {
 	if w.Count != 2 || w.Counts.Questions != 2 || w.Items[0].Kind != api.WaitingQuestion || w.Items[0].Turn != 11 || w.Items[0].Action != "reply" {
 		t.Errorf("waiting: %+v", w)
 	}
-	if line := w.Line(); !strings.Contains(line, "[Waiting on you (2)] question 1: Ship the config change?") {
+	if line := w.Line(); !strings.Contains(line, "[Waiting on you (2)] Q1 question 1: Ship the config change?") {
 		t.Errorf("line: %s", line)
 	}
 

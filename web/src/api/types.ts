@@ -882,6 +882,8 @@ export interface UpgradeStatus {
 
 /** One thing that needs the person (internal/api WaitingItem). */
 export interface WaitingItem {
+  /** The item's short stable id ("D410", "Q271", "app!175"): the same in the Inbox, the strip and the desk's line. Absent from an older daemon. */
+  id?: string
   kind: 'decision' | 'mr' | 'ship' | 'next' | 'question' | 'blocked' | 'scope' | 'request' | 'artifact'
   /** answer, approve, ship, review, reply, route or open: what the person can do from here. */
   action: 'answer' | 'approve' | 'ship' | 'review' | 'reply' | 'route' | 'open'
@@ -895,6 +897,8 @@ export interface WaitingItem {
   turn?: number
   /** A request that needs routing. */
   request_id?: number
+  /** A blocked lane: the run that reported it. */
+  run_id?: number
   mr?: number
   title: string
   detail?: string

@@ -10,6 +10,13 @@ export function waitingKey(it: WaitingItem): string {
 }
 
 /**
+ * The item's short stable id ("D410", "Q271"), set by the daemon from its kind and record id: the
+ * same in the Inbox, this strip and the desk's line, so the person can answer by it.
+ * An older daemon sends none, and nothing shows.
+ */
+export const waitingId = (it: WaitingItem): string => it.id ?? ''
+
+/**
  * The index to step to from the item with key `current` (null before the first step).
  * Down goes to the next item and wraps; up goes to the previous. A current item that left
  * the list starts from the top (down) or the bottom (up).

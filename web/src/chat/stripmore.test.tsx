@@ -32,6 +32,15 @@ describe('PendingStrip overflow', () => {
     expect(screen.queryByRole('group', { name: 'More waiting items' })).toBeNull()
   })
 
+  it('leads each chip with the item\'s stable id when the daemon sent one', async () => {
+    items.forEach((it, i) => Object.assign(it, { id: `D${i + 1}` }))
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(100)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(300)
+    render(<PendingStrip />)
+    expect(await screen.findByRole('button', { name: /D1 Decision: item 1/ })).toBeInTheDocument()
+    items.forEach((it) => Reflect.deleteProperty(it, 'id'))
+  })
+
   it('closes the menu on Escape', async () => {
     const user = userEvent.setup()
     vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(100)

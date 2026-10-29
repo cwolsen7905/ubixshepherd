@@ -30,7 +30,38 @@ A repo whose `autonomy.push` is `agent` never lists its lanes to ship: the agent
 its own. Approving and shipping stay the person's own click; the list gives no tool to the
 desk or an agent.
 
+## Item ids
+
+Every item has a short id, sent as `id` and shown the same way everywhere, so "D410 yes"
+or "Q271 a" can name one item without confusion across messages. The id is computed from
+the item's kind and the id of the record it is about; nothing is stored, so it is the same
+on every read and does not depend on the item's text.
+
+| Kind | Id | Example | Keyed to |
+|---|---|---|---|
+| `decision` | `D<decision>` | `D410` | the decision |
+| `question` | `Q<question>` | `Q271` | the desk question |
+| `request` | `R<request>` | `R111` | the request |
+| `next` | `N<item>` | `N255` | the Next-up item (every variant of it shares the id) |
+| `scope` | `W<decision>` | `W410` | the approved scope-widening decision |
+| `blocked` | `B<run>` | `B318` | the run that reported blocked (`run_id`) |
+| `ship` | `S<lane>` | `S42` | the lane |
+| `artifact` | `F<lane>` | `F42` | the lane |
+| `mr` | `<repo>!<number>` | `app!175` | the repo and its merge request number |
+
+A merge request uses the forge's own reference rather than a lane id, so it can be traced
+on the forge; the repo is part of it because merge request numbers repeat across repos.
+`ship` and `artifact` items are one per lane, so the lane id names "this lane's unpushed
+work" and keeps naming it as commits come and go. Ids are unique within the list, and the
+letter keeps `D12` and `Q12` apart. Decisions, requests, questions, next-up items and runs
+are never deleted; a lane deleted after it failed to open could free its number, which is
+the only way an id could be reused. An item that lacks the record id it is keyed by has no
+id.
+
 ## Where it shows
+
+- **Ids:** the Inbox row's sub-line, the chat strip's chips and menu, and the desk's line (`[Waiting on you (N)] D410 decision 410 (repo:lane): ...`)
+  all lead with the id. A daemon older than this shows none.
 
 - **Web header:** a "N waiting on you" badge, hidden while nothing waits. It opens a
   dropdown with each item and its action. The component reads the endpoint every five

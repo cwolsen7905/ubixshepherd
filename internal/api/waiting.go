@@ -35,6 +35,9 @@ const (
 // up page), reply (a desk question, in the thread) or open (look at the lane: nothing Shepherd can do for them). A blocked lane, an
 // unapplied scope widening and a merged lane's undecided files are shown with open.
 type WaitingItem struct {
+	// ID is the item's short stable id ("D410"), derived from its kind and record id by
+	// StableID and set by Seal. The person and the desk answer by it.
+	ID     string `json:"id,omitempty"`
 	Kind   string `json:"kind"`
 	Action string `json:"action"`
 	Repo   string `json:"repo,omitempty"`
@@ -48,8 +51,10 @@ type WaitingItem struct {
 	// in, which is the thread message to scroll to.
 	QuestionID int64 `json:"question_id,omitempty"`
 	Turn       int64 `json:"turn,omitempty"`
-	// RequestID is set for a request that needs routing.
+	// RequestID is set for a request that needs routing; RunID for a blocked lane, the run
+	// that reported it.
 	RequestID int64  `json:"request_id,omitempty"`
+	RunID     int64  `json:"run_id,omitempty"`
 	Title     string `json:"title"`
 	Detail    string `json:"detail,omitempty"`
 	// Since is when it started to wait, as far as Shepherd knows.
@@ -86,6 +91,9 @@ type Waiting struct {
 // fields, so it is stable while the list is and moves when any item does.
 func (w *Waiting) Seal() {
 	w.Count = len(w.Items)
+	for i := range w.Items {
+		w.Items[i].ID = w.Items[i].StableID()
+	}
 	h := sha256.New()
 	for _, it := range w.Items {
 		b, _ := json.Marshal(it)
@@ -121,10 +129,11 @@ func (it WaitingItem) lineItem() string {
 		text = it.Title
 	}
 	text = plainText(text)
-	base, _, _ := strings.Cut(label, " (")
+	plain := it.label()
+	base, _, _ := strings.Cut(plain, " (")
 	for stripped := true; stripped; {
 		stripped = false
-		for _, k := range []string{label, base} {
+		for _, k := range []string{plain, base} {
 			if rest, ok := strings.CutPrefix(text, k+":"); ok {
 				text, stripped = strings.TrimSpace(rest), true
 			}
@@ -164,8 +173,58 @@ func shorten(s string, max int) string {
 	return strings.TrimRight(cut, " ,;:.-") + "…"
 }
 
+// StableID is the item's short id, from the record the item is about so it is the same on
+// every read and never names another item: D<decision>, Q<question>, R<request>,
+// N<next-up item>, W<decision> (an approved scope widening), B<run> (a blocked lane, by the
+// run that reported it), and per lane S<lane> (work to ship) and F<lane> (files to decide).
+// A merge request is <repo>!<number>, the forge's own reference, since numbers repeat across
+// repos. It is "" when the item lacks the record id it is keyed by.
+func (it WaitingItem) StableID() string {
+	n := func(letter string, id int64) string {
+		if id == 0 {
+			return ""
+		}
+		return fmt.Sprintf("%s%d", letter, id)
+	}
+	switch it.Kind {
+	case WaitingDecision:
+		return n("D", it.DecisionID)
+	case WaitingQuestion:
+		return n("Q", it.QuestionID)
+	case WaitingRequest:
+		return n("R", it.RequestID)
+	case WaitingNext:
+		return n("N", it.NextID)
+	case WaitingScope:
+		return n("W", it.DecisionID)
+	case WaitingBlocked:
+		return n("B", it.RunID)
+	case WaitingShip:
+		return n("S", it.LaneID)
+	case WaitingArtifact:
+		return n("F", it.LaneID)
+	case WaitingMR:
+		if it.MR == 0 {
+			return ""
+		}
+		if it.Repo == "" {
+			return fmt.Sprintf("!%d", it.MR)
+		}
+		return fmt.Sprintf("%s!%d", it.Repo, it.MR)
+	}
+	return ""
+}
+
 // Label names the item the way the person and the desk refer to it.
 func (it WaitingItem) Label() string {
+	label := it.label()
+	if id := it.StableID(); id != "" {
+		return id + " " + label
+	}
+	return label
+}
+
+func (it WaitingItem) label() string {
 	where := it.Lane
 	if it.Repo != "" && it.Lane != "" {
 		where = it.Repo + ":" + it.Lane
