@@ -201,7 +201,7 @@ export function blocks(src: string): Block[] {
         // A different kind of marker at the same level starts a new list beside the old one.
         listStack.pop()
         const parent = listStack.at(-1)?.list.items.at(-1)
-        listStack.push({ indent: top.indent, list: start(parent ? parent.sub : out) })
+        listStack.push({ indent, list: start(parent ? parent.sub : out) })
       }
       continue
     }

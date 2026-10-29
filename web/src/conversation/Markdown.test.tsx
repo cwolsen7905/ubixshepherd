@@ -49,6 +49,10 @@ describe('Markdown lists', () => {
     expect(lists('- x\n- y\n1. one\n2. two')).toEqual(['ul(x y)', 'ol(one two)'])
   })
 
+  it('nests under a replacement list started at a shallower indent', () => {
+    expect(lists('  1. a\n- b\n   - c')).toEqual(['ol(a)', 'ul(b ul(c))'])
+  })
+
   it('keeps continuation lines inside the item and returns to the outer level', () => {
     expect(lists('1. one\n   more of one\n   - nested\n2. two')).toEqual(['ol(one\nmore of one ul(nested) two)'])
   })
