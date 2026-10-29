@@ -56,7 +56,11 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 		r.diagnose(ctx, run, outsideDiagnosis(run.Outside))
 		return
 	}
-	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
+	if outside, err := r.outsideScopeErr(ctx, lane); err != nil {
+		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: could not list the files its commits change, so the scope is unchecked (%s)", lane.Name, clip(err.Error(), 200))
+		r.diagnose(ctx, run, scopeCheckDiagnosis(err))
+		return
+	} else if len(outside) > 0 {
 		r.feed(ctx, store.FeedGate, lane.ID, "not pushing lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
 		r.diagnose(ctx, run, outsideDiagnosis(outside))
 		return
@@ -154,7 +158,10 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		}
 		return out, refuse("lane %s has no commits beyond %s: nothing to ship", lane.Name, pushed)
 	}
-	if outside := r.outsideScope(ctx, lane); len(outside) > 0 {
+	if outside, err := r.outsideScopeErr(ctx, lane); err != nil {
+		r.diagnoseLane(ctx, lane, scopeCheckDiagnosis(err))
+		return out, refuse("not shipping lane %s: could not list the files its commits change, so the scope is unchecked (%s)", lane.Name, clip(err.Error(), 200))
+	} else if len(outside) > 0 {
 		r.diagnoseLane(ctx, lane, outsideDiagnosis(outside))
 		return out, refuse("not shipping lane %s: its commits change files outside its scope (%s)", lane.Name, strings.Join(outside, ", "))
 	}
@@ -193,15 +200,30 @@ func pushedRef(ctx context.Context, lane store.Lane) string {
 }
 
 // outsideScope lists the files the lane's branch changes, since it left its base, that
-// its scope does not cover.
+// its scope does not cover. A branch it cannot judge counts as a problem: it refuses
+// in its callers instead of shipping unchecked.
 func (r *Runner) outsideScope(ctx context.Context, lane store.Lane) []string {
+	outside, err := r.outsideScopeErr(ctx, lane)
+	if err != nil {
+		return nil
+	}
+	return outside
+}
+
+// outsideScopeErr is outsideScope with the error kept: a failed diff must refuse the
+// ship, not read as an empty and in-scope change.
+func (r *Runner) outsideScopeErr(ctx context.Context, lane store.Lane) ([]string, error) {
+	files, err := changedFilesErr(ctx, lane)
+	if err != nil {
+		return nil, err
+	}
 	var outside []string
-	for _, f := range changedFiles(ctx, lane) {
+	for _, f := range files {
 		if !scope.Any(lane.Scope, f) {
 			outside = append(outside, f)
 		}
 	}
-	return outside
+	return outside, nil
 }
 
 // baseRef is what the lane's changes are counted from: its base on origin if there.
@@ -212,19 +234,45 @@ func baseRef(ctx context.Context, lane store.Lane) string {
 	return lane.Base
 }
 
-// changedFiles lists the files the lane's branch changes since it left its base.
+// changedFiles lists the files the lane's branch changes since it left its base. A
+// branch it cannot judge is nil: the callers that gate a push refuse on the error
+// from changedFilesErr instead.
 func changedFiles(ctx context.Context, lane store.Lane) []string {
-	files, err := git.Run(ctx, lane.Worktree, "diff", "--name-only", "--no-renames", baseRef(ctx, lane)+"...HEAD")
+	files, err := changedFilesErr(ctx, lane)
 	if err != nil {
 		return nil
 	}
-	var out []string
-	for _, f := range strings.Split(files, "\n") {
+	return files
+}
+
+// changedFilesErr is changedFiles with the error kept: a failed diff must refuse the
+// ship, not read as an empty and in-scope change.
+func changedFilesErr(ctx context.Context, lane store.Lane) ([]string, error) {
+	// -z gives exact names; without it git quotes one with unusual characters and it
+	// would match no scope glob. git.Run trims stdout, which would eat a first
+	// name's leading space the same way, so this runs git with the same environment
+	// and redaction as git.Run but keeps the output raw.
+	cmd := exec.CommandContext(ctx, "git", "-C", lane.Worktree, "diff", "--name-only", "-z", "--no-renames", baseRef(ctx, lane)+"...HEAD")
+	cmd.Env = append(cmd.Environ(), "GIT_TERMINAL_PROMPT=0")
+	if os.Getenv("GIT_SSH_COMMAND") == "" {
+		cmd.Env = append(cmd.Env, "GIT_SSH_COMMAND=ssh -o BatchMode=yes")
+	}
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(errb.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return nil, fmt.Errorf("git diff: %s", redact.String(msg))
+	}
+	var names []string
+	for _, f := range strings.Split(out.String(), "\x00") {
 		if f != "" {
-			out = append(out, f)
+			names = append(names, f)
 		}
 	}
-	return out
+	return names, nil
 }
 
 // publish pushes a lane whose gate has passed and opens its merge request, or says the
@@ -459,6 +507,13 @@ func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string)
 func outsideDiagnosis(files []string) store.Diagnosis {
 	return store.Diagnosis{Kind: store.DiagOutsideScope, Files: files,
 		Summary: "not pushed: commits change files outside the lane's scope: " + clip(strings.Join(files, ", "), 160)}
+}
+
+// scopeCheckDiagnosis is the diagnosis of a lane whose changed files could not be
+// listed: the scope is unchecked, so there is nothing to push.
+func scopeCheckDiagnosis(err error) store.Diagnosis {
+	return store.Diagnosis{Kind: store.DiagOutsideScope, Evidence: redact.String(err.Error()),
+		Summary: "not pushed: could not check the lane's commits against its scope: " + clip(err.Error(), 200)}
 }
 
 // checkProblems judges the lane's branch against the repo's approved check files: the
