@@ -67,8 +67,8 @@ export function MoreMenu() {
               </button>
             ))}
           </div>
-          {pages.map((items, i) => (
-            <div key={i} role="group" aria-label="This page" className="sh-more-options sh-more-page">
+          {pages.map(({ title, items }, i) => (
+            <div key={i} role="group" aria-label={title} className="sh-more-options sh-more-page">
               {items.map((it) =>
                 it.node !== undefined ? (
                   <div key={it.key} className="sh-more-node">{it.node}</div>

@@ -92,7 +92,7 @@ function ChatThread({
     { key: 'notify', node: <NotifyToggle /> },
     ...(side ? [] : [{ key: 'topics', label: topics ? 'Hide topics' : 'All topics', pressed: topics, onSelect: () => setTopics(!topics) }]),
     { key: 'new', label: 'New conversation', onSelect: () => setConfirming(true) },
-  ])
+  ], side ? 'Side conversation' : 'This page')
   const wasConfirming = useRef(false)
   const confirmRoot = useRef<HTMLSpanElement>(null)
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)

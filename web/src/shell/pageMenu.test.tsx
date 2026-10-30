@@ -50,4 +50,40 @@ describe('the one menu', () => {
     expect(screen.queryByRole('group', { name: 'Menu' })).toBeNull()
     expect(more).toHaveFocus()
   })
+
+  it('keeps a side conversation apart from the page, under its own heading', async () => {
+    function Side() {
+      usePageMenu([{ key: 'new', label: 'New conversation' }], 'Side conversation')
+      return null
+    }
+    render(
+      <PageMenuProvider>
+        <MoreMenu />
+        <Page onNew={() => {}} />
+        <Side />
+      </PageMenuProvider>,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'More' }))
+    expect(screen.getByRole('group', { name: 'This page' })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: 'Side conversation' })).toBeInTheDocument()
+  })
+
+  it('does not tell the menu again when nothing visible changed, and runs the latest onSelect', async () => {
+    const calls: number[] = []
+    function Counter() {
+      const [n, setN] = useState(0)
+      usePageMenu([{ key: 'a', label: 'Act', onSelect: () => calls.push(n) }])
+      return <button type="button" onClick={() => setN(n + 1)}>bump</button>
+    }
+    render(
+      <PageMenuProvider>
+        <MoreMenu />
+        <Counter />
+      </PageMenuProvider>,
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'bump' }))
+    await userEvent.click(screen.getByRole('button', { name: 'More' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Act' }))
+    expect(calls).toEqual([1])
+  })
 })
