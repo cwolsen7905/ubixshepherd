@@ -662,8 +662,9 @@ func powers(prof config.Profile, remote string) Powers {
 
 // watch copies the agent's output to the log line by line, redacted, then records the
 // outcome when the agent exits.
-func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out io.Reader, logf *os.File) {
+func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out io.Reader, file *os.File) {
 	defer r.wg.Done()
+	logf := NewStampWriter(file, nil) // each line the run writes from here on starts with its time
 	sc := bufio.NewScanner(out)
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	var limit Limit
@@ -795,28 +796,30 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	}
 	r.Spend(ctx, store.Spend{Source: run.Agent, Ref: run.ID, USD: run.CostUSD, Credits: run.Credits})
 	use := r.recordUsage(ctx, run, p)
-	fmt.Fprintf(logf, "\n# shepherd: run %d %s (exit %d) with %d commit(s)", run.ID, run.State, code, run.Commits)
+	fmt.Fprintln(logf)
+	end := fmt.Sprintf("# shepherd: run %d %s (exit %d) with %d commit(s)", run.ID, run.State, code, run.Commits)
 	if run.CostUSD > 0 {
 		est := ""
 		if run.CostEstimated {
 			est = " (estimate)"
 		}
-		fmt.Fprintf(logf, ", $%.2f%s", run.CostUSD, est)
+		end += fmt.Sprintf(", $%.2f%s", run.CostUSD, est)
 	}
 	if run.Credits > 0 {
-		fmt.Fprintf(logf, ", %.2f credits", run.Credits)
+		end += fmt.Sprintf(", %.2f credits", run.Credits)
 	}
 	if len(run.Outside) > 0 {
-		fmt.Fprintf(logf, "; outside the scope: %s", strings.Join(run.Outside, ", "))
+		end += fmt.Sprintf("; outside the scope: %s", strings.Join(run.Outside, ", "))
 	}
-	fmt.Fprintln(logf)
+	logf.Note(end)
 	if use.Measured() {
-		fmt.Fprintf(logf, "# shepherd: usage: %s\n", use.Line())
+		logf.Note("# shepherd: usage: " + use.Line())
 	}
 	if why != "" {
-		fmt.Fprintf(logf, "# shepherd: %s\n", why)
+		logf.Note("# shepherd: " + why)
 	}
-	logf.Close()
+	logf.Flush()
+	file.Close()
 	if err := r.Store.UpdateRun(ctx, run); err != nil {
 		r.Log.Error("record run outcome", "run", run.ID, "err", err)
 	}

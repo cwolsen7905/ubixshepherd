@@ -25,6 +25,10 @@ func TestStepFromLog(t *testing.T) {
 		{"mcp tool", "→ mcp__shepherd__report {\"status\":\"progress\"}\n", "using report"},
 		{"other tool", "→ Weird {}\n", "using Weird"},
 		{"plain text agents", "thinking about it\nrunning the tests now\n", "running the tests now"},
+		{"timed tool line", "21:27:03 → Bash {\"command\":\"make check\"}\n", "running make check"},
+		{"timed plain line", "21:27:03 running the tests now\n", "running the tests now"},
+		{"old and timed mixed", "→ Edit {\"file_path\":\"/w/app-wt/x/a.go\"}\n21:27:09 → Bash {\"command\":\"go vet\"}\n", "running go vet"},
+		{"timed end note is skipped", "21:27:03 → Bash {\"command\":\"ls\"}\n21:27:04 (the run ended)\n", "running ls"},
 		{"the latest line wins", "→ Edit {\"file_path\":\"/w/app-wt/x/a.go\"}\n→ Bash {\"command\":\"go vet\"}\n", "running go vet"},
 		{"secrets are redacted", "→ Bash {\"command\":\"curl -H 'Authorization: Bearer sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789'\"}\n", ""},
 	} {

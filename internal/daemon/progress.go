@@ -126,7 +126,7 @@ var (
 func StepFromLog(tail, worktree string) string {
 	lines := strings.Split(strings.TrimRight(tail, "\n"), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
+		l := dispatch.StripStamp(strings.TrimSpace(lines[i]))
 		if l == "" {
 			continue
 		}

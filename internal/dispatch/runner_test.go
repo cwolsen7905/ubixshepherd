@@ -536,7 +536,7 @@ func logLine(t *testing.T, run store.Run, prefix string) string {
 	t.Helper()
 	b, _ := os.ReadFile(run.Log)
 	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, prefix) {
+		if line = StripStamp(line); strings.HasPrefix(line, prefix) {
 			return line
 		}
 	}
