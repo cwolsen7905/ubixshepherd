@@ -63,7 +63,7 @@ func (h *feedHub) poll() {
 		}
 		h.last = items[len(items)-1].ID
 		if runEnded(items) {
-			h.s.KeepGoing().EvaluateAll(context.Background())
+			h.s.KeepGoing().Trigger()
 		}
 		h.s.desks.Wake(items)
 		h.mu.Lock()
