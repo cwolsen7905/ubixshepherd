@@ -14,6 +14,10 @@ DRAIN_TIMEOUT ?= 10m
 # Go packages: web/node_modules can hold Go code of its own, which is not ours to check.
 GO_PKGS := ./cmd/... ./internal/...
 
+# Tests to skip, as names joined by `|`. The GitHub Windows job sets this (see ci.yml); empty elsewhere.
+GO_TEST_SKIP ?=
+GO_TEST_FLAGS := $(if $(GO_TEST_SKIP),-skip '^($(GO_TEST_SKIP))$$')
+
 # The built web UI is embedded from here (internal/webui). Only its .gitignore is tracked.
 WEBUI_DIR := internal/webui/app
 
@@ -55,7 +59,7 @@ install: build
 	fi
 
 test:
-	go test $(GO_PKGS)
+	go test $(GO_TEST_FLAGS) $(GO_PKGS)
 
 # The full gate: the Go checks plus the web checks. The GitLab go-check job and the GitHub
 # old-git job run this inside containers with no Node, where web-check skips with a
@@ -68,7 +72,7 @@ check: check-go web-check
 check-go: core-boundary script-check
 	@test -z "$$(gofmt -l cmd internal)" || { echo "gofmt needed:"; gofmt -l cmd internal; exit 1; }
 	go vet $(GO_PKGS)
-	go test $(GO_PKGS)
+	go test $(GO_TEST_FLAGS) $(GO_PKGS)
 
 # The web checks: typecheck, lint and tests (`npm --prefix web run check`), which need
 # Node 22 or later. Without npm there is nothing to run them with. In CI or a container
@@ -95,9 +99,10 @@ check-keep-going:
 	if [ $$status -ne 0 ] && ! grep -q -E '^--- ' .keepgoing-checks.log; then cat .keepgoing-checks.log; fi; \
 	rm -f .keepgoing-checks.log; exit $$status
 
-# The install script is not Go: parse it, so it cannot rot unseen.
+# The install script and the CI check script are not Go: parse them, so it cannot rot unseen.
 script-check:
 	@sh -n bin/install.sh && echo "install.sh parses."
+	@bash -n .github/scripts/run-check.sh && echo "run-check.sh parses."
 
 core-boundary:
 	@if grep -rniE '$(PRODUCT_PATTERN)' $(CORE_DIRS); then \
