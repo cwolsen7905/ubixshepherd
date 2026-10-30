@@ -114,6 +114,11 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 			items[0].retried = true
 			w.saveOwnerItems(ctx, lane.ID, "pipeline", items[:1])
 		}
+		// The failure is over (fixed, canceled, skipped): its attempts do not carry to
+		// whatever fails next.
+		if len(items) > 0 && !items[0].taken && p.Status != "running" && p.Status != "pending" {
+			w.saveOwnerItems(ctx, lane.ID, "pipeline", nil)
+		}
 		return tries
 	}
 	limit := wc.Tries()

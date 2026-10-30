@@ -283,3 +283,29 @@ func TestExternalOwnerFinishTimeFilledInLaterIsNotARetry(t *testing.T) {
 		t.Errorf("counted a phantom retry: %s", got)
 	}
 }
+
+func TestExternalOwnerAttemptsDoNotCarryPastAFixedPipeline(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "failed"} // attempt 1
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "success"}
+	f.w.Check(f.ctx)
+	// An unrelated failure later gets the owner's full wait, not an attempt carried over.
+	*now = now.Add(time.Hour)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 102, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 1 {
+		t.Fatalf("took over a new failure at once on a carried-over count: %d runs", n)
+	}
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d after the full wait, want 2", n)
+	}
+}
