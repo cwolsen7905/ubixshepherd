@@ -27,6 +27,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
   daemon refuses any other agent, including on a continued run, with an error naming the
   repo and its allowed agents. Unset allows all; unknown names are rejected at load.
 
+### Fixed
+
+- A lane closes even when its worktree folder is missing, or exists but is not a git
+  checkout. A missing folder is pruned from git's record, and a folder with no checkout
+  is left in place and named in the close's result, while the branch and the lane close
+  as usual.
+
 ## [0.6.0-beta.1] - 2026-10-23
 
 Keep-going mode now starts approved work itself, Crook keeps a log of every verdict that

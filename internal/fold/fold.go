@@ -384,9 +384,20 @@ type CloseResult struct {
 	Notes         []string   `json:"notes,omitempty"`
 }
 
+// isCheckout reports whether dir holds a working tree git can read. A lane's worktree
+// folder can be gone, or exist with no checkout in it (a folder someone replaced); only
+// a live working tree can be inspected or removed.
+func isCheckout(ctx context.Context, dir string) bool {
+	out, err := git.Run(ctx, dir, "rev-parse", "--is-inside-work-tree")
+	return err == nil && out == "true"
+}
+
 // Close removes a lane's worktree and closes it. Without force it refuses a worktree
 // with uncommitted changes, and a branch git cannot see merged into origin/<base>. A
-// squash merge looks unmerged to git; proving merges from the forge comes later.
+// squash merge looks unmerged to git; proving merges from the forge comes later. A
+// worktree folder that is gone, or that holds no checkout git can read, does not stop
+// the close: the gone folder is pruned from git's record, and the other is left in
+// place and named in the result.
 func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult, error) {
 	lane, err := f.Store.Lane(ctx, laneID)
 	if err != nil {
@@ -416,7 +427,8 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 		}
 	}
 	letGo := false
-	if present {
+	checkout := present && isCheckout(ctx, lane.Worktree)
+	if checkout {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
 			return res, err
@@ -450,11 +462,17 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 	}
 
 	plan := f.planArtifacts(ctx, lane, repo.Path)
-	if present {
+	switch {
+	case checkout:
 		if err := removeWorktree(ctx, repo.Path, lane.Worktree, force || letGo); err != nil {
 			return res, err
 		}
-	} else {
+	case present:
+		// The folder holds no checkout git can read, so git has nothing to remove and
+		// the folder is not the lane's to delete; prune git's stale record of it.
+		res.Notes = append(res.Notes, fmt.Sprintf("worktree %s is not a git checkout; left it in place", lane.Worktree))
+		git.Run(ctx, repo.Path, "worktree", "prune")
+	default:
 		res.Notes = append(res.Notes, "worktree was already gone; pruned git's record of it")
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
@@ -480,7 +498,9 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 
 // CloseMerged closes a lane whose merge the forge has proven (proof is the merge or
 // squash commit), so a squash merge needs no --force. It still refuses a worktree with
-// uncommitted changes, and a lane with an agent running: those are someone's work.
+// uncommitted changes, and a lane with an agent running: those are someone's work. As
+// with Close, a worktree folder that is gone, or that holds no checkout git can read,
+// does not stop the close.
 //
 // head is the merged request's head commit: the lane's branch must hold nothing beyond
 // it, or there is work the merge does not cover and the lane stays open.
@@ -515,11 +535,15 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 			return res, refuse("branch %s has commits beyond its merged request (head %s): work the merge does not cover", lane.Branch, shortSHA(head))
 		}
 	}
-	plan := artifactPlan{}
+	plan := f.planArtifacts(ctx, lane, repo.Path)
+	present := false
 	if _, err := os.Stat(lane.Worktree); err == nil {
+		present = true
 		if err := f.SnapshotLane(ctx, lane.ID); err != nil {
 			res.Notes = append(res.Notes, "artifact snapshot: "+err.Error())
 		}
+	}
+	if present && isCheckout(ctx, lane.Worktree) {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
 			return res, err
@@ -535,12 +559,15 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 			}
 			letGo = len(ignorable) > 0
 		}
-		plan = f.planArtifacts(ctx, lane, repo.Path)
 		if err := removeWorktree(ctx, repo.Path, lane.Worktree, letGo); err != nil {
 			return res, err
 		}
 	} else {
-		plan = f.planArtifacts(ctx, lane, repo.Path)
+		if present {
+			// The folder holds no checkout git can read, so git has nothing to remove
+			// and the folder is not the lane's to delete; prune git's stale record.
+			res.Notes = append(res.Notes, fmt.Sprintf("worktree %s is not a git checkout; left it in place", lane.Worktree))
+		}
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
 	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
