@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/store/sqlite"
 )
@@ -36,9 +37,19 @@ func TestFeedPollDoesNotWaitForTheDrive(t *testing.T) {
 		}
 		<-release
 	}
-	t.Cleanup(s.Close)
-	t.Cleanup(func() { close(release) }) // runs first: Close waits for a stuck pass
-	s.background()
+	// The hub and the drive are built by hand, not started with background(), so the
+	// test is the hub's only poller and the feed row is read exactly once.
+	s.desks = desk.NewManager(desk.Options{
+		Store: st, Agent: nopDesk{}, Tokens: s, Log: s.Log,
+		Wake: func() string { return config.WakeNever }, Config: s.LiveConfig,
+	})
+	t.Cleanup(s.desks.Close)
+	s.hub = newFeedHub(s)
+	quit, done := make(chan struct{}), make(chan struct{})
+	go func() { defer close(done); s.KeepGoing().run(quit) }()
+	t.Cleanup(func() { <-done })
+	t.Cleanup(func() { close(quit) })
+	t.Cleanup(func() { close(release) }) // runs first: a stuck pass must return
 
 	if err := st.AddFeed(ctx, store.FeedRunEnded, "run ended", 1); err != nil {
 		t.Fatal(err)
