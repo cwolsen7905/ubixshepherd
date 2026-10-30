@@ -31,6 +31,14 @@ type ownerItem struct {
 	notes int       // a thread's note count when last seen; 0 for a pipeline
 	since time.Time // when the wait began, or restarted by the owner acting
 	taken bool
+
+	// Pipelines only. attempts counts what the owner has tried on this failure: a retry of
+	// a job in the same pipeline, or a newer pipeline. retried is set when the pipeline
+	// was seen running again after it failed. finished is the failed pipeline's end time
+	// when last seen, so a retry that ran and failed between two polls still shows.
+	attempts int
+	retried  bool
+	finished time.Time
 }
 
 func (o ownerItem) String() string {
@@ -38,19 +46,29 @@ func (o ownerItem) String() string {
 	if o.taken {
 		state = "taken"
 	}
-	return fmt.Sprintf("%s|%d|%d|%s", o.id, o.notes, o.since.Unix(), state)
+	if o.retried && !o.taken {
+		state = "retry"
+	}
+	return fmt.Sprintf("%s|%d|%d|%s|%d|%d", o.id, o.notes, o.since.Unix(), state, o.attempts, o.finished.Unix())
 }
 
 func parseOwnerItems(stored string) []ownerItem {
 	var out []ownerItem
 	for _, e := range strings.Split(stored, "\n") {
 		p := strings.Split(e, "|")
-		if len(p) != 4 {
+		if len(p) != 4 && len(p) != 6 {
 			continue
 		}
 		n, _ := strconv.Atoi(p[1])
 		sec, _ := strconv.ParseInt(p[2], 10, 64)
-		out = append(out, ownerItem{id: p[0], notes: n, since: time.Unix(sec, 0), taken: p[3] == "taken"})
+		it := ownerItem{id: p[0], notes: n, since: time.Unix(sec, 0), taken: p[3] == "taken", retried: p[3] == "retry"}
+		if len(p) == 6 {
+			it.attempts, _ = strconv.Atoi(p[4])
+			if fin, _ := strconv.ParseInt(p[5], 10, 64); fin > 0 {
+				it.finished = time.Unix(fin, 0)
+			}
+		}
+		out = append(out, it)
 	}
 	return out
 }
@@ -73,30 +91,93 @@ func (w *Watcher) saveOwnerItems(ctx context.Context, lane int64, what string, i
 }
 
 // ownerPipeline waits for the external owner on a failed head pipeline, and hands the
-// failure to the lane's agent once the owner's patience is spent. It runs on every poll of
-// an open request. It returns the lane's fix tries after any handoff.
+// failure to the lane's agent once the owner's patience is spent or it has used up the
+// repo's try cap. It runs on every poll of an open request. It returns the lane's fix
+// tries after any handoff.
+//
+// An owner that retries a failed job is working, not giving up: the retry is one attempt,
+// and when it fails again in the same pipeline the wait starts over, as it does for a newer
+// pipeline. Both count against the cap (watch.fix_tries), the same number Shepherd's own
+// rounds get, so an owner that keeps failing is taken over after that many tries without
+// waiting out the patience each time.
 func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, tries int, wc config.Watch) int {
 	ft := wc.FollowThrough
 	p := mr.Pipeline
-	if !ft.External() || mr.State != "opened" || p == nil || p.Status != "failed" {
+	if !ft.External() || mr.State != "opened" || p == nil {
 		return tries
 	}
 	id := strconv.FormatInt(p.ID, 10)
 	items := w.ownerItems(ctx, lane.ID, "pipeline")
+	if p.Status != "failed" {
+		// The failed pipeline running again is the owner retrying it.
+		if len(items) > 0 && items[0].id == id && !items[0].taken && !items[0].retried && (p.Status == "running" || p.Status == "pending") {
+			items[0].retried = true
+			w.saveOwnerItems(ctx, lane.ID, "pipeline", items[:1])
+		}
+		// The failure is over (fixed, canceled, skipped): its attempts do not carry to
+		// whatever fails next.
+		if len(items) > 0 && !items[0].taken && p.Status != "running" && p.Status != "pending" {
+			w.saveOwnerItems(ctx, lane.ID, "pipeline", nil)
+		}
+		return tries
+	}
+	limit := wc.Tries()
 	if len(items) == 0 || items[0].id != id {
-		w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{{id: id, since: w.now()}})
-		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d (%s) failed for !%d (%s) (lane %s); %s follows it through and has %s to act before Shepherd does",
-			p.ID, p.URL, mr.IID, mr.URL, lane.Name, ft.Label(), ft.Wait())
+		it := ownerItem{id: id, since: w.now(), finished: p.Finished}
+		if len(items) > 0 && !items[0].taken {
+			it.attempts = items[0].attempts + 1 // a newer pipeline: the owner pushed
+		}
+		w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+		if it.attempts > 0 && limit > 0 && it.attempts >= limit {
+			return w.takeOverPipeline(ctx, f, lane, mr, tries, wc, it, "has tried %d times")
+		}
+		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d (%s) failed for !%d (%s) (lane %s); %s follows it through%s and has %s to act before Shepherd does",
+			p.ID, p.URL, mr.IID, mr.URL, lane.Name, ft.Label(), attemptNote(it.attempts, limit), ft.Wait())
 		return tries
 	}
 	it := items[0]
-	if it.taken || w.now().Sub(it.since) < ft.Wait() {
+	if it.taken {
+		return tries
+	}
+	if it.finished.IsZero() && !p.Finished.IsZero() && !it.retried {
+		// The forge gave no finish time at first sight: record it, it is not a retry.
+		it.finished = p.Finished
+		w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+	}
+	if it.retried || (!it.finished.IsZero() && p.Finished.After(it.finished)) {
+		// A retry in this pipeline failed again: one more attempt, and the wait restarts.
+		it.attempts++
+		it.retried, it.since, it.finished = false, w.now(), p.Finished
+		w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+		if limit > 0 && it.attempts >= limit {
+			return w.takeOverPipeline(ctx, f, lane, mr, tries, wc, it, "has retried %d times")
+		}
+		w.feed(ctx, store.FeedPipeline, lane.ID, "a retry in pipeline %d failed again for !%d (lane %s); that is one attempt by %s%s, so it has %s from now before Shepherd takes over",
+			p.ID, mr.IID, lane.Name, ft.Label(), attemptNote(it.attempts, limit), ft.Wait())
+		return tries
+	}
+	if w.now().Sub(it.since) < ft.Wait() {
 		return tries
 	}
 	it.taken = true
 	w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
 	w.feed(ctx, store.FeedPipeline, lane.ID, "%s did not act on pipeline %d within %s; Shepherd takes it over (lane %s)", ft.Label(), p.ID, ft.Wait(), lane.Name)
-	return w.pipelineFailed(ctx, f, lane, mr, p, tries, wc.Tries())
+	return w.pipelineFailed(ctx, f, lane, mr, p, tries, limit)
+}
+
+// takeOverPipeline takes a failed pipeline from the owner once it has used its attempts.
+func (w *Watcher) takeOverPipeline(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, tries int, wc config.Watch, it ownerItem, why string) int {
+	it.taken = true
+	w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+	w.feed(ctx, store.FeedPipeline, lane.ID, "%s "+why+" and pipeline %s still fails; Shepherd takes it over (lane %s)", wc.FollowThrough.Label(), it.attempts, it.id, lane.Name)
+	return w.pipelineFailed(ctx, f, lane, mr, mr.Pipeline, tries, wc.Tries())
+}
+
+func attemptNote(attempts, limit int) string {
+	if attempts == 0 || limit <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (attempt %d of %d)", attempts, limit)
 }
 
 // ownerThreads returns the threads Shepherd acts on: those not the owner's, and the

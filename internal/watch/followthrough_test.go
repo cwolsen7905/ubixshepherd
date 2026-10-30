@@ -183,3 +183,129 @@ func TestExternalOwnerUnfixedOnFirstSightIsTakenAtOnce(t *testing.T) {
 		t.Fatalf("runs = %d, want 2", n)
 	}
 }
+
+func TestExternalOwnerRetryFailingAgainInTheSamePipelineIsOneAttempt(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	// The owner retries a job near the end of its patience, and the retry fails again.
+	*now = now.Add(29 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "running"}
+	f.w.Check(f.ctx)
+	*now = now.Add(5 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 1 {
+		t.Fatalf("took over at once on a retry that failed again: %d runs", n)
+	}
+	if got := f.feed(t); !strings.Contains(got, "a retry in pipeline 100 failed again") || !strings.Contains(got, "attempt 1 of 2") {
+		t.Errorf("feed does not say why Shepherd waits: %s", got)
+	}
+	// The wait restarted at the retry's failure.
+	*now = now.Add(25 * time.Minute)
+	f.w.Check(f.ctx)
+	if n := f.runs(t); n != 1 {
+		t.Fatalf("took over before the restarted wait ran out: %d runs", n)
+	}
+	*now = now.Add(10 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d after the restarted wait, want 2", n)
+	}
+}
+
+func TestExternalOwnerRetryBetweenPollsIsSeenByTheFinishTime(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	end := *now
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", Finished: end}
+	f.w.Check(f.ctx)
+	*now = now.Add(29 * time.Minute)
+	f.w.Check(f.ctx)
+	*now = now.Add(2 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", Finished: end.Add(30 * time.Minute)}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 1 {
+		t.Fatalf("took over on a retry seen only by its finish time: %d runs", n)
+	}
+}
+
+func TestExternalOwnerTakenOverAfterTheAttemptCap(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	// A newer pipeline is the owner's attempt 1; it fails within the patience.
+	*now = now.Add(5 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 1 {
+		t.Fatalf("took over before the cap: %d runs", n)
+	}
+	// Attempt 2 reaches the default cap of 2: taken over with no wait.
+	*now = now.Add(5 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 102, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d after the cap, want 2", n)
+	}
+	if got := f.feed(t); !strings.Contains(got, "reviewbot has tried 2 times and pipeline 102 still fails; Shepherd takes it over") {
+		t.Errorf("feed = %s", got)
+	}
+}
+
+func TestExternalOwnerFinishTimeFilledInLaterIsNotARetry(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	*now = now.Add(10 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", Finished: now.Add(-9 * time.Minute)}
+	f.w.Check(f.ctx)
+	// No retry happened: the original wait still runs out on time.
+	*now = now.Add(21 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d, want 2: a finish time filled in later restarted the wait", n)
+	}
+	if got := f.feed(t); strings.Contains(got, "failed again") {
+		t.Errorf("counted a phantom retry: %s", got)
+	}
+}
+
+func TestExternalOwnerAttemptsDoNotCarryPastAFixedPipeline(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "failed"} // attempt 1
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "success"}
+	f.w.Check(f.ctx)
+	// An unrelated failure later gets the owner's full wait, not an attempt carried over.
+	*now = now.Add(time.Hour)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 102, Status: "failed"}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 1 {
+		t.Fatalf("took over a new failure at once on a carried-over count: %d runs", n)
+	}
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d after the full wait, want 2", n)
+	}
+}

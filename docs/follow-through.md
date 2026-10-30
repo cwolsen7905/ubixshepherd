@@ -31,3 +31,17 @@ Details:
   the round stays with the previous agent rather than failing.
 - Rounds still spend the `watch.fix_tries` budget.
 - Set `watch.escalate: false` to keep every round on the same agent.
+
+## An external owner and retries
+
+When an external owner follows a repo (`watch.follow_through`, see [config.md](config.md)),
+it has its patience to act on a failed pipeline before Shepherd takes the failure over.
+What the owner does counts as an attempt:
+
+- A newer pipeline that fails is one attempt, and the wait starts over.
+- A retried job that fails again in the same pipeline is one attempt too, and the wait
+  starts over from that failure. A retry that fails again is not the owner giving up.
+- Once the owner has made `watch.fix_tries` attempts and the pipeline still fails,
+  Shepherd takes it over at once rather than waiting out the patience again.
+
+The feed says when a retry failed again, which attempt it was, and why Shepherd took over.
