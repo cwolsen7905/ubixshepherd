@@ -58,6 +58,7 @@ jobs:
       # Linux and macOS. They are skipped on Windows only, by name, so the job shows new
       # breakage instead of these. Fix the test, then remove its name here.
       - name: make check
+        shell: bash
         env:
           GO_TEST_SKIP: ${{ runner.os == 'Windows' && 'TestLaneOpenListCloseFromCLI|TestConnectRunningTellsNoDaemonFromAnUnansweringOne|TestDaemonGoneIsFalseForAnAnsweringDaemon|TestSaveConflictAndBackup|TestScanAndRead|TestMissingUnreadableAndUnsupported|TestOpenCodeBinaryLookup|TestSetupCursorKeepsOtherServers|TestLaneSetup|TestCommandLines' || '' }}
         run: bash .github/scripts/run-check.sh
