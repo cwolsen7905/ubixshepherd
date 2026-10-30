@@ -16,7 +16,7 @@ status=${PIPESTATUS[0]}
 # The lines that name the failure: Go test failures and panics, the failing make target,
 # TypeScript and vitest errors, shell errors. Strip CRs (Windows) and cap at the 10
 # annotations GitHub shows per step.
-pattern='^(--- FAIL|FAIL|panic:|make: \*\*\*)|^\s+[a-z_]+_test\.go:[0-9]+:|error TS[0-9]+|AssertionError|^\s*(FAIL|×|✗) |ERR!|gofmt needed|^go: |: command not found|^[^ ]+\.go:[0-9]+:[0-9]+: |^# [a-zA-Z]'
+pattern='^(--- FAIL|FAIL|panic:|make: \*\*\*)|^[[:space:]]+[a-z_]+_test\.go:[0-9]+:|error TS[0-9]+|AssertionError|^[[:space:]]*(FAIL|×|✗) |ERR!|gofmt needed|^go: |: command not found|^[^ ]+\.go:[0-9]+:[0-9]+: |^# [a-zA-Z]'
 grep -E "$pattern" "$log" | tr -d '\r' | cut -c1-400 | awk '!seen[$0]++' | head -10 |
 	while IFS= read -r line; do
 		# Workflow commands use % and newlines as escapes.
