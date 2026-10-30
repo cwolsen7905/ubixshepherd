@@ -79,16 +79,18 @@ When the next step is one of these the desk says so in one line and leaves it, a
 |---|---|---|---|
 | Spend since turning on | $5 | `keep_going.cap` | at the cap, off |
 | Concurrent runs while on | 2 | `keep_going.max_runs` | a start past the cap is refused, not queued |
-| Daily budget | the existing budget | none | crossing it, off |
+| Daily budget | the existing budget | none | crossing it, off, when its cap is `hard` |
 | Idle time with nothing started or answered | 4 hours | `keep_going.idle_hours` | off |
 | End of day | local midnight | `keep_going.day_end` | off |
 | Loop guard | 3 autonomous starts per lane per day | `keep_going.lane_starts` | the lane is skipped and the person is told once |
 
-Idle time counts from the last autonomous action or the last message from the person. The
-loop guard counts starts per lane (an item's lane, a fix, a re-run), so a lane that keeps
-failing is handed back rather than re-run for ever. The defaults are conservative; each
-is a `config.yaml` setting under `keep_going:`, validated in `internal/config` and
-reloaded on SIGHUP, and the CLI flags set the per-session cap and run limit.
+The daily budget is the daemon's, not a `keep_going` setting: it turns the mode off only
+when its cap is `hard` (the default), and a `soft` budget only warns. Idle time counts
+from the last autonomous action or the last message from the person. The loop guard counts
+starts per lane (an item's lane, a fix, a re-run), so a lane that keeps failing is handed
+back rather than re-run for ever. The defaults are conservative; each is a `config.yaml`
+setting under `keep_going:`, validated in `internal/config` and reloaded on SIGHUP, and the
+CLI flags set the per-session cap, run limit and idle hours.
 
 Turning itself off is a recorded event: `reason_off` (cap, runs, budget, idle, day end,
 person) goes to the feed, and the next desk turn is told in the event text.
@@ -128,6 +130,28 @@ The drive never answers a decision, approves, merges, pushes for a person, tags,
 releases or deploys. A failed pipeline is still followed up by the watcher, capped as
 before.
 
+## 4b. The repo's autonomy binds the agents it starts
+
+The mode starts and continues agents; it is not a new kind of authority. Every agent it
+starts is an ordinary agent in its lane, and the repo's `autonomy` rules apply to it
+exactly as to one a person starts. The mode grants none of those rules and does not widen
+them: a repo set to `human` for push stays `human` while the mode is on, and the agent it
+starts in that repo cannot push.
+
+| Rule | A drive-started agent |
+|---|---|
+| `autonomy.push` | Pushes its lane branch and opens the merge request only where the rule is `agent`. Where it is `human`, the agent stops and the branch waits for the person. |
+| `autonomy.merge` | Arms a merge only where the rule is `agent`, on GitLab, on its own lane's request. `human` and `after_approval` never let the agent arm one. |
+| `autonomy.tag`, `autonomy.deploy` | Tag or deploy only where the rule is `agent`. The default is `human`, so by default it does neither. |
+
+The mark that tells the budget and the keep-going counters a run was started by Shepherd
+changes none of the agent's powers. It only holds the run to the daily budget and lets it
+skip the plan-first approval, since a run Shepherd starts on its own has no one to approve
+a plan.
+
+So the mode reaches an agent's work, not the person's calls: decisions, approvals, merges,
+tags, releases and deploys stay the person's, on every surface the mode touches.
+
 ## 5. How the desk's instructions change and how Shepherd enforces the limits
 
 **Instructions.** The three copies of "do not start new work they have not asked for"
@@ -140,9 +164,11 @@ list in section 3. Today the three copies can drift; the change puts them in one
 **Enforcement is server-side**, because a prompt is not a limit:
 
 - Each autonomous start goes through one daemon check (`KeepGoing.Allow(action, lane)`)
-  in the desk's lane and run tools. It refuses when the flag is off, a cap is reached, the
-  lane's loop count is spent, the repo's rule is human or the item is not approved. The
-  refusal is a tool result with the reason, which the desk relays.
+  in the desk's lane and run tools; the drive's starts pass the same check. It refuses
+  when the flag is off, a cap is reached, or the lane's loop count is spent. The refusal
+  is a tool result with the reason, which the desk relays. The repo's own autonomy is not
+  part of this check: it is enforced where the action runs, the push hook and the merge
+  and tag rules, as for any agent (section 4b).
 - Autonomous actions are those the desk takes in a turn the person did not start (an
   event turn). A turn the person started is unchanged: they asked, so there is no cap
   to apply.
