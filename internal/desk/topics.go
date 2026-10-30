@@ -147,6 +147,8 @@ func (d *Desk) topicHead(ctx context.Context, t turn) string {
 		switch t.how {
 		case fileViewing:
 			why = "the one the person was viewing when they wrote"
+		case fileViewingMixed:
+			why = fmt.Sprintf("the one the person was viewing when they wrote, kept because the message names things in several topics (%s)", t.what)
 		case fileNamed:
 			why = fmt.Sprintf("the one %s is in, which the message names", t.what)
 		default:

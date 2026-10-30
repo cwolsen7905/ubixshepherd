@@ -11,12 +11,15 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// How Shepherd filed a person's turn: the topic the person was viewing, the topic of
-// something their message names, or the topic of their last turn.
+// How Shepherd filed a person's turn: the topic of something their message names, the
+// topic the person was viewing, or the topic of their last turn.
 const (
 	fileViewing = "viewing"
-	fileNamed   = "named"
-	fileLast    = "last"
+	// fileViewingMixed is the viewed topic kept because the message names things in
+	// several topics.
+	fileViewingMixed = "viewing-mixed"
+	fileNamed        = "named"
+	fileLast         = "last"
 )
 
 // lastTurnScan is how many of the newest desk events are read to find the person's last
@@ -142,24 +145,40 @@ func (d *Desk) lastTurnTopic(ctx context.Context) int64 {
 	return 0
 }
 
-// chooseTopic applies the filing rule to a person's message, in order: the topic they
-// wrote from, the one topic of what they name, the topic of their last turn. It returns
-// 0 when none applies, and how the topic was chosen with what the message named.
+// chooseTopic applies the filing rule to a person's message, in order: the one topic of
+// what they name, the topic they wrote from, the topic of their last turn. What the
+// message names outweighs the view, since a message written in one topic about another
+// belongs to the other. When it names things in several topics the view is kept and the
+// head says so; with no view they are no guide. It returns 0 when none applies, and how
+// the topic was chosen with what the message named.
 func (d *Desk) chooseTopic(ctx context.Context, text string, viewing int64) (topic int64, how, what string) {
-	if t := d.openTopic(ctx, viewing); t != 0 {
-		return t, fileViewing, ""
-	}
-	if named := d.namedTopics(ctx, text); len(named) == 1 {
+	viewed := d.openTopic(ctx, viewing)
+	named := d.namedTopics(ctx, text)
+	switch {
+	case len(named) == 1:
 		for t, w := range named {
+			if t == viewed {
+				return t, fileViewing, ""
+			}
 			return t, fileNamed, w
 		}
-	} else if len(named) > 1 {
+	case len(named) > 1:
 		var ids []int64
 		for t := range named {
 			ids = append(ids, t)
 		}
 		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		if viewed != 0 {
+			var all []string
+			for _, t := range ids {
+				all = append(all, named[t])
+			}
+			return viewed, fileViewingMixed, strings.Join(all, ", ")
+		}
 		d.m.o.Log.Debug("desk: a message names things in several topics; none chosen", "topics", ids)
+	}
+	if viewed != 0 {
+		return viewed, fileViewing, ""
 	}
 	if t := d.lastTurnTopic(ctx); t != 0 {
 		return t, fileLast, ""

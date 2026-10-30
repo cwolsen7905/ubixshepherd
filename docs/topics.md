@@ -112,6 +112,14 @@ with `topic_set`. A turn already filed is never moved by Shepherd, and the desk 
 move it either: that is the person's. The head also gives the turn's id, and the desk may
 file only its own turn.
 
+A person's own turn is filed by Shepherd in this order: the one topic of what the message
+names (a lane, a run, a decision, a request or a merge request such as `!158`, each in an
+open topic), then the topic the person was viewing when they wrote, then the topic of their
+last turn. What the message names outweighs the view, so a message written in one topic
+about a lane in another is filed under the other. When the message names things in
+several topics the viewed topic is kept and the head says so; with no viewed topic, such a
+message is filed by the last turn. A cleared topic is never chosen.
+
 If the desk does not call `topic_set`, nothing breaks: the turn is in General or inherits
 from the links of what it touched.
 
