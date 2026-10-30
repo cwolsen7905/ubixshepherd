@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -408,5 +409,80 @@ func TestKeepGoingActionsReachFeedAndStatus(t *testing.T) {
 	st, err := s.KeepGoing().Status(ctx, ws.ID)
 	if err != nil || len(st.Recent) != 2 || st.Recent[1].Lane != lane.ID {
 		t.Fatalf("recent: %+v, %v", st.Recent, err)
+	}
+}
+
+// gatedLoop runs a KeepGoing's drive goroutine with a pass that counts itself and, for
+// the first pass, waits for release.
+func gatedLoop(t *testing.T) (k *KeepGoing, passes *atomic.Int32, started, release chan struct{}, quit chan struct{}, done chan struct{}) {
+	t.Helper()
+	passes = new(atomic.Int32)
+	started, release = make(chan struct{}, 8), make(chan struct{})
+	k = &KeepGoing{kick: make(chan struct{}, 1)}
+	k.pass = func(context.Context) {
+		if passes.Add(1) == 1 {
+			started <- struct{}{}
+			<-release
+		}
+	}
+	quit, done = make(chan struct{}), make(chan struct{})
+	go func() { defer close(done); k.run(quit) }()
+	return
+}
+
+func TestKeepGoingBurstOfTriggersCoalesces(t *testing.T) {
+	k, passes, started, release, quit, done := gatedLoop(t)
+	defer func() { close(quit); <-done }()
+	k.Trigger()
+	<-started // pass one is running
+	for i := 0; i < 100; i++ {
+		k.Trigger()
+	}
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for passes.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(100 * time.Millisecond) // room for a wrong third pass
+	if n := passes.Load(); n != 2 {
+		t.Fatalf("101 triggers gave %d passes, want 2 (the running one, then one more)", n)
+	}
+}
+
+func TestKeepGoingTriggerNeverBlocks(t *testing.T) {
+	k := &KeepGoing{kick: make(chan struct{}, 1)}
+	finished := make(chan struct{})
+	go func() {
+		for i := 0; i < 1000; i++ {
+			k.Trigger()
+		}
+		close(finished)
+	}()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Trigger blocked with no one receiving")
+	}
+}
+
+func TestKeepGoingDriveStopsWhenQuitCloses(t *testing.T) {
+	k, _, started, release, quit, done := gatedLoop(t)
+	k.Trigger()
+	<-started
+	close(quit) // mid-pass: the goroutine ends once the pass returns
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the drive goroutine outlived its context")
+	}
+	// Idle, too.
+	k2, _, _, _, quit2, done2 := gatedLoop(t)
+	_ = k2
+	close(quit2)
+	select {
+	case <-done2:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the idle drive goroutine outlived its context")
 	}
 }

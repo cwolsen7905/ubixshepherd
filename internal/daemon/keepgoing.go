@@ -69,12 +69,18 @@ type KeepGoing struct {
 	// check-and-count in Allow, so neither passes a cap the other is using. Taken before mu.
 	startMu sync.Mutex
 	refused map[int64]string
+	// kick is the coalescing trigger for the drive's goroutine (run): a buffer of one, sent
+	// to without blocking, so a burst of triggers is one pass and a trigger during a pass
+	// is exactly one more. pass is what a pass does; nil means EvaluateAll. Tests set it
+	// before the daemon's background starts.
+	kick chan struct{}
+	pass func(context.Context)
 }
 
 // KeepGoing returns the server's keep-going controller.
 func (s *Server) KeepGoing() *KeepGoing {
 	s.keepOnce.Do(func() {
-		s.keep = &KeepGoing{s: s, Now: time.Now, told: map[string]bool{}, stalls: map[int64]*stallState{}, refused: map[int64]string{}}
+		s.keep = &KeepGoing{s: s, Now: time.Now, told: map[string]bool{}, stalls: map[int64]*stallState{}, refused: map[int64]string{}, kick: make(chan struct{}, 1)}
 	})
 	return s.keep
 }
@@ -522,16 +528,46 @@ func (k *KeepGoing) Status(ctx context.Context, ws int64) (api.KeepGoingStatus, 
 	return out, nil
 }
 
-// run checks the limits on a timer until quit closes.
+// Trigger asks for a pass of EvaluateAll on the drive's goroutine and returns at once.
+// Triggers that arrive before the goroutine takes one coalesce into it.
+func (k *KeepGoing) Trigger() {
+	select {
+	case k.kick <- struct{}{}:
+	default:
+	}
+}
+
+// run is the drive's goroutine: it evaluates on every trigger and on a timer, until quit
+// closes. It is off the feed hub's poll, so a slow pass never delays the feed.
 func (k *KeepGoing) run(quit <-chan struct{}) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		select {
+		case <-quit:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	t := time.NewTicker(keepGoingTick)
 	defer t.Stop()
 	for {
 		select {
-		case <-quit:
+		case <-ctx.Done():
 			return
 		case <-t.C:
-			k.EvaluateAll(context.Background())
+		case <-k.kick:
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// A pass in flight finishes, as it did on the feed poll: quit only stops the loop
+		// between passes, so a start the drive began is never cut off mid-write.
+		pctx := context.WithoutCancel(ctx)
+		if k.pass != nil {
+			k.pass(pctx)
+		} else {
+			k.EvaluateAll(pctx)
 		}
 	}
 }
