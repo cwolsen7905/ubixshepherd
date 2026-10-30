@@ -55,7 +55,11 @@ func TestPersonTurnFilingRule(t *testing.T) {
 	b := func(a, b int64) int64 { return b }
 	none := func(a, b int64) int64 { return 0 }
 	cases := []tc{
-		{"viewing wins over a name", "what about run 2?", b, b, "was viewing"},
+		{"viewing holds when the name is in it", "what about run 2?", b, b, "was viewing"},
+		{"a lane in another topic beats the view", "how is feat/login going?", b, a, "lane feat/login"},
+		{"an MR in another topic beats the view", "is !158 green?", b, a, "!158"},
+		{"nothing named keeps the view", "hello there", a, a, "was viewing"},
+		{"two topics named keep the view", "run 2 and feat/login", a, a, "names things in several topics (lane feat/login, run 2)"},
 		{"a lane name", "how is feat/login going?", nil, a, "lane feat/login"},
 		{"a lane name in quotes", "check `feat/login`.", nil, a, "lane feat/login"},
 		{"a run", "why did run 2 stop", nil, b, "run 2"},
