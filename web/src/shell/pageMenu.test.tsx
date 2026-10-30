@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { MoreMenu } from './MoreMenu'
-import { PageMenuProvider, usePageMenu } from './pageMenu'
+import { PageMenuProvider, usePageMenu, usePageMenuItems } from './pageMenu'
 
 function Page({ onNew }: { onNew: () => void }) {
   usePageMenu([{ key: 'new', label: 'New conversation', onSelect: onNew }])
@@ -68,22 +68,32 @@ describe('the one menu', () => {
     expect(screen.getByRole('group', { name: 'Side conversation' })).toBeInTheDocument()
   })
 
-  it('does not tell the menu again when nothing visible changed, and runs the latest onSelect', async () => {
+  it('does not re-render the menu when nothing visible changed, and runs the latest onSelect', async () => {
     const calls: number[] = []
     function Counter() {
       const [n, setN] = useState(0)
       usePageMenu([{ key: 'a', label: 'Act', onSelect: () => calls.push(n) }])
       return <button type="button" onClick={() => setN(n + 1)}>bump</button>
     }
+    let menuRenders = 0
+    function Spy() {
+      usePageMenuItems()
+      menuRenders++
+      return null
+    }
     render(
       <PageMenuProvider>
         <MoreMenu />
+        <Spy />
         <Counter />
       </PageMenuProvider>,
     )
+    const before = menuRenders
     await userEvent.click(screen.getByRole('button', { name: 'bump' }))
+    await userEvent.click(screen.getByRole('button', { name: 'bump' }))
+    expect(menuRenders).toBe(before)
     await userEvent.click(screen.getByRole('button', { name: 'More' }))
     await userEvent.click(screen.getByRole('button', { name: 'Act' }))
-    expect(calls).toEqual([1])
+    expect(calls).toEqual([2])
   })
 })
