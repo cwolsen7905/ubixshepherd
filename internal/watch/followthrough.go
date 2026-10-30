@@ -134,7 +134,12 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 	if it.taken {
 		return tries
 	}
-	if it.retried || p.Finished.After(it.finished) {
+	if it.finished.IsZero() && !p.Finished.IsZero() && !it.retried {
+		// The forge gave no finish time at first sight: record it, it is not a retry.
+		it.finished = p.Finished
+		w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+	}
+	if it.retried || (!it.finished.IsZero() && p.Finished.After(it.finished)) {
 		// A retry in this pipeline failed again: one more attempt, and the wait restarts.
 		it.attempts++
 		it.retried, it.since, it.finished = false, w.now(), p.Finished

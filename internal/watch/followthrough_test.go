@@ -262,3 +262,24 @@ func TestExternalOwnerTakenOverAfterTheAttemptCap(t *testing.T) {
 		t.Errorf("feed = %s", got)
 	}
 }
+
+func TestExternalOwnerFinishTimeFilledInLaterIsNotARetry(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.w.Check(f.ctx)
+	*now = now.Add(10 * time.Minute)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", Finished: now.Add(-9 * time.Minute)}
+	f.w.Check(f.ctx)
+	// No retry happened: the original wait still runs out on time.
+	*now = now.Add(21 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d, want 2: a finish time filled in later restarted the wait", n)
+	}
+	if got := f.feed(t); strings.Contains(got, "failed again") {
+		t.Errorf("counted a phantom retry: %s", got)
+	}
+}
