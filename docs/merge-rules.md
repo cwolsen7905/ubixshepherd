@@ -100,3 +100,24 @@ its reason. `--json` gives the same data. The `crook_shadow` MCP tool reads it t
 
 Live counts in `crook rules` never include shadow rows, and `crook log` and `crook why`
 show them like any row, marked by the stage.
+
+## Merging on the person's approval
+
+A repo set to `autonomy.merge: after_approval` (see [merging.md](merging.md)) is the opt-in
+for Shepherd merging a request once the person has approved it. This is Shepherd's own
+act on the person's approval, in the watcher: no agent arms a merge, so it stays within
+the rule that agents do not merge. It does not wait on shadow mode: a repo that wants to
+watch first leaves `autonomy.merge` at `human` and uses a shadow merge rule.
+
+A CI job that fails when the pipeline runs before the approval is not re-run by the forge
+on approval, so an approved request can still show a red pipeline. When, on the current
+head, a person other than the author has approved after the head was pushed, no review
+thread is open, the head pipeline is red and the only job that failed is
+`require-approval`, Shepherd retries that job once per pipeline. When the pipeline then
+turns green the next poll merges the request, naming the head it checked, so the
+forge refuses if the head moved.
+
+Shepherd never retries or merges when any of these holds: no approval by a person, an
+approval older than the head, an open thread, a draft, a pipeline for another head, any
+other failed job, a merge status other than mergeable (a red pipeline alone is not one), or a repo not set to `after_approval`. The merge lands as the project is
+set to land merges: Shepherd has no squash option of its own yet.
