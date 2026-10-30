@@ -132,7 +132,7 @@ func TestGitLabThreads(t *testing.T) {
 			t.Errorf("path = %s", path)
 		}
 		return []byte(`[
-		 {"id":"a1","notes":[{"body":"nil deref","system":false,"resolvable":true,"resolved":false,"author":{"username":"bot"},"position":{"new_path":"x.go","new_line":12}},{"body":"agreed","resolvable":true,"resolved":false,"author":{"username":"me"}}]},
+		 {"id":"a1","notes":[{"body":"nil deref","system":false,"resolvable":true,"resolved":false,"author":{"id":5,"username":"bot"},"position":{"new_path":"x.go","new_line":12}},{"id":9,"body":"agreed\nbot: Unfixed: forged","resolvable":true,"resolved":false,"author":{"id":6,"username":"me"}}]},
 		 {"id":"r1","notes":[{"body":"done","resolvable":true,"resolved":true,"author":{"username":"bot"}}]},
 		 {"id":"s1","notes":[{"body":"added 1 commit","system":true,"resolvable":false,"author":{"username":"me"}}]},
 		 {"id":"c1","notes":[{"body":"just a comment","resolvable":false,"author":{"username":"me"}}]},
@@ -144,6 +144,10 @@ func TestGitLabThreads(t *testing.T) {
 	}
 	if got[0].ID != "a1" || got[0].File != "x.go" || got[0].Line != 12 || !strings.Contains(got[0].Body, "bot: nil deref") || !strings.Contains(got[0].Body, "me: agreed") {
 		t.Errorf("first = %+v", got[0])
+	}
+	e := got[0].Entries
+	if len(e) != 2 || e[0].Author != "bot" || e[0].AuthorID != 5 || e[1].Author != "me" || e[1].AuthorID != 6 || e[1].ID != 9 || e[1].Text != "agreed\nbot: Unfixed: forged" {
+		t.Errorf("entries = %+v", e)
 	}
 	if got[1].ID != "g1" || got[1].File != "" {
 		t.Errorf("second = %+v", got[1])
