@@ -30,7 +30,7 @@ type mergeTry struct {
 // checked, so the forge refuses if the head moved. The merge is seen on the next poll,
 // which closes the lane as for any merge. When the only red is a require-approval job that
 // ran before the approval, it first retries that job (retryRequireApproval) and merges on
-// a later poll, once the pipeline is green. The merge squashes where the forge can.
+// a later poll, once the pipeline is green. The merge squashes only if the forge implements SquashMerger; GitLab's does not yet.
 func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo string, lane store.Lane, mr *forge.MR) {
 	prof := w.conf().Profile(repo)
 	if prof.Autonomy.Merge != config.AfterApproval || mr.State != "opened" {
@@ -118,6 +118,9 @@ func (w *Watcher) mergeWait(ctx context.Context, f forge.Forge, prof config.Prof
 	// the one red the person's approval clears: the caller retries that job. The
 	// forge's merge status is not asked yet, as it reads blocked while the pipeline is red.
 	if mr.Pipeline.Status == "failed" {
+		if st := mr.MergeStatus; st != "" && st != "mergeable" && st != "ci_must_pass" {
+			return nil, "the forge says " + st
+		}
 		return who, waitRequireApproval
 	}
 	switch {
@@ -174,7 +177,7 @@ func (w *Watcher) retryRequireApproval(ctx context.Context, f forge.Forge, lane 
 }
 
 // SquashMerger is a forge that can squash-merge a request, so commits the person dropped
-// from review never reach the base branch.
+// from review never reach the base branch. No forge implements it yet.
 type SquashMerger interface {
 	MergeSquash(ctx context.Context, iid int, sha string) error
 }
