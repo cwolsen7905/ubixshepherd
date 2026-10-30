@@ -196,6 +196,17 @@ func TestRequireApprovalIsRetriedOncePerPipelineAndNotMerged(t *testing.T) {
 	}
 }
 
+func TestRequireApprovalIsRetriedWhateverBlockedStatusTheForgeWords(t *testing.T) {
+	for _, st := range []string{"", "ci_must_pass", "blocked_status", "not_approved"} {
+		f, mf := redFixture(t)
+		f.f.mr.MergeStatus = st
+		f.w.Check(f.ctx)
+		if len(mf.retries) != 1 {
+			t.Errorf("status %q: retries = %v, want one", st, mf.retries)
+		}
+	}
+}
+
 func TestRequireApprovalRetryRefusals(t *testing.T) {
 	cases := map[string]func(f *fixture, mf *mergingForge, mr *forge.MR){
 		"not approved":      func(_ *fixture, mf *mergingForge, _ *forge.MR) { mf.approvers = nil },

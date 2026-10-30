@@ -115,10 +115,12 @@ func (w *Watcher) mergeWait(ctx context.Context, f forge.Forge, prof config.Prof
 		return nil, fmt.Sprintf("%d review threads open", len(ts))
 	}
 	// A pipeline that failed only because require-approval ran before the approval is
-	// the one red the person's approval clears: the caller retries that job. The
-	// forge's merge status is not asked yet, as it reads blocked while the pipeline is red.
+	// the one red the person's approval clears: the caller retries that job. The forge
+	// words its status for a red pipeline in several ways (ci_must_pass, blocked), so only
+	// the statuses a retry cannot help are refused here; the job checks do the rest.
 	if mr.Pipeline.Status == "failed" {
-		if st := mr.MergeStatus; st != "" && st != "mergeable" && st != "ci_must_pass" {
+		switch st := mr.MergeStatus; st {
+		case "need_rebase", "conflict", "draft_status":
 			return nil, "the forge says " + st
 		}
 		return who, waitRequireApproval
