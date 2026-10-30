@@ -10,13 +10,10 @@
 # Included on merge request pipelines only, where the job can run: at the pinned ref the
 # file defines one job, kelpie-review, and every rule of it requires merge_request_event.
 # Check that again when the ref is bumped. The include is fetched at pipeline creation, and
-# a pipeline created by a user who cannot read the private ubixkelpie project fails at creation, with no jobs:
-# the promotion of dev to main pushes with a project access token whose user is one such
-# user, so an unconditional include broke every main pipeline. If a job from this file
-# should ever run on a push pipeline, give that token's user read access to ubixkelpie
-# first. Merge request pipelines still need their author to read ubixkelpie: an author who
-# cannot gets a pipeline with no jobs, and a maintainer has to re-run it. Every author
-# today can, and that is accepted rather than worked around.
+# a pipeline whose user cannot read the private ubixkelpie project fails there, with no
+# jobs. So a push pipeline must not include it unless that user can read the project. A
+# merge request pipeline needs its author to read it too; if an author cannot, a
+# maintainer re-runs the pipeline.
 include:
   - project: ubixsys/ubixkelpie
     ref: 788c9416214a6bdf4ceaffd851eaf34ac7850a38 # dev
