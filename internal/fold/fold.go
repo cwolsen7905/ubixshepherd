@@ -535,7 +535,6 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 			return res, refuse("branch %s has commits beyond its merged request (head %s): work the merge does not cover", lane.Branch, shortSHA(head))
 		}
 	}
-	plan := f.planArtifacts(ctx, lane, repo.Path)
 	present := false
 	if _, err := os.Stat(lane.Worktree); err == nil {
 		present = true
@@ -543,6 +542,9 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 			res.Notes = append(res.Notes, "artifact snapshot: "+err.Error())
 		}
 	}
+	// Plan after the snapshot, as Close does: a snapshot file written now, or an
+	// artifact row recordUnseen just added, belongs to the close that is happening.
+	plan := f.planArtifacts(ctx, lane, repo.Path)
 	if present && isCheckout(ctx, lane.Worktree) {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
