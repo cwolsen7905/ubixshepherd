@@ -561,10 +561,13 @@ func (k *KeepGoing) run(quit <-chan struct{}) {
 		if ctx.Err() != nil {
 			return
 		}
+		// A pass in flight finishes, as it did on the feed poll: quit only stops the loop
+		// between passes, so a start the drive began is never cut off mid-write.
+		pctx := context.WithoutCancel(ctx)
 		if k.pass != nil {
-			k.pass(ctx)
+			k.pass(pctx)
 		} else {
-			k.EvaluateAll(ctx)
+			k.EvaluateAll(pctx)
 		}
 	}
 }
