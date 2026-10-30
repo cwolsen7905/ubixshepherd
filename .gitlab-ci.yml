@@ -7,9 +7,10 @@
 # project. Without them it exits 75, "unreviewed", and is allowed to fail: never red.
 # Docs: docs/ai-review.md in that project.
 #
-# Included on merge request pipelines only, where the job can run (its rules match no
-# other pipeline). The include is fetched at pipeline creation, and a pipeline created by
-# a user who cannot read the private ubixkelpie project fails at creation, with no jobs:
+# Included on merge request pipelines only, where the job can run: at the pinned ref the
+# file defines one job, kelpie-review, and every rule of it requires merge_request_event.
+# Check that again when the ref is bumped. The include is fetched at pipeline creation, and
+# a pipeline created by a user who cannot read the private ubixkelpie project fails at creation, with no jobs:
 # the promotion of dev to main pushes with a project access token whose user is one such
 # user, so an unconditional include broke every main pipeline. If a job from this file
 # should ever run on a push pipeline, give that token's user read access to ubixkelpie
