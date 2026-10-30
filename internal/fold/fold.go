@@ -384,12 +384,13 @@ type CloseResult struct {
 	Notes         []string   `json:"notes,omitempty"`
 }
 
-// isCheckout reports whether dir holds a working tree git can read. A lane's worktree
-// folder can be gone, or exist with no checkout in it (a folder someone replaced); only
-// a live working tree can be inspected or removed.
-func isCheckout(ctx context.Context, dir string) bool {
-	out, err := git.Run(ctx, dir, "rev-parse", "--is-inside-work-tree")
-	return err == nil && out == "true"
+// isCheckout reports whether dir holds a working tree. A lane's worktree folder can be
+// gone, or exist with no checkout in it (a folder someone replaced, even inside another
+// repo); a working tree is the only folder that carries its own .git entry, a file for
+// a linked worktree and a directory for a standalone clone.
+func isCheckout(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, ".git"))
+	return err == nil
 }
 
 // Close removes a lane's worktree and closes it. Without force it refuses a worktree
@@ -427,7 +428,7 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 		}
 	}
 	letGo := false
-	checkout := present && isCheckout(ctx, lane.Worktree)
+	checkout := present && isCheckout(lane.Worktree)
 	if checkout {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
@@ -545,7 +546,7 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 	// Plan after the snapshot, as Close does: a snapshot file written now, or an
 	// artifact row recordUnseen just added, belongs to the close that is happening.
 	plan := f.planArtifacts(ctx, lane, repo.Path)
-	if present && isCheckout(ctx, lane.Worktree) {
+	if present && isCheckout(lane.Worktree) {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
 			return res, err
@@ -569,6 +570,8 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 			// The folder holds no checkout git can read, so git has nothing to remove
 			// and the folder is not the lane's to delete; prune git's stale record.
 			res.Notes = append(res.Notes, fmt.Sprintf("worktree %s is not a git checkout; left it in place", lane.Worktree))
+		} else {
+			res.Notes = append(res.Notes, "worktree was already gone; pruned git's record of it")
 		}
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
