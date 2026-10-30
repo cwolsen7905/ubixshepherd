@@ -1,0 +1,15 @@
+/* The one ⋯ menu: a slim row at the top right of the main column, so it never covers a page's own
+   header controls; in the mobile bar it sits in the flow. */
+.sh-main-col > .sh-more-menu { flex: none; align-self: flex-end; padding: var(--sh-s2) var(--sh-s6); }
+.sh-more-menu { position: relative; }
+.sh-more-pop {
+  position: absolute; top: calc(100% - var(--sh-s2)); right: var(--sh-s6); z-index: 30; min-width: 12rem; max-width: min(22rem, 80vw);
+  padding: var(--sh-s4); border: 1px solid var(--sh-rule); border-radius: var(--sh-r-lg);
+  background: var(--sh-raised); color: var(--sh-ink); box-shadow: var(--sh-shadow-pop);
+}
+.sh-mobile-bar .sh-more-pop { right: 0; top: calc(100% + var(--sh-s2)); }
+.sh-more-options { display: flex; flex-direction: column; gap: var(--sh-s2); }
+.sh-more-options .sh-btn { justify-content: flex-start; text-align: left; }
+.sh-more-theme [aria-pressed="true"]::before { content: "✓ "; }
+.sh-more-page { margin-top: var(--sh-s4); padding-top: var(--sh-s4); border-top: 1px solid var(--sh-rule); }
+.sh-more-node { padding: var(--sh-s2) 0; }

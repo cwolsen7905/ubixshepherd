@@ -1,23 +1,23 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { ThemeMenu } from './ThemeMenu'
+import { MoreMenu } from './MoreMenu'
 import { THEME_KEY } from '../theme/theme'
 
-describe('ThemeMenu', () => {
+describe('MoreMenu', () => {
   beforeEach(() => {
     window.localStorage.clear()
     document.documentElement.removeAttribute('data-theme')
   })
 
   it('offers Dark, Light and System, with System chosen by default', async () => {
-    render(<ThemeMenu />)
+    render(<MoreMenu />)
     await userEvent.click(screen.getByRole('button', { name: 'More' }))
     expect(screen.getAllByRole('button', { pressed: undefined }).filter((b) => b.hasAttribute('aria-pressed')).map((r) => r.textContent?.replace('✓ ', ''))).toEqual(['System', 'Light', 'Dark'])
     expect(screen.getByRole('button', { name: 'System' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('applies and remembers a pick, and System clears it', async () => {
-    render(<ThemeMenu />)
+    render(<MoreMenu />)
     await userEvent.click(screen.getByRole('button', { name: 'More' }))
     await userEvent.click(screen.getByRole('button', { name: 'Dark' }))
     expect(document.documentElement).toHaveAttribute('data-theme', 'dark')

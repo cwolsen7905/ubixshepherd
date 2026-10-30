@@ -63,6 +63,22 @@ describe('StatusCounts', () => {
     expect(screen.queryByText('1 waiting on you', { selector: '.sh-count-pop-h' })).toBeNull()
   })
 
+  it('carries Tab into the card drawn in the body, and Shift+Tab back to the count', async () => {
+    const user = userEvent.setup()
+    render(<StatusCounts counts={{ running: 0, waiting: 2, broken: 0, routing: 0 }} lists={{ ...none, waiting: [item(1), item(2)] }} />)
+    await user.tab()
+    await user.tab()
+    const count = screen.getByRole('link', { name: '2 waiting on you' })
+    expect(count).toHaveFocus()
+    await user.tab()
+    const first = screen.getByRole('link', { name: /Question 1/ })
+    expect(first).toHaveFocus()
+    expect(first.closest('.sh-flyout')?.parentElement).toBe(document.body)
+    await user.tab({ shift: true })
+    expect(count).toHaveFocus()
+    expect(screen.getByRole('link', { name: /Question 1/ })).toBeInTheDocument()
+  })
+
   it('closes a moment after the pointer leaves', async () => {
     const user = userEvent.setup()
     render(<StatusCounts counts={{ running: 0, waiting: 1, broken: 0, routing: 0 }} lists={{ ...none, waiting: [item(1)] }} />)
