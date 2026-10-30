@@ -11,13 +11,15 @@ import (
 )
 
 // TestCloseWorktreeStates closes a merged lane whose worktree folder is a normal
-// checkout, has been deleted, or exists without a checkout in it, both through Close
-// and through CloseMerged. The branch and the lane close in every case; only the
-// folder's fate and the result's notes differ.
+// checkout, has been deleted, or holds no checkout git can read: a plain folder, a
+// plain folder inside another repo, or a .git file pointing at a gitdir that is gone.
+// Both close paths are exercised. The branch and the lane close in every case; only
+// the folder's fate and the result's notes differ.
 func TestCloseWorktreeStates(t *testing.T) {
 	cases := map[string]struct {
 		prepare  func(t *testing.T, f *fixture, l store.Lane)
 		wantLeft bool
+		wantFile string
 		wantNote string
 	}{
 		"normal worktree": {
@@ -34,6 +36,7 @@ func TestCloseWorktreeStates(t *testing.T) {
 		"folder not a checkout": {
 			prepare:  func(t *testing.T, f *fixture, l store.Lane) { plainFolder(t, l.Worktree) },
 			wantLeft: true,
+			wantFile: "stray.txt",
 			wantNote: "not a git checkout",
 		},
 		"folder inside another repo": {
@@ -44,6 +47,17 @@ func TestCloseWorktreeStates(t *testing.T) {
 				plainFolder(t, l.Worktree)
 			},
 			wantLeft: true,
+			wantFile: "stray.txt",
+			wantNote: "not a git checkout",
+		},
+		"gitdir pruned from the main repo": {
+			prepare: func(t *testing.T, f *fixture, l store.Lane) {
+				// The main repo lost its worktree metadata, so the .git file in the
+				// worktree points at a gitdir that no longer exists.
+				dropWorktreeMetadata(t, f.repo.Path)
+			},
+			wantLeft: true,
+			wantFile: "src/a.go",
 			wantNote: "not a git checkout",
 		},
 	}
@@ -105,11 +119,27 @@ func TestCloseWorktreeStates(t *testing.T) {
 					t.Errorf("git still lists the worktree:\n%s", list)
 				}
 				if tc.wantLeft {
-					if _, err := os.ReadFile(filepath.Join(l.Worktree, "stray.txt")); err != nil {
+					if _, err := os.ReadFile(filepath.Join(l.Worktree, tc.wantFile)); err != nil {
 						t.Errorf("folder was not left in place: %v", err)
 					}
 				}
 			})
+		}
+	}
+}
+
+// dropWorktreeMetadata removes the repo's worktree admin entries, leaving any
+// worktree folders with .git files that point at nothing.
+func dropWorktreeMetadata(t *testing.T, repoPath string) {
+	t.Helper()
+	dir := filepath.Join(repoPath, ".git", "worktrees")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			t.Fatal(err)
 		}
 	}
 }
