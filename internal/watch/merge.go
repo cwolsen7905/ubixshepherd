@@ -30,7 +30,7 @@ type mergeTry struct {
 // checked, so the forge refuses if the head moved. The merge is seen on the next poll,
 // which closes the lane as for any merge. When the only red is a require-approval job that
 // ran before the approval, it first retries that job (retryRequireApproval) and merges on
-// a later poll, once the pipeline is green. The merge squashes only if the forge implements SquashMerger; GitLab's does not yet.
+// a later poll, once the pipeline is green. The squash path is inert: no forge implements SquashMerger yet, so the merge lands as the project is set to.
 func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo string, lane store.Lane, mr *forge.MR) {
 	prof := w.conf().Profile(repo)
 	if prof.Autonomy.Merge != config.AfterApproval || mr.State != "opened" {
@@ -86,7 +86,7 @@ func (w *Watcher) mergeWait(ctx context.Context, f forge.Forge, prof config.Prof
 		return nil, "draft"
 	case mr.Author == "":
 		return nil, "the forge did not name the author"
-	case mr.Pipeline == nil:
+	case mr.Pipeline == nil || (mr.Pipeline.Status != "success" && mr.Pipeline.Status != "failed"):
 		return nil, "no passed head pipeline"
 	case mr.Pipeline.SHA != mr.SHA:
 		return nil, "the pipeline is not for the head"

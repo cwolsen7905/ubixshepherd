@@ -13,16 +13,18 @@ import (
 // mergingForge is an approvingForge that records merges.
 type mergingForge struct {
 	*approvingForge
-	approvers []forge.ApprovedBy
-	merges    []string
-	squashed  []string
-	retries   []int64
-	mergeErr  error
+	approvers     []forge.ApprovedBy
+	merges        []string
+	squashed      []string
+	retries       []int64
+	approvalReads int
+	mergeErr      error
 	// stale are approvers whose approval predates the head, as ApprovedHead sees it.
 	stale map[string]bool
 }
 
 func (m *mergingForge) ApprovedHead(_ context.Context, _ int, _ string, who []string) ([]string, error) {
+	m.approvalReads++
 	var out []string
 	for _, u := range who {
 		if !m.stale[u] {
@@ -248,5 +250,16 @@ func TestMergeSquashesWhereTheForgeCan(t *testing.T) {
 	}
 	if len(mf.squashed) != 1 || mf.squashed[0] != head {
 		t.Fatalf("squashed = %v, want one at %s", mf.squashed, head)
+	}
+}
+
+func TestUnfinishedPipelineCostsNoApprovalReads(t *testing.T) {
+	for _, st := range []string{"running", "pending", "created"} {
+		f, mf, _ := mergeFixture(t, config.AfterApproval)
+		f.f.mr.Pipeline.Status = st
+		f.w.Check(f.ctx)
+		if mf.approvalReads != 0 || len(mf.merges) != 0 {
+			t.Errorf("pipeline %s: %d approval reads, merges %v", st, mf.approvalReads, mf.merges)
+		}
 	}
 }
