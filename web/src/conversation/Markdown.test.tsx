@@ -58,6 +58,10 @@ describe('Markdown lists', () => {
     expect(Array.from(root?.children ?? []).map((e) => e.tagName)).toEqual(['UL', 'P', 'UL'])
   })
 
+  it('keeps sub-items at an inconsistent indent in one list', () => {
+    expect(lists('- a\n    - b\n  - c')).toEqual(['ul(a ul(b c))'])
+  })
+
   it('keeps continuation lines inside the item and returns to the outer level', () => {
     expect(lists('1. one\n   more of one\n   - nested\n2. two')).toEqual(['ol(one\nmore of one ul(nested) two)'])
   })

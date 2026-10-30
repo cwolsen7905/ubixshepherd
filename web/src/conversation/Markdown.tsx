@@ -194,7 +194,14 @@ export function blocks(src: string): Block[] {
       } else if (indent >= top.indent + 2 && top.list.items.at(-1)) {
         // Indented under the last item: its own list inside that item.
         const parent = top.list.items.at(-1)
-        listStack.push({ indent, list: start(parent?.sub ?? out) })
+        const prev = parent?.sub.at(-1)
+        if (prev?.ordered === ordered) {
+          // Siblings at an inconsistent indent stay one list.
+          prev.items.push(item)
+          listStack.push({ indent, list: prev })
+        } else {
+          listStack.push({ indent, list: start(parent?.sub ?? out) })
+        }
       } else if (top.list.ordered === ordered) {
         top.list.items.push(item)
       } else {
