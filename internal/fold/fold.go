@@ -387,14 +387,38 @@ type CloseResult struct {
 // isCheckout reports whether dir holds a working tree git can read. A lane's worktree
 // folder can be gone, or exist with no checkout in it (a folder someone replaced, even
 // inside another repo), or hold a .git file whose gitdir the main repo no longer has.
-// The .git entry rules out a plain folder inside a parent repo; rev-parse, run in the
-// folder, confirms the entry resolves to a working tree.
-func isCheckout(ctx context.Context, dir string) bool {
-	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-		return false
+// The .git entry rules out a plain folder inside a parent repo, and a .git file naming
+// a gitdir that is missing or unreadable is no checkout. Past that, a git failure is
+// not "no checkout": it is returned, so a lock or an ownership check does not pass for
+// a folder with nothing to remove.
+func isCheckout(ctx context.Context, dir string) (bool, error) {
+	entry := filepath.Join(dir, ".git")
+	info, err := os.Stat(entry)
+	if err != nil {
+		return false, nil
+	}
+	if !info.IsDir() {
+		data, err := os.ReadFile(entry)
+		if err != nil {
+			return false, nil
+		}
+		gitdir, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:")
+		if !ok {
+			return false, nil
+		}
+		gitdir = strings.TrimSpace(gitdir)
+		if !filepath.IsAbs(gitdir) {
+			gitdir = filepath.Join(dir, gitdir)
+		}
+		if _, err := os.Stat(gitdir); err != nil {
+			return false, nil
+		}
 	}
 	out, err := git.Run(ctx, dir, "rev-parse", "--is-inside-work-tree")
-	return err == nil && out == "true"
+	if err != nil {
+		return false, fmt.Errorf("check %s for a git checkout: %w", dir, err)
+	}
+	return out == "true", nil
 }
 
 // Close removes a lane's worktree and closes it. Without force it refuses a worktree
@@ -432,7 +456,12 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 		}
 	}
 	letGo := false
-	checkout := present && isCheckout(ctx, lane.Worktree)
+	checkout := false
+	if present {
+		if checkout, err = isCheckout(ctx, lane.Worktree); err != nil {
+			return res, err
+		}
+	}
 	if checkout {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
@@ -550,7 +579,13 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 	// Plan after the snapshot, as Close does: a snapshot file written now, or an
 	// artifact row recordUnseen just added, belongs to the close that is happening.
 	plan := f.planArtifacts(ctx, lane, repo.Path)
-	if present && isCheckout(ctx, lane.Worktree) {
+	checkout := false
+	if present {
+		if checkout, err = isCheckout(ctx, lane.Worktree); err != nil {
+			return res, err
+		}
+	}
+	if checkout {
 		dirty, err := git.Dirty(ctx, lane.Worktree)
 		if err != nil {
 			return res, err

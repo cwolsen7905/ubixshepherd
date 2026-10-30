@@ -128,6 +128,45 @@ func TestCloseWorktreeStates(t *testing.T) {
 	}
 }
 
+// TestCloseGitFailureIsNotNoCheckout: a .git entry that resolves but that git cannot
+// read is a git error, not "not a checkout". Close and CloseMerged return it, and the
+// lane, branch and folder are untouched.
+func TestCloseGitFailureIsNotNoCheckout(t *testing.T) {
+	for _, name := range []string{"Close", "CloseMerged"} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			l := f.open("work")
+			f.commit(l.Worktree, "src/a.go")
+			gitT(t, l.Worktree, "push", "-q", "origin", "HEAD:main")
+			head := gitT(t, f.repo.Path, "rev-parse", "refs/heads/"+l.Branch)
+			// The gitdir exists, but its HEAD is garbage, so rev-parse fails.
+			entries, err := os.ReadDir(filepath.Join(f.repo.Path, ".git", "worktrees"))
+			if err != nil || len(entries) == 0 {
+				t.Fatalf("no worktree metadata: %v", err)
+			}
+			for _, e := range entries {
+				if err := os.WriteFile(filepath.Join(f.repo.Path, ".git", "worktrees", e.Name(), "HEAD"), []byte("garbage\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if name == "Close" {
+				_, err = f.fold.Close(context.Background(), l.ID, false)
+			} else {
+				_, err = f.fold.CloseMerged(context.Background(), l.ID, head, head)
+			}
+			if err == nil {
+				t.Fatal("close succeeded; want the git error")
+			}
+			if got, _ := f.fold.Store.Lane(context.Background(), l.ID); got.State == store.LaneClosed {
+				t.Error("lane was closed")
+			}
+			if _, err := os.Stat(filepath.Join(l.Worktree, "src/a.go")); err != nil {
+				t.Errorf("worktree touched: %v", err)
+			}
+		})
+	}
+}
+
 // dropWorktreeMetadata removes the repo's worktree admin entries, leaving any
 // worktree folders with .git files that point at nothing.
 func dropWorktreeMetadata(t *testing.T, repoPath string) {
