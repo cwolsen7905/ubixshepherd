@@ -50,23 +50,34 @@ export function inline(text: string): ReactNode[] {
 
 export type TaskItem = { checked: boolean; text: string }
 
+/** One list item: its text (continuation lines joined by newlines) and the lists nested under it. */
+export type ListItem = { text: string; sub: ListBlock[] }
+export type ListBlock = { t: 'list'; ordered: boolean; items: ListItem[] }
+
 type Block =
   | { t: 'p'; text: string }
   | { t: 'h'; text: string }
   | { t: 'code'; text: string }
-  | { t: 'list'; ordered: boolean; items: string[] }
+  | ListBlock
   | { t: 'task'; items: TaskItem[] }
   | { t: 'quote'; text: string }
   | { t: 'hr' }
   | { t: 'table'; header: string[]; rows: string[][] }
 
-/** A small markdown subset: paragraphs, headings, fenced code, lists, tables, blockquotes, horizontal rules and task lists. */
+/** Width of leading whitespace, a tab counting to the next multiple of four. */
+function columns(ws: string): number {
+  let n = 0
+  for (const ch of ws) n = ch === '\t' ? n + 4 - (n % 4) : n + 1
+  return n
+}
+
+/** A small markdown subset: paragraphs, headings, fenced code, nested lists, tables, blockquotes, horizontal rules and task lists. */
 export function blocks(src: string): Block[] {
   const out: Block[] = []
   const lines = src.replace(/\r\n?/g, '\n').split('\n')
   let para: string[] = []
-  let listItems: string[] = []
-  let listOrdered = false
+  // Open lists, outermost first; `indent` is the column of the list's markers.
+  let listStack: { indent: number; list: ListBlock }[] = []
   let taskItems: TaskItem[] = []
   let quoteLines: string[] = []
   const flush = () => {
@@ -74,11 +85,7 @@ export function blocks(src: string): Block[] {
     para = []
   }
   const flushList = () => {
-    if (listItems.length) {
-      out.push({ t: 'list', ordered: listOrdered, items: [...listItems] })
-      listItems = []
-      listOrdered = false
-    }
+    listStack = []
   }
   const flushTask = () => {
     if (taskItems.length) {
@@ -166,16 +173,43 @@ export function blocks(src: string): Block[] {
       continue
     }
     // Regular list item
-    const li = /^\s*(?:([-*])|\d+[.)])\s+(.*)$/.exec(line)
+    const li = /^(\s*)(?:([-*+])|\d+[.)])\s+(.*)$/.exec(line)
     if (li) {
       flush()
       flushTask()
       flushQuote()
-      const ordered = !li[1]
-      if (listItems.length === 0) {
-        listOrdered = ordered
+      const ordered = !li[2]
+      const indent = columns(li[1] ?? '')
+      const item: ListItem = { text: li[3] ?? '', sub: [] }
+      const start = (at: Block[]) => {
+        const list: ListBlock = { t: 'list', ordered, items: [item] }
+        at.push(list)
+        return list
       }
-      listItems.push(li[2] ?? '')
+      // A shallower marker closes the lists deeper than it (never the outermost).
+      while (listStack.length > 1 && indent < (listStack.at(-1)?.indent ?? 0)) listStack.pop()
+      const top = listStack.at(-1)
+      if (!top) {
+        listStack = [{ indent, list: start(out) }]
+      } else if (indent >= top.indent + 2 && top.list.items.at(-1)) {
+        // Indented under the last item: its own list inside that item.
+        const parent = top.list.items.at(-1)
+        const prev = parent?.sub.at(-1)
+        if (prev?.ordered === ordered) {
+          // Siblings at an inconsistent indent stay one list.
+          prev.items.push(item)
+          listStack.push({ indent, list: prev })
+        } else {
+          listStack.push({ indent, list: start(parent?.sub ?? out) })
+        }
+      } else if (top.list.ordered === ordered) {
+        top.list.items.push(item)
+      } else {
+        // A different kind of marker at the same level starts a new list beside the old one.
+        listStack.pop()
+        const parent = listStack.at(-1)?.list.items.at(-1)
+        listStack.push({ indent, list: start(parent ? parent.sub : out) })
+      }
       continue
     }
     // Blank line flushes
@@ -186,7 +220,14 @@ export function blocks(src: string): Block[] {
       flushQuote()
       continue
     }
-    // Regular text
+    // An indented line under a list item continues that item
+    const open = listStack.at(-1)?.list.items.at(-1)
+    if (open && columns(/^\s*/.exec(line)?.[0] ?? '') >= 2) {
+      open.text += '\n' + line.trim()
+      continue
+    }
+    // Regular text ends any open list, so a later marker starts a new one after it
+    flushList()
     para.push(line)
   }
   flush()
@@ -194,6 +235,18 @@ export function blocks(src: string): Block[] {
   flushTask()
   flushQuote()
   return out
+}
+
+function ListView({ list }: { list: ListBlock }) {
+  const items = list.items.map((it, j) => (
+    <li key={j}>
+      {inline(it.text)}
+      {it.sub.map((s, k) => (
+        <ListView key={k} list={s} />
+      ))}
+    </li>
+  ))
+  return list.ordered ? <ol>{items}</ol> : <ul>{items}</ul>
 }
 
 /** Class names for each block: the lane pages' `cv-` set, or the chat page's `md` set. */
@@ -223,10 +276,8 @@ export function Markdown({ text, classes = 'cv' }: { text: string; classes?: key
                 {inline(b.text)}
               </p>
             )
-          case 'list': {
-            const items = b.items.map((it, j) => <li key={j}>{inline(it)}</li>)
-            return b.ordered ? <ol key={i}>{items}</ol> : <ul key={i}>{items}</ul>
-          }
+          case 'list':
+            return <ListView key={i} list={b} />
           case 'task': {
             const items = (b.items as TaskItem[]).map((it, j) => (
               <li key={j}>
