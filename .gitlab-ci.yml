@@ -6,10 +6,20 @@
 # KELPIE_REGISTRY_TOKEN (read_registry) as group variables to pull the image from another
 # project. Without them it exits 75, "unreviewed", and is allowed to fail: never red.
 # Docs: docs/ai-review.md in that project.
+#
+# Included on merge request pipelines only, where the job can run: at the pinned ref the
+# file defines one job, kelpie-review, and every rule of it requires merge_request_event.
+# Check that again when the ref is bumped. The include is fetched at pipeline creation, and
+# a pipeline whose user cannot read the private ubixkelpie project fails there, with no
+# jobs. So a push pipeline must not include it unless that user can read the project. A
+# merge request pipeline needs its author to read it too; if an author cannot, a
+# maintainer re-runs the pipeline.
 include:
   - project: ubixsys/ubixkelpie
     ref: 788c9416214a6bdf4ceaffd851eaf34ac7850a38 # dev
     file: ci/kelpie.yml
+    rules:
+      - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 
 # The default stages plus approval and promote. The checks stay in the default test stage.
 # approval only runs in merge request pipelines and promote only in dev push pipelines, so
