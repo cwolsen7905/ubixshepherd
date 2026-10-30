@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -282,4 +284,15 @@ func TestRoutedRequestStartsOrSaysWhy(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitRequest(t, f, held.ID, store.RequestReplied)
+}
+
+func TestLogTailIsBareAgentText(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "run.log")
+	body := "# shepherd run 1: claude in lane x\n# task: t\n\n21:27:03 first\nolder line\n21:27:04 10:30:00 is the deadline\n# shepherd: run 1 succeeded at 21:27:05\n"
+	if err := os.WriteFile(log, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := logTail(log, 1000), "first\nolder line\n10:30:00 is the deadline"; got != want {
+		t.Errorf("logTail = %q, want %q", got, want)
+	}
 }

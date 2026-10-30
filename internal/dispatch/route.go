@@ -538,7 +538,7 @@ func logTail(path string, max int) string {
 	var keep []string
 	for _, line := range strings.Split(string(b), "\n") {
 		if !strings.HasPrefix(line, "# shepherd") && !strings.HasPrefix(line, "# task:") {
-			keep = append(keep, line)
+			keep = append(keep, StripStamp(line))
 		}
 	}
 	s := strings.TrimSpace(strings.Join(keep, "\n"))
