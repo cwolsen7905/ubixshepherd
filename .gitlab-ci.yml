@@ -13,7 +13,9 @@
 # the promotion of dev to main pushes with a project access token whose user is one such
 # user, so an unconditional include broke every main pipeline. If a job from this file
 # should ever run on a push pipeline, give that token's user read access to ubixkelpie
-# first.
+# first. Merge request pipelines still need their author to read ubixkelpie: an author who
+# cannot gets a pipeline with no jobs, and a maintainer has to re-run it. Every author
+# today can, and that is accepted rather than worked around.
 include:
   - project: ubixsys/ubixkelpie
     ref: 788c9416214a6bdf4ceaffd851eaf34ac7850a38 # dev
