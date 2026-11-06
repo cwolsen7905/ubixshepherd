@@ -83,7 +83,12 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 	agentRuns := false
 	if lane != nil {
 		v.Lane = lane.Name
-		if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
+		running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1)
+		if err != nil {
+			// Not knowing whether an agent runs is not the same as none running.
+			return v, fmt.Errorf("lane %s: cannot tell whether an agent runs in it: %w", lane.Name, err)
+		}
+		if len(running) > 0 {
 			push := ""
 			if repo != nil {
 				push = prof.Autonomy.Push

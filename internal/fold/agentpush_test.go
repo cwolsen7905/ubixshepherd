@@ -2,6 +2,7 @@ package fold
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,5 +141,29 @@ func TestCheckPushToRules(t *testing.T) {
 	f.commit(l.Worktree, "docs/stray.md")
 	if v := check("origin", []PushRef{pushRef(t, l.Worktree, "work")}); v.OK || v.rule != crook.RuleScopePush || !strings.Contains(v.Problems[0], "docs/stray.md") {
 		t.Errorf("outside scope: %+v (rule %q)", v, v.rule)
+	}
+}
+
+// failingRuns is a store whose run lookups fail, as a transient error would.
+type failingRuns struct {
+	store.Store
+}
+
+func (failingRuns) Runs(context.Context, int64, string, int) ([]store.Run, error) {
+	return nil, errors.New("database is locked")
+}
+
+// When Shepherd cannot tell whether an agent runs in the lane, the push check fails
+// rather than treating the lane as having none, which would skip the agent-only checks.
+func TestPushCheckFailsWhenTheRunLookupFails(t *testing.T) {
+	f := newFixture(t)
+	l := f.open("work")
+	f.commit(l.Worktree, "src/ok.go")
+	agentProfile(f, PushAgent)
+	f.fold.Store = failingRuns{Store: f.fold.Store}
+	ref := []PushRef{pushRef(t, l.Worktree, "work")}
+	_, err := f.fold.CheckPushTo(context.Background(), &l, &f.repo, l.Worktree, "origin", ref)
+	if err == nil || !strings.Contains(err.Error(), "cannot tell whether an agent runs") {
+		t.Fatalf("a failed run lookup let the push check through: %v", err)
 	}
 }
