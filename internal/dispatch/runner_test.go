@@ -648,6 +648,10 @@ func TestAnswerContinuesTheAsker(t *testing.T) {
 	ctx := context.Background()
 	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
 	run = f.wait(t, run.ID)
+	// The store shows the run ended before the runner has finished with it: its
+	// end-of-run step delivers any answered decision. Let that finish, or it can race
+	// the Answer below and start the continuation first.
+	f.runner.Wait()
 
 	d, err := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Raise the price?", Options: []string{"yes", "no"}, Recommendation: "no"})
 	if err != nil || d.State != store.DecisionOpen {
