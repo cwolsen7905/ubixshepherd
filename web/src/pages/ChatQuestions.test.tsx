@@ -141,6 +141,33 @@ describe('QuestionList', () => {
     expect(calls).toContain('POST /v1/questions/1/skip')
   })
 
+  it('clearing the last question lights the previous one', async () => {
+    const calls: string[] = []
+    stubClear(calls, 'answered')
+    const selected = vi.fn()
+    render(<QuestionList questions={[qa, qb, qc]} thread={thread().t} selected={qc.id} onSelected={selected} />)
+    expect(screen.getByText('Tag the release?').closest('.sh-row')).toHaveClass('is-selected')
+    await userEvent.click(within(row('Tag the release?')).getByRole('button', { name: 'Mark answered' }))
+    await waitFor(() => expect(screen.queryByText('Tag the release?')).not.toBeInTheDocument())
+    expect(screen.getByText('Ship it today?').closest('.sh-row')).toHaveClass('is-selected')
+    expect(selected).toHaveBeenLastCalledWith(2)
+    expect(calls).toContain('POST /v1/questions/4/answer')
+  })
+
+  it('a reply the desk accepts clears the question and lights the next', async () => {
+    const { t } = thread()
+    const cleared = vi.fn()
+    const selected = vi.fn()
+    render(<QuestionList questions={[qa, qb, qc]} thread={t} onCleared={cleared} onSelected={selected} />)
+    await userEvent.click(within(row('Which branch?')).getByRole('button', { name: 'Reply here' }))
+    await userEvent.type(screen.getByRole('textbox'), 'main')
+    await userEvent.click(screen.getByRole('button', { name: 'Send reply' }))
+    await waitFor(() => expect(screen.queryByText('Which branch?')).not.toBeInTheDocument())
+    expect(screen.getByText('Ship it today?').closest('.sh-row')).toHaveClass('is-selected')
+    expect(cleared).toHaveBeenCalledWith(1)
+    expect(selected).toHaveBeenLastCalledWith(2)
+  })
+
   it('the last one leaves the empty state', async () => {
     const calls: string[] = []
     stubClear(calls, 'answered')

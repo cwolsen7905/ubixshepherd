@@ -167,7 +167,8 @@ export function QuestionList({
     })
     const rest = shown.filter((x) => x.id !== q.id)
     const after = shown.findIndex((x) => x.id === q.id)
-    const next = rest.some((x) => x.id === lit) ? lit : rest[after]?.id ?? rest[0]?.id ?? null
+    // The next row takes the light; with none after it, the previous one does, or the empty state.
+    const next = rest.some((x) => x.id === lit) ? lit : rest[after]?.id ?? rest[after - 1]?.id ?? null
     pick(next)
     onCleared?.(q.id)
   }
