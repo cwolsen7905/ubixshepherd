@@ -150,6 +150,10 @@ release-notes:
 		found { print } \
 		END { if (!found) { print "CHANGELOG.md has no section for " v > "/dev/stderr"; exit 1 } }' CHANGELOG.md
 
+# Remove only build outputs: the binary, the cross and release artifacts, the web build
+# and the embedded web UI. The scripts in bin/ (install.sh, promote.sh, ci/) are tracked
+# sources and must stay.
 clean:
-	rm -rf bin dist web/dist
+	rm -f bin/shepherd
+	rm -rf dist web/dist
 	find $(WEBUI_DIR) -mindepth 1 -maxdepth 1 ! -name .gitignore -exec rm -rf {} +
