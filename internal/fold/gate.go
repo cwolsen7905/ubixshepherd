@@ -79,6 +79,9 @@ func (f *Fold) RunGate(ctx context.Context, laneID int64, logPath string) (GateR
 		cmd = exec.CommandContext(ctx, "sh", "-c", gate)
 	}
 	cmd.Dir = lane.Worktree
+	// A child the shell started may hold the output open after the shell is killed:
+	// stop waiting for it shortly after the timeout, so the run is bounded.
+	cmd.WaitDelay = 10 * time.Second
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	runErr := cmd.Run()
