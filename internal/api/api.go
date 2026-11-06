@@ -591,6 +591,10 @@ const (
 // update its merge request, after Shepherd's own checks.
 func PathLaneShip(id int64) string { return fmt.Sprintf("%s/%d/ship", PathLanes, id) }
 
+// PathLaneGate is POST /v1/lanes/{id}/gate: run the repo's gate on the lane's head and
+// record the result, so the pre-push hook can let an agent's push of that commit go.
+func PathLaneGate(id int64) string { return fmt.Sprintf("%s/%d/gate", PathLanes, id) }
+
 // PathLaneScope is POST /v1/lanes/{id}/scope.
 func PathLaneScope(id int64) string { return fmt.Sprintf("%s/%d/scope", PathLanes, id) }
 

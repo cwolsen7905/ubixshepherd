@@ -80,9 +80,15 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 	if repo != nil {
 		prof = f.Conf().Profile(repo.Name)
 	}
+	agentRuns := false
 	if lane != nil {
 		v.Lane = lane.Name
-		if running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(running) > 0 {
+		running, err := f.Store.Runs(ctx, lane.ID, store.RunRunning, 1)
+		if err != nil {
+			// Not knowing whether an agent runs is not the same as none running.
+			return v, fmt.Errorf("lane %s: cannot tell whether an agent runs in it: %w", lane.Name, err)
+		}
+		if len(running) > 0 {
 			push := ""
 			if repo != nil {
 				push = prof.Autonomy.Push
@@ -95,6 +101,7 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 				v.OK, v.Problems, v.rule = false, []string{d.Reason}, d.Rule
 				return v, nil
 			}
+			agentRuns = true
 		}
 	}
 	reserved := repo != nil && prof.Tags == config.TagsReserved
@@ -122,6 +129,13 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 			v.Problems = append(v.Problems, fmt.Sprintf("lane %s pushes only its branch %s; this pushes to %s",
 				lane.Name, lane.Branch, strings.TrimPrefix(r.RemoteRef, "refs/heads/")))
 			continue
+		}
+		if gate := gateCommand(repo, f); agentRuns && gate != "" {
+			// An agent's push goes out only on a commit Shepherd recorded a passing
+			// gate for. The person's own push is left alone.
+			if p := f.gateProblem(ctx, lane, gate, r.LocalSHA); p != "" {
+				v.Problems = append(v.Problems, p)
+			}
 		}
 		from, note, err := pushBase(ctx, dir, lane, r)
 		if err != nil {

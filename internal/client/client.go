@@ -201,6 +201,19 @@ func (c *Client) ShipLane(ctx context.Context, id int64) (dispatch.Shipped, erro
 	return out, long.do(ctx, http.MethodPost, api.PathLaneShip(id), struct{}{}, &out)
 }
 
+// GateLane runs the repo's gate on the lane's head in the daemon and records the result.
+// It waits as long as a gate may take.
+func (c *Client) GateLane(ctx context.Context, id int64) (fold.GateRun, error) {
+	var out fold.GateRun
+	c.mu.RLock()
+	long := &Client{
+		Name: c.Name, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
+		http: &http.Client{Timeout: fold.GateTimeout + 5*time.Minute},
+	}
+	c.mu.RUnlock()
+	return out, long.do(ctx, http.MethodPost, api.PathLaneGate(id), struct{}{}, &out)
+}
+
 func (c *Client) FoldGC(ctx context.Context, workspaceID int64) ([]fold.Stale, error) {
 	var out []fold.Stale
 	return out, c.do(ctx, http.MethodGet, fmt.Sprintf("%s?workspace_id=%d", api.PathFoldGC, workspaceID), nil, &out)
