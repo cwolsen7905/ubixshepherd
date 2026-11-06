@@ -9,6 +9,7 @@ import {
   problemsFor, projectRepos, removeProject, revert, scopes, setValue, show, unsetValue, type Draft, type Scope,
 } from '../model/settings'
 import { go, href } from '../router'
+import { DeviceList } from '../auth/DeviceList'
 import { Button, Chip, ErrorState, LoadingRows } from '../ui'
 import { Confirm } from '../ui/Confirm'
 import { Kbd } from '../ui/Kbd'
@@ -623,6 +624,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     )
   }
 
+  const hostedOn = typeof (doc.effective.daemon as { public?: unknown } | undefined)?.public === 'object'
   return (
     <div className="sh-settings" data-component="Settings">
       <header className="sh-settings-head">
@@ -633,6 +635,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
         </span>
       </header>
       <div className="sh-settings-body">
+        {hostedOn && <DeviceList onSignedOut={() => window.location.reload()} />}
         <div className="sh-section">
           {readOnly && <p className="banner tone-warn" role="status">{doc.why ?? 'This session cannot save settings.'} You can still change fields and review the diff.</p>}
           {doc.invalid && doc.invalid.length > 0 && (

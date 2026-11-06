@@ -52,12 +52,15 @@ describe('DeviceList', () => {
 
 describe('LoginGate', () => {
   it('shows the app with a session, the sign-in page on 401, and the app when offline', async () => {
-    const { rerender } = render(<LoginGate read={async () => ({})}><p>app</p></LoginGate>)
+    const { rerender } = render(<LoginGate hosted read={async () => ({})}><p>app</p></LoginGate>)
     expect(await screen.findByText('app')).toBeTruthy()
-    rerender(<LoginGate read={async () => { throw new ApiError(401, 'no session') }}><p>app2</p></LoginGate>)
+    rerender(<LoginGate hosted read={async () => { throw new ApiError(401, 'no session') }}><p>app2</p></LoginGate>)
     expect(await screen.findByRole('heading', { name: /Sign in/ })).toBeTruthy()
     cleanup()
-    render(<LoginGate read={async () => { throw new Error('offline') }}><p>app3</p></LoginGate>)
+    render(<LoginGate hosted read={async () => { throw new Error('offline') }}><p>app3</p></LoginGate>)
     expect(await screen.findByText('app3')).toBeTruthy()
+    cleanup()
+    render(<LoginGate hosted={false} read={async () => { throw new ApiError(401, 'no session') }}><p>app4</p></LoginGate>)
+    expect(await screen.findByText('app4')).toBeTruthy()
   })
 })

@@ -47,6 +47,8 @@ type principal struct {
 	Turn int64
 	// web is a browser's session (RoleWeb).
 	web *webSession
+	// device is the id of the device token a RoleWeb request came with (hosted mode).
+	device string
 }
 
 // actor is who Crook sees acting for the principal: the front desk is the person's only
@@ -167,6 +169,14 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		} else if o := r.Header.Get("Origin"); o != "" && !sameOrigin(r) {
 			writeError(w, http.StatusForbidden, fmt.Errorf("a request from %s cannot use a token here", o))
 			return
+		} else if isPublic(r) {
+			// The public listener takes device tokens only: the operator token is
+			// answered 404 before it gets here, and worker and desk tokens never leave
+			// the machine.
+			var ok bool
+			if p, ok = s.deviceAuth(w, r, got); !ok {
+				return
+			}
 		} else if subtle.ConstantTimeCompare([]byte(got), want) == 1 {
 			p = principal{Role: RoleOperator}
 		} else if tok, ok := strings.CutPrefix(got, "Bearer "); ok && tok != "" {
@@ -175,6 +185,10 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			}
 		}
 		if p.Role == "" && got == "" {
+			if isPublic(r) {
+				writeError(w, http.StatusUnauthorized, errors.New("not signed in: log in at "+hostedOf(r).pub.URL))
+				return
+			}
 			writeError(w, http.StatusUnauthorized, errors.New("not signed in: run shepherd web for a sign-in link"))
 			return
 		}

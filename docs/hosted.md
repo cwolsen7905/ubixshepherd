@@ -1,10 +1,14 @@
 # Hosted mode: a daemon reachable over HTTPS with a login
 
-Status: **in progress.** The settings, the account, the second factor, the device tokens,
-the rate limits and the login routes are built and tested as packages; the daemon does not
-serve them yet. Until it does, a daemon refuses to start with `daemon.public` set, and
-nothing below changes how a daemon runs today. This page says what the finished feature
-does, and marks what is not wired yet.
+Status: **implemented in the daemon, with one start-up step still to land.** The listener,
+account, second factor, device tokens, rate limits, login routes, `shepherd account`, the
+web sign-in page and the Settings device list are built and tested. The daemon's `Run` does
+not yet call the code that opens the public listener (`PreparePublic` before it listens,
+`ServePublic` beside it), so until it does a configured `daemon.public` is read and
+validated but nothing listens beyond loopback. `shepherd login` and `--host https://...`
+are the next phase.
+
+This page says what the finished feature does.
 
 A hosted daemon is any daemon with three opt-in settings. Without `daemon.public` nothing
 changes: it listens on loopback only, as before.
@@ -15,9 +19,12 @@ changes: it listens on loopback only, as before.
 | `daemon.public.tls`, or `daemon.public.trusted_proxies` | Either the daemon serves HTTPS itself from a certificate and key, or a proxy in front ends TLS and the daemon takes plain HTTP only from it |
 | An owner account | Set with `shepherd account set`; browser sessions and device tokens come from this login |
 
-The daemon refuses to start with a public listener unless TLS (or a trusted proxy) and an
-account are both present. The loopback listener stays up beside it, for the CLI on the
-same machine and for the operator token.
+The daemon refuses to start with a public listener unless TLS (or a trusted proxy) is
+configured and the TOTP key can be read. An account cannot be made before the daemon runs,
+so with no account yet the daemon starts on loopback only, says so in its log, and opens the
+public listener the moment `shepherd account set` succeeds: nothing is reachable from
+outside without a login to reach it with. The loopback listener stays up beside the public
+one, for the CLI on the same machine and for the operator token.
 
 ## Configuration
 
@@ -46,7 +53,8 @@ The owner account has a password (at least 12 characters, kept as an argon2id ha
 second factor. TOTP is the first; the code behind it is a `SecondFactor` (enrol, verify,
 list, remove), so a passkey can be added later without changing the login.
 
-`shepherd account set` prints, once, the TOTP enrolment address and its typed secret, and
+`shepherd account set` (on the daemon's machine, with a password typed twice on a terminal or
+one line from `--password-stdin`, never a flag) prints, once, the TOTP enrolment address and its typed secret, and
 ten recovery codes. A recovery code works once in place of a TOTP code and is kept only as
 a hash. A TOTP code cannot be used twice, and an earlier code than the last one used is
 refused. Setting the password again, or changing the second factor, signs everything out.
@@ -54,7 +62,7 @@ refused. Setting the password again, or changing the second factor, signs everyt
 | Way in | Route | Gives |
 |---|---|---|
 | Browser | `POST /v1/web/login`, from a page whose Origin is `daemon.public.url` | A session cookie named `__Host-shepherd_session` (Secure, HttpOnly, SameSite=Strict, Path `/`), and the CSRF token the page sends on every write |
-| CLI | `POST /v1/device/login` (`shepherd login`, not yet built) | A named device token, shown once |
+| CLI | `POST /v1/device/login` (`shepherd login` is the next phase) | A named device token, shown once |
 
 The login routes send `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
 Every wrong password, wrong code and reused code gives the same answer: "wrong password or
@@ -100,9 +108,23 @@ On the public listener, in logs, in the feed and in the web UI: the operator tok
 and desk tokens, password and recovery-code hashes, the TOTP secret and its key, agent CLI
 credentials, forge tokens and git push keys.
 
-## Not wired yet
+## Managing sign-ins
 
-The packages `internal/auth` and `internal/login` and the web pages in `web/src/auth` and
-`web/src/pages/Login.tsx` are in place. The store tables, the daemon's second listener and
-startup checks, `shepherd account`, the Settings device list, and the end-to-end secret
-test wait on the daemon, store and API changes of the same phase.
+| Where | What |
+|---|---|
+| Settings, "Signed-in devices" | Lists each device token by name and times, revokes one, or signs out everywhere. Shown only on a hosted daemon |
+| `shepherd account sign-out-all` | The same sign-out, from the daemon's machine |
+| `GET /v1/devices`, `POST /v1/devices/{id}/revoke`, `POST /v1/web/signout-all` | The routes behind them, for a session or a device token |
+
+A sign-in link (`shepherd web`) is not accepted on the public listener: sessions there come
+only from the login. Worker and desk tokens are refused there too. A device token has the web
+role, so it reads and answers like a session, but cannot save settings and never reaches the
+operator's setup routes or sign-in minting.
+
+## What the tests check
+
+Hosted mode's tests run a daemon with a fake agent that prints secrets, sign in over the
+public handler, and read every route a signed-in person can, the feed and the daemon's log:
+none of the daemon's tokens, the password, recovery codes, TOTP secret and key, their
+hashes or the agent's secret appears. They also cover logout and sign-out-everywhere across a
+restart, the 404 for the operator token, and a TLS listener started from a certificate.
