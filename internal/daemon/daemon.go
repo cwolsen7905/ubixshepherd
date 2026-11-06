@@ -202,6 +202,9 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathLanes+"/{id}/files", desk|web, api.LaneFiles(s.Fold))
 	handle("GET "+api.PathFoldGC, desk, s.foldGC)
 	handle("POST "+api.PathPrePush, worker, s.prePush)
+	// An agent records the gate on its own head here: the daemon runs the repo's
+	// configured command, so the caller never supplies a result.
+	handle("POST "+api.PathLanes+"/{id}/gate", worker|desk, s.withRunner(s.gateLane))
 	handle("POST /v1/repos/{id}/hook", operatorOnly, s.repoHook)
 	handle("POST "+api.PathRuns, desk, s.acted(s.describeStart, s.withRunner(s.startRun)))
 	handle("GET "+api.PathRuns, desk, s.listRuns)
@@ -799,6 +802,21 @@ func (s *Server) shipLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("lane ship", "lane", res.Lane, "pushed", res.Pushed, "mr", res.MR)
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) gateLane(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	res, err := s.Fold.RunGate(r.Context(), id, filepath.Join(s.Runner.Dir, fmt.Sprintf("lane-%d.agent-gate.log", id)))
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	s.Log.Info("lane gate", "lane", res.Lane, "sha", res.SHA, "passed", res.Passed)
 	writeJSON(w, http.StatusOK, res)
 }
 
