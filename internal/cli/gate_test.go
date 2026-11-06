@@ -2,12 +2,15 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -115,5 +118,60 @@ func TestAgentPushNeedsAPassingGate(t *testing.T) {
 	gate("")
 	if code := push(head); code != 0 {
 		t.Fatalf("agent push with no gate configured refused: %s", h.err)
+	}
+}
+
+// A worker may have the gate run on its own run's lane and no other.
+func TestWorkerGatesOnlyItsOwnLane(t *testing.T) {
+	clearRunEnv(t)
+	h := newHarness(t, "", false)
+	root, app := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = app
+	for _, args := range [][]string{{"feat/x", "--scope", "src/**"}, {"feat/y", "--scope", "other/**"}} {
+		if code := h.run(append([]string{"lane", "open"}, args...)...); code != 0 {
+			t.Fatalf("lane open: %s", h.err)
+		}
+	}
+	cfg := config.Default()
+	cfg.Repos = map[string]config.Profile{"app": {Gate: "true"}}
+	h.srv.Fold.SetConfig(cfg)
+
+	ctx := context.Background()
+	x, err := h.srv.Store.Lane(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	y, err := h.srv.Store.Lane(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := h.srv.Store.CreateRun(ctx, store.Run{LaneID: x.ID, Agent: "claude", Prompt: "x", State: store.RunRunning, Log: "l"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, err := h.srv.MintWorker(run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(h.env.Layout.Runtime())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rt api.Runtime
+	if err := json.Unmarshal(b, &rt); err != nil {
+		t.Fatal(err)
+	}
+	c := client.New("http://"+rt.Addr, tok)
+	if _, err := c.GateLane(ctx, y.ID); err == nil || !strings.Contains(err.Error(), "own lane") {
+		t.Fatalf("a worker gated another lane: %v", err)
+	}
+	if g, err := h.srv.Store.LastGateResult(ctx, y.ID); err != nil || g != nil {
+		t.Fatalf("a refused request recorded a gate result: %+v %v", g, err)
+	}
+	if res, err := c.GateLane(ctx, x.ID); err != nil || !res.Passed {
+		t.Fatalf("a worker could not gate its own lane: %+v %v", res, err)
 	}
 }

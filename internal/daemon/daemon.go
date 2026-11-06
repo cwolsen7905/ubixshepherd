@@ -811,6 +811,16 @@ func (s *Server) gateLane(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// A worker records the gate only on its own run's lane.
+	own, err := s.workerLane(r)
+	if err != nil {
+		s.foldError(w, err)
+		return
+	}
+	if own != nil && own.ID != id {
+		writeError(w, http.StatusForbidden, fmt.Errorf("an agent runs the gate only on its own lane (%s)", own.Name))
+		return
+	}
 	res, err := s.Fold.RunGate(r.Context(), id, filepath.Join(s.Runner.Dir, fmt.Sprintf("lane-%d.agent-gate.log", id)))
 	if err != nil {
 		s.foldError(w, err)
