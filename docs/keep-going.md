@@ -54,10 +54,10 @@ Each is already authorised elsewhere; keep-going only lets the desk act on it un
 
 | Action | Authorised by | Mechanism |
 |---|---|---|
-| Start the next approved Next-up item with no lane | the person's approval of the item ([backlog-next.md](backlog-next.md)) | `lane_open` with `item`, then `lane_run`. Only the first approved item, one at a time |
+| Start the next approved Next-up item with no lane | the person's approval of the item | `lane_open` with `item`, then `lane_run`. Only the first approved item, one at a time |
 | Continue a run whose next step is already approved, such as push or open an MR | the repo's `autonomy.push` and `autonomy.merge` | the existing `lane ship` or a continued session. A repo whose rule is human is skipped |
 | Follow up a failed pipeline | the watcher's fix loop | the desk may start one the watcher did not, still capped by `MaxFixTries` |
-| Widen scope the person already approved | an answered decision naming the paths | the desk's scope-widening tool ([backlog-next.md](backlog-next.md) seeds it as planned); refused without a decision to cite |
+| Widen scope the person already approved | an answered decision naming the paths | the desk's scope-widening tool; refused without a decision to cite |
 | Re-run a run the daemon's restart interrupted | the original run's own approval | `Runner` resume, once per run |
 
 ## 3. What always stops for the person
