@@ -263,8 +263,12 @@ func openCodeExternal(worktree string) any {
 var openCodeGlabReadOnly = []string{"glab ci list*", "glab ci view*", "glab ci status*", "glab ci trace*",
 	"glab api projects/*/pipelines*", "glab api projects/*/jobs*"}
 
-var openCodeGlabDeny = []string{"glab api* -X*", "glab api* --method*", "glab api* -f*", "glab api* -F*",
-	"glab api* --field*", "glab api* --raw-field*", "glab api* --input*",
+// The flag denies do not assume a space before the flag, since the shell splits on a tab
+// too; they over-deny a path that merely contains one of these strings, which is the safe
+// side. --hostname and -H/--header are refused so a call stays on the repo's own forge.
+var openCodeGlabDeny = []string{"glab api*-X*", "glab api*--method*", "glab api*-f*", "glab api*-F*",
+	"glab api*--field*", "glab api*--raw-field*", "glab api*--input*",
+	"glab api*-h*", "glab api*--hostname*", "glab api*-H*", "glab api*--header*",
 	"glab api*/retry*", "glab api*/cancel*", "glab api*/erase*", "glab api*/play*",
 	"glab api*/variables*", "glab api*/artifacts*",
 	// Dot segments and percent-encoding could walk out of the allowed endpoints.
