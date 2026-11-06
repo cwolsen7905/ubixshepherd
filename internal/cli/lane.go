@@ -62,6 +62,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneReview(ctx, env, args[1:])
 	case "ship":
 		return laneShip(ctx, env, args[1:])
+	case "gate":
+		return laneGate(ctx, env, args[1:])
 	case "diff":
 		return laneDiff(ctx, env, args[1:])
 	}
