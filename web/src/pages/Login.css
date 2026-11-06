@@ -1,0 +1,10 @@
+/* Sign-in page layout only. Card, inputs, banner and button are the shared .sh-* classes. */
+.login { min-height: 100vh; display: grid; place-items: center; padding: var(--sh-s8); background: var(--sh-surface); }
+.login-card { width: min(100%, 24rem); display: grid; gap: var(--sh-s4); padding: var(--sh-s8); }
+.login-title { font-size: var(--sh-t-view); margin: 0; }
+.login-host { margin: 0; color: var(--sh-muted); font-family: var(--sh-mono); font-size: var(--sh-t-meta); }
+.login-label { font-size: var(--sh-t-small); color: var(--sh-muted); margin-top: var(--sh-s3); }
+.login-hint { margin: 0; color: var(--sh-faint); font-size: var(--sh-t-meta); }
+.login-actions { display: flex; align-items: center; gap: var(--sh-s6); margin-top: var(--sh-s4); flex-wrap: wrap; }
+.login-link { background: none; border: 0; padding: 0; color: var(--sh-lichen); font: inherit; font-size: var(--sh-t-small); cursor: pointer; text-decoration: underline; }
+.login-link:focus-visible { outline: 2px solid var(--sh-lichen); outline-offset: 2px; }

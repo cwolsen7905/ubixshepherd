@@ -24,6 +24,18 @@
 #   ## What the daemon logs: debug, info, warn or error. A reload applies a change; the
 #   ## SHEPHERD_LOG_LEVEL environment variable, when set, overrides it.
 #   log_level: info
+#   ## Hosted mode (docs/hosted.md): also listen beyond loopback, with TLS and a login.
+#   ## Remove the lines to stay loopback-only. Set the account with `shepherd account set`.
+#   public:
+#     listen: 0.0.0.0:8443
+#     url: https://shepherd.example.com
+#     ## Either the daemon's own certificate and key ...
+#     tls: {cert: /etc/shepherd/tls.crt, key: /etc/shepherd/tls.key}
+#     ## ... or the addresses of the TLS-terminating proxy in front of it.
+##     trusted_proxies: [10.0.0.5]
+#     ## A 0600 file holding the key that encrypts the TOTP secret; without it the key
+#     ## is totp.key in the Shepherd home, with a warning.
+#     totp_key_file: /run/secrets/shepherd-totp-key
 
 ## Keep-going mode (docs/keep-going.md): lets the front desk act on what is already
 ## approved, within these limits. Each setting is the default shown; `shepherd
