@@ -83,6 +83,10 @@ type Record struct {
 	// NextAfterSec is the seconds from this turn's last event to the person's next
 	// message; nil when they have not written again.
 	NextAfterSec *float64 `json:"next_after_sec,omitempty"`
+	// Trimmed marks a turn whose conversation was trimmed away: only what the desk
+	// kept as it began is known, and the fields about its reply and what followed are
+	// empty.
+	Trimmed bool `json:"trimmed,omitempty"`
 
 	// items keeps each listed item's text, for the summary; never written out.
 	items []needItem
@@ -101,6 +105,10 @@ type Input struct {
 	// TurnTopic is the title of the topic a turn is filed under, by turn id.
 	TurnTopic map[int64]string
 	Resolve   Resolver
+	// Logged is what the desk kept of each turn as it began. It wins over what is
+	// derived from the conversation, and the only trace of a turn the conversation
+	// no longer holds.
+	Logged []store.DeskTurnLog
 	// Since and Until bound the turns returned by their start; zero is unbounded.
 	// History before Since still informs repeats and traces.
 	Since, Until time.Time
@@ -124,13 +132,26 @@ func Derive(in Input) []Record {
 		feedByText[f.Text] = append(feedByText[f.Text], f)
 	}
 	seen := map[string]bool{}
+	logged := map[int64]store.DeskTurnLog{}
+	for _, l := range in.Logged {
+		logged[l.Turn] = l
+	}
 	recs := make([]Record, 0, len(turns))
 	for _, t := range turns {
 		r := Record{Turn: t.id, Time: t.start, StartedBy: startedBy(t), Topic: in.TurnTopic[t.id],
 			Tools: t.tools, NextDid: []string{}}
 		if r.StartedBy != ByPerson {
 			r.Events = eventsOf(t, feedByText, in.Resolve)
-			r.Waiting = waitingCount(t.text)
+			r.Waiting = WaitingCount(t.text)
+		}
+		if l, ok := logged[t.id]; ok {
+			// What the desk kept as the turn began beats a guess from the digest's text.
+			if l.Topic != "" {
+				r.Topic = l.Topic
+			}
+			if r.StartedBy != ByPerson {
+				r.Events, r.Waiting = fromLog(l.Events), l.Waiting
+			}
 		}
 		reply := strings.Join(t.replies, "\n")
 		r.ReplyChars = len([]rune(reply))
@@ -156,6 +177,17 @@ func Derive(in Input) []Record {
 		recs = append(recs, r)
 	}
 	traceNext(recs, turns, in)
+	have := map[int64]bool{}
+	for _, t := range turns {
+		have[t.id] = true
+	}
+	for _, l := range in.Logged {
+		if !have[l.Turn] {
+			recs = append(recs, Record{Turn: l.Turn, Time: l.Created, StartedBy: l.StartedBy, Topic: l.Topic,
+				Events: fromLog(l.Events), Waiting: l.Waiting, Opening: OpenNone, NextDid: []string{}, Trimmed: true})
+		}
+	}
+	sort.SliceStable(recs, func(i, j int) bool { return recs[i].Turn < recs[j].Turn })
 	out := recs[:0]
 	for _, r := range recs {
 		if (!in.Since.IsZero() && r.Time.Before(in.Since)) || (!in.Until.IsZero() && r.Time.After(in.Until)) {
@@ -209,11 +241,14 @@ func groupTurns(events []store.DeskEvent) []*turnData {
 	return order
 }
 
-func startedBy(t *turnData) string {
+func startedBy(t *turnData) string { return StartedBy(t.origin, t.text) }
+
+// StartedBy says who began a turn from its origin and the message that started it.
+func StartedBy(origin, text string) string {
 	switch {
-	case t.origin != store.DeskBySystem:
+	case origin != store.DeskBySystem:
 		return ByPerson
-	case strings.HasPrefix(t.text, "[Shepherd] Since your last turn:\n"):
+	case strings.HasPrefix(text, "[Shepherd] Since your last turn:\n"):
 		return ByEvent
 	}
 	return ByShepherd
@@ -230,7 +265,9 @@ func toolName(line string) string {
 
 var waitingRe = regexp.MustCompile(`\[Waiting on you \((\d+)\)\]`)
 
-func waitingCount(text string) *int {
+// WaitingCount is the count in the "[Waiting on you (N)]" line of a message to the desk,
+// or nil when it has none.
+func WaitingCount(text string) *int {
 	m := waitingRe.FindStringSubmatch(text)
 	if m == nil {
 		return nil
@@ -283,4 +320,12 @@ func opening(reply string) string {
 		return OpenNothing
 	}
 	return OpenOther
+}
+
+func fromLog(es []store.DeskLogEvent) []Event {
+	var out []Event
+	for _, e := range es {
+		out = append(out, Event(e))
+	}
+	return out
 }

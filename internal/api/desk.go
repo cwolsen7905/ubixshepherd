@@ -16,7 +16,8 @@ import (
 //	POST /v1/desk/turn       the person's message: 202 with DeskTurnAccepted; 429 when
 //	                         DeskQueueMax turns already wait
 //	GET  /v1/desk/stream     server-sent events, see below
-//	GET  /v1/desk/history    ?before=SEQ&limit=N: DeskHistory, oldest first
+//	GET  /v1/desk/history    ?before=SEQ&limit=N: DeskHistory, oldest first; &log=1 adds the
+//	                         desk log's per-turn rows
 //	GET  /v1/desk/status     DeskStatus
 //	POST /v1/desk/interrupt  stop the turn in progress: DeskInterrupted
 //	POST /v1/desk/new        a new conversation: the next turn starts a new session
@@ -144,6 +145,9 @@ type DeskHistory struct {
 	// More says whether older events remain: ask again with before set to the first
 	// event's seq.
 	More bool `json:"more"`
+	// TurnLog is, with ?log=1, what the desk kept of each turn as it began, for the desk
+	// log: all of the workspace's, not only those of the events returned.
+	TurnLog []store.DeskTurnLog `json:"turn_log,omitempty"`
 }
 
 // DeskStatus answers GET /v1/desk/status.

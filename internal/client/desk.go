@@ -53,6 +53,13 @@ func (c *Client) DeskHistory(ctx context.Context, workspaceID, before int64, lim
 	return out, c.do(ctx, http.MethodGet, api.PathDeskHistory+deskQuery(workspaceID, more), nil, &out)
 }
 
+// DeskTurnLogs reads what the desk kept of each turn as it began, for the desk log.
+func (c *Client) DeskTurnLogs(ctx context.Context, workspaceID int64) ([]store.DeskTurnLog, error) {
+	var out api.DeskHistory
+	err := c.do(ctx, http.MethodGet, api.PathDeskHistory+deskQuery(workspaceID, url.Values{"log": {"1"}, "limit": {"1"}}), nil, &out)
+	return out.TurnLog, err
+}
+
 // DeskStatus says whether the desk is busy, how many turns wait and who follows it.
 func (c *Client) DeskStatus(ctx context.Context, workspaceID int64) (api.DeskStatus, error) {
 	var out api.DeskStatus

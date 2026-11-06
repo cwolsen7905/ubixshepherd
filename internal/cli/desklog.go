@@ -134,6 +134,9 @@ func gatherDeskLog(ctx context.Context, c *client.Client, ws int64) (desklog.Inp
 		after = f.Last
 	}
 	var err error
+	if in.Logged, err = c.DeskTurnLogs(ctx, ws); err != nil {
+		return in, err
+	}
 	if in.Questions, err = c.Questions(ctx, ws, ""); err != nil {
 		return in, err
 	}

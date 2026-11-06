@@ -162,3 +162,28 @@ func TestSummarise(t *testing.T) {
 		t.Fatalf("kinds: %+v", s.NoActionKinds)
 	}
 }
+
+func TestLoggedTurnsWinAndOutliveTheConversation(t *testing.T) {
+	in := scenario()
+	two := 2
+	in.Logged = []store.DeskTurnLog{
+		// Turn 1 is still in the conversation: the kept row beats the digest's text.
+		{Turn: 1, StartedBy: ByEvent, Topic: "kept", Waiting: &two,
+			Events: []store.DeskLogEvent{{Kind: "run_failed", Repo: "r", Lane: "l", Run: 9}}},
+		// An older turn the conversation has trimmed away.
+		{Turn: 0, StartedBy: ByEvent, Created: at(-60), Events: []store.DeskLogEvent{{Kind: "mr"}}},
+	}
+	in.Logged[1].Turn = -5
+	recs := Derive(in)
+	if len(recs) != 5 || recs[0].Turn != -5 || !recs[0].Trimmed || recs[0].Opening != OpenNone || recs[0].Events[0].Kind != "mr" {
+		t.Fatalf("trimmed: %+v", recs[0])
+	}
+	r := recs[1]
+	if r.Topic != "kept" || *r.Waiting != 2 || len(r.Events) != 1 || r.Events[0].Run != 9 || r.Trimmed {
+		t.Fatalf("kept: %+v", r)
+	}
+	// A trimmed turn is not judged on what followed.
+	if s := Summarise(recs); s.EventTurns != 3 || s.Judged != 2 {
+		t.Fatalf("summary: %+v", s)
+	}
+}

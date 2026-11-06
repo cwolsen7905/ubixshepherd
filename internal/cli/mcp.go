@@ -303,6 +303,28 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name: "desk_log",
+			Description: "The front desk's own conversation log, for studying what in the thread was signal and what was noise: one JSON line per turn (who started it, the events it carried, the waiting count shown, reply length, how the reply opened, Needs-you items and repeats, tool names, and what the person did next). " +
+				"Pass summary for totals per day, the share of event turns that led to no action, the most repeated Needs-you items and the event kinds that most often led to no action. Read only; it changes nothing about the desk. Default range: everything kept.",
+			InputSchema: obj(map[string]any{
+				"since":   map[string]any{"type": "string", "description": "From when: a day (2026-11-01), RFC 3339, or a number of days like 7d."},
+				"until":   map[string]any{"type": "string", "description": "Up to when: a day (that whole day is included), RFC 3339, or a number of days ago like 1d."},
+				"summary": map[string]any{"type": "boolean", "description": "Totals instead of the turns."},
+			}),
+			args: func(a map[string]any) ([]string, error) {
+				out := []string{"desk", "log"}
+				for _, k := range []string{"since", "until"} {
+					if v := str(a, k); v != "" {
+						out = append(out, "--"+k, v)
+					}
+				}
+				if sum, _ := a["summary"].(bool); sum {
+					out = append(out, "--summary")
+				}
+				return out, nil
+			},
+		},
+		{
 			Name:        "run_stop",
 			Description: "Stop a running agent. Its commits so far stay in the lane. Set for_restart only when you stop it to hurry a restart's drain: it is then continued after the restart. A stop the person asked for is never for_restart.",
 			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}, "for_restart": map[string]any{"type": "boolean"}}, "id"),

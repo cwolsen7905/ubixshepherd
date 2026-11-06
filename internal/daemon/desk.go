@@ -222,6 +222,13 @@ func (s *Server) deskHistory(w http.ResponseWriter, r *http.Request) {
 	if es != nil {
 		out.Events = es
 	}
+	if q.Get("log") == "1" {
+		// The desk log's per-turn rows (docs/desk-log.md), all of the workspace's.
+		if out.TurnLog, err = s.Store.DeskTurnLogs(r.Context(), d.Workspace().ID); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

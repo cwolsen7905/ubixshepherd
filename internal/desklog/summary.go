@@ -39,7 +39,7 @@ type Summary struct {
 	Days []Day `json:"days"`
 	// EventTurns counts event turns whose next person turn is known (Judged) and how
 	// many of those led to no action. NoActionShare is NoAction over Judged, 0 when
-	// none was judged. A turn after which the person has not written yet is not judged.
+	// none was judged. A turn after which the person has not written yet, and a trimmed one, is not judged.
 	EventTurns    int     `json:"event_turns"`
 	Judged        int     `json:"event_turns_judged"`
 	NoAction      int     `json:"event_turns_no_action"`
@@ -98,7 +98,7 @@ func Summarise(recs []Record) Summary {
 			continue
 		}
 		s.EventTurns++
-		if hasDid(r.NextDid, DidNoNextTurn) {
+		if r.Trimmed || hasDid(r.NextDid, DidNoNextTurn) {
 			continue
 		}
 		s.Judged++

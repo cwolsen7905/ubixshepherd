@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -37,6 +38,10 @@ func seedDeskTurns(t *testing.T, h *harness) {
 	add(store.DeskAssistant, store.DeskBySystem, "Needs you:\n1. Review [!7](https://forge.example/mr/7).\n\nStatus:\n- ok", t1)
 	add(store.DeskTurnEnd, store.DeskBySystem, "", t1)
 	time.Sleep(5 * time.Millisecond)
+	if err := st.SaveDeskTurnLog(ctx, store.DeskTurnLog{WorkspaceID: ws.ID, Turn: -1, StartedBy: desklog.ByEvent,
+		Events: []store.DeskLogEvent{{Kind: store.FeedRunFailed, Repo: "app", Lane: "old", Run: 2}}}); err != nil {
+		t.Fatal(err)
+	}
 	t2 := add(store.DeskUser, store.DeskByHuman, "is !7 passing?", 0)
 	add(store.DeskAssistant, store.DeskByHuman, "Yes.", t2)
 }
@@ -45,8 +50,10 @@ func TestDeskLogLinesAndSummary(t *testing.T) {
 	h := newHarness(t, "", false)
 	seedDeskTurns(t, h)
 	run := func(args ...string) error {
-		h.out.Reset()
-		return runDesk(context.Background(), h.env, args)
+		if code := h.run(append([]string{"desk"}, args...)...); code != 0 {
+			return fmt.Errorf("exit %d: %s", code, h.err)
+		}
+		return nil
 	}
 	if err := run("log"); err != nil {
 		t.Fatal(err)
@@ -60,9 +67,14 @@ func TestDeskLogLinesAndSummary(t *testing.T) {
 		}
 		recs = append(recs, r)
 	}
-	if len(recs) != 2 {
+	if len(recs) != 3 {
 		t.Fatalf("got %d lines", len(recs))
 	}
+	// A turn the conversation no longer holds comes first, from what the desk kept.
+	if old := recs[0]; !old.Trimmed || old.Turn != -1 || len(old.Events) != 1 || old.Events[0].Lane != "old" {
+		t.Fatalf("trimmed turn: %+v", old)
+	}
+	recs = recs[1:]
 	r := recs[0]
 	if r.StartedBy != desklog.ByEvent || len(r.Events) != 1 || r.Events[0].Kind != store.FeedMR ||
 		r.Waiting == nil || *r.Waiting != 1 || r.Opening != desklog.OpenNeedsYou || r.NeedsYou != 1 ||
@@ -80,14 +92,14 @@ func TestDeskLogLinesAndSummary(t *testing.T) {
 	if err := run("log", "--since", "soon"); err == nil {
 		t.Fatal("a bad --since was taken")
 	}
-	if err := run("log", "--summary"); err != nil || !strings.Contains(h.out.String(), "Event turns: 1") {
+	if err := run("log", "--summary"); err != nil || !strings.Contains(h.out.String(), "Event turns: 2") {
 		t.Fatalf("summary: %v\n%s", err, h.out.String())
 	}
 	if err := run("log", "--summary", "--json"); err != nil {
 		t.Fatal(err)
 	}
 	var s desklog.Summary
-	if err := json.Unmarshal(h.out.Bytes(), &s); err != nil || s.EventTurns != 1 {
+	if err := json.Unmarshal(h.out.Bytes(), &s); err != nil || s.EventTurns != 2 || s.Judged != 1 {
 		t.Fatalf("summary json: %v %+v", err, s)
 	}
 	if err := run("other"); err == nil {
@@ -107,5 +119,20 @@ func TestParseLogTime(t *testing.T) {
 	}
 	if _, err := parseLogTime("x", now, false); err == nil {
 		t.Fatal("garbage taken")
+	}
+}
+
+func TestDeskLogMCPTool(t *testing.T) {
+	h := newHarness(t, "", false)
+	seedDeskTurns(t, h)
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"desk_log","arguments":{"summary":true,"since":"2000-01-01"}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"desk_log","arguments":{"since":"nonsense"}}}`,
+	)
+	if text, isErr := toolText(t, resps[0]); isErr || !strings.Contains(text, "Event turns: 2") {
+		t.Errorf("desk_log summary: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[1]); !isErr || !strings.Contains(text, "--since") {
+		t.Errorf("desk_log bad since: %v %s", isErr, text)
 	}
 }

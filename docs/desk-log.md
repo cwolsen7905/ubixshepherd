@@ -19,7 +19,7 @@ counts when deciding whether a Needs-you item is a repeat.
 |---|---|
 | `turn`, `time` | The turn's id (the thread message that started it) and when it began. |
 | `started_by` | `person`, `event` (a digest of swarm events) or `shepherd` (any other message Shepherd sent the desk). |
-| `topic` | The title of the topic the turn is filed under, when it has one. |
+| `topic` | The title of the topic the turn was filed under, when it had one. |
 | `events` | For an event turn, each event the digest carried: `kind`, and `repo`, `lane`, `run` where they can be named. |
 | `waiting` | The Waiting-on-you count the desk was shown; absent when it was not shown one. |
 | `reply_chars` | The reply's length in characters. |
@@ -29,6 +29,7 @@ counts when deciding whether a Needs-you item is a repeat.
 | `needs_you_keys` | The ids and links those items name. |
 | `tools` | The desk's tool calls, by name only. |
 | `next_did` | What the person did next; see below. |
+| `trimmed` | Set when only what was kept at the turn's start is known; see below. |
 | `next_turn`, `next_after_sec` | The person's next message and the seconds from the end of this turn to it. Absent until they write again. |
 
 Replies and messages are not copied into the log: it holds counts, names and ids.
@@ -59,9 +60,32 @@ most turns, and the event kinds that most often sat in a turn that led to no act
 turns the person has not yet answered with a message are left out of the share.
 `--summary --json` prints the same as JSON.
 
+## What is kept
+
+Most of the log is derived each time you ask, from the desk's kept conversation, the feed,
+questions, decisions and topics. The daemon also keeps one small row per turn when the turn
+begins (in its own table, which trimming the conversation does not touch):
+
+- who started the turn;
+- the topic it was filed under at that moment;
+- the Waiting-on-you count shown to the desk;
+- for an event turn, each event's kind with the repo, lane and run it was about as they were
+  named then.
+
+Where a row exists it is used in place of what would be guessed from the digest's text. A
+turn whose conversation has been trimmed away still appears, from its row alone, with
+`"trimmed": true`: its reply, repeat and follow-up fields are empty, and the summary does not
+judge it by what followed. Turns from before this was kept have no row, and appear only while
+the conversation still holds them.
+
+## Other ways in
+
+The desk can read the same log with its `desk_log` tool (`since`, `until`, `summary`). Over
+the API, `GET /v1/desk/history?log=1` adds the rows as `turn_log`.
+
 ## Limits
 
-The log is derived from the desk's kept conversation (the newest events per workspace, see
-`desk.md`), the feed, questions, decisions and topics, so it reaches back only as far as
-those do. An event line is matched to the feed item with the same text; one that cannot be
+The derived part reaches back only as far as the desk's kept conversation (the newest events
+per workspace, see `desk.md`), the feed, questions, decisions and topics do. For a turn with
+no row, an event line is matched to the feed item with the same text; one that cannot be
 matched has kind `unknown`.
