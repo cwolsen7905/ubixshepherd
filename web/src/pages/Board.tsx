@@ -179,7 +179,7 @@ export function BoardPage({
   let index = -1
   // In the flat view the group is gone, so a card names its repo whenever several
   // repos are on the board; under a project the group already names a single repo.
-  const flatRepos = new Set(items.map((it) => it.repo)).size
+  const flatRepos = new Set(items.map((it) => it.repo).filter(Boolean)).size
   const flatShowRepo = flatRepos > 1
   const renderGroups = (its: Row[], showRepo: boolean) => {
     const byGroup = new Map<RowGroup, Row[]>()
