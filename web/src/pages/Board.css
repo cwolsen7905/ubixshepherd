@@ -1,3 +1,7 @@
 /* The design's status group headers read in lower case ("needs you 1", "to review 1"). */
 .board-group .sh-group-h--status { text-transform: lowercase; }
 .board-group .sh-group-h--status .sh-group-h-n { text-transform: none; }
+
+/* The repo a card belongs to, under a project that holds more than one: a faint mono
+   tag on the card's badge line, so quiet projects stay quiet. */
+.board-repo { font-family: var(--sh-mono); }
