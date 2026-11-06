@@ -21,6 +21,16 @@ failure, so it never lets a push through. `shepherd lane gate` refuses to run wi
 uncommitted changes, because the gate would then be checking something other than the
 commit that is pushed.
 
+## What a pass does and does not show
+
+The gate runs the lane's own checked-out code, so the agent controls what the command
+does: a commit that edits the gate's script or its dependencies can make it pass. A
+recorded pass shows that the configured command passed on that commit. It does not show
+that the commit left the gate's definition alone. Check files the person has approved are
+judged separately: a push that changes one is refused, whatever the gate says. Review the
+commit as you would any other. Only the operator and the agent's own run may call the
+gate route; the front desk cannot.
+
 ## What it leaves alone
 
 - Your own pushes. The check applies while an agent runs in the lane.

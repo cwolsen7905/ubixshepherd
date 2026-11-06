@@ -40,7 +40,9 @@ func gateCommand(repo *store.Repo, f *Fold) string {
 
 // RunGate runs the repo's configured gate in the lane's worktree and records the result
 // for the commit it ran on, as the agent's own. The command comes from the repo's
-// profile, never from the caller, so a recorded pass means the configured gate passed.
+// profile, never from the caller. The gate runs the lane's own checked-out code, so a pass
+// means the configured command passed on this commit, not that the commit left the
+// gate's definition alone: approved check files are judged separately, on push.
 // The worktree must be clean and the gate is judged on its HEAD: a run over uncommitted
 // changes says nothing about the commit that will be pushed. logPath receives the whole
 // output.

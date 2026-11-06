@@ -204,7 +204,7 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathPrePush, worker, s.prePush)
 	// An agent records the gate on its own head here: the daemon runs the repo's
 	// configured command, so the caller never supplies a result.
-	handle("POST "+api.PathLanes+"/{id}/gate", worker|desk, s.withRunner(s.gateLane))
+	handle("POST "+api.PathLanes+"/{id}/gate", worker, s.withRunner(s.gateLane))
 	handle("POST /v1/repos/{id}/hook", operatorOnly, s.repoHook)
 	handle("POST "+api.PathRuns, desk, s.acted(s.describeStart, s.withRunner(s.startRun)))
 	handle("GET "+api.PathRuns, desk, s.listRuns)
