@@ -417,6 +417,9 @@ func TestOpenCodeGlabIsReadOnly(t *testing.T) {
 		{"glab api projects/7/pipelines/12/variables", "deny"},
 		{"glab api projects/7/jobs/9/artifacts", "deny"},
 		{"glab api projects/7/jobs/9/artifacts/out.zip", "deny"},
+		{"glab api projects/7/pipelines/../../../user", "deny"},
+		{"glab api projects/7/pipelines/x/../../../groups/2", "deny"},
+		{"glab api projects/7/jobs/%2e%2e/%2e%2e/user", "deny"},
 		{"glab api projects/7/merge_requests/3", "deny"},
 		{"glab api graphql", "deny"},
 	} {

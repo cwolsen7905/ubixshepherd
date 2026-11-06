@@ -266,7 +266,9 @@ var openCodeGlabReadOnly = []string{"glab ci list*", "glab ci view*", "glab ci s
 var openCodeGlabDeny = []string{"glab api* -X*", "glab api* --method*", "glab api* -f*", "glab api* -F*",
 	"glab api* --field*", "glab api* --raw-field*", "glab api* --input*",
 	"glab api*/retry*", "glab api*/cancel*", "glab api*/erase*", "glab api*/play*",
-	"glab api*/variables*", "glab api*/artifacts*"}
+	"glab api*/variables*", "glab api*/artifacts*",
+	// Dot segments and percent-encoding could walk out of the allowed endpoints.
+	"glab api*..*", "glab api*%*"}
 
 // openCodeConfig is the run's opencode.json. The permissions are the evaluated set for
 // mechanical edits: files may be edited, shell commands are denied except the repo's
