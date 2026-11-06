@@ -4,4 +4,4 @@
 
 /* The repo a card belongs to, under a project that holds more than one: a faint mono
    tag on the card's badge line, so quiet projects stay quiet. */
-.board-repo { font-family: var(--sh-mono); }
+.board-repo { font-family: var(--sh-mono); color: var(--sh-faint); }
