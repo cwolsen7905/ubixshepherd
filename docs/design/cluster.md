@@ -1,8 +1,8 @@
 # A cluster of daemons behind one conversation: design
 
-Status: proposed, for the maintainer's approval. Nothing here is built, and no code changes
-with this document. The maintainer answered the first round of open questions on 2026-11-05
-(see [Decided](#decided-on-2026-11-05)).
+Status: approved by the maintainer on 2026-11-05; phase 0a is next. Nothing here is built,
+and no code changes with this document. Every question is decided (see
+[Decided](#decided-on-2026-11-05)).
 
 ## Goal
 
@@ -62,7 +62,7 @@ Hosted mode is not a kind of daemon. It is three settings, all opt-in, on any da
 
 | Setting | What it does |
 |---|---|
-| A non-loopback listener (`daemon.public.listen`, with `daemon.public.url` naming the public address) | The daemon accepts connections beyond loopback and accepts the public name in the Host check |
+| A non-loopback listener (`daemon.public.listen`, with `daemon.public.url` naming the public address) | The daemon accepts connections beyond loopback and accepts the public name in the Host check. `url` must be `https://` with no path other than `/`, and no query or fragment; a trailing slash is dropped as it is for `hosts.yaml`, so `https://shepherd.example.com` and `https://shepherd.example.com/` are the same setting and the same Host-check name |
 | TLS: a certificate and key (`daemon.public.tls`), or a TLS-terminating proxy (`daemon.public.trusted_proxies`) | Without a proxy the daemon serves HTTPS itself. With one, it accepts plain HTTP only from the listed proxy addresses, refuses a request the proxy did not mark `X-Forwarded-Proto: https`, and reads the client address from `X-Forwarded-For` only on those requests |
 | A login (an owner account, set with `shepherd account set`) | Browser sessions and device tokens come from the login, not the operator token |
 
@@ -94,9 +94,18 @@ but the daemon never relies on it.
   the password and prints, once, the TOTP enrolment URI and ten recovery codes. The store
   keeps the argon2id hash of the password and of each recovery code; a recovery code works
   once in place of a TOTP code. The TOTP secret is encrypted at rest with a key kept in a
-  separate file (0600, outside the store, sourced like other credentials). That protects a
-  leaked or backed-up store on its own; it does not protect a machine whose whole home is
-  read, which is said in the docs rather than implied away.
+  separate file, chosen at start by `internal/daemon/account.go`:
+  - If `daemon.public.totp_key_file` names a file (synced from uBixVault, mode 0600), that
+    key is used, and a missing, unreadable or too-open file stops the start with a plain
+    error.
+  - Otherwise the daemon uses `totp.key` in the Shepherd home (`~/.shepherd/totp.key` by
+    default), generating it with mode 0600 on first need, and logs a warning at every start
+    that the key sits beside the store, with one feed item the first time.
+
+  The threat it mitigates is a copy of the store without the key: a leaked or restored
+  backup of the database, a store file copied off the machine. With the vault file the key
+  is never in the home, so a copy of the whole home does not hold it either. With the
+  fallback, a reader of the whole home has both, which the warning and the docs say plainly.
 - **Logging in from a browser.** `POST /v1/web/login` with password and code, then the
   existing session path: a random cookie kept as a hash, now `Secure` with the `__Host-`
   prefix, the CSRF header on every write, the Origin check against the public URL. The login
@@ -108,7 +117,8 @@ but the daemon never relies on it.
   account for a while and puts one item in the feed.
 - **Logging in from the CLI.** `shepherd login https://shepherd.example.com` asks for the
   password and code and gets a **device token**: named, kept only as a hash, valid for 30
-  days on a sliding window (each use pushes the expiry out). It is stored in the client's
+  days on a sliding window (each use pushes the expiry out), and never past 90 days from the
+  login that made it, after which a fresh login is required however often it was used. It is stored in the client's
   home, never in `hosts.yaml`. A revoked or expired token gets one message, "log in again:
   shepherd login https://shepherd.example.com", which says nothing of the token's age.
 - **Revocation.** Logging out ends one session; "sign out everywhere" ends every session
@@ -171,6 +181,9 @@ login page and the device list in Settings), `go.mod` (`golang.org/x/crypto`),
 
 - Done when the daemon refuses a non-loopback listener without TLS or a trusted proxy and an
   account, and without `daemon.public` nothing changes.
+- `daemon.public.url` is refused unless it is `https://` with no path other than `/`;
+  `https://shepherd.example.com` and `https://shepherd.example.com/` load as the same URL,
+  and a request with either Host form passes the Host check.
 - A browser logs in with password and TOTP, and with a recovery code once; a wrong code, a
   reused code and a burst of attempts per account and per address are refused; an
   `X-Forwarded-For` from an untrusted address is ignored.
@@ -179,11 +192,16 @@ login page and the device list in Settings), `go.mod` (`golang.org/x/crypto`),
 - Logout and "sign out everywhere" end sessions and device tokens across a restart.
 - A fake agent writes a known secret into its output, and the test asserts it appears on no
   public route, in no feed item and in no daemon log line.
-- The TOTP secret is not readable in the store without its key file. Both themes checked.
+- The TOTP secret is not readable in the store without its key file. With
+  `totp_key_file` set, that file is used and a missing or group-readable one stops the start;
+  without it, `totp.key` is created in the home with mode 0600 and the start logs the
+  fallback warning.
+- A device token used every day still stops working 90 days after its login and gets the
+  "log in again" message; one left unused stops after 30. Both themes checked.
 
 **0b. The CLI over HTTPS.**
 Scope: `internal/remote` (an HTTPS `Transport` beside `SSH`), `internal/cli/host.go`
-(`--host https://...`, a `url` field in `hosts.yaml`), `internal/cli` (`shepherd login`,
+(`--host https://...`, a `url` field in `hosts.yaml`, normalised as `daemon.public.url` is), `internal/cli` (`shepherd login`,
 `shepherd logout`), `internal/client`, `docs/cli.md`, `docs/hosted.md`.
 
 - Done when `shepherd login` then `shepherd --host https://... status`, `chat` and
@@ -272,7 +290,8 @@ There are two ways between a hub and a member. Both carry the same HTTP API.
 ### Enrolment
 
 The person runs `shepherd member add <name>` on the hub, or uses Settings there. It shows a
-one-time enrolment code of eight words from a wordlist embedded in the binary, single use,
+one-time enrolment code: eight words from the EFF short wordlist (1296 words, embedded in
+the binary with its attribution), lowercase, joined by `-`, about 82 bits; single use,
 valid for five minutes. On the member, `shepherd cluster join https://shepherd.example.com
 <code>` trades it for a **member credential**: kept as a hash in the hub's
 `member_credentials` table, named, revocable from Settings, stored on the member in its
@@ -284,7 +303,7 @@ start and stop, next-up, settings) answers it with 403.
 
 | Part | Design |
 |---|---|
-| Opening | The member opens one long-lived connection to `/v1/cluster/link` with its credential, and the connection is upgraded to a framed, bidirectional stream (the carrier is an open question below) |
+| Opening | The member opens one long-lived connection to `GET /v1/cluster/link` with its credential and upgrades it to a WebSocket (the carrier, below), carrying a framed, bidirectional stream |
 | Handshake | Both sides send their daemon id, version, `api_level` and capabilities (`read_lanes`, `push_feed`, `act`, and later ones). The hub uses only what a member reports and says what is off for it ("build is on 0.9: answering decisions from here needs `act`") |
 | Frames | Length-prefixed JSON frames. Feed batches and status go up; the hub's calls go down as RPCs with a request id, each answered by the member through its own local API. Many RPCs share the connection at once, matched by id, each with its own deadline |
 | Keepalive | A ping every 20 seconds each way, under the idle timeouts of common proxies and load balancers; two missed pongs close the link |
@@ -301,11 +320,12 @@ dependencies few.
 | HTTP/2 full-duplex streaming | None | Needs HTTP/2 end to end; a proxy that speaks HTTP/1.1 to the backend, or buffers bodies, breaks it | No upgrade at all |
 | Two streams (a long `GET` down, short `POST`s up) | None | Works through any proxy that streams responses | More requests; not one connection to watch |
 
-**Recommendation: WebSocket**, behind a small carrier interface so the framing above does
-not depend on it. The link must cross proxies the person may not control, and WebSocket is
-the upgrade they are most likely to pass; one dependency with none of its own is a fair
-price. If the person prefers no dependency, the custom upgrade is the fallback, and a member
-behind a proxy that refuses it uses the SSH transport.
+**Decided: WebSocket**, behind a small carrier interface so the framing above does not
+depend on it. The link must cross proxies the person may not control, and WebSocket is the
+upgrade they are most likely to pass; one dependency with none of its own is a fair price.
+The handshake is therefore a `GET`. Should a dependency ever need to go, the custom upgrade
+fits behind the same interface, and a member behind a proxy that refuses WebSocket uses the
+SSH transport.
 
 ### Trust
 
@@ -405,12 +425,12 @@ Scope: `internal/config` (`cluster:` on the hub, `cluster.hub` on a member), `in
 the `link` role), `internal/store/sqlite` (an appended migration for members and
 `member_credentials`), `internal/api` (`GET /v1/cluster`, `/v1/cluster/link`, enrolment),
 `internal/client`, `internal/cli` (`shepherd member add`, `shepherd cluster join`,
-`shepherd cluster status`, the `cluster_status` MCP tool), an embedded wordlist,
-`web/src` (members in Settings), `go.mod` (if WebSocket is chosen), `docs/cluster.md`,
+`shepherd cluster status`, the `cluster_status` MCP tool), the embedded EFF short wordlist,
+`web/src` (members in Settings), `go.mod` (`github.com/coder/websocket`), `docs/cluster.md`,
 `docs/config.md`.
 
-- Done when an eight-word code enrols a member once and is refused after use or after five
-  minutes.
+- Done when an enrolment code is eight lowercase words from the EFF short wordlist joined by
+  `-`, enrols a member once, and is refused after use or after five minutes.
 - The member holds a link to a test hub over TLS; the handshake records its `api_level` and
   capabilities; pings flow every 20 seconds; a dropped link redials with jittered backoff
   capped at 60 seconds and honours `Retry-After`.
@@ -496,24 +516,23 @@ interface), `internal/config` (a member given as a `hosts.yaml` name), `docs/clu
 
 ## Decided on 2026-11-05
 
-The maintainer agreed with every recommendation in the first round.
+The maintainer agreed with every recommendation in both rounds and approved the design.
 
 | # | Question | Decision |
 |---|---|---|
 | 1 | How the person logs in | Password and TOTP built in, behind a `SecondFactor` interface for passkeys later; a proxy in front only as defence in depth |
 | 2 | Whether a hosted daemon runs agents itself | Yes: it is a full daemon; its egress and credentials decide what its agents can reach |
-| 3 | How long a device token lives | 30 days on a sliding window, renewed by use, revocable from Settings |
+| 3 | How long a device token lives | 30 days on a sliding window, renewed by use, never past 90 days from its login, revocable from Settings |
 | 4 | Is the hub a separate program | No: a config role of the same daemon |
 | 5 | Members' transport | Both: the HTTPS link first (phase 1), SSH later (phase 7) |
 | 6 | Does a member's own desk keep working | Yes, behind the wake lease |
 | 7 | A cluster-wide hard spend cap | Soft first, after a view-only week; hard later only if needed |
 | 8 | Hub's items unprefixed | Yes: bare for the hub's own, prefixed for members |
 | 9 | Where the image is published | GitHub's container registry and the internal forge's registry, signed like the release archives |
+| 10 | The link's carrier | WebSocket (`github.com/coder/websocket`) behind the carrier interface; the handshake is a `GET` |
+| 11 | The Kubernetes example's controller | A StatefulSet with one replica, not a Deployment with `Recreate` |
+| 12 | Where the TOTP key comes from | The file named by `daemon.public.totp_key_file` (from uBixVault) when set; otherwise `totp.key` in the Shepherd home, mode 0600, with a warning (see [Login](#login)) |
+| 13 | Repo homes | By `workspace.NormalizeRemote`, with `shepherd cluster set-home` and `--also` |
+| 14 | The soft cluster cap | View-only for a week before any warning |
 
-## Open questions
-
-| # | Question | Options | Recommendation |
-|---|---|---|---|
-| 1 | The link's carrier | WebSocket (`github.com/coder/websocket`) / a custom HTTP upgrade (standard library) / HTTP/2 streaming / two streams | WebSocket behind a carrier interface: it is the upgrade proxies most often pass, for one dependency with none of its own. The custom upgrade if no new dependency is wanted |
-| 2 | The Kubernetes example's controller | A StatefulSet / a Deployment with the `Recreate` strategy | A StatefulSet: with one replica it already stops the old pod before starting the new one. `Recreate` is a Deployment strategy and has no StatefulSet equivalent |
-| 3 | Where the TOTP key comes from | A key file generated in the home on `account set` / a file synced from uBixVault | A file from uBixVault on a hosted machine, so a copy of the home alone does not hold it; generated in the home when no vault is set up, with the docs saying what that protects |
+No questions are open.
