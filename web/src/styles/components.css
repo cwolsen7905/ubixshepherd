@@ -167,6 +167,10 @@ a:hover { text-decoration: underline; }
 .sh-project-h { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--sh-rule); margin-top: 8px; }
 .sh-project-h b { font-size: var(--sh-t-card); }
 
+/* The open questions in the inspector: one row per question, its actions under it. */
+.sh-question-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.sh-question-list li { display: grid; gap: 6px; }
+
 /* Changes list (lane / MR) */
 .sh-changes-h { font-size: var(--sh-t-small); font-weight: 600; margin: 14px 0 4px; display: flex; gap: 8px; }
 .sh-change { display: grid; grid-template-columns: 1rem minmax(0, 1fr) auto auto; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--sh-rule); font: 12.5px var(--sh-mono); }

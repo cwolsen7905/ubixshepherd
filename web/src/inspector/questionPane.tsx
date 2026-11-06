@@ -1,61 +1,48 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { deskQuestions } from '../api/client'
 import type { DeskQuestion } from '../api/types'
-import { QuestionActions } from '../chat/questions'
-import { advanceFrom } from '../chat/strip'
-import { Markdown } from '../chat/md'
-import { waitingKey } from '../model/waitingStep'
-import { href } from '../router'
+import { QuestionList } from '../chat/questions'
 import { useSnapshot } from '../state/context'
 import { DeskThread } from '../state/desk'
-import { IdChip } from '../ui'
 
 const defaultMake = (w: number) => new DeskThread(w)
 
-/** A desk question in the inspector: what the desk asked, with Reply and Skip. */
+/**
+ * A desk question in the inspector: the open questions as one list, the one asked for lit.
+ * Mark answered or Skip drops it and lights the next; the last leaves the empty state. The
+ * lit question is the list's own, so answering never re-reads the pane from scratch.
+ */
 export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (workspaceId: number) => DeskThread }) {
   const snap = useSnapshot()
-  const [got, setQ] = useState<DeskQuestion | null | undefined>(undefined)
-  const q = got && got.id !== id ? undefined : got
+  const [got, setQ] = useState<DeskQuestion[] | undefined>(undefined)
   const [failed, setFailed] = useState(false)
   const read = useCallback(() => {
     setFailed(false)
-    deskQuestions.list('open').then(
-      (qs) => setQ(qs.find((x) => x.id === id) ?? null),
-      () => setFailed(true),
-    )
-  }, [id])
+    deskQuestions.list('open').then(setQ, () => setFailed(true))
+  }, [])
   useEffect(() => {
     const first = window.setTimeout(read, 0)
     return () => window.clearTimeout(first)
   }, [read])
   const workspaces = snap.status?.workspaces ?? []
-  // Never act on a question other than the one asked for, while a new read is in flight.
-  const thread = useMemo(() => (q ? make(workspaces.length > 1 ? q.workspace_id : 0) : null), [q, workspaces.length, make])
-  if (q === undefined && failed) {
+  const open = got?.filter((x) => x.state === 'open') ?? []
+  // The thread a reply posts to: the workspace of the question asked for, or the first open one.
+  const wsId = workspaces.length > 1 ? (open.find((x) => x.id === id)?.workspace_id ?? open[0]?.workspace_id ?? 0) : 0
+  const thread = useMemo(() => make(wsId), [wsId, make])
+  if (failed && got === undefined) {
     return (
       <p className="inspector-body tone-bad" role="alert">
-        Could not read the question.{' '}
+        Could not read the questions.{' '}
         <button type="button" className="link-button" onClick={read}>
           Try again
         </button>
       </p>
     )
   }
-  if (q === undefined) return <p className="inspector-body faint">Reading the question…</p>
-  if (q === null || !thread) {
-    return (
-      <p className="inspector-body" role="status">
-        <IdChip kind="question" id={id} /> is not waiting on you any more. <a href={href.chat()}>Back to the conversation</a>.
-      </p>
-    )
-  }
-  const key = waitingKey({ kind: 'question', action: 'reply', question_id: id, title: '' })
+  if (got === undefined) return <p className="inspector-body faint">Reading the questions…</p>
   return (
     <div className="inspector-body question-pane">
-      <p className="faint">The front desk asked, in turn {q.turn}:</p>
-      <Markdown text={q.text} />
-      <QuestionActions q={q} thread={thread} topicId={q.topic_id ?? null} onCleared={() => advanceFrom(snap.waiting?.items ?? [], key)} />
+      <QuestionList questions={got} selected={id} thread={thread} onCleared={read} />
     </div>
   )
 }

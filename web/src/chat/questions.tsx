@@ -185,8 +185,7 @@ export function QuestionList({
             glyphLabel="question"
             title={q.text}
             titleAttr={q.text}
-            sub={<IdChip kind="question" id={q.id} />}
-            selected={q.id === lit}
+            selected={lit === q.id}
             onSelect={() => pick(q.id)}
           />
           <QuestionActions q={q} thread={thread} topicId={topicId} onCleared={() => clear(q)} onReplied={() => clear(q)} />
