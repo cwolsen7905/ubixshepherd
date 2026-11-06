@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError, history, nextUp, waitingOnYou } from '../api/client'
-import type { LaneRecord, WaitingItem } from '../api/types'
+import type { DecisionView, LaneRecord, LaneView, WaitingItem } from '../api/types'
 import { splitQuestion } from '../components/DecisionCard'
 import { inline } from '../conversation/Markdown'
 import { since } from '../format'
@@ -48,6 +48,51 @@ const MARK: Record<WaitingItem['kind'], { glyph: string; tone: GlyphTone }> = {
   scope: { glyph: '!', tone: 'warn' },
   blocked: { glyph: '✗', tone: 'bad' },
   artifact: { glyph: '▤', tone: 'warn' },
+}
+
+const WHY: Record<WaitingItem['kind'], string> = {
+  decision: 'An agent asked and is waiting for your answer.',
+  question: 'The front desk asked and needs your answer.',
+  request: 'A request that no rule can route to a lane.',
+  mr: 'A merge request is ready for you to approve.',
+  next: 'A proposed next-up item needs your yes or no.',
+  ship: 'The lane passed its gate and waits for you to ship it.',
+  scope: 'A lane asked to widen its scope.',
+  blocked: 'The lane stopped and cannot go on without you.',
+  artifact: 'Files from a merged lane need your decision.',
+}
+
+export interface InboxContext {
+  /** Kind label, repo and lane. */
+  what: string
+  mr?: { number: number; url?: string }
+  why: string
+  options: string[]
+  recommendation?: string
+  reason?: string
+  /** Why the subject looks finished, when it does. */
+  stale?: string
+}
+
+/** The four parts of an entry (what it is, why it waits, the choices, the recommendation) and a stale flag, from the snapshot's decisions and lanes. */
+export function inboxContext(it: WaitingItem, decisions: DecisionView[], lanes: LaneView[]): InboxContext {
+  const lane = lanes.find((l) => (it.lane_id ? l.id === it.lane_id : l.name === it.lane && (!it.repo || l.repo === it.repo)))
+  const d = it.decision_id ? decisions.find((x) => x.id === it.decision_id) : undefined
+  const mrNumber = it.mr ?? lane?.mr
+  let stale: string | undefined
+  if (lane?.mr_state === 'merged') stale = `its merge request${mrNumber ? ` !${mrNumber}` : ''} has merged`
+  else if (lane?.mr_state === 'closed') stale = `its merge request${mrNumber ? ` !${mrNumber}` : ''} was closed`
+  else if (lane?.state === 'closed') stale = `lane ${lane.name} is closed`
+  const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
+  return {
+    what: [KIND_LABEL[it.kind] ?? it.kind, where].filter(Boolean).join(' · '),
+    mr: mrNumber ? { number: mrNumber, url: lane?.mr_url } : undefined,
+    why: [WHY[it.kind], it.kind === 'decision' || it.kind === 'question' || isSuggestion(it) ? '' : it.detail].filter(Boolean).join(' '),
+    options: d?.options?.filter((o) => o.trim()) ?? [],
+    recommendation: d?.recommendation?.trim() || undefined,
+    reason: d?.why?.trim() || undefined,
+    stale,
+  }
 }
 
 /** A kind this page does not know yet (a newer daemon) still shows, with a neutral mark. */
@@ -221,6 +266,7 @@ export function InboxPage({ kind }: { kind?: string }) {
 
   const row = (it: WaitingItem) => {
     const key = waitingKey(it)
+    const cx = inboxContext(it, snap.decisions, snap.lanes)
     const where = it.lane ? (it.repo ? `${it.repo}:${it.lane}` : it.lane) : it.repo
     const actionable = inboxOpen(it) !== null
     const note = notes[waitingKey(it)]
@@ -271,6 +317,28 @@ export function InboxPage({ kind }: { kind?: string }) {
           selected={waitingKey(it) === at}
           onSelect={actionable ? () => { setCursor(waitingKey(it)); show(it) } : undefined}
         />
+        <div className="inbox-context" data-component="InboxContext">
+          <p className="inbox-ctx-line">
+            {cx.what}
+            {cx.mr ? (
+              <>
+                {' · '}
+                {cx.mr.url ? <a href={cx.mr.url}>!{cx.mr.number}</a> : `!${cx.mr.number}`}
+              </>
+            ) : null}
+          </p>
+          {cx.stale && <p className="inbox-ctx-stale" role="status">✓ Probably finished: {cx.stale}.</p>}
+          <p className="inbox-ctx-line">Waiting because: {cx.why}</p>
+          {it.kind === 'question' && it.title ? <p className="inbox-ctx-line">{it.title}</p> : null}
+          {cx.options.length > 0 && (
+            <ol className="inbox-ctx-options">
+              {cx.options.map((o) => (
+                <li key={o}>{o}{o.trim() === cx.recommendation ? ' (recommended)' : ''}</li>
+              ))}
+            </ol>
+          )}
+          {cx.recommendation && <p className="inbox-ctx-line">Recommended: {cx.recommendation}{cx.reason ? `. ${cx.reason}` : ''}</p>}
+        </div>
         {(isSuggestion(it) || (it.action === 'ship' && it.lane_id)) && (
           <div className="inbox-actions">
             {isSuggestion(it)

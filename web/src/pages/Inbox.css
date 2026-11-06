@@ -19,3 +19,8 @@
 .mr-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s7); margin-top: var(--sh-s7); }
 .mr-next { margin-left: auto; font-size: var(--sh-t-meta); }
 .mr-confirm { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sh-s4); font-size: var(--sh-t-small); }
+
+.inbox-context { padding: 0 var(--sh-s5) var(--sh-s4) 38px; font-size: var(--sh-t-meta); color: var(--sh-muted); }
+.inbox-context p { margin: 0; }
+.inbox-ctx-stale { color: var(--sh-ok); }
+.inbox-ctx-options { margin: 0; padding-left: var(--sh-s9); }
