@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { LoginGate } from './auth/LoginGate'
 import { Live } from './state/live'
 import { LiveProvider } from './state/context'
 import './styles/tokens.css'
@@ -15,8 +16,10 @@ if (!root) throw new Error('no #root element')
 
 createRoot(root).render(
   <StrictMode>
-    <LiveProvider live={live}>
-      <App />
-    </LiveProvider>
+    <LoginGate>
+      <LiveProvider live={live}>
+        <App />
+      </LiveProvider>
+    </LoginGate>
   </StrictMode>,
 )
