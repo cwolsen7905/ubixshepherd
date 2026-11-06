@@ -384,6 +384,52 @@ func TestOpenCodeBashNpmAndExactGate(t *testing.T) {
 	}
 }
 
+func TestOpenCodeGlabIsReadOnly(t *testing.T) {
+	for _, c := range []struct {
+		cmd  string
+		want string
+	}{
+		{"glab ci list", "allow"},
+		{"glab ci view 123", "allow"},
+		{"glab ci status", "allow"},
+		{"glab ci trace 456", "allow"},
+		{"glab api projects/7/pipelines/12/jobs", "allow"},
+		{"glab api projects/7/jobs/9/trace", "allow"},
+		{"glab api projects/7/pipelines?status=failed --paginate", "allow"},
+		{"glab ci retry 456", "deny"},
+		{"glab ci run", "deny"},
+		{"glab ci cancel pipeline 1", "deny"},
+		{"glab ci delete 1", "deny"},
+		{"glab mr approve 3", "deny"},
+		{"glab mr note 3 -m hi", "deny"},
+		{"glab mr merge 3", "deny"},
+		{"glab api projects/7/pipelines -X POST", "deny"},
+		{"glab api projects/7/pipelines -XPOST", "deny"},
+		{"glab api projects/7/pipelines --method DELETE", "deny"},
+		{"glab api projects/7/pipelines -f ref=main", "deny"},
+		{"glab api projects/7/pipelines -F ref=main", "deny"},
+		{"glab api projects/7/pipelines --field ref=main", "deny"},
+		{"glab api projects/7/pipelines --raw-field a=b", "deny"},
+		{"glab api projects/7/pipelines --input body.json", "deny"},
+		{"glab api projects/7/jobs/9/retry", "deny"},
+		{"glab api projects/7/jobs/9/cancel", "deny"},
+		{"glab api projects/7/jobs/9/erase", "deny"},
+		{"glab api projects/7/merge_requests/3", "deny"},
+		{"glab api graphql", "deny"},
+	} {
+		for _, merge := range []bool{false, true} {
+			rules := bashRules(t, openCodeConfig(Opts{Merge: merge}, config.OpenCode{}))
+			want := c.want
+			if merge && c.cmd == "glab mr merge 3" {
+				want = "allow"
+			}
+			if got := openCodeMatch(rules, c.cmd); got != want {
+				t.Errorf("merge=%v %q: %q, want %q", merge, c.cmd, got, want)
+			}
+		}
+	}
+}
+
 // providerNames returns the provider keys of a run's config.
 func providerNames(t *testing.T, s string) map[string]json.RawMessage {
 	t.Helper()

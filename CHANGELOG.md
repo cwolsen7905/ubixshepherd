@@ -11,6 +11,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- OpenCode runs can read pipelines and jobs with `glab ci list`, `view`, `status` and
+  `trace`, and with `glab api` GET calls on a project's pipelines and jobs. Retry, cancel,
+  run, delete and any `glab api` call with another method, fields or a body stay refused.
+
 - Every item in Waiting on you carries a short stable id, shown the same way in the web
   Inbox, the chat strip and the desk's `[Waiting on you (N)]` line, so a reply such as
   "D410 yes" or "Q271 a" names one item. It is derived from the item's kind and record id
