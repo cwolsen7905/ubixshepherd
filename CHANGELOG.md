@@ -29,6 +29,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Fixed
 
+- `make clean` removes only build outputs: `bin/shepherd`, `dist/`, `web/dist` and the
+  embedded web UI. It no longer deletes the tracked scripts in `bin/` such as
+  `bin/install.sh` and `bin/promote.sh`.
 - A lane closes even when its worktree folder is missing, or exists but is not a git
   checkout. A missing folder is pruned from git's record, and a folder with no checkout
   is left in place and named in the close's result, while the branch and the lane close
