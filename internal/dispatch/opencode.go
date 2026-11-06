@@ -260,6 +260,20 @@ func openCodeExternal(worktree string) any {
 	return r
 }
 
+var openCodeGlabReadOnly = []string{"glab ci list*", "glab ci view*", "glab ci status*", "glab ci trace*",
+	"glab api projects/*/pipelines*", "glab api projects/*/jobs*"}
+
+// The flag denies do not assume a space before the flag, since the shell splits on a tab
+// too; they over-deny a path that merely contains one of these strings, which is the safe
+// side. --hostname and -H/--header are refused so a call stays on the repo's own forge.
+var openCodeGlabDeny = []string{"glab api*-X*", "glab api*--method*", "glab api*-f*", "glab api*-F*",
+	"glab api*--field*", "glab api*--raw-field*", "glab api*--input*",
+	"glab api*-h*", "glab api*--hostname*", "glab api*-H*", "glab api*--header*",
+	"glab api*/retry*", "glab api*/cancel*", "glab api*/erase*", "glab api*/play*",
+	"glab api*/variables*", "glab api*/artifacts*",
+	// Dot segments and percent-encoding could walk out of the allowed endpoints.
+	"glab api*..*", "glab api*%*"}
+
 // openCodeConfig is the run's opencode.json. The permissions are the evaluated set for
 // mechanical edits: files may be edited, shell commands are denied except the repo's
 // build and test tools (npm included), reading git state and committing, and everything that reaches
@@ -278,6 +292,15 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 	}
 	for _, p := range allow {
 		bash = append(bash, kv{p, "allow"})
+	}
+	// Read-only glab access to pipelines and jobs, so a run can see why a pipeline failed.
+	// Rules are last match wins, so these denies follow every glab allow above: a glab api
+	// call is a GET unless it names another method or sends fields or a body.
+	for _, p := range openCodeGlabReadOnly {
+		bash = append(bash, kv{p, "allow"})
+	}
+	for _, p := range openCodeGlabDeny {
+		bash = append(bash, kv{p, "deny"})
 	}
 	// Explicitly deny interactive rebases to prevent hangs
 	bash = append(bash, kv{"git rebase -i*", "deny"})
