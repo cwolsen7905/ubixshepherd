@@ -96,6 +96,9 @@ type StartRequest struct {
 type Runner struct {
 	// deliverMu makes answer delivery claim-once: see deliver.
 	deliverMu sync.Mutex
+	// delivered holds decisions whose continuation has started in this process, guarded
+	// by deliverMu, so a failed write of the answer run cannot start a second one.
+	delivered map[int64]int64
 	Store     store.Store
 	// Config is the configuration until the first SetConfig; after that SetConfig's
 	// wins. A daemon that reloads its configuration calls SetConfig, never assigns this.
@@ -962,6 +965,15 @@ func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision,
 	} else if cur.AnswerRun != 0 {
 		return cur, nil
 	}
+	if run, ok := r.delivered[d.ID]; ok {
+		// Started earlier, but recording it failed: retry the record, never the start.
+		if err := r.Store.SetDecisionRun(ctx, d.ID, run); err != nil {
+			return d, err
+		}
+		delete(r.delivered, d.ID)
+		d.AnswerRun = run
+		return d, nil
+	}
 	asker, err := r.Store.Run(ctx, d.RunID)
 	if err != nil {
 		return d, err
@@ -1000,9 +1012,14 @@ func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision,
 	if err != nil {
 		return d, fmt.Errorf("answer recorded, but continuing run %d failed: %w", target.ID, err)
 	}
+	if r.delivered == nil {
+		r.delivered = map[int64]int64{}
+	}
+	r.delivered[d.ID] = next.ID
 	if err := r.Store.SetDecisionRun(ctx, d.ID, next.ID); err != nil {
 		return d, err
 	}
+	delete(r.delivered, d.ID)
 	d.AnswerRun = next.ID
 	r.Log.Info("answer delivered", "decision", d.ID, "run", next.ID, "asker", asker.ID, "target", target.ID)
 	r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered; "+where, d.ID, next.ID)
