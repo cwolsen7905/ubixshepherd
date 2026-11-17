@@ -97,7 +97,10 @@ type Runner struct {
 	// deliverMu makes answer delivery claim-once: see deliver.
 	deliverMu sync.Mutex
 	// delivered holds decisions whose continuation has started in this process, guarded
-	// by deliverMu, so a failed write of the answer run cannot start a second one.
+	// by deliverMu, so a failed write of the answer run cannot start a second one. It is
+	// memory only: a daemon that dies between starting the continuation and recording its
+	// run can start it again on the next start. Closing that window needs the run recorded
+	// with the decision in the store.
 	delivered map[int64]int64
 	Store     store.Store
 	// Config is the configuration until the first SetConfig; after that SetConfig's
