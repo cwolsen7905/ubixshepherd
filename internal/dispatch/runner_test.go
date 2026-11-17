@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1168,4 +1169,44 @@ func TestRepoAgentAllowList(t *testing.T) {
 	}
 	f.runner.Stop(ctx, run.ID)
 	f.wait(t, run.ID)
+}
+
+func TestAnswerDeliveryContinuesTheRunOnce(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "work"})
+	run = f.wait(t, run.ID)
+	f.runner.Wait()
+
+	for i := 0; i < 5; i++ {
+		d, err := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Raise the price?", Recommendation: "no"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err = f.st.AnswerDecision(ctx, d.ID, "no")
+		if err != nil {
+			t.Fatal(err)
+		}
+		before, _ := f.st.Runs(ctx, f.lane.ID, "", 1000)
+		// The direct path and the end-of-run sweep reach the same answer together.
+		var wg sync.WaitGroup
+		for j := 0; j < 4; j++ {
+			wg.Add(2)
+			go func() { defer wg.Done(); f.runner.deliver(ctx, d) }()
+			go func() { defer wg.Done(); f.runner.deliverAnswers(ctx, run.ID) }()
+		}
+		wg.Wait()
+		f.runner.Wait()
+		// A sweep that listed the decision before it was delivered still holds the stale
+		// copy, and its run has ended by the time it acts.
+		f.runner.deliver(ctx, d)
+		f.runner.Wait()
+		after, _ := f.st.Runs(ctx, f.lane.ID, "", 1000)
+		if got := len(after) - len(before); got != 1 {
+			t.Fatalf("round %d: %d continuations started, want 1", i, got)
+		}
+		if got, _ := f.st.Decision(ctx, d.ID); got.AnswerRun == 0 {
+			t.Fatalf("round %d: answer run not recorded", i)
+		}
+	}
 }

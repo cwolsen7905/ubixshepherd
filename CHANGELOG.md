@@ -33,6 +33,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Fixed
 
+- Answering a decision continues the asking run once. The direct answer and the sweep that
+  runs when a run ends could both deliver it, starting two follow-up runs. Delivery is now
+  serialized and skipped once an answer run is recorded.
 - `make clean` removes only build outputs: `bin/shepherd`, `dist/`, `web/dist` and the
   embedded web UI. It no longer deletes the tracked scripts in `bin/` such as
   `bin/install.sh` and `bin/promote.sh`.

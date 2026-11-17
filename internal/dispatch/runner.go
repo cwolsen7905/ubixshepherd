@@ -94,7 +94,9 @@ type StartRequest struct {
 
 // Runner starts agents and watches them until they exit.
 type Runner struct {
-	Store store.Store
+	// deliverMu makes answer delivery claim-once: see deliver.
+	deliverMu sync.Mutex
+	Store     store.Store
 	// Config is the configuration until the first SetConfig; after that SetConfig's
 	// wins. A daemon that reloads its configuration calls SetConfig, never assigns this.
 	Config config.Config
@@ -950,6 +952,16 @@ func (r *Runner) deliverAnswers(ctx context.Context, runID int64) {
 // not revived. It is held while that run is going, and only recorded (and said so in
 // the feed) when the lane is closed or has no session to continue.
 func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision, error) {
+	// Answer and the end-of-run sweep can reach the same decision together. Deliveries
+	// are serialized and the decision is re-read under the lock, so whichever comes
+	// second sees the answer's run already recorded and does nothing.
+	r.deliverMu.Lock()
+	defer r.deliverMu.Unlock()
+	if cur, err := r.Store.Decision(ctx, d.ID); err != nil {
+		return d, err
+	} else if cur.AnswerRun != 0 {
+		return cur, nil
+	}
 	asker, err := r.Store.Run(ctx, d.RunID)
 	if err != nil {
 		return d, err
