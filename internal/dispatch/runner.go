@@ -1020,7 +1020,10 @@ func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision,
 	}
 	r.delivered[d.ID] = next.ID
 	if err := r.Store.SetDecisionRun(ctx, d.ID, next.ID); err != nil {
-		return d, err
+		// The run is going: say so, so the person does not answer again. The record is
+		// retried the next time answers are delivered.
+		r.Log.Error("record answer run", "decision", d.ID, "run", next.ID, "err", err)
+		return d, fmt.Errorf("answer delivered as run %d, but recording it failed; it will be recorded on the next delivery, so do not answer again: %w", next.ID, err)
 	}
 	delete(r.delivered, d.ID)
 	d.AnswerRun = next.ID

@@ -1236,8 +1236,9 @@ func TestAnswerDeliveryDoesNotRestartWhenRecordingFails(t *testing.T) {
 	d, _ := f.runner.Ask(ctx, store.Decision{RunID: run.ID, Question: "Raise the price?", Recommendation: "no"})
 	d, _ = f.st.AnswerDecision(ctx, d.ID, "no")
 	before, _ := f.st.Runs(ctx, f.lane.ID, "", 1000)
-	if _, err := f.runner.deliver(ctx, d); err == nil {
-		t.Fatal("the failed write was not reported")
+	_, err := f.runner.deliver(ctx, d)
+	if err == nil || !strings.Contains(err.Error(), "answer delivered as run") || !strings.Contains(err.Error(), "do not answer again") {
+		t.Fatalf("the failed write should say the run was started: %v", err)
 	}
 	f.runner.Wait()
 	f.runner.deliverAnswers(ctx, run.ID)
