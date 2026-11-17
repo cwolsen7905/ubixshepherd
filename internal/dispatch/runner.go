@@ -94,7 +94,15 @@ type StartRequest struct {
 
 // Runner starts agents and watches them until they exit.
 type Runner struct {
-	Store store.Store
+	// deliverMu makes answer delivery claim-once: see deliver.
+	deliverMu sync.Mutex
+	// delivered holds decisions whose continuation has started in this process, guarded
+	// by deliverMu, so a failed write of the answer run cannot start a second one. It is
+	// memory only: a daemon that dies between starting the continuation and recording its
+	// run can start it again on the next start. Closing that window needs the run recorded
+	// with the decision in the store.
+	delivered map[int64]int64
+	Store     store.Store
 	// Config is the configuration until the first SetConfig; after that SetConfig's
 	// wins. A daemon that reloads its configuration calls SetConfig, never assigns this.
 	Config config.Config
@@ -950,6 +958,25 @@ func (r *Runner) deliverAnswers(ctx context.Context, runID int64) {
 // not revived. It is held while that run is going, and only recorded (and said so in
 // the feed) when the lane is closed or has no session to continue.
 func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision, error) {
+	// Answer and the end-of-run sweep can reach the same decision together. Deliveries
+	// are serialized and the decision is re-read under the lock, so whichever comes
+	// second sees the answer's run already recorded and does nothing.
+	r.deliverMu.Lock()
+	defer r.deliverMu.Unlock()
+	if cur, err := r.Store.Decision(ctx, d.ID); err != nil {
+		return d, err
+	} else if cur.AnswerRun != 0 {
+		return cur, nil
+	}
+	if run, ok := r.delivered[d.ID]; ok {
+		// Started earlier, but recording it failed: retry the record, never the start.
+		if err := r.Store.SetDecisionRun(ctx, d.ID, run); err != nil {
+			return d, err
+		}
+		delete(r.delivered, d.ID)
+		d.AnswerRun = run
+		return d, nil
+	}
 	asker, err := r.Store.Run(ctx, d.RunID)
 	if err != nil {
 		return d, err
@@ -988,9 +1015,17 @@ func (r *Runner) deliver(ctx context.Context, d store.Decision) (store.Decision,
 	if err != nil {
 		return d, fmt.Errorf("answer recorded, but continuing run %d failed: %w", target.ID, err)
 	}
-	if err := r.Store.SetDecisionRun(ctx, d.ID, next.ID); err != nil {
-		return d, err
+	if r.delivered == nil {
+		r.delivered = map[int64]int64{}
 	}
+	r.delivered[d.ID] = next.ID
+	if err := r.Store.SetDecisionRun(ctx, d.ID, next.ID); err != nil {
+		// The run is going: say so, so the person does not answer again. The record is
+		// retried the next time answers are delivered.
+		r.Log.Error("record answer run", "decision", d.ID, "run", next.ID, "err", err)
+		return d, fmt.Errorf("answer delivered as run %d, but recording it failed; it will be recorded on the next delivery, so do not answer again: %w", next.ID, err)
+	}
+	delete(r.delivered, d.ID)
 	d.AnswerRun = next.ID
 	r.Log.Info("answer delivered", "decision", d.ID, "run", next.ID, "asker", asker.ID, "target", target.ID)
 	r.feed(ctx, store.FeedDecisionAnswer, d.ID, "decision %d answered; "+where, d.ID, next.ID)

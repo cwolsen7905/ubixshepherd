@@ -41,6 +41,9 @@ func TestDeclareArtifactRecordsVersionsAndFeed(t *testing.T) {
 	f := newFixture(t, "ok")
 	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
 	f.wait(t, run.ID)
+	// The store shows the run ended before the runner has finished its end-of-run scan,
+	// which can record the file first; let it finish so the declare is the first record.
+	f.runner.Wait()
 
 	writeIn(t, f.lane.Worktree, ".shepherd/artifacts/plan.md", "# plan\n")
 	a, created, added, err := f.runner.DeclareArtifact(ctx, run.ID, ".shepherd/artifacts/plan.md", "The plan", "keep")
