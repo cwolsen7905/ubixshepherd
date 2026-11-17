@@ -8,7 +8,7 @@ import { ApiError, history, laneApprove, laneChanges, nextUp, waitingOnYou } fro
 import { STEP_EVENT } from '../model/waitingStep'
 import { MrInspector } from '../inspector/mr'
 import { InspectorFrame } from '../inspector/Inspector'
-import { InboxPage } from './Inbox'
+import { InboxPage, inboxContext } from './Inbox'
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
@@ -341,5 +341,30 @@ describe('MR approval panel', () => {
     expect(await screen.findByRole('heading', { name: 'Merge request !12 is approved' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Approve !12' })).toBeNull()
     expect(read).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('inboxContext', () => {
+  const d = decision({ id: 7, options: ['Widen', 'Refuse'], recommendation: 'Widen', why: 'The change is small' })
+  const item: WaitingItem = { kind: 'decision', action: 'answer', decision_id: 7, repo: 'acme-api', lane: 'feat/login', title: 'Which?' }
+
+  it('carries the options and the recommendation of a decision', () => {
+    const c = inboxContext(item, [d], [lane()])
+    expect(c.what).toBe('decision · acme-api:feat/login')
+    expect(c.options).toEqual(['Widen', 'Refuse'])
+    expect(c.recommendation).toBe('Widen')
+    expect(c.reason).toBe('The change is small')
+    expect(c.stale).toBeUndefined()
+  })
+
+  it('flags an entry whose merge request merged or whose lane closed', () => {
+    const merged = inboxContext(item, [d], [lane({ mr: 9, mr_state: 'merged', mr_url: 'http://x/9' })])
+    expect(merged.stale).toMatch(/!9 has merged/)
+    expect(merged.mr).toEqual({ number: 9, url: 'http://x/9' })
+    expect(inboxContext(item, [d], [lane({ state: 'closed' })]).stale).toMatch(/is closed/)
+  })
+
+  it('does not flag a lane it cannot find', () => {
+    expect(inboxContext(item, [], []).stale).toBeUndefined()
   })
 })
