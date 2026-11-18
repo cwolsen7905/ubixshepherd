@@ -3,11 +3,13 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -26,9 +28,10 @@ type LaneStallOptions struct {
 	After time.Duration
 	// Now is the clock; nil is time.Now. Tests set it.
 	Now func() time.Time
-	// Unpushed counts a lane's commits not on its branch at origin; nil asks git
-	// (dispatch.Unpushed). Tests set it.
-	Unpushed func(ctx context.Context, l store.Lane) int
+	// Unpushed counts a lane's commits not on its branch at origin; an error means git
+	// could not say, and the lane is left as it was for that pass. Nil asks git
+	// (unpushedCount). Tests set it.
+	Unpushed func(ctx context.Context, l store.Lane) (int, error)
 }
 
 // LaneStall alerts, once per stall, on an open lane that has unpushed commits or a
@@ -55,7 +58,7 @@ func (opts LaneStallOptions) withDefaults() LaneStallOptions {
 		opts.Now = time.Now
 	}
 	if opts.Unpushed == nil {
-		opts.Unpushed = dispatch.Unpushed
+		opts.Unpushed = unpushedCount
 	}
 	return opts
 }
@@ -153,7 +156,12 @@ func (ls *LaneStall) checkLane(ctx context.Context, rp store.Repo, l store.Lane)
 		ls.clear(l.ID) // a run started or ended inside the window: not stalled
 		return
 	}
-	cause := ls.cause(ctx, l, opts)
+	cause, err := ls.cause(ctx, l, opts)
+	if err != nil {
+		// Unknown is not healthy: keep what was announced and look again next pass.
+		ls.s.Log.Warn("lane stall: read lane state", "lane", l.Name, "err", err)
+		return
+	}
 	if cause == "" {
 		ls.clear(l.ID)
 		return
@@ -170,22 +178,43 @@ func (ls *LaneStall) checkLane(ctx context.Context, rp store.Repo, l store.Lane)
 		l.Name, rp.Name, opts.Now().Sub(quiet).Round(time.Minute), cause)))
 }
 
-// cause says what holds the lane, or "" when nothing does.
-func (ls *LaneStall) cause(ctx context.Context, l store.Lane, opts LaneStallOptions) string {
+// cause says what holds the lane, or "" when nothing does; an error when a read failed,
+// since a lane that could not be read is not known to be healthy.
+func (ls *LaneStall) cause(ctx context.Context, l store.Lane, opts LaneStallOptions) (string, error) {
 	var parts []string
-	if n := opts.Unpushed(ctx, l); n > 0 {
+	n, err := opts.Unpushed(ctx, l)
+	if err != nil {
+		return "", err
+	}
+	if n > 0 {
 		parts = append(parts, fmt.Sprintf("%d commit(s) are not pushed", n))
 	}
-	if lf, err := ls.s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 && lf.PipelineStatus == "failed" && !mrDone(lf) {
+	lf, err := ls.s.Store.LaneForge(ctx, l.ID)
+	if err != nil {
+		return "", err
+	}
+	if lf.MR != 0 && lf.PipelineStatus == "failed" && !mrDone(lf) {
 		parts = append(parts, fmt.Sprintf("the pipeline for MR !%d failed", lf.MR))
 	}
 	switch len(parts) {
 	case 0:
-		return ""
+		return "", nil
 	case 1:
-		return parts[0]
+		return parts[0], nil
 	}
-	return parts[0] + " and " + parts[1]
+	return parts[0] + " and " + parts[1], nil
+}
+
+// unpushedCount is dispatch.Unpushed, which reads 0 when git fails, with the failures
+// that matter here (a worktree that is gone, one git cannot read) reported as errors.
+func unpushedCount(ctx context.Context, l store.Lane) (int, error) {
+	if _, err := os.Stat(l.Worktree); err != nil {
+		return 0, err
+	}
+	if _, err := git.Run(ctx, l.Worktree, "rev-parse", "--verify", "HEAD"); err != nil {
+		return 0, err
+	}
+	return dispatch.Unpushed(ctx, l), nil
 }
 
 func (ls *LaneStall) clear(id int64) {

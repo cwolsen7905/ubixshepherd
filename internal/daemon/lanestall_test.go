@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,7 +32,7 @@ func newLaneStall(t *testing.T) (*Server, *LaneStall, *fakeClock, store.Lane, *i
 	_, lane := seedLane(t, s, "stuck")
 	clk := &fakeClock{t: time.Now().UTC()}
 	n := new(int)
-	ls := NewLaneStall(s, LaneStallOptions{Now: clk.Now, Unpushed: func(context.Context, store.Lane) int { return *n }})
+	ls := NewLaneStall(s, LaneStallOptions{Now: clk.Now, Unpushed: func(context.Context, store.Lane) (int, error) { return *n, nil }})
 	return s, ls, clk, lane, n
 }
 
@@ -132,7 +133,7 @@ func TestLaneStallIgnoresClosedLanesAndWiresInWithOneCall(t *testing.T) {
 	s, _ := newServer(t)
 	_, lane := seedLane(t, s, "gone")
 	clk := &fakeClock{t: time.Now().UTC()}
-	s.SetLaneStallOptions(LaneStallOptions{Now: clk.Now, Unpushed: func(context.Context, store.Lane) int { return 3 }})
+	s.SetLaneStallOptions(LaneStallOptions{Now: clk.Now, Unpushed: func(context.Context, store.Lane) (int, error) { return 3, nil }})
 	ctx := context.Background()
 	if err := s.Store.SetLaneState(ctx, lane.ID, store.LaneClosed); err != nil {
 		t.Fatal(err)
@@ -148,7 +149,7 @@ func TestLaneStallSetOptionsKeepsWhatWasAnnounced(t *testing.T) {
 	s, _ := newServer(t)
 	seedLane(t, s, "kept")
 	clk := &fakeClock{t: time.Now().UTC()}
-	opts := LaneStallOptions{After: time.Hour, Now: clk.Now, Unpushed: func(context.Context, store.Lane) int { return 1 }}
+	opts := LaneStallOptions{After: time.Hour, Now: clk.Now, Unpushed: func(context.Context, store.Lane) (int, error) { return 1, nil }}
 	s.SetLaneStallOptions(opts)
 	ctx := context.Background()
 	clk.Add(2 * time.Hour)
@@ -176,5 +177,34 @@ func TestLaneStallFailedPipelineOfClosedOrMergedMRIsNotAStall(t *testing.T) {
 		if got := stallFeed(t, s); len(got) != 0 {
 			t.Fatalf("%+v alerted: %v", lf, got)
 		}
+	}
+}
+
+func TestLaneStallUnreadableLaneKeepsItsState(t *testing.T) {
+	s, _ := newServer(t)
+	seedLane(t, s, "flaky")
+	clk := &fakeClock{t: time.Now().UTC()}
+	fail := false
+	s.SetLaneStallOptions(LaneStallOptions{Now: clk.Now, Unpushed: func(context.Context, store.Lane) (int, error) {
+		if fail {
+			return 0, errors.New("git is busy")
+		}
+		return 2, nil
+	}})
+	ctx := context.Background()
+	clk.Add(5 * time.Hour)
+	s.CheckLaneStalls(ctx)
+	fail = true
+	s.CheckLaneStalls(ctx) // git cannot say: not "no work", so not a new stall later
+	fail = false
+	s.CheckLaneStalls(ctx)
+	if got := stallFeed(t, s); len(got) != 1 {
+		t.Fatalf("a read failure between passes must not re-announce the stall: %v", got)
+	}
+}
+
+func TestUnpushedCountReportsAMissingWorktree(t *testing.T) {
+	if _, err := unpushedCount(context.Background(), store.Lane{Worktree: filepath.Join(t.TempDir(), "gone")}); err == nil {
+		t.Fatal("a worktree that is gone must be an error, not 0")
 	}
 }
