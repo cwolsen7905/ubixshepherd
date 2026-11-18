@@ -52,7 +52,7 @@ func TestDamagedCredentialsSayLogInAgain(t *testing.T) {
 	dir := t.TempDir()
 	url := "https://shepherd.example.com"
 	os.WriteFile(CredentialsPath(dir, url), []byte("{nope"), 0o600)
-	if _, err := LoadCredentials(dir, url); err == nil || !strings.Contains(err.Error(), "log in again: shepherd login "+url) {
+	if _, err := LoadCredentials(dir, url); !errors.Is(err, ErrDamaged) || !strings.Contains(err.Error(), "log in again: shepherd login "+url) {
 		t.Errorf("damaged: %v", err)
 	}
 }

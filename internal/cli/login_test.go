@@ -351,3 +351,23 @@ func TestPlainHTTPHostIsRefused(t *testing.T) {
 		t.Errorf("http host: %d %q", code, errb.String())
 	}
 }
+
+func TestLogoutKeepsAnUnreadableTokenFile(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a file this user cannot read")
+	}
+	env, _, _ := clientEnv(t)
+	url := "https://shepherd.example.com"
+	if err := client.SaveCredentials(tokenDir(env), client.Credentials{URL: url, Token: "shd_x", DeviceID: "d"}); err != nil {
+		t.Fatal(err)
+	}
+	p := client.CredentialsPath(tokenDir(env), url)
+	os.Chmod(p, 0)
+	defer os.Chmod(p, 0o600)
+	if err := runLogout(context.Background(), env, []string{url}); err == nil || !strings.Contains(err.Error(), "Signed-in devices") {
+		t.Fatalf("logout: %v", err)
+	}
+	if _, err := os.Stat(p); err != nil {
+		t.Error("an unreadable token file was deleted without a revoke")
+	}
+}

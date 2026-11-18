@@ -20,6 +20,9 @@ import (
 // ErrNotLoggedIn means no device token is kept for the host.
 var ErrNotLoggedIn = errors.New("not logged in")
 
+// ErrDamaged means the saved login exists but cannot be read as one.
+var ErrDamaged = errors.New("the saved login is damaged")
+
 // Credentials is what a login leaves in the client's home: the device token, with what
 // is needed to show and revoke it. It never goes in hosts.yaml, output, logs or the
 // environment.
@@ -86,7 +89,7 @@ func LoadCredentials(dir, url string) (Credentials, error) {
 	}
 	var c Credentials
 	if err := json.Unmarshal(b, &c); err != nil || c.Token == "" || c.URL != url {
-		return Credentials{}, fmt.Errorf("the saved login for %s is damaged: log in again: shepherd login %s", url, url)
+		return Credentials{}, fmt.Errorf("%w for %s: log in again: shepherd login %s", ErrDamaged, url, url)
 	}
 	return c, nil
 }

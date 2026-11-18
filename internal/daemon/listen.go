@@ -104,11 +104,11 @@ func (p *publicListener) watch(ctx context.Context) {
 		}
 		p.s.Log.Info("daemon.public changed; restarting the public listener")
 		p.closeListener()
-		if !p.s.LiveConfig().Daemon.Public.Enabled() {
-			p.s.web.hosted.mu.Lock()
-			p.s.web.hosted.h = nil
-			p.s.web.hosted.mu.Unlock()
-		}
+		// Forget the old listener's state whatever comes next, so a new setting that
+		// cannot be prepared leaves nothing that still reports the old address.
+		p.s.web.hosted.mu.Lock()
+		p.s.web.hosted.h = nil
+		p.s.web.hosted.mu.Unlock()
 		if err := p.open(ctx); err != nil {
 			p.s.Log.Error("public listener not restarted", "err", err)
 			p.s.Store.AddFeed(context.Background(), store.FeedSession, fmt.Sprintf("the public listener is closed: %v", err), 0)

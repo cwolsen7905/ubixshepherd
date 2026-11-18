@@ -262,3 +262,29 @@ func writeConfig(t *testing.T, path string, cfg config.Config) {
 		t.Fatal(err)
 	}
 }
+
+func TestReloadToAnUnpreparableConfigLeavesNoListenerAndNoAddress(t *testing.T) {
+	home := t.TempDir()
+	pub, _ := tlsPublic(t, home)
+	cfgPath := filepath.Join(home, "config.yaml")
+	cfg := config.Default()
+	cfg.Daemon.Public = pub
+	writeConfig(t, cfgPath, cfg)
+	r := startRun(t, home, cfg, cfgPath)
+	r.up()
+	rt, _ := ReadRuntime(filepath.Join(home, "daemon.json"))
+	r.setAccountOnLoopback(rt)
+	r.waitPublic(true)
+	// Valid settings, but the key file is gone: Validate passes, PreparePublic cannot.
+	bad := *pub
+	bad.TOTPKeyFile = filepath.Join(home, "missing.key")
+	cfg.Daemon.Public = &bad
+	writeConfig(t, cfgPath, cfg)
+	if err := r.s.ReloadConfig(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r.waitPublic(false)
+	if _, err := net.DialTimeout("tcp", pub.Listen, 200*time.Millisecond); err == nil {
+		t.Error("the public port still listens")
+	}
+}

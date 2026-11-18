@@ -120,6 +120,10 @@ func runLogout(ctx context.Context, env Env, args []string) error {
 		fmt.Fprintf(env.Stdout, "Not logged in to %s.\n", url)
 		return nil
 	}
+	if err != nil && !errors.Is(err, client.ErrDamaged) {
+		// Unreadable, not invalid: the token may be live, so keep the file.
+		return fmt.Errorf("could not read the saved login for %s (%v); fix that, or revoke the token from Settings, \"Signed-in devices\"", url, err)
+	}
 	if err != nil { // damaged: nothing to revoke with, so just remove it
 		if derr := client.DeleteCredentials(tokenDir(env), url); derr != nil {
 			return derr
