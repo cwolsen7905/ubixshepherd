@@ -265,8 +265,6 @@ func (r *Runner) outOfQuota(agent string, run int64, l Limit) time.Time {
 	return l.Until
 }
 
-// SetConfig replaces the configuration, safely while runs go. Each operation (a start,
-// a ship, a gate) reads the configuration once, so a reload never splits one.
 // openCodeHost is the runner's OpenCode host: OpenCode, else one made on first use so
 // the version probe's answers are remembered for the runner's life.
 func (r *Runner) openCodeHost() *OpenCodeHost {
@@ -277,6 +275,8 @@ func (r *Runner) openCodeHost() *OpenCodeHost {
 	return r.openCodeDef
 }
 
+// SetConfig replaces the configuration, safely while runs go. Each operation (a start,
+// a ship, a gate) reads the configuration once, so a reload never splits one.
 func (r *Runner) SetConfig(c config.Config) { r.cfg.Store(&c) }
 
 // Conf is the configuration for one operation: the last SetConfig's, else Config.
