@@ -45,6 +45,11 @@ type BriefView struct {
 	Project string `json:"project"`
 	// Approved is the brief agents are given; nil when none has been approved.
 	Approved *store.ProjectBrief `json:"approved,omitempty"`
+	// Source is where Approved came from: "file" when read from the project's
+	// brief_source, "store" otherwise. Commit and Ref name the file's commit and ref.
+	Source string `json:"source,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	Ref    string `json:"ref,omitempty"`
 	// Age is the time since approval, in nanoseconds as a Go duration; AgeText is the
 	// same as agents read it ("approved 41 days ago").
 	Age     time.Duration `json:"age,omitempty"`

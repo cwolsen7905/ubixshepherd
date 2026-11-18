@@ -40,8 +40,9 @@ repos:
         task: "Move the pin, run the gate, fix what breaks."
 ```
 
-The brief is not in this file. It is text with an author and an approval, so it
-lives in the store and is drafted through the front desk.
+The brief text is not in this file. It is text with an author and an approval, so it
+lives in the store and is drafted through the front desk, or in a file in a repo that
+`brief_source` names (see below).
 
 ## The brief
 
@@ -64,6 +65,31 @@ Staleness is visible. Each approved brief records `approved_at`. Shepherd shows 
 age in the project page and in the brief itself as it is given to agents, so a
 stale focus is a stated fact to the agent too. Past `brief_max_age` the front desk
 drafts a refresh and the project page marks it; nothing is blocked.
+
+### Keeping the brief in a file
+
+A project can keep its approved brief as a file in a repo of the workspace, such as a
+docs repo, instead of in the store:
+
+```yaml
+projects:
+  shop:
+    repos: [api, web]
+    brief_source:
+      repo: docs                      # a repo of the workspace, by name
+      path: projects/{name}/brief.md  # default; {name} is the project's name
+      ref: ""                         # default: the repo's default branch
+```
+
+The file is read at the tip of the ref (the remote's default branch when `ref` is
+empty), never from the working tree. A brief change counts as approved once it has
+landed there, so the merge is the approval. The commit that last changed the file
+gives `approved_at`, and so the age and staleness. Shepherd does not fetch: the repo
+is as fresh as its last fetch. Reads are reused for 60 seconds.
+
+The file wins. When the repo, the ref or the file is missing or empty, the store's
+approved brief is used, and drafts and approvals through the front desk work as
+before. The project's brief view says which source it used (`file` or `store`).
 
 ## Spend
 

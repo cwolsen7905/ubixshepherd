@@ -199,3 +199,18 @@ func TestProjectsReload(t *testing.T) {
 		t.Error("a repo in two projects loaded")
 	}
 }
+
+func TestBriefSource(t *testing.T) {
+	c, err := Parse([]byte(twoRepos + "projects:\n  p:\n    repos: [a]\n    brief_source: {repo: docs}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Project("p").BriefSource.FilePath("p"); got != "projects/p/brief.md" {
+		t.Errorf("default path = %q", got)
+	}
+	for _, bad := range []string{"{}", "{repo: docs, path: ../x.md}", "{repo: docs, path: /etc/x}"} {
+		if _, err := Parse([]byte(twoRepos + "projects:\n  p:\n    repos: [a]\n    brief_source: " + bad + "\n")); err == nil {
+			t.Errorf("brief_source %s accepted", bad)
+		}
+	}
+}

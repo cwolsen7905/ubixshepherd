@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -83,6 +84,9 @@ type Project struct {
 	// BriefMaxAge is how old the approved brief may be before it shows as stale: "30d",
 	// or a Go duration ("720h"); "" is DefaultBriefMaxAge.
 	BriefMaxAge string `yaml:"brief_max_age,omitempty" json:"brief_max_age,omitempty"`
+	// BriefSource reads the approved brief from a file in a workspace repo instead of
+	// the store; the store's brief is the fallback. Nil keeps the store alone.
+	BriefSource *BriefSource `yaml:"brief_source,omitempty" json:"brief_source,omitempty"`
 	// Budget is the project's own spend limit; its zero value takes the daemon's.
 	Budget ProjectBudget `yaml:"budget,omitempty" json:"budget"`
 	// Caches are local build caches that are not repos, shared by the project's repos.
@@ -92,6 +96,31 @@ type Project struct {
 	Intake []IntakeRule `yaml:"intake,omitempty" json:"intake,omitempty"`
 	// Models narrows the models the project's repos may run, by agent (see ModelRules).
 	Models ModelRules `yaml:"models,omitempty" json:"models,omitempty"`
+}
+
+// DefaultBriefPath is where a project's brief is in its source repo; {name} is the
+// project's name.
+const DefaultBriefPath = "projects/{name}/brief.md"
+
+// BriefSource says where a project's approved brief is kept as a file: a repo of the
+// workspace, read at the tip of its default branch, so a change counts as approved once
+// it has landed there.
+type BriefSource struct {
+	// Repo is the workspace repo that holds the file, by name.
+	Repo string `yaml:"repo" json:"repo"`
+	// Path is the file in that repo; "" is DefaultBriefPath.
+	Path string `yaml:"path,omitempty" json:"path,omitempty"`
+	// Ref is the branch or ref to read; "" is the repo's default branch.
+	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
+}
+
+// FilePath is Path with {name} replaced by the project's name.
+func (b BriefSource) FilePath(project string) string {
+	p := b.Path
+	if p == "" {
+		p = DefaultBriefPath
+	}
+	return strings.ReplaceAll(p, "{name}", project)
 }
 
 // ProjectBudget is a project's spend limit.
@@ -257,6 +286,15 @@ func (c Config) validateProjects() []error {
 		if p.BriefMaxAge != "" {
 			if _, err := parseAge(p.BriefMaxAge); err != nil {
 				errs = append(errs, fmt.Errorf("%s.brief_max_age: %q; a duration above zero such as 30d or 720h", at, p.BriefMaxAge))
+			}
+		}
+		if bs := p.BriefSource; bs != nil {
+			if strings.TrimSpace(bs.Repo) == "" {
+				errs = append(errs, fmt.Errorf("%s.brief_source.repo: empty; name a repo of the workspace", at))
+			}
+			fp := bs.FilePath(name)
+			if filepath.IsAbs(fp) || strings.HasPrefix(fp, "/") || slices.Contains(strings.Split(filepath.ToSlash(fp), "/"), "..") {
+				errs = append(errs, fmt.Errorf("%s.brief_source.path: %q must stay inside the repo", at, fp))
 			}
 		}
 		if a := p.Budget.Amount; a != nil && *a < 0 {

@@ -11,6 +11,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- Projects: `brief_source` reads the approved brief from a file in a workspace repo
+  (default `projects/{name}/brief.md`, at the default branch tip), falling back to the
+  store's brief when the file is missing. See [docs/projects.md](docs/projects.md).
 - OpenCode runs can read pipelines and jobs with `glab ci list`, `view`, `status` and
   `trace`, and with `glab api` GET calls on a project's pipelines and jobs. Retry, cancel,
   run, delete and any `glab api` call with another method, fields or a body stay refused.
