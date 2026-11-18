@@ -140,11 +140,14 @@ func mrRef(mr string) (project, num string) {
 	mr = strings.TrimRight(strings.TrimSpace(mr), "/")
 	if i := strings.Index(mr, "/-/merge_requests/"); i >= 0 {
 		project, mr = mr[:i], mr[i+len("/-/merge_requests/"):]
-		project = strings.TrimPrefix(project[strings.Index(project, "://")+1:], "//")
-		if j := strings.Index(project, "/"); j >= 0 {
-			project = project[j+1:]
-		} else {
-			project = ""
+		if i := strings.Index(project, "://"); i >= 0 {
+			// Drop the scheme and host; a URL without a scheme is the project path as is.
+			project = project[i+3:]
+			if j := strings.Index(project, "/"); j >= 0 {
+				project = project[j+1:]
+			} else {
+				project = ""
+			}
 		}
 	}
 	mr = strings.TrimPrefix(mr, "!")

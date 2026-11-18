@@ -20,7 +20,8 @@ A lane whose run would be checked is skipped when:
 
 - the lane has no linked open item,
 - the lane already has commits beyond its base (the work is in progress),
-- the run continues an earlier one (an answer, a fix or a follow-up), or
+- the run continues an earlier one (an answer, a fix or a follow-up),
+- the start was queued for a restart and is now replayed (the check ran when it was first requested, before it was queued), or
 - the request sets `force`.
 
 When the item looks done, no run starts. The start is refused with the reason and a hint to
