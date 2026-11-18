@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,7 +120,7 @@ func DefaultRef(ctx context.Context, dir string) (string, error) {
 }
 
 func read(ctx context.Context, dir, ref, file string) (Brief, error) {
-	if dir == "" || !git.Ok(ctx, dir, "rev-parse", "--git-dir") {
+	if !isRepoRoot(ctx, dir) {
 		return Brief{}, fmt.Errorf("%w: %s is not a git repo", ErrMissing, dir)
 	}
 	if ref == "" {
@@ -158,4 +159,24 @@ func read(ctx context.Context, dir, ref, file string) (Brief, error) {
 // ForProject reads the brief a project's brief_source names, in the repo at dir.
 func (r *Reader) ForProject(ctx context.Context, name string, src config.BriefSource, dir string) (Brief, error) {
 	return r.Read(ctx, dir, src.Ref, src.FilePath(name))
+}
+
+// isRepoRoot reports whether dir is itself a repo (or a bare one), not a plain directory
+// inside some other repo, whose history would be read as this one's.
+func isRepoRoot(ctx context.Context, dir string) bool {
+	if dir == "" {
+		return false
+	}
+	if out, err := git.Run(ctx, dir, "rev-parse", "--is-bare-repository"); err != nil {
+		return false
+	} else if out == "true" {
+		return true
+	}
+	top, err := git.Run(ctx, dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return false
+	}
+	a, errA := filepath.EvalSymlinks(top)
+	b, errB := filepath.EvalSymlinks(dir)
+	return errA == nil && errB == nil && a == b
 }

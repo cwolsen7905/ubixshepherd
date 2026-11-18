@@ -97,6 +97,11 @@ store; it reads the file in a follow-up. The view's `agents_get` field names the
 agents get (`store`), so a file brief shown as approved is not mistaken for what governs
 them. Only the remote's default branch counts: a local branch is never read.
 
+Because a merge is the approval, keep the source repo's merges with a person: leave
+`autonomy.merge` at `human` for that repo (or require forge approvals), so an agent
+cannot approve a brief by merging a change to the file. Shepherd does not check who
+merged it.
+
 ## Spend
 
 Run costs are recorded per run, and a run belongs to a lane and a lane to a repo,

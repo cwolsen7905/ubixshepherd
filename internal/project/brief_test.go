@@ -177,3 +177,13 @@ func TestExplicitRefIsTheRemoteBranch(t *testing.T) {
 		t.Errorf("an unpushed local branch was read: %v", err)
 	}
 }
+
+func TestPlainDirectoryInsideARepoIsNotTheRepo(t *testing.T) {
+	clone := docsRepo(t)
+	commitBrief(t, clone, "outer")
+	inner := filepath.Join(clone, "not-a-repo")
+	os.MkdirAll(inner, 0o755)
+	if _, err := (&Reader{}).ForProject(context.Background(), "p", src, inner); !errors.Is(err, ErrMissing) {
+		t.Fatalf("read the enclosing repo's brief: %v", err)
+	}
+}
