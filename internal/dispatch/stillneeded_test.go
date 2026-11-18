@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"strings"
 	"testing"
@@ -99,6 +100,101 @@ func TestAlreadyDoneReportIsIgnoredWhenTheLaneHasCommits(t *testing.T) {
 	for _, fi := range feed {
 		if fi.Kind == store.FeedPlan {
 			t.Errorf("offered mark-done despite commits: %q", fi.Text)
+		}
+	}
+}
+
+// landOnBase pushes a commit with the message to origin's main, as a merged branch
+// would appear, and refreshes the lane repo's remote-tracking ref.
+func landOnBase(t *testing.T, f *fixture, msg string) {
+	t.Helper()
+	ctx := context.Background()
+	repo, _ := f.st.Repo(ctx, f.lane.RepoID)
+	for _, args := range [][]string{
+		{"-C", repo.Path, "commit", "-q", "--allow-empty", "-m", msg},
+		{"-C", repo.Path, "push", "-q", "origin", "HEAD:main"},
+		{"-C", repo.Path, "fetch", "-q", "origin"},
+	} {
+		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+}
+
+func itemFor(t *testing.T, f *fixture, mr string) store.NextItem {
+	t.Helper()
+	ctx := context.Background()
+	it, _ := f.st.AddNextItem(ctx, store.NextItem{Title: "Add the thing", Repo: "app", State: store.NextApproved, MR: mr})
+	id := f.lane.ID
+	f.st.UpdateNextItem(ctx, it.ID, store.NextPatch{LaneID: &id})
+	return it
+}
+
+func TestRunIsNotStartedWhenTheBaseNamesTheLaneBranch(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	it := itemFor(t, f, "")
+	landOnBase(t, f, "Merge branch '"+f.lane.Branch+"' into 'main'")
+
+	_, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "build it"})
+	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "already done") || !strings.Contains(err.Error(), "force") {
+		t.Fatalf("want a refusal naming the reason and force, got %v", err)
+	}
+	if runs := mustRuns(f.st); len(runs) != 0 {
+		t.Errorf("a run was recorded: %v", runs)
+	}
+	feed, _ := f.st.Feed(ctx, 0, 100)
+	found := false
+	for _, e := range feed {
+		if strings.Contains(e.Text, "run not started") && strings.Contains(e.Text, "item") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("no feed line for item %d: %v", it.ID, feed)
+	}
+
+	run, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "build it", Force: true})
+	if err != nil {
+		t.Fatalf("force should start: %v", err)
+	}
+	f.wait(t, run.ID)
+}
+
+func TestRunIsNotStartedWhenTheBaseNamesTheItemsMR(t *testing.T) {
+	f := newFixture(t, "quick")
+	itemFor(t, f, "https://forge.example/g/p/-/merge_requests/42")
+	landOnBase(t, f, "feat: the thing\n\nSee merge request g/p!42")
+	if _, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "w"}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("want a refusal, got %v", err)
+	}
+}
+
+func TestAlreadyDoneCheckLeavesOtherRunsAlone(t *testing.T) {
+	// An unrelated commit on the base, and an MR number that only prefixes another.
+	f := newFixture(t, "quick")
+	itemFor(t, f, "4")
+	landOnBase(t, f, "fix: other work, see !42")
+	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "w"})
+	if err != nil {
+		t.Fatalf("nothing on the base names the work: %v", err)
+	}
+	f.wait(t, run.ID)
+
+	// A lane with no item is never checked, even when the base names its branch.
+	g := newFixture(t, "quick")
+	landOnBase(t, g, "Merge branch '"+g.lane.Branch+"' into 'main'")
+	run2, err := g.runner.Start(context.Background(), StartRequest{LaneID: g.lane.ID, Agent: "claude", Prompt: "w"})
+	if err != nil {
+		t.Fatalf("a lane with no item was checked: %v", err)
+	}
+	g.wait(t, run2.ID)
+}
+
+func TestMRNumber(t *testing.T) {
+	for in, want := range map[string]string{"12": "12", "!12": "12", "https://h/g/p/-/merge_requests/12/": "12", "": "", "abc": ""} {
+		if got := mrNumber(in); got != want {
+			t.Errorf("mrNumber(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

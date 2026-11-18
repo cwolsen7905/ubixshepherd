@@ -90,6 +90,9 @@ type StartRequest struct {
 	// sent to close: when that run was cheaper than Claude on the repo's default model,
 	// the start runs on Claude instead (see EscalationTarget).
 	Escalate bool `json:"-"`
+	// Force starts the run although the already-done check found the item's work on
+	// the base branch (see LandedOnBase). A run Shepherd starts on its own never sets it.
+	Force bool `json:"force,omitempty"`
 }
 
 // Runner starts agents and watches them until they exit.
@@ -405,6 +408,12 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	repo, err := r.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
 		return store.Run{}, err
+	}
+	if !req.Force && req.Continue == 0 && !fromQueue {
+		if why := r.landedOnBase(ctx, lane, repo); why != "" {
+			r.feed(ctx, store.FeedPlan, lane.ID, "run not started in lane %s: %s", lane.Name, why)
+			return store.Run{}, refuse("%s; start it anyway with force", why)
+		}
 	}
 	if prof := cfg.Profile(repo.Name); !prof.AgentAllowed(ad.Name) {
 		return store.Run{}, refuse("repo %s allows only %s; %s is not on its agents list", repo.Name, strings.Join(prof.Agents, ", "), ad.Name)
