@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DeskQuestion } from '../api/types'
 import { deskQuestions } from '../api/client'
+import { isYesNo } from './reply'
 import { DeskThread } from '../state/desk'
 import { Button, EmptyState, IdChip, ListRow } from '../ui'
 
@@ -43,6 +44,16 @@ function QuestionActions({
       setProblem('Not sent. The desk may be busy; try again.')
     }
   }
+  // One click answers as a typed reply would: the same turn, linked to this question.
+  const quick = async (word: 'Yes' | 'No') => {
+    if (busy || q.state !== 'open') return
+    setBusy(true)
+    setProblem(null)
+    const ok = await thread.send(word, topicId, q.id)
+    setBusy(false)
+    if (ok) onReplied?.()
+    else setProblem('Not sent. The desk may be busy; try again.')
+  }
   const close = async (how: 'answer' | 'skip') => {
     setBusy(true)
     setProblem(null)
@@ -62,6 +73,16 @@ function QuestionActions({
       <IdChip kind="question" id={q.id} />
       {!replying && (
         <>
+          {q.state === 'open' && isYesNo(q.text) && (
+            <>
+              <Button size="small" onClick={() => void quick('Yes')} disabled={busy}>
+                Yes
+              </Button>
+              <Button size="small" onClick={() => void quick('No')} disabled={busy}>
+                No
+              </Button>
+            </>
+          )}
           <Button size="small" onClick={() => setReplying(true)} disabled={busy}>
             Reply here
           </Button>

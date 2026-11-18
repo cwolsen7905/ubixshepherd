@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeskEvent, DeskQuestion } from '../api/types'
-import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
+import { closedQuestions, isYesNo, questionsByMessage, replyJumpNote, replyRef } from './reply'
 
 const ev = (seq: number, kind: DeskEvent['kind'], turn?: number) => ({ seq, kind, turn, created: '' }) as DeskEvent
 const q = (id: number, turn: number, state: DeskQuestion['state'] = 'open') => ({ id, turn, state, text: '', workspace_id: 1, created: '' }) as DeskQuestion
@@ -48,5 +48,14 @@ describe('closedQuestions', () => {
     })
     expect(asked.sort()).toEqual(['answered', 'skipped'])
     expect(got.map((x) => x.id)).toEqual([1, 2])
+  })
+})
+
+describe('isYesNo', () => {
+  it('accepts a short single yes-or-no question', () => {
+    for (const t of ['Is the config valid?', 'Is the gate green?', 'Does the build use the new config?', 'Are both repos on dev?']) expect(isYesNo(t)).toBe(true)
+  })
+  it('refuses open, either-or, multi-part and unfinished questions', () => {
+    for (const t of ['Which repo?', 'Should I merge or rebase?', 'Should I merge? Which branch?', 'Should I rebase it, and delete the branch?', 'Should I rebase it. Is the gate green?', "Can't you fix it?", 'Is it not ready?', 'Should I merge it?', 'Should I force-push?', 'Should I delete the branch?', 'Ready to release?', 'Should I approve the MR?', 'Should I rebase onto main?', 'Should I close the MR?', 'Should I kill the running agent?', 'Should I stop the daemon?', 'Should I run the migration?', 'Should I commit the changes?', 'Is it ok to run the migration?', 'Do you want me to install it?', 'Is the daemon stopped?', 'Is the change ready to land on main?', 'Is the MR good to go?', 'Is it fine to hand it over to the release bot?', 'Is the site going live?', 'Should I merge', 'Is it ok?\nExplain.', '']) expect(isYesNo(t)).toBe(false)
   })
 })
