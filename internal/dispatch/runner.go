@@ -591,6 +591,15 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		Session: session, Resume: resume, Worker: worker,
 		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge,
 		OpenCode: r.openCodeHost()}
+	if ad.Name == "opencode" {
+		// The run's own brief counts only when a person started it: a run Shepherd starts
+		// on its own (a routed request, a fix) carries text another agent wrote.
+		texts := []string{prof.Brief}
+		if !req.Auto {
+			texts = append(texts, req.Prompt)
+		}
+		opts.ReadPaths = openCodeReadPaths(lane.Worktree, texts...)
+	}
 	cmd := exec.Command(bin, ad.Args(opts)...)
 	cmd.Dir = lane.Worktree
 	// The prompt, then end of input: headless, and off the command line (see Adapter).

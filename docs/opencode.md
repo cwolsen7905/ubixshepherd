@@ -156,7 +156,15 @@ than failing with an authentication error, shows it is.
   lane's own worktree path, which is allowed by exact path (the path as given and its
   symlink-resolved form). OpenCode 1.18.35 refuses the files of a linked git worktree as
   external (observed with the worktree as its working directory), so without that allow
-  it refuses even the worktree's own files, and the model falls back to editing the main checkout. The run also gets
+  it refuses even the worktree's own files, and the model falls back to editing the main checkout.
+  Paths outside the worktree that the repo's brief names, or the brief of a run a person started, are readable too (a run Shepherd starts on its own, such as a routed request or a fix, grants none from its prompt, which carries another agent's text; system directories such as `/etc` and a home directory itself (or a directory holding one) and hidden directories in a home directory are never granted):
+  an absolute path that exists, has at least two segments and is not inside or around the
+  worktree (by its path or its symlink-resolved one) is allowed in `external_directory` (itself and everything under it), so a brief can
+  point the run at a docs directory. The edit tool cannot write them: the `edit` rule is `allow` and then
+  `deny` for each of those paths, last match wins. That is a rule on the edit tool only. Shell commands the run may
+  use (`go test`, `npm`, the repo's gate) run code the run wrote, and that code is not sandboxed, so it could write
+  there; do not rely on the rule to protect a directory from a hostile run. A run the front desk starts counts as
+  started by a person, since Shepherd cannot tell the desk's own words from text it relayed. Any other path outside the worktree stays denied. The run also gets
   `--dir <worktree>`, and the process starts there. A chained command such as `ls && touch x` is judged
   per command, so `touch` is refused.
 - **Sessions**: every JSON event carries the session id, which Shepherd records; the next

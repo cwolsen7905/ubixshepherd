@@ -181,6 +181,9 @@ type Opts struct {
 	// Push lets the agent push its lane's branch; Merge lets it arm merge when the
 	// pipeline succeeds on its lane's merge request (glab mr merge).
 	Push, Merge bool
+	// ReadPaths are absolute paths outside the worktree the run's briefs name; OpenCode
+	// may read them, never write them.
+	ReadPaths []string
 	// OpenCode is the machine the OpenCode adapter reads its settings and version from;
 	// the runner sets it. Nil is a real machine.
 	OpenCode *OpenCodeHost
