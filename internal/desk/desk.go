@@ -282,6 +282,23 @@ func (d *Desk) Send(ctx context.Context, text string) (int64, int, error) {
 // turn under that topic, or else under the topic of what it names, or else under the
 // topic of the person's last turn, before the desk sees it.
 func (d *Desk) SendIn(ctx context.Context, text string, topic int64) (int64, int, error) {
+	return d.SendWith(ctx, text, SendOpts{Topic: topic})
+}
+
+// SendOpts are the extras of a person's message.
+type SendOpts struct {
+	// Topic is the topic the message was written from, 0 for none.
+	Topic int64
+	// Attach are ids of uploaded files the message carries (store.TakeAttachments).
+	// Note turns the taken files into the block the agent reads after the message; the
+	// stored conversation keeps the person's words alone, and the files with the turn.
+	Attach []int64
+	Note   func([]store.Attachment) string
+}
+
+// SendWith is SendIn with the extras of SendOpts.
+func (d *Desk) SendWith(ctx context.Context, text string, o SendOpts) (int64, int, error) {
+	topic := o.Topic
 	if strings.TrimSpace(text) == "" {
 		return 0, 0, errors.New("say something")
 	}
@@ -294,11 +311,16 @@ func (d *Desk) SendIn(ctx context.Context, text string, topic int64) (int64, int
 		return 0, len(d.queue), ErrQueueFull
 	}
 	filed, how, what := d.chooseTopic(ctx, text, topic)
-	e, err := d.appendLocked(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman})
+	e, err := d.appendLockedThen(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman}, o.Attach)
 	if err != nil {
 		return 0, 0, err
 	}
-	t := turn{id: e.Turn, origin: store.DeskByHuman, text: text}
+	files := e.Attachments
+	agentText := text
+	if len(files) > 0 && o.Note != nil {
+		agentText += "\n\n" + o.Note(files)
+	}
+	t := turn{id: e.Turn, origin: store.DeskByHuman, text: agentText}
 	if filed != 0 {
 		l := store.TopicLink{TopicID: filed, Kind: store.TopicTurn, Ref: strconv.FormatInt(e.Turn, 10), By: store.TopicLinkShepherd}
 		if _, err := d.m.o.Store.LinkTopic(ctx, l); err != nil {
@@ -834,8 +856,20 @@ func (d *Desk) append(ctx context.Context, e store.DeskEvent) (store.DeskEvent, 
 
 // appendLocked stores an event and tells the streams.
 func (d *Desk) appendLocked(ctx context.Context, e store.DeskEvent) (store.DeskEvent, error) {
+	return d.appendLockedThen(ctx, e, nil)
+}
+
+// appendLockedThen is appendLocked for a message that takes uploaded files with it: the
+// message and the files are stored in one step, so a file that cannot be taken leaves no
+// message behind.
+func (d *Desk) appendLockedThen(ctx context.Context, e store.DeskEvent, files []int64) (store.DeskEvent, error) {
 	e.WorkspaceID = d.ws.ID
-	e, err := d.m.o.Store.AddDeskEvent(ctx, e)
+	var err error
+	if len(files) > 0 {
+		e, err = d.m.o.Store.AddDeskEventWithFiles(ctx, e, files)
+	} else {
+		e, err = d.m.o.Store.AddDeskEvent(ctx, e)
+	}
 	if err != nil {
 		return e, err
 	}

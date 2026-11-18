@@ -524,3 +524,17 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-request-route,
 .sh-next-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sh-s4); }
 .sh-next-actions { margin-top: var(--sh-s6); }
+
+/* Attachments: files in a message (thread) and waiting in the composer. */
+.sh-attach-list { display: flex; flex-wrap: wrap; gap: var(--sh-s4); margin-top: var(--sh-s3); align-items: flex-start; }
+.sh-attach-image { display: block; line-height: 0; border: 1px solid var(--sh-rule); border-radius: var(--sh-r); overflow: hidden; background: var(--sh-raised); }
+.sh-attach-image img { display: block; max-width: 100%; max-height: 18em; object-fit: contain; }
+.sh-attach-chip { display: inline-flex; align-items: baseline; max-width: 100%; text-decoration: none; }
+.sh-attach-name { overflow: hidden; text-overflow: ellipsis; font-family: var(--sh-mono); }
+.sh-attach-size { color: var(--sh-faint); }
+.sh-attach-bar { list-style: none; margin: 0; padding-inline: 0; display: flex; flex-wrap: wrap; gap: var(--sh-s4); align-items: center; padding: var(--sh-s3) 0; }
+.sh-attach-item { display: inline-flex; gap: var(--sh-s3); align-items: center; }
+.sh-attach-item.is-bad .sh-chip { border-color: var(--sh-broken); color: var(--sh-broken); }
+.sh-attach-thumb { width: 2.4em; height: 2.4em; object-fit: cover; border-radius: var(--sh-r); border: 1px solid var(--sh-rule); }
+.sh-conv-composer.is-drop .sh-composer { border-color: var(--sh-lichen); }
+.sh-attach-hint { font-size: var(--sh-t-meta); color: var(--sh-muted); }

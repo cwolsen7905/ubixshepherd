@@ -185,6 +185,8 @@ export function fakeDeskApi(over: Partial<DeskApi> = {}): DeskApi {
     turn: async () => ({ workspace_id: 1, turn: 9, ahead: 1 }),
     interrupt: async () => ({ interrupted: true }),
     newConversation: async () => ({}),
+    attach: async (_ws, f) => ({ id: 7, name: f.name, mime: f.type || 'text/plain', kind: f.type.startsWith('image/') ? 'image' : 'text', size: f.size }),
+    attachmentUrl: (id) => `/v1/desk/attachments/${id}`,
     streamUrl: (ws, after) => `/stream?ws=${ws}&after=${after}`,
     ...over,
   }

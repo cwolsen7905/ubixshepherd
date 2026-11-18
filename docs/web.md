@@ -1,6 +1,6 @@
 # The web UI: what the person may do to a forge from the page
 
-Status: **implemented** for approving a lane's merge request; the rest of the web UI is
+Status: **implemented** for approving a lane's merge request and for attaching files to a chat message; the rest of the web UI is
 described in [web-chat.md](web-chat.md), [web-projects.md](web-projects.md),
 [web-settings.md](web-settings.md) and [web-daemon-status.md](web-daemon-status.md).
 
@@ -36,3 +36,28 @@ request's link when there is one.
 The feed line reuses the `mr` kind. A dedicated kind (so the thread and history could mark
 a human approval distinctly) needs `internal/store` and `internal/api/events.go`, and is
 tracked in Next up.
+
+## Attaching files to a message
+
+The chat box takes files three ways: paste them (a screenshot from the clipboard, or
+copied files), drop them on the box, or press **Attach**. Each file uploads as it is added
+and waits as a chip with its name and size, with a small preview for an image; **Send** is
+off while one is still uploading, and a file may go without words. Remove a chip to leave
+the file out.
+
+| Limit | Value |
+|---|---|
+| One file | 10 MiB |
+| One message | 5 files, 25 MiB |
+| Refused | programs, scripts and archives (by content and by name), empty files, and types the desk cannot read |
+
+The box checks the limits first and says why in words; the daemon checks again by what the
+file really is, not by the type the browser claims. In the thread an image shows inline
+(a click opens it whole) and any other file shows as a `▤` chip with its name and size
+that downloads it. Files are part of the message they were sent with, so reloading the
+page, or opening the thread in another browser, shows them again.
+
+The daemon keeps each file by the hash of its bytes in `attachments/` under the Shepherd
+home, so one file sent twice is stored once. A file uploaded but never sent is forgotten
+after a day, and a file whose message has aged out of the conversation is removed with it; the daemon checks hourly.
+What the desk is told is in [desk.md](desk.md#files-in-a-message).

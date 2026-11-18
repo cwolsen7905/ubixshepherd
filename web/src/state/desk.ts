@@ -6,7 +6,7 @@
 // ?after=, and the cookie carries the session.
 import { ApiError, NetworkError, SIGN_IN_HINT } from '../api/client'
 import { deskApi, type DeskApi } from '../api/desk'
-import type { DeskAbout } from '../api/types'
+import type { DeskAbout, DeskAttachment } from '../api/types'
 import type { DeskEvent } from '../api/types'
 import type { FeedEntry } from '../model/feed'
 import type { EventKind } from '../model/marks'
@@ -315,11 +315,14 @@ export class DeskThread {
   /** Sends the person's words, from the topic being viewed if any; true when the daemon accepted them. */
   /** `replyTo` is a desk question's id: the turn answers it and clears it. */
   /** `about` is the entity the turn speaks of; the daemon names it to the desk. */
-  async send(text: string, topicId?: number | null, replyTo?: number, about?: DeskAbout): Promise<boolean> {
-    if (this.snap.sending || !text.trim()) return false
+  /** `attachments` are the ids of files uploaded for this message; they may stand without words. */
+  async send(text: string, topicId?: number | null, replyTo?: number, about?: DeskAbout, attachments?: number[]): Promise<boolean> {
+    if (this.snap.sending || (!text.trim() && !attachments?.length)) return false
     this.set({ sending: true, problem: null, notice: null })
     try {
-      const a = about
+      const a = attachments?.length
+        ? await this.deps.api.turn(this.workspaceId, text, topicId || undefined, replyTo, about, attachments)
+        : about
         ? await this.deps.api.turn(this.workspaceId, text, topicId || undefined, replyTo, about)
         : replyTo
         ? await this.deps.api.turn(this.workspaceId, text, topicId || undefined, replyTo)
@@ -332,6 +335,11 @@ export class DeskThread {
       this.fail(e, { sending: false })
       return false
     }
+  }
+
+  /** Uploads one file for the next message; a refusal reads as its words. */
+  attachFile(file: File): Promise<DeskAttachment> {
+    return this.deps.api.attach(this.workspaceId, file)
   }
 
   async interrupt() {

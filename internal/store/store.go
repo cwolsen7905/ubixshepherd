@@ -594,6 +594,8 @@ type DeskEvent struct {
 	Turn    int64     `json:"turn,omitempty"`
 	Origin  string    `json:"origin,omitempty"`
 	Created time.Time `json:"created"`
+	// Attachments are the files a person's message carried, filled when events are read.
+	Attachments []Attachment `json:"attachments,omitempty"`
 }
 
 // LaneForge is what the forge last said about a lane's branch.
@@ -1066,6 +1068,20 @@ type Store interface {
 	DeskHistory(ctx context.Context, workspaceID, before int64, limit int) ([]DeskEvent, error)
 	// TrimDeskEvents keeps a workspace's newest keep desk events and deletes the rest.
 	TrimDeskEvents(ctx context.Context, workspaceID int64, keep int) error
+	// AddAttachment records an uploaded file, not yet in any message. Attachment returns
+	// one by id (ErrNotFound if none). TakeAttachments puts the named files, uploaded to
+	// this workspace and not yet taken, into a turn and returns them in the order given;
+	// it fails with ErrConflict, taking none, when one is unknown or taken.
+	// SweepAttachments deletes the files never taken that are older than before, and those
+	// whose turn the conversation no longer holds, and returns the hashes no remaining
+	// file uses.
+	// AddDeskEventWithFiles appends a message and takes the files for it in one step: if a
+	// file cannot be taken (ErrConflict) nothing is stored. The event carries the files.
+	AddDeskEventWithFiles(ctx context.Context, e DeskEvent, attachmentIDs []int64) (DeskEvent, error)
+	AddAttachment(ctx context.Context, a Attachment) (Attachment, error)
+	Attachment(ctx context.Context, id int64) (Attachment, error)
+	TakeAttachments(ctx context.Context, workspaceID, turn int64, ids []int64) ([]Attachment, error)
+	SweepAttachments(ctx context.Context, before time.Time) ([]string, error)
 	// SaveDeskTurnLog records what a desk turn started with; a second save of the same
 	// turn replaces the first. DeskTurnLogs returns a workspace's, oldest turn first, and
 	// is never trimmed with the conversation.

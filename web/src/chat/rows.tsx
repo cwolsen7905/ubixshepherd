@@ -9,6 +9,7 @@ import type { DeskThread } from '../state/desk'
 import { glyphTone } from '../ui/StatusGlyph'
 import { IdChip } from '../ui'
 import type { ThreadEntry, WorkStep } from '../ui/Thread'
+import { AttachmentList } from './attachments'
 import { QuestionActions } from './questions'
 import { replyRef } from './reply'
 import { threadId } from '../model/backlog'
@@ -118,6 +119,7 @@ export function deskEntry({
               Replying to <IdChip kind="question" id={ref} />
             </button>
           ) : null,
+        attachments: e.attachments?.length ? <AttachmentList files={e.attachments} /> : undefined,
         children: text,
       }
     }

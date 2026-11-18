@@ -44,7 +44,7 @@ function csrfToken(): Promise<string> {
   return csrf
 }
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
+async function call<T>(path: string, init?: RequestInit, timeout = REQUEST_TIMEOUT): Promise<T> {
   const write = init?.method !== undefined && init.method !== 'GET'
   const token = write ? await csrfToken() : ''
   // The timer covers the body too: a daemon that sends headers and stalls is as lost.
@@ -53,7 +53,7 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const timer = setTimeout(() => {
     timedOut = true
     ctl.abort()
-  }, REQUEST_TIMEOUT)
+  }, timeout)
   try {
     return await exchange<T>(path, init, token, ctl.signal)
   } catch (e) {
@@ -70,7 +70,7 @@ async function exchange<T>(path: string, init: RequestInit | undefined, token: s
     signal,
     headers: {
       Accept: 'application/json',
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init?.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { [CSRF_HEADER]: token } : {}),
     },
   })
@@ -151,6 +151,9 @@ export function normalizeRunHistory(v: unknown): RunHistory {
 
 export const get = <T>(path: string) => call<T>(path)
 export const post = <T>(path: string, body: unknown) => call<T>(path, { method: 'POST', body: JSON.stringify(body) })
+/** How long a file upload may take: a 10 MiB file on a slow link is not a lost daemon. */
+export const UPLOAD_TIMEOUT = 120_000
+export const upload = <T>(path: string, form: FormData) => call<T>(path, { method: 'POST', body: form }, UPLOAD_TIMEOUT)
 export const put = <T>(path: string, body: unknown) => call<T>(path, { method: 'PUT', body: JSON.stringify(body) })
 export const patch = <T>(path: string, body: unknown) => call<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
 export const qs = (params: Record<string, string | number>) => new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()

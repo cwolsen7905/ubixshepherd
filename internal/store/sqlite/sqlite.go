@@ -587,6 +587,20 @@ var migrations = []string{
 	// The review threads of an approved request that only the follow-through owner's
 	// threads hold up under after_approval, raised to the person.
 	`ALTER TABLE lane_forge ADD COLUMN owner_blocking TEXT NOT NULL DEFAULT '';`,
+	// Files the person put in desk messages; the bytes live in the attachments directory
+	// under their hash. turn is 0 until a message takes the file.
+	`CREATE TABLE desk_attachments (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER NOT NULL,
+		turn         INTEGER NOT NULL DEFAULT 0,
+		sha          TEXT NOT NULL,
+		name         TEXT NOT NULL,
+		mime         TEXT NOT NULL,
+		kind         TEXT NOT NULL,
+		size         INTEGER NOT NULL,
+		created      TEXT NOT NULL
+	);
+	CREATE INDEX desk_attachments_turn ON desk_attachments (workspace_id, turn);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -1406,9 +1420,17 @@ func nonNil(s []string) []string {
 	return s
 }
 
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (s *DB) AddDeskEvent(ctx context.Context, e store.DeskEvent) (store.DeskEvent, error) {
+	return addDeskEvent(ctx, s.db, e)
+}
+
+func addDeskEvent(ctx context.Context, db execer, e store.DeskEvent) (store.DeskEvent, error) {
 	e.Created = time.Now().UTC()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_events (workspace_id, kind, text, turn, origin, created) VALUES (?, ?, ?, ?, ?, ?)`,
+	res, err := db.ExecContext(ctx, `INSERT INTO desk_events (workspace_id, kind, text, turn, origin, created) VALUES (?, ?, ?, ?, ?, ?)`,
 		e.WorkspaceID, e.Kind, e.Text, e.Turn, e.Origin, e.Created.Format(time.RFC3339Nano))
 	if err != nil {
 		return e, err
@@ -1418,7 +1440,7 @@ func (s *DB) AddDeskEvent(ctx context.Context, e store.DeskEvent) (store.DeskEve
 	}
 	// A message that starts a turn is its own turn's id.
 	if e.Turn == 0 && (e.Kind == store.DeskUser || e.Kind == store.DeskSystem) {
-		if _, err := s.db.ExecContext(ctx, `UPDATE desk_events SET turn = seq WHERE seq = ?`, e.Seq); err != nil {
+		if _, err := db.ExecContext(ctx, `UPDATE desk_events SET turn = seq WHERE seq = ?`, e.Seq); err != nil {
 			return e, err
 		}
 		e.Turn = e.Seq
@@ -1457,7 +1479,11 @@ func (s *DB) deskEvents(ctx context.Context, q string, args ...any) ([]store.Des
 		e.Created = parseTime(created)
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return out, s.fillAttachments(ctx, out)
 }
 
 func (s *DB) TrimDeskEvents(ctx context.Context, workspaceID int64, keep int) error {

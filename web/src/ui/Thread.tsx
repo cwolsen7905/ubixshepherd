@@ -33,6 +33,8 @@ export type ThreadEntry =
       pill?: ReactNode
       /** The typed-ID chip of the question this answers ("question 3"). */
       reply?: ReactNode
+      /** Files the message carried. */
+      attachments?: ReactNode
       children: ReactNode
     })
   | (Base & {
@@ -150,6 +152,7 @@ export function ThreadRow({ it }: { it: ThreadEntry }) {
           </div>
           {it.reply}
           <p>{it.children}</p>
+          {it.attachments}
         </div>
       )
     case 'desk':
