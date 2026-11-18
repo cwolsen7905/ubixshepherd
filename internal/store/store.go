@@ -1060,6 +1060,11 @@ type Store interface {
 	DeskHistory(ctx context.Context, workspaceID, before int64, limit int) ([]DeskEvent, error)
 	// TrimDeskEvents keeps a workspace's newest keep desk events and deletes the rest.
 	TrimDeskEvents(ctx context.Context, workspaceID int64, keep int) error
+	// SaveDeskTurnLog records what a desk turn started with; a second save of the same
+	// turn replaces the first. DeskTurnLogs returns a workspace's, oldest turn first, and
+	// is never trimmed with the conversation.
+	SaveDeskTurnLog(ctx context.Context, l DeskTurnLog) error
+	DeskTurnLogs(ctx context.Context, workspaceID int64) ([]DeskTurnLog, error)
 
 	// LaneHistory returns lanes with their run counts, cost and forge state, for the
 	// history views: read-only, closed lanes included.

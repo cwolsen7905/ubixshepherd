@@ -572,6 +572,18 @@ var migrations = []string{
 		last_used TEXT NOT NULL,
 		expires TEXT NOT NULL
 	);`,
+	// The desk log: what each desk turn started with, kept apart from the conversation
+	// so trimming it does not take the log's history.
+	`CREATE TABLE desk_turn_log (
+		workspace_id INTEGER NOT NULL,
+		turn         INTEGER NOT NULL,
+		started_by   TEXT NOT NULL DEFAULT '',
+		topic        TEXT NOT NULL DEFAULT '',
+		waiting      INTEGER,
+		events       TEXT NOT NULL DEFAULT '[]',
+		created      TEXT NOT NULL,
+		PRIMARY KEY (workspace_id, turn)
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.

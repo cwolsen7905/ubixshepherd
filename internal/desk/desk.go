@@ -152,7 +152,7 @@ func (m *Manager) Wake(items []store.FeedItem) {
 	var texts []pendingEvent
 	for _, it := range items {
 		if wakes(it.Kind) {
-			texts = append(texts, pendingEvent{text: it.Text, topic: m.eventTopic(it)})
+			texts = append(texts, pendingEvent{text: it.Text, topic: m.eventTopic(it), kind: it.Kind, ref: it.Ref})
 		}
 	}
 	if len(texts) == 0 || m.o.Wake() == config.WakeNever {
@@ -241,6 +241,8 @@ type turn struct {
 	// how is how Shepherd filed a person's turn (fileViewing, fileNamed or fileLast),
 	// empty for an event turn; what is the thing the message named, for fileNamed.
 	how, what string
+	// events are the swarm events an event turn's digest carried.
+	events []pendingEvent
 }
 
 // pendingEvent is a waiting swarm event: its line, and the topic it is already tied to
@@ -248,6 +250,9 @@ type turn struct {
 type pendingEvent struct {
 	text  string
 	topic int64
+	// kind and ref are the feed item's, for the desk log.
+	kind string
+	ref  int64
 }
 
 // Sub is a client following the desk: it counts as attached while subscribed, and
@@ -492,6 +497,7 @@ func (d *Desk) next() (turn, bool) {
 			return t, true
 		}
 		if len(d.pending) > 0 && d.mayWakeLocked() {
+			carried := slices.Clone(d.pending)
 			lines := make([]string, len(d.pending))
 			topics := make([]int64, len(d.pending))
 			for i, p := range d.pending {
@@ -505,7 +511,7 @@ func (d *Desk) next() (turn, bool) {
 				d.m.o.Log.Error("desk: record a wake-up", "workspace", d.ws.Name, "err", err)
 				continue
 			}
-			t := turn{id: e.Turn, origin: store.DeskBySystem, text: text}
+			t := turn{id: e.Turn, origin: store.DeskBySystem, text: text, events: carried}
 			t.topic, t.others = d.fileEventTurn(d.m.ctx, e.Turn, topics)
 			return t, true
 		}
@@ -588,6 +594,7 @@ func (d *Desk) run(t turn) {
 		}
 	}
 	add(store.DeskTurnStart, "")
+	d.logTurn(bg, t)
 
 	session := d.Session(bg)
 	fresh := session == ""
