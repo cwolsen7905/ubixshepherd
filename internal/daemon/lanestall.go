@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -175,7 +176,7 @@ func (ls *LaneStall) cause(ctx context.Context, l store.Lane, opts LaneStallOpti
 	if n := opts.Unpushed(ctx, l); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d commit(s) are not pushed", n))
 	}
-	if lf, err := ls.s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 && lf.PipelineStatus == "failed" {
+	if lf, err := ls.s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 && lf.PipelineStatus == "failed" && !mrDone(lf) {
 		parts = append(parts, fmt.Sprintf("the pipeline for MR !%d failed", lf.MR))
 	}
 	switch len(parts) {
@@ -191,4 +192,10 @@ func (ls *LaneStall) clear(id int64) {
 	ls.mu.Lock()
 	delete(ls.told, id)
 	ls.mu.Unlock()
+}
+
+// mrDone says the lane's request is merged or closed, so no pipeline of it is waited on.
+// It matches the waiting list's reading of the same fields.
+func mrDone(lf store.LaneForge) bool {
+	return strings.EqualFold(lf.MRState, "merged") || strings.EqualFold(lf.MRState, "closed") || lf.MergeSHA != ""
 }

@@ -159,3 +159,22 @@ func TestLaneStallSetOptionsKeepsWhatWasAnnounced(t *testing.T) {
 		t.Fatalf("one stall, one alert, even across an options change: %v", got)
 	}
 }
+
+func TestLaneStallFailedPipelineOfClosedOrMergedMRIsNotAStall(t *testing.T) {
+	for _, lf := range []store.LaneForge{
+		{MR: 7, MRState: "closed", PipelineStatus: "failed"},
+		{MR: 7, MRState: "merged", PipelineStatus: "failed"},
+		{MR: 7, MRState: "opened", PipelineStatus: "failed", MergeSHA: "abc"},
+	} {
+		s, ls, clk, lane, _ := newLaneStall(t)
+		lf.LaneID = lane.ID
+		if err := s.Store.PutLaneForge(context.Background(), lf); err != nil {
+			t.Fatal(err)
+		}
+		clk.Add(5 * time.Hour)
+		ls.Check(context.Background())
+		if got := stallFeed(t, s); len(got) != 0 {
+			t.Fatalf("%+v alerted: %v", lf, got)
+		}
+	}
+}
