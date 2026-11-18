@@ -3,6 +3,7 @@ package watch
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
@@ -96,7 +97,7 @@ func TestRequireApprovalFailureIsNotHandedToTheAgent(t *testing.T) {
 	if n, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10); len(n) != 1 {
 		t.Fatalf("require-approval handed to the agent: %d runs", len(n))
 	}
-	if got := f.feed(t); !strings.Contains(got, "needs a reviewer") {
+	if got := f.feed(t); !strings.Contains(got, "awaiting sign-off") {
 		t.Errorf("feed = %s", got)
 	}
 	if lf, _ := f.st.LaneForge(f.ctx, f.lane.ID); lf.FixTries != 0 {
@@ -171,5 +172,122 @@ func TestRetryIsLeftToThePersonWhenTheBudgetIsSpent(t *testing.T) {
 	}
 	if got := f.feed(t); strings.Count(got, "are spent") != 1 {
 		t.Errorf("feed = %s", got)
+	}
+}
+
+func TestSignoffOnlyFailureIsRaisedOnceAndDispatchesNoAgent(t *testing.T) {
+	for _, owner := range []bool{false, true} {
+		f := newFixture(t)
+		f.withSession(t)
+		var now *time.Time
+		if owner {
+			now = f.external(t)
+		}
+		f.w.Check(f.ctx)
+		f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+		f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+		for i := 0; i < 3; i++ {
+			f.w.Check(f.ctx)
+			if owner {
+				*now = now.Add(2 * time.Hour)
+			}
+		}
+		f.settle(t)
+		if n := f.runs(t); n != 1 {
+			t.Fatalf("owner=%v: agent dispatched for a sign-off: %d runs", owner, n)
+		}
+		if got := strings.Count(f.feed(t), "awaiting sign-off"); got != 1 {
+			t.Errorf("owner=%v: raised %d times: %s", owner, got, f.feed(t))
+		}
+		// Re-run green: the mark is gone with the failed status.
+		f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "success"}
+		f.w.Check(f.ctx)
+		if lf, _ := f.st.LaneForge(f.ctx, f.lane.ID); lf.PipelineStatus != "success" {
+			t.Errorf("owner=%v: status = %q", owner, lf.PipelineStatus)
+		}
+		// A later real failure goes to the agent as usual.
+		f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "failed"}
+		f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}, {ID: 1, Name: "go-check"}}
+		if owner {
+			*now = now.Add(2 * time.Hour)
+			f.w.Check(f.ctx)
+			*now = now.Add(2 * time.Hour)
+		}
+		f.w.Check(f.ctx)
+		f.settle(t)
+		if n := f.runs(t); n != 2 {
+			t.Errorf("owner=%v: real failure beside sign-off: %d runs, want 2", owner, n)
+		}
+	}
+}
+
+func TestSignoffMarkIsDroppedWhenTheSamePipelineGoesGreenAndFailsAgain(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "success"}
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx)
+	if got := f.feed(t); !strings.Contains(got, "reviewbot follows it through") {
+		t.Errorf("later real failure was hidden: %s", got)
+	}
+}
+
+func TestSignoffRetriedOnTheSamePipelineThenFailingElsewhereIsFollowed(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "running"} // approved, job retried
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx)
+	if got := f.feed(t); !strings.Contains(got, "reviewbot follows it through") {
+		t.Errorf("later real failure was hidden: %s", got)
+	}
+}
+
+func TestSignoffOnlyAfterAnOwnerRetryIsNotAnOwnerAttempt(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx) // the owner follows a real failure
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "running"}
+	f.w.Check(f.ctx) // the owner retries it
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	got := f.feed(t)
+	if strings.Contains(got, "failed again") || !strings.Contains(got, "awaiting sign-off") {
+		t.Errorf("sign-off after a retry was an owner attempt: %s", got)
+	}
+}
+
+func TestSignoffMarkEndsWhenAnotherJobFailsInTheSamePollGap(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	// Failed to failed between polls, now with a real failure beside the gate.
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}, {ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx)
+	if got := f.feed(t); !strings.Contains(got, "reviewbot follows it through") {
+		t.Errorf("real failure hidden by the mark: %s", got)
 	}
 }

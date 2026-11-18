@@ -119,7 +119,29 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 		if len(items) > 0 && !items[0].taken && p.Status != "running" && p.Status != "pending" {
 			w.saveOwnerItems(ctx, lane.ID, "pipeline", nil)
 		}
+		// Any change from failed ends a sign-off mark: what fails next is judged afresh.
+		if len(w.ownerItems(ctx, lane.ID, "signoff")) > 0 {
+			w.saveOwnerItems(ctx, lane.ID, "signoff", nil)
+		}
 		return tries
+	}
+	// Judged on every poll of a failed pipeline, whatever its history: a failure that is
+	// only require-approval is the person's sign-off, and one with any other job is not,
+	// even in a pipeline already marked.
+	so := w.ownerItems(ctx, lane.ID, "signoff")
+	marked := len(so) > 0 && so[0].id == id
+	if w.signoffOnly(ctx, f, p) {
+		if marked {
+			return tries // raised already; still waiting on the person
+		}
+		// No owner or agent can clear it, so there is nothing to wait out. The mark is its
+		// own record, apart from the owner's items, and ends when the pipeline leaves the
+		// failed state or fails on another job.
+		w.saveOwnerItems(ctx, lane.ID, "signoff", []ownerItem{{id: id, since: w.now()}})
+		return w.pipelineFailed(ctx, f, lane, mr, p, tries, wc.Tries())
+	}
+	if len(so) > 0 {
+		w.saveOwnerItems(ctx, lane.ID, "signoff", nil)
 	}
 	limit := wc.Tries()
 	if len(items) == 0 || items[0].id != id {
