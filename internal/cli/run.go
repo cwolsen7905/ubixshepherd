@@ -294,7 +294,9 @@ func finalReport(events []store.Event) store.Event {
 }
 
 // needsPerson says what the run waits on the person for: the open decisions asked in
-// it, and the questions it asked that are still open. Empty when nothing does.
+// it, and the questions it asked that are still open. A question another agent or the
+// front desk is working (routed, needs routing) does not wait on the person. Empty when
+// nothing does.
 func needsPerson(ctx context.Context, c *client.Client, id int64, decisions []store.Decision) (string, error) {
 	var out []string
 	for _, d := range decisions {
@@ -303,7 +305,7 @@ func needsPerson(ctx context.Context, c *client.Client, id int64, decisions []st
 		}
 		out = append(out, fmt.Sprintf("decision %d: %s", d.ID, oneLine(d.Question, 110)))
 	}
-	states := strings.Join([]string{store.RequestPending, store.RequestNeedsRouting, store.RequestRouted, store.RequestReplyReady}, ",")
+	states := strings.Join([]string{store.RequestPending, store.RequestReplyReady}, ",")
 	reqs, err := c.Requests(ctx, states)
 	if err != nil {
 		return "", err

@@ -95,6 +95,35 @@ func TestRunStatusLeadsWithReport(t *testing.T) {
 	}
 }
 
+func TestRunStatusNeedsOnlyWhatWaitsOnThePerson(t *testing.T) {
+	h := newHarness(t, "", false)
+	id, _ := seedStatusRun(t, h)
+	for state, msg := range map[string]string{
+		store.RequestRouted:       "routed question about the api",
+		store.RequestNeedsRouting: "unrouted question about the schema",
+		store.RequestReplyReady:   "answered question about colours",
+	} {
+		if _, err := h.srv.Store.CreateRequest(context.Background(), store.Request{FromRun: id,
+			Kind: store.RequestQuestion, Message: msg, State: state, Depth: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code := h.run("run", "status", fmt.Sprint(id)); code != 0 {
+		t.Fatalf("run status: %d %s", code, h.err)
+	}
+	out := h.out.String()
+	for _, want := range []string{"which error style", "answered question about colours"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("needs line lacks %q:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"routed question about the api", "unrouted question about the schema"} {
+		if strings.Contains(out, bad) {
+			t.Errorf("needs line lists %q, which does not wait on the person:\n%s", bad, out)
+		}
+	}
+}
+
 func TestRunStatusWithoutReportNeedsNothing(t *testing.T) {
 	h := newHarness(t, "", false)
 	id := seedUsage(t, h)
