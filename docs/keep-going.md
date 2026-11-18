@@ -64,7 +64,7 @@ Each is already authorised elsewhere; keep-going only lets the desk act on it un
 
 | Stop | Why |
 |---|---|
-| An agent's decision | `decision_answer` takes the person's words; the desk never answers |
+| An agent's decision | `decision_answer` takes the person's words; the desk never answers. The one exception is the daemon's plan auto-approve (section 4c), a plan that meets every rule there |
 | Approving, deferring, dropping or reordering Next-up items | already the person's, and `[Shepherd]` events cannot move one |
 | A merge, or a push where the repo's rule is `human` | repo autonomy decides, not this flag |
 | Tags, releases and deploys | `autonomy.tag` and `autonomy.deploy`, and "agents never tag or publish unasked" |
@@ -151,6 +151,40 @@ a plan.
 
 So the mode reaches an agent's work, not the person's calls: decisions, approvals, merges,
 tags, releases and deploys stay the person's, on every surface the mode touches.
+
+## 4c. Plans that proceed
+
+Where a repo is set to plan first, an agent posts its plan as a decision and waits. While
+the mode is on, the daemon answers such a plan itself when every rule holds, on each pass
+and when a run ends:
+
+| Rule | Check |
+|---|---|
+| It is a plan | the first line of the question says "plan" |
+| Inside the scope | it names at least one file, and every file it names (any word with a slash, backslash, `~` or `$`, or that looks like a file name, ticked or not, such as `go.mod` or `Makefile`) is inside the lane's scope; an absolute path, `..`, `~`, `$` or a drive letter is outside |
+| Follows the brief | the lane serves an approved Next-up item, and the plan, its reason and its options do not say they deviate, conflict with it or are unsure of it |
+| The agent agrees | the agent's own recommendation says to proceed or approve, and does not say wait, hold or no |
+| Nothing the person owns | no mention, in any form (merge, merged, push, tag, release, deploy, publish, ship, promote, revert, roll back, go live), of an action the person owns, nor of approving or arming a merge request, money, widening scope or leaving the scope, deleting, production or credentials |
+
+Anything else stays a decision for the person, as before. The rule is cautious: a plan that
+merely mentions a push waits.
+
+The answer says "Auto-approved under keep-going (rule plan-auto-approve), not by the
+person", so the agent and the decision's history carry it, and the feed gets a
+`keep_going` item naming the decision, the lane and the rule. It counts as activity for the
+idle limit, and because the answer resumes the agent it passes the same gate as any
+continued run (`Allow`, action `continue`): the spend cap, run cap, idle time, end of day
+and the lane's starts per day apply, and it counts one of them. A plan the gate refuses
+stays a decision. It never applies while the mode is off, and the person can still answer a
+decision first.
+
+This does not make an agent approve its own work. A plan is a go-ahead to start, not a
+review of the result: the lane's scope is still enforced on every commit and push by the
+hooks, and the merge request is still reviewed and merged by the person or the repo's
+rule. The daemon, not the agent, applies the rules above to what the agent wrote.
+
+The switch is `keep_going.plan_approve` in `config.yaml`: unset or `true` is on while
+keep-going is on, `false` leaves every plan to the person. It is reloaded on SIGHUP.
 
 ## 5. How the desk's instructions change and how Shepherd enforces the limits
 
