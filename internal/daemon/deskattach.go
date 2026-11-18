@@ -100,11 +100,19 @@ func (s *Server) deskAttachUpload(w http.ResponseWriter, r *http.Request) {
 func (s *Server) keepUpload(ctx context.Context, ws int64, g *attach.Staged) (store.Attachment, error) {
 	uploadMu.Lock()
 	defer uploadMu.Unlock()
+	in := g.Info
+	// The row first: a failed insert then leaves no bytes behind, and a failed commit
+	// leaves a row the client never hears of, which the sweep forgets after a day.
+	a, err := s.Store.AddAttachment(ctx, store.Attachment{WorkspaceID: ws, SHA: g.SHA, Name: in.Name, Mime: in.Mime, Kind: in.Kind, Size: in.Size})
+	if err != nil {
+		g.Discard()
+		return a, err
+	}
 	if err := g.Commit(); err != nil {
+		g.Discard()
 		return store.Attachment{}, err
 	}
-	in := g.Info
-	return s.Store.AddAttachment(ctx, store.Attachment{WorkspaceID: ws, SHA: g.SHA, Name: in.Name, Mime: in.Mime, Kind: in.Kind, Size: in.Size})
+	return a, nil
 }
 
 // sweepAttachments forgets files nobody sent, and removes the bytes nothing refers to.

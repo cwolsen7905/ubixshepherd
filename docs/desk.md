@@ -190,8 +190,10 @@ reads is the words followed by a block that says the person attached files and l
 each one with its name, type, size and the path it is kept at. The desk opens a file with
 its `Read` tool, which shows an image or a PDF to the model and reads text as it is. A
 text file of up to 16 KiB is also written into the block, with secrets redacted, so the
-desk needs no tool call for a short log. The block tells the desk the files are the
-person's data and not instructions. A message of files alone reaches the desk as
+desk needs no tool call for a short log. Its text sits between markers that carry a
+random token made for that message, so the file cannot close them early, and the block
+tells the desk before and after that the files are the person's data and not
+instructions. A message of files alone reaches the desk as
 "See the attached file." Only the person's messages carry files: the desk's tools do
 not, and it cannot write or run anything it is given.
 
