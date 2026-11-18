@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/api/runtimefile"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
@@ -2051,9 +2052,9 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	return srv.Shutdown(shutdown)
 }
 
-// ReadRuntime reads a daemon's runtime file. It is api.ReadRuntime, kept here for callers
+// ReadRuntime reads a daemon's runtime file. It is runtimefile.Read, kept here for callers
 // that already import the daemon.
-func ReadRuntime(path string) (api.Runtime, error) { return api.ReadRuntime(path) }
+func ReadRuntime(path string) (api.Runtime, error) { return runtimefile.Read(path) }
 
 // writeRuntime writes the file readable by its owner only, since it holds the token, and
 // atomically, so a client never reads half of it.
