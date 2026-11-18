@@ -231,8 +231,13 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 		f.Store.DeleteLane(ctx, lane.ID)
 		return Opened{}, addErr
 	}
-	if req.Adopt {
+	if !req.Adopt {
+		// A marker left by a lane that never closed cleanly must not make this branch
+		// look adopted.
+		git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
+	} else {
 		if _, err := git.Run(ctx, repo.Path, "config", adoptedKey(req.Branch), "true"); err != nil {
+			git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
 			git.Run(ctx, repo.Path, "worktree", "remove", "--force", wt)
 			f.Store.DeleteLane(ctx, lane.ID)
 			return Opened{}, err
@@ -240,6 +245,9 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 		out.Notes = append(out.Notes, fmt.Sprintf("adopted %s from origin: closing this lane keeps the branch", req.Branch))
 	}
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneOpen); err != nil {
+		if req.Adopt {
+			git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
+		}
 		return Opened{}, err
 	}
 	if note := f.setup(ctx, repo, prof.Setup, wt); note != "" {
