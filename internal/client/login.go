@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -142,6 +143,9 @@ func Login(ctx context.Context, url string, hc *http.Client, r LoginRequest) (Cr
 // Revoke ends the device token on the daemon, so a logout does not leave a live token
 // behind. It uses the token itself, which the daemon lets end its own row.
 func Revoke(ctx context.Context, c Credentials, hc *http.Client) error {
+	if c.DeviceID == "" {
+		return errors.New("the saved login has no device id")
+	}
 	cl := NewHTTPS(c.URL, c.Token, hc)
-	return cl.do(ctx, http.MethodPost, api.PathDevices+"/"+c.DeviceID+"/revoke", struct{}{}, &struct{}{})
+	return cl.do(ctx, http.MethodPost, api.PathDevices+"/"+neturl.PathEscape(c.DeviceID)+"/revoke", struct{}{}, &struct{}{})
 }

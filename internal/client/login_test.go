@@ -102,3 +102,21 @@ func TestLoginReportsTheDaemonsWordsAndNeverTheToken(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 }
+
+func TestRevokeEscapesTheDeviceIDAndNeedsOne(t *testing.T) {
+	var got string
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.EscapedPath()
+		w.Write([]byte("{}"))
+	}))
+	defer ts.Close()
+	if err := Revoke(context.Background(), Credentials{URL: ts.URL, Token: "t"}, ts.Client()); err == nil {
+		t.Error("an empty device id was sent")
+	}
+	if err := Revoke(context.Background(), Credentials{URL: ts.URL, Token: "t", DeviceID: "../x?y"}, ts.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if got != "/v1/devices/..%2Fx%3Fy/revoke" {
+		t.Errorf("path %q", got)
+	}
+}
