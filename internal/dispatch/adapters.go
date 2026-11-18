@@ -71,7 +71,7 @@ type Adapter struct {
 	NoChangeFails bool
 	// Idle is how long a run may print nothing before it is stopped and recorded failed
 	// as hung; nil, or 0, for no limit.
-	Idle func() time.Duration
+	Idle func(o Opts) time.Duration
 	// Effort says how the CLI takes an effort (see EffortMode).
 	Effort EffortMode
 	// Note is added to the brief: what this CLI's permissions need the agent to know.
@@ -181,6 +181,9 @@ type Opts struct {
 	// Push lets the agent push its lane's branch; Merge lets it arm merge when the
 	// pipeline succeeds on its lane's merge request (glab mr merge).
 	Push, Merge bool
+	// OpenCode is the machine the OpenCode adapter reads its settings and version from;
+	// the runner sets it. Nil is a real machine.
+	OpenCode *OpenCodeHost
 }
 
 // mode is the permission mode a run uses.
@@ -374,7 +377,7 @@ var adapters = map[string]Adapter{
 		Note:    openCodeLocalNote,
 		NoteFor: func(o Opts) string { return openCodeNote(o.Model) },
 		Read:    openCodeOutput,
-		ReadFor: func(o Opts) func(string) Output { return openCodeReader(o.Model) },
+		ReadFor: func(o Opts) func(string) Output { return openCodeReader(o.Model, o.OpenCode) },
 		// A hosted model's cost is OpenCode's price-table figure, not the provider's bill.
 		EstimatesCost: func(o Opts) bool { return openCodeHosted(o.Model) },
 		Usage: func(o Opts) UsageReader {
@@ -382,7 +385,7 @@ var adapters = map[string]Adapter{
 			// not known here, and an unknown one is left 0 rather than guessed.
 			window := 0
 			if _, local := openCodeLocalModel(o.Model); local {
-				if s := openCodeSettings(); s.Endpoint != "" {
+				if s := o.OpenCode.settings(); s.Endpoint != "" {
 					window, _ = s.Limits()
 				}
 			}
@@ -391,7 +394,7 @@ var adapters = map[string]Adapter{
 		// The run's config goes in the run's environment alone (see opencode.go).
 		Env:           openCodeRunEnv,
 		NoChangeFails: true,
-		Idle:          func() time.Duration { return openCodeIdle() },
+		Idle:          func(o Opts) time.Duration { return o.OpenCode.idle() },
 	},
 	"cursor": {
 		Name: "cursor", Bin: "cursor-agent",
@@ -464,13 +467,16 @@ func newUUID() (string, error) {
 }
 
 // AdapterFor returns the adapter by name.
-func AdapterFor(name string) (Adapter, error) {
+func AdapterFor(name string) (Adapter, error) { return adapterFor(name, nil) }
+
+// adapterFor returns the adapter by name, OpenCode's completed for host.
+func adapterFor(name string, host *OpenCodeHost) (Adapter, error) {
 	a, ok := adapters[name]
 	if !ok {
 		return a, fmt.Errorf("unknown agent %q; Shepherd knows %s", name, strings.Join(AgentNames(), ", "))
 	}
 	if name == "opencode" {
-		return openCodeFor(a)
+		return host.adapter(a)
 	}
 	return a, nil
 }

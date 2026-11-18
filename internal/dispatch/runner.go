@@ -102,7 +102,12 @@ type Runner struct {
 	// run can start it again on the next start. Closing that window needs the run recorded
 	// with the decision in the store.
 	delivered map[int64]int64
-	Store     store.Store
+	// OpenCode is what the OpenCode adapter reads from the machine; nil is a real one
+	// (see openCodeHost). Tests set fakes here.
+	OpenCode     *OpenCodeHost
+	openCodeOnce sync.Once
+	openCodeDef  *OpenCodeHost
+	Store        store.Store
 	// Config is the configuration until the first SetConfig; after that SetConfig's
 	// wins. A daemon that reloads its configuration calls SetConfig, never assigns this.
 	Config config.Config
@@ -260,6 +265,16 @@ func (r *Runner) outOfQuota(agent string, run int64, l Limit) time.Time {
 	return l.Until
 }
 
+// openCodeHost is the runner's OpenCode host: OpenCode, else one made on first use so
+// the version probe's answers are remembered for the runner's life.
+func (r *Runner) openCodeHost() *OpenCodeHost {
+	if r.OpenCode != nil {
+		return r.OpenCode
+	}
+	r.openCodeOnce.Do(func() { r.openCodeDef = &OpenCodeHost{} })
+	return r.openCodeDef
+}
+
 // SetConfig replaces the configuration, safely while runs go. Each operation (a start,
 // a ship, a gate) reads the configuration once, so a reload never splits one.
 func (r *Runner) SetConfig(c config.Config) { r.cfg.Store(&c) }
@@ -362,7 +377,7 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 			inherited = p.Model
 		}
 	}
-	ad, err := AdapterFor(req.Agent)
+	ad, err := adapterFor(req.Agent, r.openCodeHost())
 	if err != nil {
 		return store.Run{}, refuse("%v", err)
 	}
@@ -574,7 +589,8 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	agentPushes := may.Push == config.Agent
 	opts := Opts{Model: req.Model, Effort: effort, Gate: gate, Worktree: lane.Worktree,
 		Session: session, Resume: resume, Worker: worker,
-		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge}
+		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge,
+		OpenCode: r.openCodeHost()}
 	cmd := exec.Command(bin, ad.Args(opts)...)
 	cmd.Dir = lane.Worktree
 	// The prompt, then end of input: headless, and off the command line (see Adapter).
@@ -634,7 +650,7 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	r.procs[run.ID] = p
 	r.wg.Add(1)
 	if ad.Idle != nil {
-		p.idle = ad.Idle()
+		p.idle = ad.Idle(opts)
 	}
 	if ad.Usage != nil {
 		p.usage = ad.Usage(opts)
