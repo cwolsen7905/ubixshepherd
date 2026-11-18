@@ -8,9 +8,9 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 )
 
-// kelpieFixture is an approved request under after_approval, with the follow-through
+// ownerFixture is an approved request under after_approval, with the follow-through
 // owner named review-bot and the lane's open threads set by each test.
-func kelpieFixture(t *testing.T) (*fixture, *mergingForge) {
+func ownerFixture(t *testing.T) (*fixture, *mergingForge) {
 	t.Helper()
 	f, mf, _ := mergeFixture(t, config.AfterApproval)
 	cfg := config.Default()
@@ -38,11 +38,11 @@ func blocking(t *testing.T, f *fixture) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return lf.KelpieBlocking
+	return lf.OwnerBlocking
 }
 
 func TestApprovedMRWaitingOnlyOnOwnerThreadsIsRaisedOnce(t *testing.T) {
-	f, mf := kelpieFixture(t)
+	f, mf := ownerFixture(t)
 	f.f.threads = []forge.Thread{botThread("1", 11), botThread("2", 12)}
 	f.w.Check(f.ctx)
 	f.w.Check(f.ctx)
@@ -62,7 +62,7 @@ func TestApprovedMRWaitingOnlyOnOwnerThreadsIsRaisedOnce(t *testing.T) {
 }
 
 func TestOwnerAnsweredFindingCountsAsOwners(t *testing.T) {
-	f, _ := kelpieFixture(t)
+	f, _ := ownerFixture(t)
 	th := forge.Thread{ID: "5", Author: "pat", Notes: 2, URL: "u#note_5",
 		Entries: []forge.Note{{Author: "pat", Text: "finding"}, {Author: "review-bot", Text: "Dismissed: fine"}}}
 	f.f.threads = []forge.Thread{th}
@@ -73,7 +73,7 @@ func TestOwnerAnsweredFindingCountsAsOwners(t *testing.T) {
 }
 
 func TestNewOwnerThreadRaisesAgain(t *testing.T) {
-	f, _ := kelpieFixture(t)
+	f, _ := ownerFixture(t)
 	f.f.threads = []forge.Thread{botThread("1", 11)}
 	f.w.Check(f.ctx)
 	f.f.threads = append(f.f.threads, botThread("2", 12))
@@ -88,7 +88,7 @@ func TestNewOwnerThreadRaisesAgain(t *testing.T) {
 }
 
 func TestResolvedOwnerThreadsClearAndRaiseAgainLater(t *testing.T) {
-	f, _ := kelpieFixture(t)
+	f, _ := ownerFixture(t)
 	f.f.threads = []forge.Thread{botThread("1", 11)}
 	f.w.Check(f.ctx)
 	f.f.threads = nil
@@ -105,7 +105,7 @@ func TestResolvedOwnerThreadsClearAndRaiseAgainLater(t *testing.T) {
 }
 
 func TestMergedOrClosedRequestClearsTheRaise(t *testing.T) {
-	f, _ := kelpieFixture(t)
+	f, _ := ownerFixture(t)
 	f.f.threads = []forge.Thread{botThread("1", 11)}
 	f.w.Check(f.ctx)
 	f.f.mr.State = "closed"
@@ -133,7 +133,7 @@ func TestNotRaisedWithoutApprovalOrWithOtherThreads(t *testing.T) {
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
-			f, mf := kelpieFixture(t)
+			f, mf := ownerFixture(t)
 			f.f.threads = []forge.Thread{botThread("1", 11)}
 			mutate(f, mf)
 			f.w.Check(f.ctx)

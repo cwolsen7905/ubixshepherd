@@ -34,7 +34,7 @@ type mergeTry struct {
 func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo string, lane store.Lane, mr *forge.MR, next *store.LaneForge, ft config.FollowThrough) {
 	prof := w.conf().Profile(repo)
 	if prof.Autonomy.Merge != config.AfterApproval || mr.State != "opened" {
-		next.KelpieBlocking = ""
+		next.OwnerBlocking = ""
 		return
 	}
 	if w.mergeTried[lane.ID] == (mergeTry{iid: mr.IID, sha: mr.SHA}) {

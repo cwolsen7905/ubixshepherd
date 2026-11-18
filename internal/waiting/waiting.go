@@ -240,8 +240,8 @@ func mrItem(l store.Lane, rp store.Repo, lf store.LaneForge, running bool) (api.
 		it.Title = fmt.Sprintf("MR !%d: pipeline failed", lf.MR)
 		it.Detail = "pipeline failed"
 		it.Since = firstTime(lf.PipelineFinished, lf.PipelineStarted, lf.MRUpdated, l.Created)
-	case lf.KelpieBlocking != "":
-		n := strings.Count(lf.KelpieBlocking, ",") + 1
+	case lf.OwnerBlocking != "":
+		n := strings.Count(lf.OwnerBlocking, ",") + 1
 		it.Action = "open"
 		it.Title = fmt.Sprintf("MR !%d: approved, waits on %d review thread(s) the review service has not resolved", lf.MR, n)
 		it.Detail = "approved and waiting only on unresolved review threads nobody is handling; resolve them on the forge"

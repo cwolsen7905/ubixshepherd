@@ -48,7 +48,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.db.ExecContext(ctx, `ALTER TABLE lane_forge DROP COLUMN kelpie_blocking`); err != nil {
+	if _, err := db.db.ExecContext(ctx, `ALTER TABLE lane_forge DROP COLUMN owner_blocking`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE lane_forge DROP COLUMN threads_seen`); err != nil {

@@ -586,7 +586,7 @@ var migrations = []string{
 	);`,
 	// The review threads of an approved request that only the follow-through owner's
 	// threads hold up under after_approval, raised to the person.
-	`ALTER TABLE lane_forge ADD COLUMN kelpie_blocking TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE lane_forge ADD COLUMN owner_blocking TEXT NOT NULL DEFAULT '';`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -1263,10 +1263,10 @@ func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, erro
 	f := store.LaneForge{LaneID: laneID}
 	var created, updated, started, finished string
 	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
-		mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, threads_seen, kelpie_blocking
+		mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, threads_seen, owner_blocking
 		FROM lane_forge WHERE lane_id = ?`, laneID).
 		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries, &f.MergeSHA,
-			&created, &updated, &started, &finished, &f.Approved, &f.RequireApproval, &f.ThreadsSeen, &f.KelpieBlocking)
+			&created, &updated, &started, &finished, &f.Approved, &f.RequireApproval, &f.ThreadsSeen, &f.OwnerBlocking)
 	if errors.Is(err, sql.ErrNoRows) {
 		return f, nil
 	}
@@ -1286,17 +1286,17 @@ func timeText(t time.Time) string {
 func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
-			mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, threads_seen, kelpie_blocking, updated)
+			mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, threads_seen, owner_blocking, updated)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (lane_id) DO UPDATE SET mr = excluded.mr, mr_state = excluded.mr_state, mr_url = excluded.mr_url,
 			pipeline = excluded.pipeline, pipeline_status = excluded.pipeline_status, fix_tries = excluded.fix_tries,
 			gate_tries = excluded.gate_tries, merge_sha = excluded.merge_sha,
 			mr_created = excluded.mr_created, mr_updated = excluded.mr_updated,
 			pipeline_started = excluded.pipeline_started, pipeline_finished = excluded.pipeline_finished,
-			approved = excluded.approved, require_approval = excluded.require_approval, threads_seen = excluded.threads_seen, kelpie_blocking = excluded.kelpie_blocking,
+			approved = excluded.approved, require_approval = excluded.require_approval, threads_seen = excluded.threads_seen, owner_blocking = excluded.owner_blocking,
 			updated = excluded.updated`,
 		f.LaneID, f.MR, f.MRState, f.MRURL, f.Pipeline, f.PipelineStatus, f.FixTries, f.GateTries, f.MergeSHA,
-		timeText(f.MRCreated), timeText(f.MRUpdated), timeText(f.PipelineStarted), timeText(f.PipelineFinished), f.Approved, f.RequireApproval, f.ThreadsSeen, f.KelpieBlocking, now())
+		timeText(f.MRCreated), timeText(f.MRUpdated), timeText(f.PipelineStarted), timeText(f.PipelineFinished), f.Approved, f.RequireApproval, f.ThreadsSeen, f.OwnerBlocking, now())
 	return err
 }
 

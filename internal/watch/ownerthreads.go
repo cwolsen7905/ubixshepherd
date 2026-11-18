@@ -10,7 +10,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// ownedByFollowThrough says a review thread is the follow-through owner's (Kelpie's):
+// ownedByFollowThrough says a review thread is the follow-through owner's:
 // the owner opened it or has a note in it, such as a triage summary or an answer to a
 // finding with a proposal or a dismissal. Authorship is read from the notes, never from
 // their text.
@@ -30,7 +30,7 @@ func ownedByFollowThrough(t forge.Thread, ft config.FollowThrough) bool {
 // waits only on open threads the follow-through owner wrote or answered: nobody else is
 // going to resolve them, so the merge would otherwise wait silently. It files one feed
 // item naming the request and linking each thread's first note, and records the thread
-// ids in next.KelpieBlocking, which the waiting list reads. It files again only when the
+// ids in next.OwnerBlocking, which the waiting list reads. It files again only when the
 // set of threads changes, and clears the record once the threads are resolved, the
 // approval is gone or the request is not open. A read that did not settle (forge error,
 // head pipeline still running) leaves the record as it was.
@@ -52,10 +52,10 @@ func (w *Watcher) raiseOwnerThreads(ctx context.Context, lane store.Lane, mr *fo
 	}
 	slices.Sort(ids)
 	set := strings.Join(ids, ",")
-	if set == next.KelpieBlocking {
+	if set == next.OwnerBlocking {
 		return
 	}
-	next.KelpieBlocking = set
+	next.OwnerBlocking = set
 	if set == "" {
 		return
 	}
