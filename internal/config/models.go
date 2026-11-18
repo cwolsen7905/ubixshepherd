@@ -335,7 +335,6 @@ func badEffort(e string) bool { return e != strings.TrimSpace(e) || strings.Cont
 // validateModels checks the workspace policy, and every default a rule removes.
 func (c Config) validateModels() []error {
 	var errs []error
-	agents := map[string]bool{"claude": true, "copilot": true, "cursor": true, "opencode": true}
 	names := make([]string, 0, len(c.Models))
 	for a := range c.Models {
 		names = append(names, a)
@@ -344,8 +343,8 @@ func (c Config) validateModels() []error {
 	for _, a := range names {
 		m := c.Models[a]
 		at := "models." + a
-		if !agents[a] {
-			errs = append(errs, fmt.Errorf("models: %q is not an agent (claude, copilot, cursor or opencode)", a))
+		if !slices.Contains(Agents, a) {
+			errs = append(errs, fmt.Errorf("models: %q is not an agent (%s)", a, agentChoices()))
 			continue
 		}
 		if badModel(m.Default) {
@@ -385,7 +384,7 @@ func (c Config) validateModels() []error {
 			m    map[string][]string
 		}{{"allow", r.Allow}, {"deny", r.Deny}} {
 			for a, l := range set.m {
-				if !agents[a] {
+				if !slices.Contains(Agents, a) {
 					errs = append(errs, fmt.Errorf("%s.%s: %q is not an agent", at, set.kind, a))
 				}
 				for _, p := range l {
