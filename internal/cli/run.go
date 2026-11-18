@@ -327,20 +327,41 @@ func printLog(ctx context.Context, env Env, c *client.Client, id int64) error {
 	return nil
 }
 
-// tailLog reads a run's log and keeps its last n lines.
+// tailLog reads a run's log and keeps its last n lines. It pages through the log
+// and keeps only the tail, so a long log never sits whole in memory.
 func tailLog(ctx context.Context, c *client.Client, id int64, n int) ([]string, error) {
-	data, err := readLog(ctx, c, id)
-	if err != nil {
-		return nil, err
+	var offset int64
+	var tail []string
+	var pending strings.Builder
+	keep := func() {
+		tail = append(tail, pending.String())
+		pending.Reset()
+		if len(tail) > n {
+			tail = tail[len(tail)-n:]
+		}
 	}
-	lines := strings.Split(data, "\n")
-	if len(lines) > 0 && lines[len(lines)-1] == "" {
-		lines = lines[:len(lines)-1]
+	for {
+		chunk, err := c.RunLog(ctx, id, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range chunk.Data {
+			if r == '\n' {
+				keep()
+				continue
+			}
+			pending.WriteRune(r)
+		}
+		if chunk.Data == "" || chunk.Offset == offset {
+			break
+		}
+		offset = chunk.Offset
 	}
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
+	// A log ending mid-line still carries that line; a trailing newline adds none.
+	if pending.Len() > 0 {
+		keep()
 	}
-	return lines, nil
+	return tail, nil
 }
 
 func short(sha string) string {

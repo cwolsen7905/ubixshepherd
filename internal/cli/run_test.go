@@ -184,3 +184,66 @@ func TestRunStatusToolLeadsWithReport(t *testing.T) {
 		t.Error("run_status with a string id was accepted")
 	}
 }
+
+// seedLongLogRun records a lane with a run whose log file spans several of the
+// daemon's 64 KiB log chunks, and returns its id. Chunk boundaries can fall mid-line,
+// so the tail must be assembled from the raw stream, not from chunk starts.
+func seedLongLogRun(t *testing.T, h *harness, lines int) int64 {
+	t.Helper()
+	ctx := context.Background()
+	st := h.srv.Store
+	ws, err := st.SaveWorkspace(ctx, store.Workspace{Name: "w", Path: "/w"}, []store.Repo{{Name: "app", Path: "/w/app"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := st.Repos(ctx, ws.ID)
+	lane, err := st.CreateLane(ctx, store.Lane{RepoID: repos[0].ID, Name: "feat/x", Branch: "feat/x", Worktree: "/w/app-wt/x", State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for i := 1; i <= lines; i++ {
+		fmt.Fprintf(&b, "output line %05d with padding to widen each chunk\n", i)
+	}
+	logPath := filepath.Join(t.TempDir(), "run.log")
+	if err := os.WriteFile(logPath, []byte(b.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run, err := st.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", Prompt: "p", State: store.RunSucceeded, Log: logPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return run.ID
+}
+
+// A log far larger than one chunk still yields exactly the last 40 lines, joined
+// across chunk boundaries.
+func TestRunStatusTailAcrossChunks(t *testing.T) {
+	h := newHarness(t, "", false)
+	const lines = 3000
+	id := seedLongLogRun(t, h, lines)
+
+	if code := h.run("run", "status", fmt.Sprint(id)); code != 0 {
+		t.Fatalf("run status: %d %s", code, h.err)
+	}
+	out := h.out.String()
+	_, after, found := strings.Cut(out, "--- log tail (last 40 lines) ---\n")
+	if !found {
+		t.Fatalf("no log tail section:\n%s", out)
+	}
+	var got []string
+	for _, l := range strings.Split(strings.TrimSuffix(after, "\n"), "\n") {
+		got = append(got, l)
+	}
+	if len(got) != 40 {
+		t.Fatalf("tail holds %d lines, want 40", len(got))
+	}
+	for i, l := range got {
+		if want := fmt.Sprintf("output line %05d with padding to widen each chunk", lines-40+1+i); l != want {
+			t.Fatalf("tail line %d = %q, want %q", i, l, want)
+		}
+	}
+	if strings.Contains(after, "output line 00001") {
+		t.Errorf("the tail leaks the log's start")
+	}
+}
