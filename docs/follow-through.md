@@ -44,6 +44,14 @@ What the owner does counts as an attempt:
 - Once the owner has made `watch.fix_tries` attempts and the pipeline still fails,
   Shepherd takes it over at once rather than waiting out the patience again.
 
+A pipeline whose only failed job is `require-approval` is the sign-off gate, not a
+defect. Shepherd says in the feed that the request is awaiting sign-off, asks no agent and
+does not start the owner's wait, with or without an external owner. The request stays in
+the waiting list as an MR to approve; once a person approves, Shepherd retries the job
+(see [merge-rules.md](merge-rules.md)). A new or re-run pipeline replaces the mark. A
+failure of any other job, even beside `require-approval`, is handled as above, and the
+agent's prompt leaves `require-approval` out.
+
 The feed says when a retry failed again, which attempt it was, and why Shepherd took over.
 
 ## An approved request held only by the owner's threads

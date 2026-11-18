@@ -342,6 +342,21 @@ func (w *Watcher) merged(ctx context.Context, lane store.Lane, mr *forge.MR) {
 	w.feed(ctx, store.FeedLaneClosed, lane.ID, "!%d merged at %s; lane %s closed%s", mr.IID, short(mr.MergeSHA), lane.Name, note)
 }
 
+// signoffOnly says the pipeline's failed jobs are the require-approval job alone: the
+// manual sign-off gate, which only a person's approval clears.
+func (w *Watcher) signoffOnly(ctx context.Context, f forge.Forge, p *forge.Pipeline) bool {
+	jobs, err := f.FailedJobs(ctx, p.ID)
+	if err != nil || len(jobs) == 0 {
+		return false
+	}
+	for _, j := range jobs {
+		if j.Name != forge.RequireApprovalJob {
+			return false
+		}
+	}
+	return true
+}
+
 // pipelineFailed hands a failed pipeline to the lane's agent while tries remain, and to
 // the person after. It returns the tries used.
 func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, p *forge.Pipeline, tries, max int) int {
@@ -366,7 +381,7 @@ func (w *Watcher) pipelineFailed(ctx context.Context, f forge.Forge, lane store.
 		fmt.Fprintf(&logs, "== job [%s](%s) ==\n%s\n\n", j.Name, j.URL, tail)
 	}
 	if waits && len(names) == 0 {
-		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d (%s) for !%d (%s) (lane %s) is held by %s: it needs a reviewer, so it is yours", p.ID, p.URL, mr.IID, mr.URL, lane.Name, forge.RequireApprovalJob)
+		w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %d (%s) for !%d (%s) (lane %s) is awaiting sign-off: only %s failed, which needs a reviewer's approval, so it is yours and no agent was asked", p.ID, p.URL, mr.IID, mr.URL, lane.Name, forge.RequireApprovalJob)
 		return tries
 	}
 	what := strings.Join(names, ", ")

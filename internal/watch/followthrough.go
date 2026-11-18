@@ -123,6 +123,12 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 	}
 	limit := wc.Tries()
 	if len(items) == 0 || items[0].id != id {
+		if w.signoffOnly(ctx, f, p) {
+			// Awaiting the person's sign-off: no owner or agent can clear it, so there is
+			// nothing to wait out. Recorded as taken so later polls read nothing.
+			w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{{id: id, since: w.now(), finished: p.Finished, taken: true}})
+			return w.pipelineFailed(ctx, f, lane, mr, p, tries, limit)
+		}
 		it := ownerItem{id: id, since: w.now(), finished: p.Finished}
 		if len(items) > 0 && !items[0].taken {
 			it.attempts = items[0].attempts + 1 // a newer pipeline: the owner pushed
