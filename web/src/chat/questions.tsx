@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { DeskQuestion } from '../api/types'
 import { deskQuestions } from '../api/client'
 import { DeskThread } from '../state/desk'
-import { Button, IdChip } from '../ui'
+import { Button, EmptyState, IdChip, ListRow } from '../ui'
 
 /**
  * Reply here and Skip under a desk message that asked the person something. Reply opens an
@@ -114,6 +114,86 @@ function QuestionActions({
         </p>
       )}
     </div>
+  )
+}
+
+/**
+ * The open questions in one list: the lit one is selected, a click lights a row, and Mark
+ * answered or Skip on a question drops it from the list at once and lights the next; the last
+ * one leaves the empty state. A reply the desk accepts clears its question the same way.
+ */
+export function QuestionList({
+  questions, selected = null, thread, topicId = null, onCleared, onSelected,
+}: {
+  /** The questions as read from the daemon; the open ones list. */
+  questions: DeskQuestion[]
+  /** The question to light; the first open one when null or not in the list. */
+  selected?: number | null
+  /** The thread replies post to: one for the list, or one per question when workspaces differ. */
+  thread: DeskThread | ((q: DeskQuestion) => DeskThread)
+  topicId?: number | null
+  /** Called with the question's id once it is cleared, so the parent can re-read. */
+  onCleared?: (id: number) => void
+  /** Called when the person changes the lit question, with the new id or null when none is left. */
+  onSelected?: (id: number | null) => void
+}) {
+  // The ones the person just cleared: out of the list at once, until the daemon's read agrees.
+  const [gone, setGone] = useState<ReadonlySet<number>>(() => new Set())
+  const shown = useMemo(
+    () => questions.filter((q) => q.state === 'open' && !gone.has(q.id)),
+    [questions, gone],
+  )
+  // The row the person lit by clicking; the prop's question and the first open one fill in
+  // for it, so the light follows the list as the reads and the clears change it.
+  const [picked, setPicked] = useState<number | null>(null)
+  // A change of the prop from outside (not this list's own pick) takes the light back.
+  const [prevSelected, setPrevSelected] = useState(selected)
+  if (selected !== prevSelected) {
+    setPrevSelected(selected)
+    setPicked(null)
+  }
+  const inShown = (id: number | null) => id !== null && shown.some((q) => q.id === id)
+  const lit = inShown(picked) ? picked : inShown(selected) ? selected : shown[0]?.id ?? null
+  const pick = (id: number | null) => {
+    if (id === lit) return
+    setPicked(id)
+    onSelected?.(id)
+  }
+
+  // A cleared question leaves at once: the next one takes the light, or the empty state.
+  const clear = (q: DeskQuestion) => {
+    setGone((g) => {
+      const live = new Set(questions.map((x) => x.id))
+      return new Set([...g].filter((id) => live.has(id))).add(q.id)
+    })
+    const rest = shown.filter((x) => x.id !== q.id)
+    const after = shown.findIndex((x) => x.id === q.id)
+    // The next row takes the light; with none after it, the previous one does, or the empty state.
+    const next = rest.some((x) => x.id === lit) ? lit : rest[after]?.id ?? rest[after - 1]?.id ?? null
+    pick(next)
+    onCleared?.(q.id)
+  }
+
+  if (shown.length === 0) {
+    return <EmptyState title="No open questions." />
+  }
+  return (
+    <ul className="sh-question-list" data-component="QuestionList">
+      {shown.map((q) => (
+        <li key={q.id}>
+          <ListRow
+            glyph="?"
+            tone="warn"
+            glyphLabel="question"
+            title={q.text}
+            titleAttr={q.text}
+            selected={lit === q.id}
+            onSelect={() => pick(q.id)}
+          />
+          <QuestionActions q={q} thread={typeof thread === 'function' ? thread(q) : thread} topicId={topicId} onCleared={() => clear(q)} onReplied={() => clear(q)} />
+        </li>
+      ))}
+    </ul>
   )
 }
 
