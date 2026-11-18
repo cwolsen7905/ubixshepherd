@@ -157,7 +157,7 @@ than failing with an authentication error, shows it is.
   symlink-resolved form). OpenCode 1.18.35 refuses the files of a linked git worktree as
   external (observed with the worktree as its working directory), so without that allow
   it refuses even the worktree's own files, and the model falls back to editing the main checkout.
-  Paths outside the worktree that the repo's brief names, or the brief of a run a person started, are readable too (a run Shepherd starts on its own, such as a routed request or a fix, grants none from its prompt, which carries another agent's text; system directories such as `/etc` and hidden directories in a home directory are never granted):
+  Paths outside the worktree that the repo's brief names, or the brief of a run a person started, are readable too (a run Shepherd starts on its own, such as a routed request or a fix, grants none from its prompt, which carries another agent's text; system directories such as `/etc` and a home directory itself (or a directory holding one) and hidden directories in a home directory are never granted):
   an absolute path that exists, has at least two segments and is not inside or around the
   worktree (by its path or its symlink-resolved one) is allowed in `external_directory` (itself and everything under it), so a brief can
   point the run at a docs directory. They are never writable: the `edit` rule is `allow` and then

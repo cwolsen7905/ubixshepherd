@@ -317,12 +317,20 @@ func openCodeEditRule(readOnly []string) any {
 }
 
 // openCodeSensitive says a path is somewhere a brief should never open for reading: system
-// configuration, or a hidden directory in a home directory (keys, tokens, Shepherd's own state).
+// configuration, a home directory itself or a directory holding one, or a hidden directory in a home directory (keys, tokens, Shepherd's own state).
 func openCodeSensitive(p string) bool {
 	for _, q := range openCodePathForms(p) {
 		for _, root := range []string{"/etc", "/private/etc", "/root", "/var/root", "/proc", "/sys"} {
 			if q == root || strings.HasPrefix(q, root+"/") {
 				return true
+			}
+		}
+		// A home directory, or a directory holding one, would grant its hidden entries too.
+		if h, err := os.UserHomeDir(); err == nil && h != "" {
+			for _, hf := range openCodePathForms(h) {
+				if hf == q || strings.HasPrefix(hf, q+"/") {
+					return true
+				}
 			}
 		}
 		if h, err := os.UserHomeDir(); err == nil && h != "" {
@@ -333,7 +341,8 @@ func openCodeSensitive(p string) bool {
 		}
 		// Any other user's home: /home/<user>/.x and /Users/<user>/.x.
 		parts := strings.Split(q, "/")
-		if len(parts) > 3 && (parts[1] == "home" || parts[1] == "Users") && strings.HasPrefix(parts[3], ".") {
+		if len(parts) >= 2 && (parts[1] == "home" || parts[1] == "Users") &&
+			(len(parts) <= 3 || strings.HasPrefix(parts[3], ".")) {
 			return true
 		}
 	}

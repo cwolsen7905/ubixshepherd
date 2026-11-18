@@ -965,6 +965,11 @@ func TestOpenCodeReadPathsSkipSensitiveAndSymlinkedWorktree(t *testing.T) {
 			}
 		}
 	}
+	if h, err := os.UserHomeDir(); err == nil {
+		if got := openCodeReadPaths(wt, "see "+h, "and "+filepath.Dir(h)); len(got) != 0 {
+			t.Errorf("home directory or its parent granted: %v", got)
+		}
+	}
 	link := filepath.Join(t.TempDir(), "link")
 	if err := os.Symlink(wt, link); err != nil {
 		t.Skip("no symlinks")
