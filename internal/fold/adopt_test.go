@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -93,5 +94,49 @@ func TestCloseKeepsAnAdoptedBranch(t *testing.T) {
 	}
 	if _, err := os.Stat(l.Worktree); !os.IsNotExist(err) {
 		t.Error("worktree left behind")
+	}
+}
+
+func adoptedMarker(t *testing.T, repo, branch string) string {
+	t.Helper()
+	out, _ := exec.Command("git", "-C", repo, "config", "--get", adoptedKey(branch)).Output()
+	return strings.TrimSpace(string(out))
+}
+
+func TestOpenClearsAStaleAdoptionMarker(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	gitT(t, f.repo.Path, "config", adoptedKey("fresh"), "true")
+	res, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "fresh", Scope: []string{"src/**"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := adoptedMarker(t, f.repo.Path, "fresh"); got != "" {
+		t.Errorf("stale marker survived a normal open: %q", got)
+	}
+	// So closing it once merged deletes the branch it created.
+	gitT(t, res.Lane.Worktree, "push", "-q", "origin", "HEAD:main")
+	out, err := f.fold.Close(ctx, res.Lane.ID, false)
+	if err != nil || !out.BranchDeleted {
+		t.Errorf("close = %+v, %v", out, err)
+	}
+}
+
+func TestFailedAdoptOpenLeavesNoMarker(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.pushBranch("fix/blocked")
+	// A local copy equal to origin's, checked out in the main checkout, so the
+	// worktree cannot be added.
+	gitT(t, f.repo.Path, "fetch", "-q", "origin")
+	gitT(t, f.repo.Path, "checkout", "-q", "-b", "fix/blocked", "origin/fix/blocked")
+	if _, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "fix/blocked", Scope: []string{"src/**"}, Adopt: true}); err == nil {
+		t.Fatal("open succeeded, want a failure")
+	}
+	if got := adoptedMarker(t, f.repo.Path, "fix/blocked"); got != "" {
+		t.Errorf("marker left after a failed adopt open: %q", got)
+	}
+	if lanes, _ := f.fold.Store.Lanes(ctx, f.repo.ID); len(lanes) != 0 {
+		t.Errorf("lanes = %d, want 0", len(lanes))
 	}
 }
