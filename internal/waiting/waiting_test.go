@@ -375,3 +375,20 @@ func TestSensitivePathsAreHeldBack(t *testing.T) {
 		t.Errorf("plan: add %v held %v", add, held)
 	}
 }
+
+func TestMRItemForApprovedRequestWaitingOnOwnerThreads(t *testing.T) {
+	l := store.Lane{ID: 3, Name: "feat"}
+	lf := store.LaneForge{MR: 7, MRState: "opened", Approved: true, PipelineStatus: "success", KelpieBlocking: "a,b"}
+	it, ok := mrItem(l, store.Repo{Name: "app"}, lf, false)
+	if !ok || it.Action != "open" || !strings.Contains(it.Title, "!7") || !strings.Contains(it.Title, "2 review thread") {
+		t.Fatalf("item = %+v, %v", it, ok)
+	}
+	lf.KelpieBlocking = ""
+	if _, ok := mrItem(l, store.Repo{Name: "app"}, lf, false); ok {
+		t.Error("an approved request with nothing blocking is listed")
+	}
+	lf.KelpieBlocking, lf.MRState = "a", "merged"
+	if _, ok := mrItem(l, store.Repo{Name: "app"}, lf, false); ok {
+		t.Error("a merged request is listed")
+	}
+}

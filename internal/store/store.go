@@ -627,6 +627,12 @@ type LaneForge struct {
 	// request, as discussion ids joined by commas; cleared with the request. A string so
 	// a LaneForge still compares with ==.
 	ThreadsSeen string `json:"threads_seen,omitempty"`
+	// KelpieBlocking are the discussion ids, sorted and joined by commas, of the open
+	// review threads that are all an approved request under after_approval waits on, each
+	// one written or answered by the follow-through owner (Kelpie). Set when the watcher
+	// raised them to the person; cleared when they are resolved, the approval is gone or
+	// the request is not open. Empty is not raised.
+	KelpieBlocking string `json:"kelpie_blocking,omitempty"`
 }
 
 // Activity sources: what LaneActivity can say a lane's latest activity was.

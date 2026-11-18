@@ -260,7 +260,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, repoName string,
 	next.MR, next.MRState, next.MRURL = mr.IID, mr.State, mr.URL
 	next.MRCreated, next.MRUpdated = mr.Created.UTC(), mr.Updated.UTC()
 	if mr.IID != prev.MR {
-		next.FixTries, next.Pipeline, next.PipelineStatus, next.ThreadsSeen = 0, 0, "", ""
+		next.FixTries, next.Pipeline, next.PipelineStatus, next.ThreadsSeen, next.KelpieBlocking = 0, 0, "", "", ""
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d %s for lane %s: %s", mr.IID, mr.State, lane.Name, mr.URL)
 	}
 
@@ -289,7 +289,7 @@ func (w *Watcher) checkLane(ctx context.Context, f forge.Forge, repoName string,
 
 	w.approval(ctx, f, lane, mr, prev, &next)
 	w.aiReview(ctx, f, lane, mr)
-	w.mergeAfterApproval(ctx, f, repoName, lane, mr)
+	w.mergeAfterApproval(ctx, f, repoName, lane, mr, &next, wc.FollowThrough)
 	w.shadowObserve(ctx, lane, mr, w.reviewPassed(lane.ID, mr))
 	w.reviewThreads(ctx, f, lane, mr, &next, wc)
 
