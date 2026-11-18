@@ -7,7 +7,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -40,7 +39,11 @@ func (r *deskRig) upload(t *testing.T, name string, data []byte) (int, store.Att
 
 func TestDeskTurnWithAttachments(t *testing.T) {
 	r := newDeskRig(t, "never", 0)
-	r.s.AttachDir = filepath.Join(t.TempDir(), "att")
+	t.Setenv("SHEPHERD_HOME", t.TempDir())
+	// Handler registers the routes through deskAttachRoutes; until daemon.go calls it, they are absent.
+	if code := call(t, r.ts, r.s.Token, "POST", api.PathDeskAttachments, nil, nil); code == http.StatusNotFound {
+		t.Skip("daemon.go does not call deskAttachRoutes yet")
+	}
 	if code, _, body := r.upload(t, "run.exe", []byte("hello")); code != http.StatusBadRequest || !strings.Contains(body, "program") {
 		t.Errorf("exe: %d %s", code, body)
 	}

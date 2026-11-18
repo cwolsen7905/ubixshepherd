@@ -185,8 +185,8 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Check and take in one step, so two messages cannot both send one file.
-		s.attachMu.Lock()
-		defer s.attachMu.Unlock()
+		attachMu.Lock()
+		defer attachMu.Unlock()
 		if !s.checkTurnAttachments(w, r, d.Workspace().ID, req.Attachments) {
 			return
 		}

@@ -41,10 +41,6 @@ type Server struct {
 	Store store.Store
 	// questionMu orders the replies, skips and answers aimed at one desk question (see deskTurn).
 	questionMu keyedMutex
-	// attachMu orders the messages that carry files, so one file is not sent twice.
-	attachMu sync.Mutex
-	// AttachDir is where the files of desk messages are kept; "" is under the home.
-	AttachDir string
 	// Config is the config the daemon started with; read LiveConfig, which a reload
 	// (SIGHUP) replaces.
 	Config     config.Config
@@ -313,8 +309,6 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathDeskStatus, web, s.deskStatus)
 	handle("POST "+api.PathDeskInterrupt, web, s.deskInterrupt)
 	handle("POST "+api.PathDeskNew, web, s.deskNew)
-	handle("POST "+api.PathDeskAttachments, web, s.deskAttachUpload)
-	handle("GET "+api.PathDeskAttachments+"/{id}", web, s.deskAttachGet)
 	// Browser sign-in and sessions (api/web.go, web.go). The link's exchange, a GET with
 	// no token, is browserGate's.
 	handle("POST "+api.PathWebSignin, operatorOnly, s.webSignin)

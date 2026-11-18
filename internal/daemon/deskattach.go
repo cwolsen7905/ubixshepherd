@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/attach"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -18,12 +20,19 @@ import (
 // attachKeep is how long an uploaded file waits for the message it was meant for.
 const attachKeep = 24 * time.Hour
 
-// attachments is where the files of desk messages are kept: Server.AttachDir, else
-// "attachments" under the Shepherd home.
+// attachMu orders the messages that carry files, so one file is not sent twice.
+var attachMu sync.Mutex
+
+// deskAttachRoutes registers the attachment routes; Handler calls it with its own
+// registration function.
+func (s *Server) deskAttachRoutes(handle func(string, access, http.HandlerFunc)) {
+	handle("POST "+api.PathDeskAttachments, forWeb, s.deskAttachUpload)
+	handle("GET "+api.PathDeskAttachments+"/{id}", forWeb, s.deskAttachGet)
+}
+
+// attachments is where the files of desk messages are kept: "attachments" under the
+// Shepherd home.
 func (s *Server) attachments() (attach.Store, error) {
-	if s.AttachDir != "" {
-		return attach.Store{Dir: s.AttachDir}, nil
-	}
 	home, err := paths.Home()
 	if err != nil {
 		return attach.Store{}, err
