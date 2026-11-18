@@ -206,7 +206,8 @@ device token kept in a 0600 file. Two parts are left for a follow-up: a `url` fi
 named host in `hosts.yaml` (the HTTPS client lives in `internal/client`, not a new
 `internal/remote` transport, so only a literal address is accepted), and `chat` over https,
 which stays refused until the desk moves into the daemon; `status` and `decision answer` work.
-`docs/cli.md` is not updated yet.
+`docs/cli.md` is not updated yet. The `login` and `logout` code is written and tested but not
+registered as commands; a follow-up adds the two entries.
 Scope: `internal/remote` (an HTTPS `Transport` beside `SSH`), `internal/cli/host.go`
 (`--host https://...`, a `url` field in `hosts.yaml`, normalised as `daemon.public.url` is), `internal/cli` (`shepherd login`,
 `shepherd logout`), `internal/client`, `docs/cli.md`, `docs/hosted.md`.

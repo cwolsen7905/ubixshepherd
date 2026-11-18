@@ -1,6 +1,6 @@
 # Hosted mode: a daemon reachable over HTTPS with a login
 
-Status: **implemented, with `chat` over https and `hosts.yaml` entries still to come.** The
+Status: **implemented, with `chat` over https, `hosts.yaml` entries and the `login` and `logout` command registration still to come.** The
 daemon opens the public listener at start, `shepherd login` and `--host https://...` work, and
 the account, second factor, device tokens, rate limits, login routes, `shepherd account`, the
 web sign-in page and the Settings device list are built and tested.
@@ -100,6 +100,10 @@ Logging out ends one session. "Sign out everywhere" ends every session and every
 token. Both are rows in the store, so they hold across a restart.
 
 ## Using the CLI against a hosted daemon
+
+The login and logout code is built and tested, but the two commands are not registered in the
+command table yet, so `shepherd login` is unknown until a follow-up lands. `--host https://...`
+works once a token exists.
 
 ```
 shepherd login https://shepherd.example.com        # or: shepherd --host https://shepherd.example.com login
