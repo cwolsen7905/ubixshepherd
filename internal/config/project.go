@@ -110,7 +110,7 @@ type BriefSource struct {
 	Repo string `yaml:"repo" json:"repo"`
 	// Path is the file in that repo; "" is DefaultBriefPath.
 	Path string `yaml:"path,omitempty" json:"path,omitempty"`
-	// Ref is the branch or ref to read; "" is the repo's default branch.
+	// Ref is the branch of origin to read ("main" and "origin/main" are the same); "" is its default branch.
 	Ref string `yaml:"ref,omitempty" json:"ref,omitempty"`
 }
 

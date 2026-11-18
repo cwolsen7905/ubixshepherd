@@ -25,7 +25,7 @@ type Brief struct {
 	Approved time.Time
 	// Commit is the commit that last changed the file.
 	Commit string
-	// Ref is the ref it was read at, such as origin/main.
+	// Ref is the remote-tracking branch it was read at, such as origin/main.
 	Ref string
 }
 
@@ -92,14 +92,25 @@ func (r *Reader) Read(ctx context.Context, dir, ref, file string) (Brief, error)
 	return b, err
 }
 
+// remotePrefix is where origin's branches are: the only refs a brief is read from.
+const remotePrefix = "refs/remotes/origin/"
+
+// remoteRef qualifies a configured ref as a branch of origin: "main", "origin/main" and
+// "refs/remotes/origin/main" all mean the same remote-tracking ref, never a local branch.
+func remoteRef(ref string) string {
+	ref = strings.TrimPrefix(ref, remotePrefix)
+	ref = strings.TrimPrefix(ref, "origin/")
+	return remotePrefix + ref
+}
+
 // DefaultRef finds the tip of the remote's default branch: origin's HEAD when known,
 // else origin/main or origin/master. A local branch is never used, since it can hold
 // commits that were not pushed and so not approved.
 func DefaultRef(ctx context.Context, dir string) (string, error) {
-	if out, err := git.Run(ctx, dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil && out != "" {
+	if out, err := git.Run(ctx, dir, "symbolic-ref", "refs/remotes/origin/HEAD"); err == nil && out != "" {
 		return out, nil
 	}
-	for _, c := range []string{"origin/main", "origin/master"} {
+	for _, c := range []string{remotePrefix + "main", remotePrefix + "master"} {
 		if git.RefExists(ctx, dir, c) {
 			return c, nil
 		}
@@ -116,8 +127,11 @@ func read(ctx context.Context, dir, ref, file string) (Brief, error) {
 		if ref, err = DefaultRef(ctx, dir); err != nil {
 			return Brief{}, err
 		}
-	} else if !git.RefExists(ctx, dir, ref) {
-		return Brief{}, fmt.Errorf("%w: no ref %s", ErrMissing, ref)
+	} else {
+		ref = remoteRef(ref)
+		if !git.RefExists(ctx, dir, ref) {
+			return Brief{}, fmt.Errorf("%w: no branch %s on origin", ErrMissing, strings.TrimPrefix(ref, remotePrefix))
+		}
 	}
 	if _, err := git.Run(ctx, dir, "cat-file", "-e", ref+":"+file); err != nil {
 		return Brief{}, fmt.Errorf("%w: %s at %s", ErrMissing, file, ref)
@@ -138,7 +152,7 @@ func read(ctx context.Context, dir, ref, file string) (Brief, error) {
 	if err != nil || sha == "" {
 		return Brief{}, fmt.Errorf("%w: no history for %s at %s", ErrMissing, file, ref)
 	}
-	return Brief{Text: text, Approved: time.Unix(sec, 0).UTC(), Commit: sha, Ref: ref}, nil
+	return Brief{Text: text, Approved: time.Unix(sec, 0).UTC(), Commit: sha, Ref: "origin/" + strings.TrimPrefix(ref, remotePrefix)}, nil
 }
 
 // ForProject reads the brief a project's brief_source names, in the repo at dir.

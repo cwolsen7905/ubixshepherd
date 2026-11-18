@@ -78,7 +78,7 @@ projects:
     brief_source:
       repo: docs                      # a repo of the workspace, by name
       path: projects/{name}/brief.md  # default; {name} is the project's name
-      ref: ""                         # default: the repo's default branch
+      ref: ""                         # a branch of origin; default: its default branch
 ```
 
 The file is read at the tip of the ref (the remote's default branch when `ref` is

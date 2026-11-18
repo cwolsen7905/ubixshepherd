@@ -157,3 +157,23 @@ func TestUnpushedCommitOnMainIsNotApproved(t *testing.T) {
 		t.Fatalf("got %+v, %v", b, err)
 	}
 }
+
+func TestExplicitRefIsTheRemoteBranch(t *testing.T) {
+	ctx := context.Background()
+	clone := docsRepo(t)
+	commitBrief(t, clone, "approved")
+	commitBriefLocal(t, clone, "unpushed")
+	// A local feature branch with no remote twin is not readable by name.
+	sh(t, clone, "checkout", "-b", "draft")
+	commitBriefLocal(t, clone, "draft only")
+	sh(t, clone, "checkout", "main")
+	for _, ref := range []string{"main", "origin/main", "refs/remotes/origin/main"} {
+		b, err := (&Reader{}).Read(ctx, clone, ref, "projects/p/brief.md")
+		if err != nil || b.Text != "approved" || b.Ref != "origin/main" {
+			t.Errorf("ref %q: %+v, %v", ref, b, err)
+		}
+	}
+	if _, err := (&Reader{}).Read(ctx, clone, "draft", "projects/p/brief.md"); !errors.Is(err, ErrMissing) {
+		t.Errorf("an unpushed local branch was read: %v", err)
+	}
+}
