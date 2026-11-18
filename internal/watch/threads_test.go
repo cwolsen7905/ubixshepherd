@@ -256,3 +256,38 @@ func TestSignoffRetriedOnTheSamePipelineThenFailingElsewhereIsFollowed(t *testin
 		t.Errorf("later real failure was hidden: %s", got)
 	}
 }
+
+func TestSignoffOnlyAfterAnOwnerRetryIsNotAnOwnerAttempt(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx) // the owner follows a real failure
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "running"}
+	f.w.Check(f.ctx) // the owner retries it
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	got := f.feed(t)
+	if strings.Contains(got, "failed again") || !strings.Contains(got, "awaiting sign-off") {
+		t.Errorf("sign-off after a retry was an owner attempt: %s", got)
+	}
+}
+
+func TestSignoffMarkEndsWhenAnotherJobFailsInTheSamePollGap(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	// Failed to failed between polls, now with a real failure beside the gate.
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}, {ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx)
+	if got := f.feed(t); !strings.Contains(got, "reviewbot follows it through") {
+		t.Errorf("real failure hidden by the mark: %s", got)
+	}
+}
