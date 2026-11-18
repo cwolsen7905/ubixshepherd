@@ -164,7 +164,7 @@ and when a run ends:
 | Inside the scope | it names at least one file, and every file it names (any word with a slash, backslash, `~` or `$`, or that looks like a file name, ticked or not, such as `go.mod` or `Makefile`) is inside the lane's scope; an absolute path, `..`, `~`, `$` or a drive letter is outside |
 | Follows the brief | the lane serves an approved Next-up item, and the plan, its reason and its options do not say they deviate, conflict with it or are unsure of it |
 | The agent agrees | the agent's own recommendation says to proceed or approve, and does not say wait, hold or no |
-| Nothing the person owns | no mention of merge, push, tag, release, deploy, publish, money, widening scope or leaving the scope, deleting, production or credentials |
+| Nothing the person owns | no mention, in any form (merge, merged, push, tag, release, deploy, publish, ship, promote, revert, roll back, go live), of an action the person owns, nor of approving or arming a merge request, money, widening scope or leaving the scope, deleting, production or credentials |
 
 Anything else stays a decision for the person, as before. The rule is cautious: a plan that
 merely mentions a push waits.

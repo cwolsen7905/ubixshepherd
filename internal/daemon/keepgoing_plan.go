@@ -30,7 +30,12 @@ var (
 	// merging, pushing, tagging, releasing, deploying, money, widening scope or
 	// destroying data. A plan that merely mentions one waits; it is the cautious side.
 	rootFiles = map[string]bool{"Makefile": true, "Dockerfile": true, "Jenkinsfile": true, "LICENSE": true, "README": true, "CHANGELOG": true, "CODEOWNERS": true}
-	sensitive = regexp.MustCompile(`(?i)\b(merge|merges|merging|push|pushes|pushing|tag|tags|tagging|release|releases|releasing|deploy|deploys|deploying|publish|publishing|price|pricing|payment|billing|budget|spend|spending|cost|costs|money|widen|widening|force|delete|deleting|production|credential|credentials|secret|secrets)\b|\$\s?\d|(outside|beyond|expand\w*|extend\w*)\s+(the\s+|my\s+|its\s+)?scope`)
+	sensitive = regexp.MustCompile(`(?i)\b(` +
+		`merg(e|es|ed|ing)|push(es|ed|ing)?|tag(s|ged|ging)?|releas(e|es|ed|ing)|deploy(s|ed|ing|ment|ments)?|publish(es|ed|ing)?|` +
+		`ship(s|ped|ping)?|promot(e|es|ed|ing|ion)|reverts?|reverted|reverting|rollback|rollout|roll\s+(back|out)|go\s+live|cut\s+a\s+(tag|release)|` +
+		`pric(e|es|ed|ing)|payment|payments|billing|budget|spend|spending|spent|cost|costs|money|` +
+		`widen|widening|force|delet(e|es|ed|ing)|production|credentials?|secrets?` +
+		`)\b|\$\s?\d|(outside|beyond|expand\w*|extend\w*)\s+(the\s+|my\s+|its\s+)?scope|approv\w*\s+(the\s+|this\s+|its\s+|my\s+)?(mr|merge|pull|request)\b|\barm(s|ed|ing)?\s+(the\s+)?(merge|mr)\b`)
 	// departs marks a plan that says it does not follow the brief.
 	departs = regexp.MustCompile(`(?i)\b(deviat\w*|differs? from|instead of the (brief|item|task)|not in the (brief|item|task)|beyond the (brief|item|task)|outside the (brief|item|task)|ambiguous|conflicts? with|unclear|contradict\w*)\b`)
 )
