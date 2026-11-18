@@ -316,16 +316,39 @@ func openCodeEditRule(readOnly []string) any {
 	return r
 }
 
+// openCodeSensitive says a path is somewhere a brief should never open for reading: system
+// configuration, or a hidden directory in a home directory (keys, tokens, Shepherd's own state).
+func openCodeSensitive(p string) bool {
+	for _, q := range openCodePathForms(p) {
+		for _, root := range []string{"/etc", "/private/etc", "/root", "/var/root", "/proc", "/sys"} {
+			if q == root || strings.HasPrefix(q, root+"/") {
+				return true
+			}
+		}
+		if h, err := os.UserHomeDir(); err == nil && h != "" {
+			if rel, err := filepath.Rel(h, q); err == nil && !strings.HasPrefix(rel, "..") &&
+				rel != "." && strings.HasPrefix(rel, ".") {
+				return true
+			}
+		}
+		// Any other user's home: /home/<user>/.x and /Users/<user>/.x.
+		parts := strings.Split(q, "/")
+		if len(parts) > 3 && (parts[1] == "home" || parts[1] == "Users") && strings.HasPrefix(parts[3], ".") {
+			return true
+		}
+	}
+	return false
+}
+
 var openCodeAbsPath = regexp.MustCompile("(?:^|[\\s\"'`(\\[<])(/[^\\s\"'`)\\]>,;:*?]+)")
 
 // openCodeReadPaths are the absolute paths the texts (the run's brief and the repo's
-// brief) name that exist outside the worktree: the run may read them and never write them.
+// brief, never text another agent wrote) name that exist outside the worktree: the run may read them and never write them.
 // A path needs two segments, so "/" and "/etc" are not enough, and one that contains the
 // worktree is skipped, since denying edits there would deny the worktree's own files.
 func openCodeReadPaths(worktree string, texts ...string) []string {
 	var out []string
 	seen := map[string]bool{}
-	wt := filepath.Clean(worktree)
 	for _, t := range texts {
 		for _, m := range openCodeAbsPath.FindAllStringSubmatch(t, -1) {
 			p := strings.TrimRight(m[1], ".")
@@ -337,9 +360,19 @@ func openCodeReadPaths(worktree string, texts ...string) []string {
 			if _, err := os.Stat(p); err != nil {
 				continue
 			}
+			if openCodeSensitive(p) {
+				continue
+			}
 			if worktree != "" {
 				inside := func(a, b string) bool { return a == b || strings.HasPrefix(a, b+"/") }
-				if inside(p, wt) || inside(wt, p) {
+				skip := false
+				// Every form counts: a symlink into the worktree must not put a deny on its files.
+				for _, q := range openCodePathForms(p) {
+					for _, w := range openCodePathForms(worktree) {
+						skip = skip || inside(q, w) || inside(w, q)
+					}
+				}
+				if skip {
 					continue
 				}
 			}

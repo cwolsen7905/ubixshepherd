@@ -951,3 +951,25 @@ func TestOpenCodeReadsPathsTheBriefNames(t *testing.T) {
 		t.Errorf("edit changed without read paths: %s", got)
 	}
 }
+
+func TestOpenCodeReadPathsSkipSensitiveAndSymlinkedWorktree(t *testing.T) {
+	wt := t.TempDir()
+	if got := openCodeReadPaths(wt, "see /etc/hosts and /etc/ssh"); len(got) != 0 {
+		t.Errorf("system path granted: %v", got)
+	}
+	if h, err := os.UserHomeDir(); err == nil {
+		d := filepath.Join(h, ".shepherd")
+		if _, err := os.Stat(d); err == nil {
+			if got := openCodeReadPaths(wt, "see "+d); len(got) != 0 {
+				t.Errorf("hidden home dir granted: %v", got)
+			}
+		}
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(wt, link); err != nil {
+		t.Skip("no symlinks")
+	}
+	if got := openCodeReadPaths(wt, "see "+link); len(got) != 0 {
+		t.Errorf("symlink into the worktree granted: %v", got)
+	}
+}
