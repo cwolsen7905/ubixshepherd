@@ -574,5 +574,5 @@ tags to GitHub, so GitHub is the public home but not where work lands.
 
 ## Licence
 
-BSD 3-Clause. See [LICENSE](LICENSE).
+BSD 3-Clause. See [LICENSE](LICENSE). The uBixShepherd and uBixSys names and logos are covered separately: see [TRADEMARKS.md](TRADEMARKS.md).
 
