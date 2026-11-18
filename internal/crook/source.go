@@ -28,8 +28,9 @@ type RepoSource struct {
 	// Dir is any checkout of the repo; only its object store is used.
 	Dir string
 	// Ref is the base branch as a remote-tracking ref, such as origin/dev. It is
-	// required. A local branch is refused: worktrees share a repo's local refs, so a lane
-	// could move one with git before the next load.
+	// required. A local branch, tag or HEAD is refused as too easy to move by accident. A
+	// remote-tracking ref shares the same ref store, so this is not a lock against a lane
+	// that rewrites refs on purpose: pinning the base is the caller's job.
 	Ref string
 	// Folder is the layer folder inside the repo; empty means DefaultRepoFolder.
 	Folder string

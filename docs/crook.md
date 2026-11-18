@@ -25,8 +25,15 @@ A lane works in a worktree it can edit, so a lane could loosen its own rules by 
 them there. Crook therefore reads the repo layer from the repo's base branch, as
 committed, and never from a worktree or from a lane's branch. The base branch is named as
 a remote-tracking ref such as `origin/dev`: a local branch, a tag or `HEAD` is refused,
-because worktrees share a repo's local refs and a lane could move one with git. Uncommitted changes and
+because a lane's ordinary branch work and a stray `git branch -f` touch local refs. Uncommitted changes and
 commits on a lane's branch have no effect until they reach the base branch.
+
+This is not a lock. Remote-tracking refs live in the same ref store the lane's worktree
+shares, so a process that runs `git update-ref refs/remotes/origin/dev <commit>`, or
+fetches into that name, changes what is read. The protection holds against edits and
+commits in a lane, not against an agent that deliberately rewrites refs; pinning the base
+to a value outside the lane's reach is up to the caller, and the forge's approval rules
+on the layer folder remain the real control (see above).
 
 Whether a person reviews that change depends on the forge, not on Crook. Crook does not
 yet stop an agent from merging a change under the layer folder: where a repo sets
