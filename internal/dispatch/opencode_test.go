@@ -17,10 +17,22 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// The adapter is hermetic under test: no config.yaml is read and no opencode is run.
-func init() {
-	openCodeSettings = func() config.OpenCode { return config.OpenCode{Bin: "/fake/opencode"} }
-	openCodeProbe = func(string) (string, error) { return openCodeTested, nil }
+// fakeHost is the hermetic OpenCode machine of a test: no config.yaml is read and no
+// opencode is run.
+func fakeHost() *OpenCodeHost {
+	return &OpenCodeHost{
+		Settings: func() config.OpenCode { return config.OpenCode{Bin: "/fake/opencode"} },
+		Probe:    func(string) (string, error) { return openCodeTested, nil },
+	}
+}
+
+// localHost is fakeHost with a local endpoint configured.
+func localHost() *OpenCodeHost {
+	h := fakeHost()
+	h.Settings = func() config.OpenCode {
+		return config.OpenCode{Bin: "/fake/opencode", Endpoint: "http://localhost:11434/v1"}
+	}
+	return h
 }
 
 // fakeOpenCode is a stand-in for `opencode run --format json`: it reads the prompt from
@@ -67,19 +79,8 @@ func openCodeFixture(t *testing.T, mode string) *fixture {
 		t.Fatal(err)
 	}
 	f.runner.lookPath = func(string) (string, error) { return script, nil }
+	f.runner.OpenCode = fakeHost()
 	return f
-}
-
-func resetVersions(t *testing.T) {
-	t.Helper()
-	versionMu.Lock()
-	versionSeen = map[string]string{}
-	versionMu.Unlock()
-	t.Cleanup(func() {
-		versionMu.Lock()
-		versionSeen = map[string]string{}
-		versionMu.Unlock()
-	})
 }
 
 func logOf(t *testing.T, run store.Run) string {
@@ -96,12 +97,8 @@ func logOf(t *testing.T, run store.Run) string {
 }
 
 func TestOpenCodeRunEndToEnd(t *testing.T) {
-	old := openCodeSettings
-	openCodeSettings = func() config.OpenCode {
-		return config.OpenCode{Bin: "/fake/opencode", Endpoint: "http://localhost:11434/v1"}
-	}
-	t.Cleanup(func() { openCodeSettings = old })
 	f := openCodeFixture(t, "ok")
+	f.runner.OpenCode = localHost()
 	const task = "rename the zebra-quokka helper"
 	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Model: "local/qwen3-coder:30b", Prompt: task})
 	if err != nil {
@@ -208,16 +205,14 @@ func TestOpenCodeResumesWithSession(t *testing.T) {
 }
 
 func TestOpenCodeVersionPin(t *testing.T) {
-	resetVersions(t)
-	old := openCodeProbe
-	t.Cleanup(func() { openCodeProbe = old })
-	openCodeProbe = func(string) (string, error) { return "2.0.1", nil }
-	if _, err := AdapterFor("opencode"); err == nil || !strings.Contains(err.Error(), "2.0.1") || !strings.Contains(err.Error(), "1.x") {
+	r := &Runner{OpenCode: fakeHost()}
+	r.OpenCode.Probe = func(string) (string, error) { return "2.0.1", nil }
+	if _, err := adapterFor("opencode", r.OpenCode); err == nil || !strings.Contains(err.Error(), "2.0.1") || !strings.Contains(err.Error(), "1.x") {
 		t.Errorf("a newer major is accepted or unexplained: %v", err)
 	}
-	resetVersions(t)
-	openCodeProbe = func(string) (string, error) { return "1.99.0", nil }
-	ad, err := AdapterFor("opencode")
+	r = &Runner{OpenCode: fakeHost()}
+	r.OpenCode.Probe = func(string) (string, error) { return "1.99.0", nil }
+	ad, err := adapterFor("opencode", r.OpenCode)
 	if err != nil || ad.Bin != "/fake/opencode" {
 		t.Errorf("a 1.x opencode: %v, bin %q", err, ad.Bin)
 	}
@@ -478,9 +473,8 @@ func TestOpenCodeConfigProviderRouting(t *testing.T) {
 			if c.s == "host" {
 				s = host
 			}
-			old := openCodeSettings
-			openCodeSettings = func() config.OpenCode { return s }
-			t.Cleanup(func() { openCodeSettings = old })
+			h := fakeHost()
+			h.Settings = func() config.OpenCode { return s }
 			prov := providerNames(t, openCodeConfig(Opts{Model: c.model}, s))
 			if !c.local {
 				if len(prov) != 0 {
@@ -504,7 +498,7 @@ func TestOpenCodeConfigProviderRouting(t *testing.T) {
 					t.Errorf("local provider: %s", raw)
 				}
 			}
-			args := strings.Join(openCodeArgs(Opts{Model: c.model}), " ")
+			args := strings.Join(openCodeArgs(Opts{Model: c.model, OpenCode: h}), " ")
 			if !strings.Contains(args, " -m "+c.flag) || strings.Contains(args, c.flag+"/") {
 				t.Errorf("args %q lack -m %s", args, c.flag)
 			}
@@ -528,7 +522,7 @@ func TestOpenCodeHostedCostIsLabelledAnEstimate(t *testing.T) {
 	step := func(session, reason string, cost float64) string {
 		return fmt.Sprintf(`{"type":"step_finish","sessionID":%q,"part":{"type":"step-finish","reason":%q,"cost":%v,"tokens":{"input":10,"output":2}}}`, session, reason, cost)
 	}
-	hosted := openCodeReader("openrouter/moonshotai/kimi-k2")
+	hosted := openCodeReader("openrouter/moonshotai/kimi-k2", fakeHost())
 	if o := hosted(step("or1", "tool-calls", 0.02)); o.USD != 0.02 {
 		t.Errorf("USD = %v", o.USD)
 	}
@@ -540,7 +534,7 @@ func TestOpenCodeHostedCostIsLabelledAnEstimate(t *testing.T) {
 	if !strings.Contains(o.Show, "cost unknown") || strings.Contains(o.Show, "no billed cost") {
 		t.Errorf("hosted with no cost: %q", o.Show)
 	}
-	local := openCodeReader("qwen3-coder:30b")
+	local := openCodeReader("qwen3-coder:30b", fakeHost())
 	if o := local(step("loc", "stop", 0)); !strings.Contains(o.Show, "no billed cost (a local model") {
 		t.Errorf("local: %q", o.Show)
 	}
@@ -613,16 +607,12 @@ func TestOpenCodeRunPromptCarriesTheModelsNote(t *testing.T) {
 
 // The window in the config is the local endpoint's; a hosted model's is left unknown.
 func TestOpenCodeUsageWindowIsLocalOnly(t *testing.T) {
-	old := openCodeSettings
-	openCodeSettings = func() config.OpenCode {
-		return config.OpenCode{Bin: "/fake/opencode", Endpoint: "http://localhost:11434/v1"}
-	}
-	t.Cleanup(func() { openCodeSettings = old })
-	want, _ := openCodeSettings().Limits()
+	h := localHost()
+	want, _ := h.settings().Limits()
 	ad := adapters["opencode"]
 	line := `{"type":"step_finish","sessionID":"w","part":{"tokens":{"input":30000,"output":5,"cache":{}}}}`
 	for model, window := range map[string]int{"qwen3-coder:30b": want, "local/x": want, "openrouter/moonshotai/kimi-k2": 0} {
-		r := ad.Usage(Opts{Model: model})
+		r := ad.Usage(Opts{Model: model, OpenCode: h})
 		r.Feed(line)
 		if got := r.Usage().ContextWindow; got != window {
 			t.Errorf("%s: window = %d, want %d", model, got, window)
@@ -669,7 +659,7 @@ func TestOpenCodeOutputEvents(t *testing.T) {
 }
 
 func TestOpenCodeAttachResumesSession(t *testing.T) {
-	ad, err := AdapterFor("opencode")
+	ad, err := adapterFor("opencode", fakeHost())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -731,10 +721,8 @@ func TestNoChangeStaysSucceededForOtherAgents(t *testing.T) {
 }
 
 func TestOpenCodeIdleRunIsStoppedAndFailed(t *testing.T) {
-	old := openCodeIdle
-	openCodeIdle = func() time.Duration { return 400 * time.Millisecond }
-	t.Cleanup(func() { openCodeIdle = old })
 	f := openCodeFixture(t, "hang")
+	f.runner.OpenCode.IdleLimit = func() time.Duration { return 400 * time.Millisecond }
 	start := time.Now()
 	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Prompt: "fix it"})
 	if err != nil {
@@ -754,10 +742,8 @@ func TestOpenCodeIdleRunIsStoppedAndFailed(t *testing.T) {
 
 func TestOpenCodeSilenceUnderTheLimitIsNotIdle(t *testing.T) {
 	// A run that was quiet for less than the limit is not idle.
-	old := openCodeIdle
-	openCodeIdle = func() time.Duration { return 2500 * time.Millisecond }
-	t.Cleanup(func() { openCodeIdle = old })
-	f := openCodeFixture(t, "wait") // prints, then sleeps 1s: under the limit
+	f := openCodeFixture(t, "wait")
+	f.runner.OpenCode.IdleLimit = func() time.Duration { return 2500 * time.Millisecond } // prints, then sleeps 1s: under the limit
 	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Prompt: "x"})
 	if err != nil {
 		t.Fatal(err)
@@ -830,7 +816,7 @@ func TestOpenCodeConfigAllowsOnlyTheWorktree(t *testing.T) {
 	if got := string(openCodeConfig(Opts{}, config.OpenCode{})); !strings.Contains(got, `"external_directory":"deny"`) {
 		t.Errorf("no worktree should keep a plain deny: %s", got)
 	}
-	a := strings.Join(openCodeArgs(Opts{Worktree: wt}), " ")
+	a := strings.Join(openCodeArgs(Opts{Worktree: wt, OpenCode: fakeHost()}), " ")
 	if !strings.Contains(a, "--dir "+wt) {
 		t.Errorf("args lack --dir: %s", a)
 	}
@@ -899,12 +885,8 @@ func TestOpenCodeConfigTimeouts(t *testing.T) {
 }
 
 func TestOpenCodeHostedRunIsMarkedEstimated(t *testing.T) {
-	old := openCodeSettings
-	openCodeSettings = func() config.OpenCode {
-		return config.OpenCode{Bin: "/fake/opencode", Endpoint: "http://localhost:11434/v1"}
-	}
-	t.Cleanup(func() { openCodeSettings = old })
 	f := openCodeFixture(t, "ok")
+	f.runner.OpenCode = localHost()
 	run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode", Model: "openrouter/qwen/qwen3-coder", Prompt: "x"})
 	if err != nil {
 		t.Fatal(err)
