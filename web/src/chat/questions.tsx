@@ -129,7 +129,8 @@ export function QuestionList({
   questions: DeskQuestion[]
   /** The question to light; the first open one when null or not in the list. */
   selected?: number | null
-  thread: DeskThread
+  /** The thread replies post to: one for the list, or one per question when workspaces differ. */
+  thread: DeskThread | ((q: DeskQuestion) => DeskThread)
   topicId?: number | null
   /** Called with the question's id once it is cleared, so the parent can re-read. */
   onCleared?: (id: number) => void
@@ -189,7 +190,7 @@ export function QuestionList({
             selected={lit === q.id}
             onSelect={() => pick(q.id)}
           />
-          <QuestionActions q={q} thread={thread} topicId={topicId} onCleared={() => clear(q)} onReplied={() => clear(q)} />
+          <QuestionActions q={q} thread={typeof thread === 'function' ? thread(q) : thread} topicId={topicId} onCleared={() => clear(q)} onReplied={() => clear(q)} />
         </li>
       ))}
     </ul>
