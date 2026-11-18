@@ -70,13 +70,16 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_turn_log`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_attachments`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE next_items`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-19)); err != nil {
+	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-20)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

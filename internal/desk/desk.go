@@ -282,6 +282,23 @@ func (d *Desk) Send(ctx context.Context, text string) (int64, int, error) {
 // turn under that topic, or else under the topic of what it names, or else under the
 // topic of the person's last turn, before the desk sees it.
 func (d *Desk) SendIn(ctx context.Context, text string, topic int64) (int64, int, error) {
+	return d.SendWith(ctx, text, SendOpts{Topic: topic})
+}
+
+// SendOpts are the extras of a person's message.
+type SendOpts struct {
+	// Topic is the topic the message was written from, 0 for none.
+	Topic int64
+	// Attach are ids of uploaded files the message carries (store.TakeAttachments).
+	// Note turns the taken files into the block the agent reads after the message; the
+	// stored conversation keeps the person's words alone, and the files with the turn.
+	Attach []int64
+	Note   func([]store.Attachment) string
+}
+
+// SendWith is SendIn with the extras of SendOpts.
+func (d *Desk) SendWith(ctx context.Context, text string, o SendOpts) (int64, int, error) {
+	topic := o.Topic
 	if strings.TrimSpace(text) == "" {
 		return 0, 0, errors.New("say something")
 	}
@@ -294,11 +311,22 @@ func (d *Desk) SendIn(ctx context.Context, text string, topic int64) (int64, int
 		return 0, len(d.queue), ErrQueueFull
 	}
 	filed, how, what := d.chooseTopic(ctx, text, topic)
-	e, err := d.appendLocked(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman})
+	var files []store.Attachment
+	e, err := d.appendLockedThen(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman}, func(e store.DeskEvent) (err error) {
+		if len(o.Attach) == 0 {
+			return nil
+		}
+		files, err = d.m.o.Store.TakeAttachments(ctx, d.ws.ID, e.Turn, o.Attach)
+		return err
+	})
 	if err != nil {
 		return 0, 0, err
 	}
-	t := turn{id: e.Turn, origin: store.DeskByHuman, text: text}
+	agentText := text
+	if len(files) > 0 && o.Note != nil {
+		agentText += "\n\n" + o.Note(files)
+	}
+	t := turn{id: e.Turn, origin: store.DeskByHuman, text: agentText}
 	if filed != 0 {
 		l := store.TopicLink{TopicID: filed, Kind: store.TopicTurn, Ref: strconv.FormatInt(e.Turn, 10), By: store.TopicLinkShepherd}
 		if _, err := d.m.o.Store.LinkTopic(ctx, l); err != nil {
@@ -834,10 +862,21 @@ func (d *Desk) append(ctx context.Context, e store.DeskEvent) (store.DeskEvent, 
 
 // appendLocked stores an event and tells the streams.
 func (d *Desk) appendLocked(ctx context.Context, e store.DeskEvent) (store.DeskEvent, error) {
+	return d.appendLockedThen(ctx, e, nil)
+}
+
+// appendLockedThen is appendLocked with a step that runs once the event has its id and
+// before any stream hears of it.
+func (d *Desk) appendLockedThen(ctx context.Context, e store.DeskEvent, then func(store.DeskEvent) error) (store.DeskEvent, error) {
 	e.WorkspaceID = d.ws.ID
 	e, err := d.m.o.Store.AddDeskEvent(ctx, e)
 	if err != nil {
 		return e, err
+	}
+	if then != nil {
+		if err := then(e); err != nil {
+			return e, err
+		}
 	}
 	close(d.changed)
 	d.changed = make(chan struct{})

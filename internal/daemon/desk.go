@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/attach"
 	"github.com/ubixsys/ubixshepherd/internal/desk"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -128,6 +129,12 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if strings.TrimSpace(req.Text) == "" && len(req.Attachments) > 0 {
+		req.Text = "See the attached file."
+		if len(req.Attachments) > 1 {
+			req.Text = "See the attached files."
+		}
+	}
 	if strings.TrimSpace(req.Text) == "" {
 		writeError(w, http.StatusBadRequest, errors.New("say something"))
 		return
@@ -170,7 +177,29 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 	if req.About != nil {
 		text = req.About.Line() + "\n\n" + text
 	}
-	id, ahead, err := d.SendIn(r.Context(), text, req.TopicID)
+	opts := desk.SendOpts{Topic: req.TopicID}
+	if len(req.Attachments) > 0 {
+		files, ferr := s.attachments()
+		if ferr != nil {
+			s.fail(w, ferr)
+			return
+		}
+		// Check and take in one step, so two messages cannot both send one file.
+		s.attachMu.Lock()
+		defer s.attachMu.Unlock()
+		if !s.checkTurnAttachments(w, r, d.Workspace().ID, req.Attachments) {
+			return
+		}
+		opts.Attach = req.Attachments
+		opts.Note = func(as []store.Attachment) string {
+			fs := make([]attach.File, len(as))
+			for i, a := range as {
+				fs[i] = attach.File{Name: a.Name, Mime: a.Mime, Kind: a.Kind, Size: a.Size, SHA: a.SHA}
+			}
+			return files.Note(fs)
+		}
+	}
+	id, ahead, err := d.SendWith(r.Context(), text, opts)
 	switch {
 	case errors.Is(err, desk.ErrQueueFull):
 		writeError(w, http.StatusTooManyRequests, err)

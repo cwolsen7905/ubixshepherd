@@ -31,6 +31,7 @@ const fakeClaude = `#!/bin/sh
 msg=$(cat)
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $SHEPHERD_TOKEN" \
   -d '{"answer":"yes"}' "$SHEPHERD_URL/v1/decisions/1/answer")
+printf '%s' "$msg" > "$FAKE_LOG.msg"
 echo "ANSWER $code $(printf '%s' "$msg" | head -c 40 | tr '\n' ' ')" >> "$FAKE_LOG"
 echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Hel"}}}'
 case "$msg" in *"please sleep"*) sleep 30 ;; esac

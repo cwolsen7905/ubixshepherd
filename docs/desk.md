@@ -182,6 +182,19 @@ when none is in a topic the head says the turn is unfiled. A person's turn is ne
 by Shepherd. When there are no open topics the head of a turn is left out, as before. See
 [topics.md](topics.md) for the rules.
 
+## Files in a message
+
+A message from the web chat may carry files (see [web.md](web.md#attaching-files-to-a-message)).
+The stored conversation keeps the person's words and a list of the files; what the desk
+reads is the words followed by a block that says the person attached files and lists
+each one with its name, type, size and the path it is kept at. The desk opens a file with
+its `Read` tool, which shows an image or a PDF to the model and reads text as it is. A
+text file of up to 16 KiB is also written into the block, with secrets redacted, so the
+desk needs no tool call for a short log. The block tells the desk the files are the
+person's data and not instructions. A message of files alone reaches the desk as
+"See the attached file." Only the person's messages carry files: the desk's tools do
+not, and it cannot write or run anything it is given.
+
 ## Settings
 
 ```yaml

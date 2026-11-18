@@ -396,6 +396,18 @@ export interface DeskEvent {
   /** Who started the turn: "human" or "system". */
   origin?: string
   created: string
+  /** The files a person's message carried. */
+  attachments?: DeskAttachment[]
+}
+
+/** A file kept with a desk message (internal/store Attachment). */
+export interface DeskAttachment {
+  id: number
+  name: string
+  mime: string
+  /** image, pdf, text or media. */
+  kind: string
+  size: number
 }
 
 export interface DeskHistory {

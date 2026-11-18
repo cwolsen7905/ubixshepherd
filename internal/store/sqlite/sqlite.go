@@ -587,6 +587,20 @@ var migrations = []string{
 	// The review threads of an approved request that only the follow-through owner's
 	// threads hold up under after_approval, raised to the person.
 	`ALTER TABLE lane_forge ADD COLUMN owner_blocking TEXT NOT NULL DEFAULT '';`,
+	// Files the person put in desk messages; the bytes live in the attachments directory
+	// under their hash. turn is 0 until a message takes the file.
+	`CREATE TABLE desk_attachments (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		workspace_id INTEGER NOT NULL,
+		turn         INTEGER NOT NULL DEFAULT 0,
+		sha          TEXT NOT NULL,
+		name         TEXT NOT NULL,
+		mime         TEXT NOT NULL,
+		kind         TEXT NOT NULL,
+		size         INTEGER NOT NULL,
+		created      TEXT NOT NULL
+	);
+	CREATE INDEX desk_attachments_turn ON desk_attachments (workspace_id, turn);`,
 }
 
 // DB is a SQLite-backed store.Store.
@@ -1457,7 +1471,11 @@ func (s *DB) deskEvents(ctx context.Context, q string, args ...any) ([]store.Des
 		e.Created = parseTime(created)
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return out, s.fillAttachments(ctx, out)
 }
 
 func (s *DB) TrimDeskEvents(ctx context.Context, workspaceID int64, keep int) error {

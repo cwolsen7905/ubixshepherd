@@ -21,6 +21,10 @@ import (
 //	GET  /v1/desk/status     DeskStatus
 //	POST /v1/desk/interrupt  stop the turn in progress: DeskInterrupted
 //	POST /v1/desk/new        a new conversation: the next turn starts a new session
+//	POST /v1/desk/attachments  multipart (workspace_id, file): keeps one file for the
+//	                         next message and answers with its store.Attachment; 400 for
+//	                         a type or size the desk refuses (internal/attach)
+//	GET  /v1/desk/attachments/{id}  the file's bytes; only images are shown inline
 //
 // The stream (text/event-stream) sends each stored event as
 //
@@ -48,6 +52,9 @@ const (
 	PathDeskStatus    = "/v1/desk/status"
 	PathDeskInterrupt = "/v1/desk/interrupt"
 	PathDeskNew       = "/v1/desk/new"
+	// PathDeskAttachments takes a file (POST, multipart: workspace_id, file) and serves
+	// one back by id (GET PathDeskAttachments/{id}).
+	PathDeskAttachments = "/v1/desk/attachments"
 )
 
 // DeskPartial is the stream's event for a piece of a reply as it streams.
@@ -67,6 +74,9 @@ type DeskTurn struct {
 	// About is the entity the message is about (the inspector's composer): the desk is
 	// told of it at the head of the turn so it can name it.
 	About *DeskAbout `json:"about,omitempty"`
+	// Attachments are the ids of files uploaded to PathDeskAttachments for this
+	// message: they are kept with the turn and the desk is told where to open them.
+	Attachments []int64 `json:"attachments,omitempty"`
 }
 
 // DeskAboutKinds are the entity kinds a turn can be about.
