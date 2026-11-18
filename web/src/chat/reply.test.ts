@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DeskEvent, DeskQuestion } from '../api/types'
-import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
+import { closedQuestions, isYesNo, questionsByMessage, replyJumpNote, replyRef } from './reply'
 
 const ev = (seq: number, kind: DeskEvent['kind'], turn?: number) => ({ seq, kind, turn, created: '' }) as DeskEvent
 const q = (id: number, turn: number, state: DeskQuestion['state'] = 'open') => ({ id, turn, state, text: '', workspace_id: 1, created: '' }) as DeskQuestion
@@ -48,5 +48,14 @@ describe('closedQuestions', () => {
     })
     expect(asked.sort()).toEqual(['answered', 'skipped'])
     expect(got.map((x) => x.id)).toEqual([1, 2])
+  })
+})
+
+describe('isYesNo', () => {
+  it('accepts a short single yes-or-no question', () => {
+    for (const t of ['Should I merge it?', 'Is the gate green?', 'Want me to push the branch?']) expect(isYesNo(t)).toBe(true)
+  })
+  it('refuses open, either-or, multi-part and unfinished questions', () => {
+    for (const t of ['Which repo?', 'Should I merge or rebase?', 'Should I merge? Which branch?', 'Should I merge', 'Is it ok?\nExplain.', '']) expect(isYesNo(t)).toBe(false)
   })
 })

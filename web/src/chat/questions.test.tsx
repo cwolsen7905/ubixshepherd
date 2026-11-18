@@ -26,3 +26,32 @@ describe('QuestionActions after a reply', () => {
     expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
   })
 })
+
+describe('Yes and No buttons', () => {
+  const yn: DeskQuestion = { ...q, id: 7, text: 'Should I merge it?' }
+  it('send the word as a reply linked to the question and clear it', async () => {
+    const send = vi.fn(async () => true)
+    const replied = vi.fn()
+    render(<QuestionActions q={yn} thread={{ send } as unknown as DeskThread} topicId={3} onCleared={() => {}} onReplied={replied} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+    await waitFor(() => expect(send).toHaveBeenCalledWith('Yes', 3, 7))
+    expect(replied).toHaveBeenCalled()
+  })
+  it('send No the same way', async () => {
+    const send = vi.fn(async () => true)
+    render(<QuestionActions q={yn} thread={{ send } as unknown as DeskThread} onCleared={() => {}} />)
+    await userEvent.click(screen.getByRole('button', { name: 'No' }))
+    await waitFor(() => expect(send).toHaveBeenCalledWith('No', null, 7))
+  })
+  it('say so when the send fails, and keep the question', async () => {
+    const replied = vi.fn()
+    render(<QuestionActions q={yn} thread={{ send: async () => false } as unknown as DeskThread} onCleared={() => {}} onReplied={replied} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Not sent')
+    expect(replied).not.toHaveBeenCalled()
+  })
+  it('are absent on an open question', () => {
+    render(<QuestionActions q={q} thread={{ send: async () => true } as unknown as DeskThread} onCleared={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull()
+  })
+})

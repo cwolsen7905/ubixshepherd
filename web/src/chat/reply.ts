@@ -35,3 +35,18 @@ export async function closedQuestions(list: (state: 'answered' | 'skipped') => P
   const [answered, skipped] = await Promise.all([list('answered'), list('skipped')])
   return [...answered, ...skipped]
 }
+
+const yesNoStart = /^(?:do|does|did|is|are|was|were|can|could|should|shall|will|would|have|has|had|may|must|ok to|okay to|want me to|shall i|ready to)\b/i
+
+/**
+ * Whether a question reads as a plain yes-or-no one. The daemon keeps no flag for it, so this
+ * is deliberately conservative: one short sentence that opens with an auxiliary verb, ends in a
+ * question mark and offers no alternative ("or"). A miss only means no buttons.
+ */
+export function isYesNo(text: string): boolean {
+  const t = text.trim()
+  if (!t || t.length > 200 || /\n/.test(t)) return false
+  if (!t.endsWith('?') || t.indexOf('?') !== t.length - 1) return false
+  if (/\bor\b/i.test(t)) return false
+  return yesNoStart.test(t)
+}
