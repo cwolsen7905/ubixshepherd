@@ -3,6 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -128,5 +131,64 @@ func TestCrookShadowCLI(t *testing.T) {
 	}
 	if code := h.run("crook", "shadow", "extra"); code == 0 {
 		t.Error("a stray argument should fail")
+	}
+}
+
+// shepherd crook layers reads the repo layer from origin's base branch, not the worktree,
+// from the default .shepherd folder.
+func TestCrookLayersCLI(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, app := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = app
+	g := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", app}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	rule := func(then string) string {
+		return "---\nkind: guardrail\nactions: [push]\nthen: " + then + "\n---\nSays " + then + ".\n"
+	}
+	put := func(path, body string) {
+		t.Helper()
+		os.MkdirAll(filepath.Dir(path), 0o755)
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put(filepath.Join(app, ".shepherd", "rules", "hold-push.md"), rule("refuse"))
+	g("add", ".")
+	g("commit", "-q", "-m", "rules")
+	g("push", "-q", "origin", "HEAD:main")
+	// A loosening in the worktree, uncommitted, must not show.
+	put(filepath.Join(app, ".shepherd", "rules", "hold-push.md"), rule("ask"))
+
+	if code := h.run("crook", "layers"); code != 0 {
+		t.Fatalf("layers: %d %s%s", code, h.out, h.err)
+	}
+	out := h.out.String()
+	for _, want := range []string{"repo (1)", "hold-push", "-> refuse"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "(loosens)") || strings.Contains(out, "-> ask") {
+		t.Errorf("the worktree's edit leaked in:\n%s", out)
+	}
+	h.out.Reset()
+	if code := h.run("crook", "layers", "--json"); code != 0 {
+		t.Fatalf("json: %s", h.err)
+	}
+	var v crook.RulesView
+	if err := json.Unmarshal(h.out.Bytes(), &v); err != nil || len(v.Layers) != 4 || len(v.Layers[3].Rules) != 1 {
+		t.Fatalf("json view: %v %s", err, h.out)
+	}
+	if code := h.run("crook", "layers", "extra"); code == 0 {
+		t.Error("a stray argument was accepted")
 	}
 }
