@@ -204,23 +204,6 @@ func printRun(env Env, r api.RunView) {
 	fmt.Fprintf(w, "  log       %s\n", r.Log)
 }
 
-// readLog reads a run's whole log as it is now.
-func readLog(ctx context.Context, c *client.Client, id int64) (string, error) {
-	var offset int64
-	var b strings.Builder
-	for {
-		chunk, err := c.RunLog(ctx, id, offset)
-		if err != nil {
-			return "", err
-		}
-		b.WriteString(chunk.Data)
-		if chunk.Data == "" || chunk.Offset == offset {
-			return b.String(), nil
-		}
-		offset = chunk.Offset
-	}
-}
-
 // statusLogLines is how many lines of the run's log `run status` prints.
 const statusLogLines = 40
 
@@ -319,14 +302,21 @@ func needsPerson(ctx context.Context, c *client.Client, id int64, decisions []st
 	return strings.Join(out, "; "), nil
 }
 
-// printLog prints a run's whole log as it is now.
+// printLog prints a run's whole log as it is now, writing each chunk as it arrives so
+// a long log is never held whole.
 func printLog(ctx context.Context, env Env, c *client.Client, id int64) error {
-	data, err := readLog(ctx, c, id)
-	if err != nil {
-		return err
+	var offset int64
+	for {
+		chunk, err := c.RunLog(ctx, id, offset)
+		if err != nil {
+			return err
+		}
+		fmt.Fprint(env.Stdout, chunk.Data)
+		if chunk.Data == "" || chunk.Offset == offset {
+			return nil
+		}
+		offset = chunk.Offset
 	}
-	fmt.Fprint(env.Stdout, data)
-	return nil
 }
 
 // tailLog reads a run's log and keeps its last n lines. It pages through the log

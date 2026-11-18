@@ -276,3 +276,48 @@ func TestRunStatusTailAcrossChunks(t *testing.T) {
 		t.Errorf("the tail leaks the log's start")
 	}
 }
+
+// countingWriter records each Write call so a test can tell streamed output from one
+// buffered write.
+type countingWriter struct {
+	buf    strings.Builder
+	writes []int
+}
+
+func (w *countingWriter) Write(p []byte) (int, error) {
+	w.writes = append(w.writes, len(p))
+	return w.buf.Write(p)
+}
+
+// `run logs` writes each chunk as it arrives instead of collecting the whole log first.
+func TestRunLogsStreamsChunks(t *testing.T) {
+	h := newHarness(t, "", false)
+	const lines = 3000
+	id := seedLongLogRun(t, h, lines)
+	w := &countingWriter{}
+	h.env.Stdout = w
+
+	if code := Run(context.Background(), h.env, []string{"run", "logs", fmt.Sprint(id)}); code != 0 {
+		t.Fatalf("run logs: %d %s", code, h.err)
+	}
+	var nonEmpty []int
+	total := 0
+	for _, n := range w.writes {
+		total += n
+		if n > 0 {
+			nonEmpty = append(nonEmpty, n)
+		}
+	}
+	if len(nonEmpty) < 2 {
+		t.Fatalf("log was written in %d piece(s), want one per chunk", len(nonEmpty))
+	}
+	for _, n := range nonEmpty {
+		if n > 64<<10 {
+			t.Errorf("a single write of %d bytes exceeds one 64 KiB chunk", n)
+		}
+	}
+	out := w.buf.String()
+	if total != len(out) || !strings.HasPrefix(out, "output line 00001 ") || !strings.HasSuffix(out, fmt.Sprintf("output line %05d with padding to widen each chunk\n", lines)) {
+		t.Errorf("streamed log is not the whole log (%d bytes)", len(out))
+	}
+}
