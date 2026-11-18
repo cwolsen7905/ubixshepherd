@@ -4,8 +4,7 @@
 |---|---|
 | `icon.svg` | The icon: favicons, avatars, app and tab icons. Readable down to 16 px. |
 | `logo.svg` | Icon and wordmark, for light backgrounds. |
-| `social.svg`, `social.png` | 1200 × 630 card for link previews (most sites need the PNG). |
-| `social-preview.svg`, `social-preview.png` | 1280 × 640 card for the repository's GitHub social preview. The SVG is the source; the PNG is its render, under 1 MB. |
+| `social-preview.svg`, `social-preview.png` | 1280 × 640 card for the repository's GitHub social preview and for link previews elsewhere. The SVG is the source; the PNG is its render, under 1 MB. |
 
 The icon follows the uBix family tile (uBixSys blue `#0f62fe`, white shapes at full and
 55% opacity). A white crook stands over a 2 × 2 flock: the one voice, and the agents it
