@@ -1075,6 +1075,9 @@ type Store interface {
 	// SweepAttachments deletes the files never taken that are older than before, and those
 	// whose turn the conversation no longer holds, and returns the hashes no remaining
 	// file uses.
+	// AddDeskEventWithFiles appends a message and takes the files for it in one step: if a
+	// file cannot be taken (ErrConflict) nothing is stored. The event carries the files.
+	AddDeskEventWithFiles(ctx context.Context, e DeskEvent, attachmentIDs []int64) (DeskEvent, error)
 	AddAttachment(ctx context.Context, a Attachment) (Attachment, error)
 	Attachment(ctx context.Context, id int64) (Attachment, error)
 	TakeAttachments(ctx context.Context, workspaceID, turn int64, ids []int64) ([]Attachment, error)

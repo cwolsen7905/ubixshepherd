@@ -1420,9 +1420,17 @@ func nonNil(s []string) []string {
 	return s
 }
 
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 func (s *DB) AddDeskEvent(ctx context.Context, e store.DeskEvent) (store.DeskEvent, error) {
+	return addDeskEvent(ctx, s.db, e)
+}
+
+func addDeskEvent(ctx context.Context, db execer, e store.DeskEvent) (store.DeskEvent, error) {
 	e.Created = time.Now().UTC()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_events (workspace_id, kind, text, turn, origin, created) VALUES (?, ?, ?, ?, ?, ?)`,
+	res, err := db.ExecContext(ctx, `INSERT INTO desk_events (workspace_id, kind, text, turn, origin, created) VALUES (?, ?, ?, ?, ?, ?)`,
 		e.WorkspaceID, e.Kind, e.Text, e.Turn, e.Origin, e.Created.Format(time.RFC3339Nano))
 	if err != nil {
 		return e, err
@@ -1432,7 +1440,7 @@ func (s *DB) AddDeskEvent(ctx context.Context, e store.DeskEvent) (store.DeskEve
 	}
 	// A message that starts a turn is its own turn's id.
 	if e.Turn == 0 && (e.Kind == store.DeskUser || e.Kind == store.DeskSystem) {
-		if _, err := s.db.ExecContext(ctx, `UPDATE desk_events SET turn = seq WHERE seq = ?`, e.Seq); err != nil {
+		if _, err := db.ExecContext(ctx, `UPDATE desk_events SET turn = seq WHERE seq = ?`, e.Seq); err != nil {
 			return e, err
 		}
 		e.Turn = e.Seq

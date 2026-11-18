@@ -311,17 +311,11 @@ func (d *Desk) SendWith(ctx context.Context, text string, o SendOpts) (int64, in
 		return 0, len(d.queue), ErrQueueFull
 	}
 	filed, how, what := d.chooseTopic(ctx, text, topic)
-	var files []store.Attachment
-	e, err := d.appendLockedThen(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman}, func(e store.DeskEvent) (err error) {
-		if len(o.Attach) == 0 {
-			return nil
-		}
-		files, err = d.m.o.Store.TakeAttachments(ctx, d.ws.ID, e.Turn, o.Attach)
-		return err
-	})
+	e, err := d.appendLockedThen(ctx, store.DeskEvent{Kind: store.DeskUser, Text: text, Origin: store.DeskByHuman}, o.Attach)
 	if err != nil {
 		return 0, 0, err
 	}
+	files := e.Attachments
 	agentText := text
 	if len(files) > 0 && o.Note != nil {
 		agentText += "\n\n" + o.Note(files)
@@ -865,18 +859,19 @@ func (d *Desk) appendLocked(ctx context.Context, e store.DeskEvent) (store.DeskE
 	return d.appendLockedThen(ctx, e, nil)
 }
 
-// appendLockedThen is appendLocked with a step that runs once the event has its id and
-// before any stream hears of it.
-func (d *Desk) appendLockedThen(ctx context.Context, e store.DeskEvent, then func(store.DeskEvent) error) (store.DeskEvent, error) {
+// appendLockedThen is appendLocked for a message that takes uploaded files with it: the
+// message and the files are stored in one step, so a file that cannot be taken leaves no
+// message behind.
+func (d *Desk) appendLockedThen(ctx context.Context, e store.DeskEvent, files []int64) (store.DeskEvent, error) {
 	e.WorkspaceID = d.ws.ID
-	e, err := d.m.o.Store.AddDeskEvent(ctx, e)
+	var err error
+	if len(files) > 0 {
+		e, err = d.m.o.Store.AddDeskEventWithFiles(ctx, e, files)
+	} else {
+		e, err = d.m.o.Store.AddDeskEvent(ctx, e)
+	}
 	if err != nil {
 		return e, err
-	}
-	if then != nil {
-		if err := then(e); err != nil {
-			return e, err
-		}
 	}
 	close(d.changed)
 	d.changed = make(chan struct{})

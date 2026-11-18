@@ -23,6 +23,10 @@ const attachKeep = 24 * time.Hour
 // attachMu orders the messages that carry files, so one file is not sent twice.
 var attachMu sync.Mutex
 
+// uploadMu orders uploads and the sweep they run: a sweep never removes the bytes of a
+// file whose row is not yet written.
+var uploadMu sync.Mutex
+
 // deskAttachRoutes registers the attachment routes; Handler calls it with its own
 // registration function.
 func (s *Server) deskAttachRoutes(handle func(string, access, http.HandlerFunc)) {
@@ -70,6 +74,8 @@ func (s *Server) deskAttachUpload(w http.ResponseWriter, r *http.Request) {
 		if part.FormName() != "file" {
 			continue
 		}
+		uploadMu.Lock()
+		defer uploadMu.Unlock()
 		sha, in, err := files.Put(part.FileName(), part)
 		switch {
 		case errors.Is(err, attach.ErrRefused):

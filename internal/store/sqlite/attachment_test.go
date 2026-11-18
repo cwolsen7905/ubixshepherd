@@ -56,3 +56,25 @@ func TestAttachments(t *testing.T) {
 		t.Errorf("after trim: %v", free)
 	}
 }
+
+func TestDeskEventWithFilesIsAllOrNothing(t *testing.T) {
+	ctx := context.Background()
+	db := openTest(t)
+	a, _ := db.AddAttachment(ctx, store.Attachment{WorkspaceID: 1, SHA: "aa11", Name: "a.png", Mime: "image/png", Kind: "image", Size: 5})
+	if _, err := db.AddDeskEventWithFiles(ctx, store.DeskEvent{WorkspaceID: 1, Kind: store.DeskUser, Text: "x"}, []int64{a.ID, 999}); !errors.Is(err, store.ErrConflict) {
+		t.Fatalf("unknown file: %v", err)
+	}
+	if es, _ := db.DeskEvents(ctx, 1, 0, 10); len(es) != 0 {
+		t.Errorf("a refused message was stored: %+v", es)
+	}
+	if got, _ := db.Attachment(ctx, a.ID); got.Turn != 0 {
+		t.Errorf("a refused message kept a file: %+v", got)
+	}
+	e, err := db.AddDeskEventWithFiles(ctx, store.DeskEvent{WorkspaceID: 1, Kind: store.DeskUser, Text: "x"}, []int64{a.ID})
+	if err != nil || len(e.Attachments) != 1 || e.Attachments[0].Turn != e.Turn || e.Turn == 0 {
+		t.Fatalf("send: %+v %v", e, err)
+	}
+	if got, _ := db.Attachment(ctx, a.ID); got.Turn != e.Turn {
+		t.Errorf("file turn = %d, want %d", got.Turn, e.Turn)
+	}
+}

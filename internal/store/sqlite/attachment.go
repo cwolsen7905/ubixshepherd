@@ -47,6 +47,42 @@ func (s *DB) TakeAttachments(ctx context.Context, workspaceID, turn int64, ids [
 		return nil, err
 	}
 	defer tx.Rollback()
+	out, err := takeAttachments(ctx, tx, workspaceID, turn, ids)
+	if err != nil {
+		return nil, err
+	}
+	return out, tx.Commit()
+}
+
+func (s *DB) AddDeskEventWithFiles(ctx context.Context, e store.DeskEvent, ids []int64) (store.DeskEvent, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return e, err
+	}
+	defer tx.Rollback()
+	// Take the files first: a refusal leaves no message behind.
+	var taken []store.Attachment
+	if len(ids) > 0 {
+		if taken, err = takeAttachments(ctx, tx, e.WorkspaceID, -1, ids); err != nil {
+			return e, err
+		}
+	}
+	if e, err = addDeskEvent(ctx, tx, e); err != nil {
+		return e, err
+	}
+	for i := range taken {
+		taken[i].Turn = e.Turn
+		if _, err := tx.ExecContext(ctx, `UPDATE desk_attachments SET turn = ? WHERE id = ?`, e.Turn, taken[i].ID); err != nil {
+			return e, err
+		}
+	}
+	e.Attachments = taken
+	return e, tx.Commit()
+}
+
+// takeAttachments marks the files as the turn's inside tx, refusing any that is unknown,
+// another workspace's or already taken.
+func takeAttachments(ctx context.Context, tx *sql.Tx, workspaceID, turn int64, ids []int64) ([]store.Attachment, error) {
 	var out []store.Attachment
 	for _, id := range ids {
 		a, err := scanAttachment(tx.QueryRowContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE id = ?`, id))
@@ -62,7 +98,7 @@ func (s *DB) TakeAttachments(ctx context.Context, workspaceID, turn int64, ids [
 		a.Turn = turn
 		out = append(out, a)
 	}
-	return out, tx.Commit()
+	return out, nil
 }
 
 func (s *DB) SweepAttachments(ctx context.Context, before time.Time) ([]string, error) {
