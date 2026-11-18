@@ -59,3 +59,22 @@ shadow rows apart from what Shepherd did, and `shadow` lists them: see
 [merge-rules.md](merge-rules.md). Every form takes `--json`. `shadow` is also the
 `crook_shadow` MCP tool (`rule`, `since`). `layers` shows the effective rule files for a
 repo, by layer, and is described in [crook.md](crook.md).
+
+## lane open
+
+```sh
+shepherd lane open <name> --scope GLOB... [--repo R] [--branch B] [--item N] [--adopt]
+```
+
+`lane open` cuts a new branch from the repo's fresh `origin/<base>` and adds a worktree
+for it. It refuses a name or branch that already exists, and says to use `--adopt`.
+
+With `--adopt` the branch must already exist on origin (an open merge request's, for
+example). The worktree checks it out at `origin/<branch>` with that upstream, instead of
+cutting a new branch, so the agent can push review fixes to it. Everything else holds:
+the scope must not overlap another open lane's, and the push rules apply. It is refused
+when another open lane already holds the branch, or when a local copy of the branch
+differs from origin's. Closing an adopted lane removes the worktree but never deletes
+the branch, merged or not. See [lanes](lanes.md).
+
+The `lane_open` MCP tool takes the same choice as `adopt: true`.

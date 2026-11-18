@@ -92,6 +92,9 @@ type OpenRequest struct {
 	// Branch defaults to Name.
 	Branch string   `json:"branch,omitempty"`
 	Scope  []string `json:"scope"`
+	// Adopt takes over a branch that already exists on origin (typically an open merge
+	// request's) instead of cutting a new one from the base. The lane never deletes it.
+	Adopt bool `json:"adopt,omitempty"`
 	// Origin is who asks, and from where; the lane keeps it.
 	Origin store.Origin `json:"origin"`
 }
@@ -141,11 +144,29 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if err != nil {
 		return Opened{}, err
 	}
-	if git.RefExists(ctx, repo.Path, "refs/heads/"+req.Branch) {
-		return Opened{}, refuse("branch %s already exists in %s", req.Branch, repo.Name)
-	}
-	if git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+req.Branch) {
-		return Opened{}, refuse("branch %s already exists on origin", req.Branch)
+	localExists := git.RefExists(ctx, repo.Path, "refs/heads/"+req.Branch)
+	if req.Adopt {
+		if !git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+req.Branch) {
+			return Opened{}, refuse("cannot adopt %s: origin has no such branch in %s", req.Branch, repo.Name)
+		}
+		if req.Branch == prof.BaseBranch {
+			return Opened{}, refuse("cannot adopt %s: it is the base branch", req.Branch)
+		}
+		if localExists {
+			a, _ := git.Run(ctx, repo.Path, "rev-parse", "refs/heads/"+req.Branch)
+			b, _ := git.Run(ctx, repo.Path, "rev-parse", "refs/remotes/origin/"+req.Branch)
+			if strings.TrimSpace(a) != strings.TrimSpace(b) {
+				return Opened{}, refuse("local branch %s in %s differs from origin/%s: update or delete it first", req.Branch, repo.Name, req.Branch)
+			}
+		}
+		start = "origin/" + req.Branch
+	} else {
+		if localExists {
+			return Opened{}, refuse("branch %s already exists in %s (to work on it, open the lane with --adopt)", req.Branch, repo.Name)
+		}
+		if git.RefExists(ctx, repo.Path, "refs/remotes/origin/"+req.Branch) {
+			return Opened{}, refuse("branch %s already exists on origin (to work on it, open the lane with --adopt)", req.Branch)
+		}
 	}
 
 	// Scopes are leases: no two open lanes may claim the same path. Judged against the
@@ -169,6 +190,9 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 		return Opened{}, err
 	}
 	for _, o := range others {
+		if req.Adopt && o.Branch == req.Branch {
+			return Opened{}, refuse("lane %s already holds branch %s", o.Name, req.Branch)
+		}
 		if both := scope.OverlapWithout(req.Scope, o.Scope, files, CheckPaths(protected)); len(both) > 0 {
 			return Opened{}, refuse("scope overlaps lane %s (scope %s) on %s. Narrow the scope, or wait for %s to close",
 				o.Name, strings.Join(o.Scope, ", "), firstN(both, 5), o.Name)
@@ -194,11 +218,43 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 		f.Store.DeleteLane(ctx, lane.ID)
 		return Opened{}, err
 	}
-	if _, err := git.Run(ctx, repo.Path, "worktree", "add", "--quiet", "--no-track", "-b", req.Branch, wt, start); err != nil {
+	var addErr error
+	switch {
+	case req.Adopt && localExists:
+		_, addErr = git.Run(ctx, repo.Path, "worktree", "add", "--quiet", wt, req.Branch)
+		if addErr == nil {
+			// The local copy may have been made without tracking.
+			_, addErr = git.Run(ctx, repo.Path, "branch", "--set-upstream-to=origin/"+req.Branch, req.Branch)
+			if addErr != nil {
+				git.Run(ctx, repo.Path, "worktree", "remove", "--force", wt)
+			}
+		}
+	case req.Adopt:
+		_, addErr = git.Run(ctx, repo.Path, "worktree", "add", "--quiet", "--track", "-b", req.Branch, wt, start)
+	default:
+		_, addErr = git.Run(ctx, repo.Path, "worktree", "add", "--quiet", "--no-track", "-b", req.Branch, wt, start)
+	}
+	if addErr != nil {
 		f.Store.DeleteLane(ctx, lane.ID)
-		return Opened{}, err
+		return Opened{}, addErr
+	}
+	if !req.Adopt {
+		// A marker left by a lane that never closed cleanly must not make this branch
+		// look adopted.
+		git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
+	} else {
+		if _, err := git.Run(ctx, repo.Path, "config", adoptedKey(req.Branch), "true"); err != nil {
+			git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
+			git.Run(ctx, repo.Path, "worktree", "remove", "--force", wt)
+			f.Store.DeleteLane(ctx, lane.ID)
+			return Opened{}, err
+		}
+		out.Notes = append(out.Notes, fmt.Sprintf("adopted %s from origin: closing this lane keeps the branch", req.Branch))
 	}
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneOpen); err != nil {
+		if req.Adopt {
+			git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
+		}
 		return Opened{}, err
 	}
 	if note := f.setup(ctx, repo, prof.Setup, wt); note != "" {
@@ -211,6 +267,15 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	f.ensureExclude(ctx, repo, false)
 	out.Lane, err = f.Store.Lane(ctx, lane.ID)
 	return out, err
+}
+
+// adoptedKey is the repo config key marking a branch the lane adopted rather than
+// created. Closing such a lane never deletes the branch.
+func adoptedKey(branch string) string { return "branch." + branch + ".shepherdadopted" }
+
+func adopted(ctx context.Context, repo, branch string) bool {
+	out, err := git.Run(ctx, repo, "config", "--get", adoptedKey(branch))
+	return err == nil && strings.TrimSpace(out) == "true"
 }
 
 // SetupTimeout bounds a lane's setup command.
@@ -511,7 +576,10 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
 
-	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
+	if adopted(ctx, repo.Path, lane.Branch) {
+		res.Notes = append(res.Notes, fmt.Sprintf("kept branch %s: this lane adopted it", lane.Branch))
+		git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(lane.Branch))
+	} else if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
 		if merged {
 			// Merged into origin/<base> is checked above; -d would check against HEAD.
 			if _, err := git.Run(ctx, repo.Path, "branch", "-D", lane.Branch); err != nil {
@@ -614,7 +682,10 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 		}
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
-	if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
+	if adopted(ctx, repo.Path, lane.Branch) {
+		res.Notes = append(res.Notes, fmt.Sprintf("kept branch %s: this lane adopted it", lane.Branch))
+		git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(lane.Branch))
+	} else if git.RefExists(ctx, repo.Path, "refs/heads/"+lane.Branch) {
 		if _, err := git.Run(ctx, repo.Path, "branch", "-D", lane.Branch); err != nil {
 			return res, err
 		}

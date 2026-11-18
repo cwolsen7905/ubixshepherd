@@ -182,6 +182,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	branch := fs.String("branch", "", "branch name (default: the lane name)")
 	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
 	item := fs.Int64("item", 0, "the next-up item (shepherd next) this lane is for")
+	adopt := fs.Bool("adopt", false, "work on a branch that already exists on origin (such as an open merge request's) instead of cutting a new one; closing the lane keeps it")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -200,7 +201,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Origin: callerOrigin(env)}, *item)
+	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Adopt: *adopt, Origin: callerOrigin(env)}, *item)
 	if err != nil {
 		return err
 	}

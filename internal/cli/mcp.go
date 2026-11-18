@@ -116,9 +116,10 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "lane_open",
-			Description: "Open a lane: fetch, cut the branch from origin/<base>, add the worktree, record the scope. Returns the worktree path to work in. Refused if the scope overlaps an open lane's.",
+			Description: "Open a lane: fetch, cut the branch from origin/<base>, add the worktree, record the scope. Returns the worktree path to work in. Refused if the scope overlaps an open lane's. With adopt, the branch must already exist on origin (an open merge request's, say): the worktree checks it out instead of cutting a new branch, so you can push fixes to it; closing the lane keeps the branch. Refused if another open lane holds it.",
 			InputSchema: obj(map[string]any{
 				"repo":   propRepo,
+				"adopt":  map[string]any{"type": "boolean", "description": "Adopt the existing origin branch named by branch (or name) instead of creating one."},
 				"name":   map[string]any{"type": "string", "description": "Lane and branch name: lowercase, at most one slash (feat/login, fix-crash)."},
 				"scope":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "minItems": 1, "description": "Globs relative to the repo the work stays inside: \"src/auth/**\", \"docs/*.md\", \"README.md\"."},
 				"branch": map[string]any{"type": "string", "description": "Branch name if it should differ from the lane name."},
@@ -135,6 +136,9 @@ func mcpTools() []mcpTool {
 				}
 				if b := str(a, "branch"); b != "" {
 					out = append(out, "--branch", b)
+				}
+				if ad, _ := a["adopt"].(bool); ad {
+					out = append(out, "--adopt")
 				}
 				if n, ok := a["item"].(float64); ok && n > 0 {
 					out = append(out, "--item", fmt.Sprint(int64(n)))
