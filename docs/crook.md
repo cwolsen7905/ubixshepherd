@@ -24,8 +24,13 @@ file, or a `rules` folder that is a symlink, is not followed.
 A lane works in a worktree it can edit, so a lane could loosen its own rules by editing
 them there. Crook therefore reads the repo layer from the repo's base branch, as
 committed, and never from a worktree or from a lane's branch. Uncommitted changes and
-commits on a lane's branch have no effect until they reach the base branch, which
-happens by a merge request a person reviews.
+commits on a lane's branch have no effect until they reach the base branch.
+
+Whether a person reviews that change depends on the forge, not on Crook. Crook does not
+yet stop an agent from merging a change under the layer folder: where a repo sets
+`autonomy.merge: agent`, only the forge's own rules (approvals, code owners, protected
+paths) hold it back. To keep a lane from loosening its own rules, require a person's
+approval on the layer folder in the forge, such as a code owners entry for it.
 
 If the base branch cannot be read, the repo layer is reported as not loaded and the other
 layers still apply. It is never treated as an empty layer without saying so. A repo with no
