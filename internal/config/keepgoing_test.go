@@ -63,3 +63,17 @@ func TestKeepGoingDayEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestPlansAutoApprovedDefaultsOn(t *testing.T) {
+	var k KeepGoing
+	if !k.PlansAutoApproved() {
+		t.Error("unset should be on")
+	}
+	no, yes := false, true
+	if (KeepGoing{PlanApprove: &no}).PlansAutoApproved() {
+		t.Error("false should be off")
+	}
+	if !(KeepGoing{PlanApprove: &yes}).PlansAutoApproved() {
+		t.Error("true should be on")
+	}
+}

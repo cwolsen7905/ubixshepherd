@@ -24,6 +24,9 @@ type KeepGoing struct {
 	// LaneStarts is how many autonomous starts a lane may have in a day before it is
 	// skipped; 0 is DefaultKeepLaneStarts.
 	LaneStarts int `yaml:"lane_starts,omitempty" json:"lane_starts,omitempty"`
+	// PlanApprove turns plan auto-approve off when false: a plan an agent posts as a
+	// decision then always waits for the person. Unset is on, while keep-going is on.
+	PlanApprove *bool `yaml:"plan_approve,omitempty" json:"plan_approve,omitempty"`
 }
 
 // Keep-going's defaults, from docs/keep-going.md.
@@ -65,6 +68,12 @@ func (k KeepGoing) StartsPerLane() int {
 		return k.LaneStarts
 	}
 	return DefaultKeepLaneStarts
+}
+
+// PlansAutoApproved reports whether a plan decision that meets the rules of
+// docs/keep-going.md proceeds without the person while keep-going is on. The default is yes.
+func (k KeepGoing) PlansAutoApproved() bool {
+	return k.PlanApprove == nil || *k.PlanApprove
 }
 
 // DayEndAt is the first moment at or after now that is the day's end, in now's zone.

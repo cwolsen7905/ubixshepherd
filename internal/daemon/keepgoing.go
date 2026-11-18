@@ -75,6 +75,8 @@ type KeepGoing struct {
 	// before the daemon's background starts.
 	kick chan struct{}
 	pass func(context.Context)
+	// planAnswer answers a decision for plan auto-approve; nil uses the runner. Tests set it.
+	planAnswer func(ctx context.Context, id int64, text string) error
 }
 
 // KeepGoing returns the server's keep-going controller.
@@ -334,6 +336,7 @@ func (k *KeepGoing) EvaluateAll(ctx context.Context) {
 			continue
 		}
 		if row.On {
+			k.autoApprovePlans(ctx, ws.ID)
 			k.driveOnce(ctx, ws.ID)
 		}
 		k.checkStall(ctx, row)
