@@ -27,7 +27,9 @@ type Sources struct {
 type RepoSource struct {
 	// Dir is any checkout of the repo; only its object store is used.
 	Dir string
-	// Ref is the base branch, such as origin/dev or dev. It is required.
+	// Ref is the base branch as a remote-tracking ref, such as origin/dev. It is
+	// required. A local branch is refused: worktrees share a repo's local refs, so a lane
+	// could move one with git before the next load.
 	Ref string
 	// Folder is the layer folder inside the repo; empty means DefaultRepoFolder.
 	Folder string
@@ -73,7 +75,7 @@ func Load(ctx context.Context, src Sources) RuleSet {
 	return set
 }
 
-// ReadLayerGit reads <folder>/rules/*.md as committed at ref in the repo at dir. It reads
+// ReadLayerGit reads <folder>/rules/*.md as committed at a remote-tracking ref in the repo at dir. It reads
 // git objects only, so uncommitted edits and a lane's worktree have no say. A ref that
 // does not resolve is an error (the layer is unknown, not empty); a folder that is absent
 // at the ref has no rules. A symlink anywhere on the path is refused or skipped, as in
@@ -89,7 +91,14 @@ func ReadLayerGit(ctx context.Context, layer, dir, ref, folder string) (LayerFil
 	if ref == "" || strings.HasPrefix(ref, "-") {
 		return out, fmt.Errorf("%s layer: no base branch to read the rules from", layer)
 	}
-	commit, err := git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+	full, err := git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", ref)
+	if err != nil || full == "" {
+		return out, fmt.Errorf("%s layer: cannot read the base branch %q", layer, ref)
+	}
+	if !strings.HasPrefix(full, "refs/remotes/") {
+		return out, fmt.Errorf("%s layer: the base branch must be a remote-tracking ref such as origin/dev, not %q", layer, ref)
+	}
+	commit, err := git.Run(ctx, dir, "rev-parse", "--verify", "--quiet", full+"^{commit}")
 	if err != nil || commit == "" {
 		return out, fmt.Errorf("%s layer: cannot read the base branch %q", layer, ref)
 	}

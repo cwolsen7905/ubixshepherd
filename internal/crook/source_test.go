@@ -46,6 +46,7 @@ func repoWith(t *testing.T, files map[string]string) string {
 	write(t, dir, "README", "x")
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-q", "-m", "base")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/base", "HEAD")
 	return dir
 }
 
@@ -59,7 +60,7 @@ func TestRepoLayerComesFromBaseBranchNotWorktree(t *testing.T) {
 	write(t, dir, ".shepherd/rules/hold-push.md", "---\ndisabled: true\n---\n")
 	write(t, dir, ".shepherd/rules/extra.md", guardText("ask"))
 
-	set := Load(context.Background(), Sources{Repo: &RepoSource{Dir: dir, Ref: "base"}})
+	set := Load(context.Background(), Sources{Repo: &RepoSource{Dir: dir, Ref: "origin/base"}})
 	if len(set.Errors) != 0 {
 		t.Fatal(set.Errors)
 	}
@@ -73,18 +74,18 @@ func TestRepoFolderIsConfigurable(t *testing.T) {
 		".shepherd/rules/a.md": guardText("ask"),
 		"policy/rules/b.md":    guardText("hold"),
 	})
-	l, err := ReadLayerGit(context.Background(), LayerRepo, dir, "base", "policy")
+	l, err := ReadLayerGit(context.Background(), LayerRepo, dir, "origin/base", "policy")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := l.Files["b.md"]; !ok || len(l.Files) != 1 {
 		t.Fatalf("got %v", l.Files)
 	}
-	l, err = ReadLayerGit(context.Background(), LayerRepo, dir, "base", "")
+	l, err = ReadLayerGit(context.Background(), LayerRepo, dir, "origin/base", "")
 	if err != nil || len(l.Files) != 1 || l.Files["a.md"] == nil {
 		t.Fatalf("default folder: %v %v", l.Files, err)
 	}
-	l, err = ReadLayerGit(context.Background(), LayerRepo, dir, "base", "nope/here")
+	l, err = ReadLayerGit(context.Background(), LayerRepo, dir, "origin/base", "nope/here")
 	if err != nil || len(l.Files) != 0 {
 		t.Fatalf("absent folder has no rules: %v %v", l.Files, err)
 	}
@@ -94,11 +95,13 @@ func TestReadLayerGitRefusals(t *testing.T) {
 	ctx := context.Background()
 	dir := repoWith(t, map[string]string{"other/real.md": guardText("ask")})
 	for _, folder := range []string{"/abs", "../up", "a//b", "a/./b", ".git", `a\b`, "x/.GIT"} {
-		if _, err := ReadLayerGit(ctx, LayerRepo, dir, "base", folder); err == nil {
+		if _, err := ReadLayerGit(ctx, LayerRepo, dir, "origin/base", folder); err == nil {
 			t.Errorf("folder %q accepted", folder)
 		}
 	}
-	for _, ref := range []string{"", "missing", "--output=x"} {
+	// A local branch or a tag, which a lane could move, is not a base branch.
+	gitIn(t, dir, "tag", "tagged")
+	for _, ref := range []string{"", "missing", "--output=x", "base", "tagged", "HEAD"} {
 		if _, err := ReadLayerGit(ctx, LayerRepo, dir, ref, ""); err == nil {
 			t.Errorf("ref %q accepted", ref)
 		}
@@ -112,7 +115,8 @@ func TestReadLayerGitRefusals(t *testing.T) {
 	}
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-q", "-m", "link")
-	if _, err := ReadLayerGit(ctx, LayerRepo, dir, "HEAD", ""); err == nil {
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/head", "HEAD")
+	if _, err := ReadLayerGit(ctx, LayerRepo, dir, "origin/head", ""); err == nil {
 		t.Error("symlinked rules folder accepted")
 	}
 }
@@ -128,7 +132,8 @@ func TestReadLayerGitSkipsSymlinkedFilesAndOtherFiles(t *testing.T) {
 	}
 	gitIn(t, dir, "add", "-A")
 	gitIn(t, dir, "commit", "-q", "-m", "more")
-	l, err := ReadLayerGit(context.Background(), LayerRepo, dir, "HEAD", "")
+	gitIn(t, dir, "update-ref", "refs/remotes/origin/head", "HEAD")
+	l, err := ReadLayerGit(context.Background(), LayerRepo, dir, "origin/head", "")
 	if err != nil || len(l.Files) != 1 || l.Files["ok.md"] == nil {
 		t.Fatalf("got %v %v", l.Files, err)
 	}
@@ -139,7 +144,7 @@ func TestLoadLayersAndFailedLayerIsReported(t *testing.T) {
 	write(t, ws, "rules/a.md", guardText("refuse"))
 	write(t, proj, "rules/a.md", guardText("ask"))
 	repo := repoWith(t, map[string]string{".shepherd/rules/b.md": guardText("hold")})
-	set := Load(context.Background(), Sources{Workspace: ws, Project: proj, Repo: &RepoSource{Dir: repo, Ref: "base"}})
+	set := Load(context.Background(), Sources{Workspace: ws, Project: proj, Repo: &RepoSource{Dir: repo, Ref: "origin/base"}})
 	if len(set.Errors) != 0 || len(set.Rules) != 2 {
 		t.Fatalf("%+v %v", set.Rules, set.Errors)
 	}
