@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -105,5 +106,33 @@ func TestNote(t *testing.T) {
 	}
 	if s.Note(nil) != "" {
 		t.Error("note for nothing")
+	}
+}
+
+func TestStageKeepsNothingUntilCommit(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	g, err := s.Stage("a.png", bytes.NewReader(png))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path(g.SHA)); err == nil {
+		t.Fatal("kept before Commit")
+	}
+	if err := g.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(s.Path(g.SHA)); err != nil {
+		t.Errorf("not kept after Commit: %v", err)
+	}
+	d, _ := s.Stage("b.png", bytes.NewReader(png))
+	d.Discard()
+	if _, err := os.Stat(d.tmp); err == nil {
+		t.Error("discarded bytes remain")
+	}
+	if _, err := s.Stage("x.exe", strings.NewReader("hi")); !errors.Is(err, ErrRefused) {
+		t.Errorf("exe: %v", err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(s.Dir, "upload-*")); len(left) != 0 {
+		t.Errorf("temp files left: %v", left)
 	}
 }

@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -74,9 +75,8 @@ func (s *Server) deskAttachUpload(w http.ResponseWriter, r *http.Request) {
 		if part.FormName() != "file" {
 			continue
 		}
-		uploadMu.Lock()
-		defer uploadMu.Unlock()
-		sha, in, err := files.Put(part.FileName(), part)
+		// The body is read and hashed before the lock, so a slow client holds nothing up.
+		staged, err := files.Stage(part.FileName(), part)
 		switch {
 		case errors.Is(err, attach.ErrRefused):
 			writeError(w, http.StatusBadRequest, err)
@@ -85,20 +85,37 @@ func (s *Server) deskAttachUpload(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
-		a, err := s.Store.AddAttachment(r.Context(), store.Attachment{WorkspaceID: d.Workspace().ID, SHA: sha, Name: in.Name, Mime: in.Mime, Kind: in.Kind, Size: in.Size})
+		a, err := s.keepUpload(r.Context(), d.Workspace().ID, staged)
 		if err != nil {
 			s.fail(w, err)
 			return
 		}
-		s.sweepAttachments(r, files)
 		writeJSON(w, http.StatusCreated, a)
 		return
 	}
 }
 
+// keepUpload stores staged bytes and writes their row as one step against the sweep, so
+// the sweep never removes bytes whose row is not yet written.
+func (s *Server) keepUpload(ctx context.Context, ws int64, g *attach.Staged) (store.Attachment, error) {
+	uploadMu.Lock()
+	defer uploadMu.Unlock()
+	if err := g.Commit(); err != nil {
+		return store.Attachment{}, err
+	}
+	in := g.Info
+	return s.Store.AddAttachment(ctx, store.Attachment{WorkspaceID: ws, SHA: g.SHA, Name: in.Name, Mime: in.Mime, Kind: in.Kind, Size: in.Size})
+}
+
 // sweepAttachments forgets files nobody sent, and removes the bytes nothing refers to.
-func (s *Server) sweepAttachments(r *http.Request, files attach.Store) {
-	free, err := s.Store.SweepAttachments(r.Context(), time.Now().Add(-attachKeep))
+func (s *Server) sweepAttachments(ctx context.Context) {
+	files, err := s.attachments()
+	if err != nil {
+		return
+	}
+	uploadMu.Lock()
+	defer uploadMu.Unlock()
+	free, err := s.Store.SweepAttachments(ctx, time.Now().Add(-attachKeep))
 	if err != nil {
 		s.Log.Warn("sweep attachments", "err", err)
 		return
@@ -106,6 +123,21 @@ func (s *Server) sweepAttachments(r *http.Request, files attach.Store) {
 	for _, sha := range free {
 		if err := files.Remove(sha); err != nil {
 			s.Log.Warn("remove an attachment", "err", err)
+		}
+	}
+}
+
+// sweepAttachmentsEvery runs the sweep now and then until quit closes, so an idle daemon
+// still forgets what the retention rules say.
+func (s *Server) sweepAttachmentsEvery(quit <-chan struct{}, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		s.sweepAttachments(context.Background())
+		select {
+		case <-quit:
+			return
+		case <-t.C:
 		}
 	}
 }

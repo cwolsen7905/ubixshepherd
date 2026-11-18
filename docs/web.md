@@ -59,5 +59,5 @@ page, or opening the thread in another browser, shows them again.
 
 The daemon keeps each file by the hash of its bytes in `attachments/` under the Shepherd
 home, so one file sent twice is stored once. A file uploaded but never sent is forgotten
-after a day, and a file whose message has aged out of the conversation is removed with it.
+after a day, and a file whose message has aged out of the conversation is removed with it; the daemon checks hourly.
 What the desk is told is in [desk.md](desk.md#files-in-a-message).

@@ -80,8 +80,17 @@ function Composer({
       )
     }
   }
-  const drop1 = (k: number) => setFiles((fs) => fs.filter((f) => f.key !== k))
-  useEffect(() => () => files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview)), [])  // eslint-disable-line react-hooks/exhaustive-deps
+  const drop1 = (k: number) => {
+    const gone = files.find((f) => f.key === k)
+    if (gone?.preview) URL.revokeObjectURL(gone.preview)
+    setFiles((fs) => fs.filter((f) => f.key !== k))
+  }
+  // Previews are revoked when their file leaves and when the composer goes; the ref holds the live ones.
+  const live = useRef(files)
+  useEffect(() => {
+    live.current = files
+  }, [files])
+  useEffect(() => () => live.current.forEach((f) => f.preview && URL.revokeObjectURL(f.preview)), [])
   const onPaste = (e: ClipboardEvent) => {
     const list = Array.from(e.clipboardData?.files ?? [])
     if (list.length === 0) return

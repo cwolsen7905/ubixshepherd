@@ -58,6 +58,7 @@ func (s *Server) background() {
 		s.keepDone = make(chan struct{})
 		go func() { defer close(s.keepDone); kg.run(s.quit) }()
 		s.hub = newFeedHub(s)
+		go s.sweepAttachmentsEvery(s.quit, time.Hour)
 		s.deskStreams, s.feedStreams = newSlots(maxDeskStreams), newSlots(maxFeedStreams)
 		s.bgDone = make(chan struct{})
 		go func() { defer close(s.bgDone); s.hub.run(s.quit) }()

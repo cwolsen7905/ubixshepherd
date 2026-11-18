@@ -153,51 +153,78 @@ func (s Store) Path(sha string) string {
 	return filepath.Join(s.Dir, sha[:2], sha)
 }
 
-// Put reads r, at most MaxFileBytes of it, classifies it and stores it. It returns the
-// file's hash and what it is.
-func (s Store) Put(name string, r io.Reader) (string, Info, error) {
+// Staged is an upload read, hashed and classified, but not yet kept.
+type Staged struct {
+	SHA  string
+	Info Info
+	tmp  string
+	s    Store
+}
+
+// Stage reads r, at most MaxFileBytes of it, into a temporary file and classifies it. It
+// is the slow step of an upload: nothing is kept until Commit.
+func (s Store) Stage(name string, r io.Reader) (*Staged, error) {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
-		return "", Info{}, err
+		return nil, err
 	}
 	tmp, err := os.CreateTemp(s.Dir, "upload-*")
 	if err != nil {
-		return "", Info{}, err
+		return nil, err
 	}
-	defer os.Remove(tmp.Name())
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(tmp, h), io.LimitReader(r, MaxFileBytes+1))
 	if cerr := tmp.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
-		return "", Info{}, err
+		os.Remove(tmp.Name())
+		return nil, err
 	}
 	head := make([]byte, 512)
 	f, err := os.Open(tmp.Name())
 	if err != nil {
-		return "", Info{}, err
+		os.Remove(tmp.Name())
+		return nil, err
 	}
 	m, _ := io.ReadFull(f, head)
 	f.Close()
 	in, err := Classify(name, head[:m], n)
 	if err != nil {
-		return "", in, err
+		os.Remove(tmp.Name())
+		return nil, err
 	}
-	sha := hex.EncodeToString(h.Sum(nil))
-	dst := s.Path(sha)
+	return &Staged{SHA: hex.EncodeToString(h.Sum(nil)), Info: in, tmp: tmp.Name(), s: s}, nil
+}
+
+// Commit keeps the staged bytes under their hash; bytes already kept are left as they are.
+func (g *Staged) Commit() error {
+	defer os.Remove(g.tmp)
+	dst := g.s.Path(g.SHA)
 	if _, err := os.Stat(dst); err == nil {
-		return sha, in, nil
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
-		return "", in, err
+		return err
 	}
-	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
-		return "", in, err
+	if err := os.Chmod(g.tmp, 0o600); err != nil {
+		return err
 	}
-	if err := os.Rename(tmp.Name(), dst); err != nil {
-		return "", in, err
+	return os.Rename(g.tmp, dst)
+}
+
+// Discard drops staged bytes that will not be kept.
+func (g *Staged) Discard() { os.Remove(g.tmp) }
+
+// Put stages and keeps a file at once. It returns the file's hash and what it is.
+func (s Store) Put(name string, r io.Reader) (string, Info, error) {
+	g, err := s.Stage(name, r)
+	if err != nil {
+		return "", Info{}, err
 	}
-	return sha, in, nil
+	if err := g.Commit(); err != nil {
+		return "", g.Info, err
+	}
+	return g.SHA, g.Info, nil
 }
 
 // Open opens the stored bytes.

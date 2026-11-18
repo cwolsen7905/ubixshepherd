@@ -73,6 +73,28 @@ describe('Composer attachments', () => {
   })
 })
 
+describe('Composer previews', () => {
+  it('revokes a preview when its file is removed and when the composer unmounts', async () => {
+    const make = vi.fn((f: Blob) => `blob:${(f as File).name}`)
+    const revoke = vi.fn()
+    Object.assign(URL, { createObjectURL: make, revokeObjectURL: revoke })
+    const thread = {
+      attachFile: vi.fn(async (f: File) => ({ id: 1, name: f.name, mime: f.type, kind: 'image', size: f.size })),
+      send: vi.fn(),
+      interrupt: vi.fn(),
+    }
+    const d = { sending: false, busy: false, problem: null, notice: null } as unknown as DeskSnapshot
+    const { unmount } = render(<Composer thread={thread as unknown as DeskThread} workspaceId={1} d={d} disabled={false} topicId={null} onSend={() => {}} />)
+    const form = screen.getByLabelText('Message to the front desk').closest('form') as HTMLElement
+    fireEvent.drop(form, { dataTransfer: { files: [file('a.png', 'image/png'), file('b.png', 'image/png')], types: ['Files'] } })
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Remove' })).toHaveLength(2))
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' }).at(0) as HTMLElement)
+    expect(revoke).toHaveBeenCalledWith('blob:a.png')
+    unmount()
+    expect(revoke).toHaveBeenCalledWith('blob:b.png')
+  })
+})
+
 describe('AttachmentList', () => {
   it('shows an image inline and any other file as a chip with name and size', () => {
     render(
