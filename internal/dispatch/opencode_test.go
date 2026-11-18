@@ -978,3 +978,37 @@ func TestOpenCodeReadPathsSkipSensitiveAndSymlinkedWorktree(t *testing.T) {
 		t.Errorf("symlink into the worktree granted: %v", got)
 	}
 }
+
+// Only a run a person started may grant reads from its own prompt: a run Shepherd starts on
+// its own (a routed request, a fix) carries text another agent wrote.
+func TestOpenCodeReadGrantFollowsWhoStartedTheRun(t *testing.T) {
+	docs := t.TempDir()
+	for _, tc := range []struct {
+		auto bool
+		want string
+	}{{false, "allow"}, {true, ""}} {
+		f := openCodeFixture(t, "ok")
+		run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "opencode",
+			Prompt: "Read " + docs + "/ for the design.", Auto: tc.auto})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg := configOf(t, logOf(t, f.wait(t, run.ID)))
+		var c struct {
+			Permission map[string]json.RawMessage `json:"permission"`
+		}
+		if err := json.Unmarshal([]byte(cfg), &c); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, cfg)
+		}
+		var ext map[string]string
+		if err := json.Unmarshal(c.Permission["external_directory"], &ext); err != nil {
+			t.Fatal(err)
+		}
+		if got := ext[filepath.Join(docs, "*")]; got != tc.want {
+			t.Errorf("auto=%v: %q for the named path, want %q\n%s", tc.auto, got, tc.want, cfg)
+		}
+		if tc.want == "" && string(c.Permission["edit"]) != `"allow"` {
+			t.Errorf("auto run's edit rule changed: %s", c.Permission["edit"])
+		}
+	}
+}
