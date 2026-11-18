@@ -1,7 +1,7 @@
 # A cluster of daemons behind one conversation: design
 
-Status: approved by the maintainer on 2026-11-05; phase 0a is next. Nothing here is built,
-and no code changes with this document. Every question is decided (see
+Status: approved by the maintainer on 2026-11-05. Phase 0a is built; phase 0b is built except
+the items under its status note. The rest is not built. Every question is decided (see
 [Decided](#decided-on-2026-11-05)).
 
 ## Goal
@@ -200,6 +200,14 @@ login page and the device list in Settings), `go.mod` (`golang.org/x/crypto`),
   "log in again" message; one left unused stops after 30. Both themes checked.
 
 **0b. The CLI over HTTPS.**
+Status: built. `Run` opens the public listener (and restarts it when a reload changes
+`daemon.public`), and `shepherd login`, `shepherd logout` and `--host https://...` work with a
+device token kept in a 0600 file. Two parts are left for a follow-up: a `url` field for a
+named host in `hosts.yaml` (the HTTPS client lives in `internal/client`, not a new
+`internal/remote` transport, so only a literal address is accepted), and `chat` over https,
+which stays refused until the desk moves into the daemon; `status` and `decision answer` work.
+`docs/cli.md` is not updated yet. The `login` and `logout` code is written and tested but not
+registered as commands; a follow-up adds the two entries.
 Scope: `internal/remote` (an HTTPS `Transport` beside `SSH`), `internal/cli/host.go`
 (`--host https://...`, a `url` field in `hosts.yaml`, normalised as `daemon.public.url` is), `internal/cli` (`shepherd login`,
 `shepherd logout`), `internal/client`, `docs/cli.md`, `docs/hosted.md`.

@@ -42,6 +42,8 @@ type Client struct {
 	redial func() (base, token string, err error)
 	// host names the machine the daemon is on when it is not this one, for messages.
 	host string
+	// hostedURL is set for a daemon reached over https with a device token (NewHTTPS).
+	hostedURL string
 	// workspace and repo stand in for the current directory (see RemoteCwd).
 	workspace, repo string
 }
@@ -638,6 +640,9 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
+		if c.hostedURL != "" {
+			return nil, &unreachable{host: c.host, err: err, https: true}
+		}
 		if c.host != "" {
 			return nil, &unreachable{host: c.host, err: err}
 		}
@@ -646,6 +651,9 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
+		if c.hostedURL != "" {
+			return nil, &LoginAgain{URL: c.hostedURL}
+		}
 		return nil, &refused{host: c.host}
 	}
 	if resp.StatusCode/100 != 2 {
@@ -670,11 +678,15 @@ func (e *StatusError) Error() string { return e.msg }
 // unreachable is a remote daemon that did not answer through its tunnel. It matches
 // ErrNoDaemon so a caller that reconnects on that (the chat) does so over ssh as well.
 type unreachable struct {
-	host string
-	err  error
+	host  string
+	err   error
+	https bool
 }
 
 func (e *unreachable) Error() string {
+	if e.https {
+		return fmt.Sprintf("cannot reach the daemon at %s (%v): is it running, and is the address right?", e.host, e.err)
+	}
 	return fmt.Sprintf("cannot reach the daemon on %s through the ssh tunnel (%v): is it running? "+
 		"a daemon that restarted is picked up by running the command again", e.host, e.err)
 }

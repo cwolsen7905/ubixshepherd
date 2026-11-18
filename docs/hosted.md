@@ -1,12 +1,9 @@
 # Hosted mode: a daemon reachable over HTTPS with a login
 
-Status: **implemented in the daemon, with one start-up step still to land.** The listener,
-account, second factor, device tokens, rate limits, login routes, `shepherd account`, the
-web sign-in page and the Settings device list are built and tested. The daemon's `Run` does
-not yet call the code that opens the public listener (`PreparePublic` before it listens,
-`ServePublic` beside it), so until it does a configured `daemon.public` is read and
-validated but nothing listens beyond loopback. `shepherd login` and `--host https://...`
-are the next phase.
+Status: **implemented, with `chat` over https, `hosts.yaml` entries and the `login` and `logout` command registration still to come.** The
+daemon opens the public listener at start, `shepherd login` and `--host https://...` work, and
+the account, second factor, device tokens, rate limits, login routes, `shepherd account`, the
+web sign-in page and the Settings device list are built and tested.
 
 This page says what the finished feature does.
 
@@ -47,6 +44,21 @@ daemon:
 | `trusted_proxies` | IP addresses or CIDRs. The daemon refuses a connection from any other address, and a request from a proxy that is not marked `X-Forwarded-Proto: https`. `X-Forwarded-For` is read only on requests from these addresses |
 | `totp_key_file` | An absolute path to a file of mode 0600 (see below) |
 
+## When the listener opens
+
+`Run` checks `daemon.public` before it listens anywhere: a missing TLS or trusted-proxy
+setting, or an unreadable key file, stops the start with the reason. With none configured
+nothing changes. The loopback listener always comes up first. The public listener opens
+only once an owner account exists, so with none the daemon says so in its log and
+`shepherd account set` is what opens it.
+
+A config reload (`shepherd daemon reload`, a SIGHUP, or saving settings) that changes
+`daemon.public` closes the public listener (waiting up to five seconds for requests in
+flight), prepares the new settings and opens it again, within about a second. A reload that
+leaves it alone does not touch it. If the new settings cannot be prepared the listener stays
+closed, and the log and the feed say why: it never falls back to the old settings. Removing
+`daemon.public` closes it for good. A stop closes it with the daemon.
+
 ## The login
 
 The owner account has a password (at least 12 characters, kept as an argon2id hash) and a
@@ -62,7 +74,7 @@ refused. Setting the password again, or changing the second factor, signs everyt
 | Way in | Route | Gives |
 |---|---|---|
 | Browser | `POST /v1/web/login`, from a page whose Origin is `daemon.public.url` | A session cookie named `__Host-shepherd_session` (Secure, HttpOnly, SameSite=Strict, Path `/`), and the CSRF token the page sends on every write |
-| CLI | `POST /v1/device/login` (`shepherd login` is the next phase) | A named device token, shown once |
+| CLI | `POST /v1/device/login`, by `shepherd login` | A named device token, kept in a file in the client's home |
 
 The login routes send `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
 Every wrong password, wrong code and reused code gives the same answer: "wrong password or
@@ -86,6 +98,36 @@ expired gets one answer, "log in again", which says nothing of its age.
 
 Logging out ends one session. "Sign out everywhere" ends every session and every device
 token. Both are rows in the store, so they hold across a restart.
+
+## Using the CLI against a hosted daemon
+
+The login and logout code is built and tested, but the two commands are not registered in the
+command table yet, so `shepherd login` is unknown until a follow-up lands. `--host https://...`
+works once a token exists.
+
+```
+shepherd login https://shepherd.example.com        # or: shepherd --host https://shepherd.example.com login
+shepherd --host https://shepherd.example.com status
+shepherd --host https://shepherd.example.com decision answer 12 "go ahead"
+shepherd logout https://shepherd.example.com
+```
+
+`shepherd login` asks for the password (not shown) and a code: an authenticator code, or one
+recovery code. For a script, `--password-stdin` reads the password and then the code, one
+line each. `--name` sets the name the device is listed under (the machine's name by default).
+Neither secret is ever a flag or an environment variable.
+
+| Thing | Rule |
+|---|---|
+| The token file | `tokens/<hash of the address>.json` in the client's Shepherd home, mode 0600 in a directory of mode 0700, written whole or not at all. It is never in `hosts.yaml`, the environment, output or a log |
+| The address | Normalised as `daemon.public.url` is: with or without a trailing slash it is one host. `http://` is refused, and there is no way to skip certificate checks: the system's trust roots, TLS 1.2 or newer, and redirects are never followed |
+| Expiry | Each use pushes the token's expiry out on the daemon, so the file never needs rewriting. It ends 30 days after its last use and 90 days after its login |
+| A revoked, expired or missing token | Exactly one message: `log in again: shepherd login <address>` |
+| `shepherd logout` | Asks the daemon to revoke the token, then deletes the file. If the daemon cannot be reached the file is still deleted, and the message says to revoke the token from Settings |
+| What works | Every command that works over `--host` ssh except `run attach` and `session attach`. `shepherd chat` is refused for now: its front desk starts on the machine that runs the command, in a directory that exists only on the daemon's, so run it on the daemon's machine |
+
+`--host` and `SHEPHERD_HOST` take a literal `https://` address. A `url` field for a named
+entry in `hosts.yaml` is not built yet.
 
 ## The TOTP key
 
