@@ -124,3 +124,36 @@ func TestCacheRefresh(t *testing.T) {
 		t.Error("after the TTL the file is read again")
 	}
 }
+
+func TestUnpushedLocalBranchIsNotApproved(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	local := filepath.Join(root, "local")
+	if out, err := exec.Command("git", "init", local).CombinedOutput(); err != nil {
+		t.Fatal(string(out), err)
+	}
+	sh(t, local, "checkout", "-b", "main")
+	commitBriefLocal(t, local, "never pushed")
+	if _, err := (&Reader{}).ForProject(ctx, "p", src, local); !errors.Is(err, ErrMissing) {
+		t.Fatalf("a repo with no remote branch read its local main: %v", err)
+	}
+}
+
+func commitBriefLocal(t *testing.T, dir, text string) {
+	t.Helper()
+	f := filepath.Join(dir, "projects", "p", "brief.md")
+	os.MkdirAll(filepath.Dir(f), 0o755)
+	os.WriteFile(f, []byte(text), 0o644)
+	sh(t, dir, "add", ".")
+	sh(t, dir, "commit", "-m", "brief")
+}
+
+func TestUnpushedCommitOnMainIsNotApproved(t *testing.T) {
+	clone := docsRepo(t)
+	commitBrief(t, clone, "approved")
+	commitBriefLocal(t, clone, "unpushed")
+	b, err := (&Reader{}).ForProject(context.Background(), "p", src, clone)
+	if err != nil || b.Text != "approved" {
+		t.Fatalf("got %+v, %v", b, err)
+	}
+}

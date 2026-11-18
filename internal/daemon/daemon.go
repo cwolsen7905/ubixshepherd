@@ -51,7 +51,9 @@ type Server struct {
 	Fold       *fold.Fold
 	Runner     *dispatch.Runner
 	// Briefs reads project briefs kept as files (brief_source); its zero value works.
-	Briefs project.Reader
+	Briefs      project.Reader
+	briefWarnMu sync.Mutex
+	briefWarned map[string]time.Time
 	// Level is the level Log writes at, when it was opened with this one; a reload sets
 	// it from daemon.log_level.
 	Level     *slog.LevelVar
@@ -1790,7 +1792,7 @@ func (s *Server) getBrief(w http.ResponseWriter, r *http.Request) {
 
 // briefView is a project's brief as getBrief and the project view give it.
 func (s *Server) briefView(ctx context.Context, name string, p config.Project) (api.BriefView, error) {
-	view := api.BriefView{Project: name, MaxAge: p.MaxAge()}
+	view := api.BriefView{Project: name, MaxAge: p.MaxAge(), AgentsGet: BriefAgentsGet}
 	// A brief kept as a file wins; the store's approved brief is the fallback.
 	b, fromFile, err := s.approvedBrief(ctx, name, p)
 	switch {

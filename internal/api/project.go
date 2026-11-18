@@ -50,6 +50,9 @@ type BriefView struct {
 	Source string `json:"source,omitempty"`
 	Commit string `json:"commit,omitempty"`
 	Ref    string `json:"ref,omitempty"`
+	// AgentsGet is the source of the brief agents are given: "store". While it is not
+	// Source, the view's approved brief does not yet govern the agents.
+	AgentsGet string `json:"agents_get,omitempty"`
 	// Age is the time since approval, in nanoseconds as a Go duration; AgeText is the
 	// same as agents read it ("approved 41 days ago").
 	Age     time.Duration `json:"age,omitempty"`

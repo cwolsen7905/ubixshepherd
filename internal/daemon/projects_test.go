@@ -188,7 +188,7 @@ func TestProjectBriefFromFile(t *testing.T) {
 	s.Briefs = project.Reader{}
 	v = api.BriefView{}
 	if code := call(t, ts, s.Token, "GET", path, nil, &v); code != http.StatusOK || v.Approved == nil || v.Approved.Text != "File focus." ||
-		v.Source != "file" || v.Commit == "" || v.Ref != "origin/main" || v.Stale {
+		v.Source != "file" || v.AgentsGet != "store" || v.Commit == "" || v.Ref != "origin/main" || v.Stale {
 		t.Fatalf("file: %d %+v", code, v)
 	}
 }

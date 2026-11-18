@@ -43,6 +43,10 @@ type Reader struct {
 // DefaultTTL is how long a read is reused.
 const DefaultTTL = 60 * time.Second
 
+// errBackoff is how long a read that failed for another reason than a missing file is
+// reused.
+const errBackoff = 10 * time.Second
+
 type cached struct {
 	at  time.Time
 	b   Brief
@@ -68,7 +72,16 @@ func (r *Reader) Read(ctx context.Context, dir, ref, file string) (Brief, error)
 	}
 	b, err := read(ctx, dir, ref, file)
 	if err != nil && !errors.Is(err, ErrMissing) {
-		return Brief{}, err // not cached: a hiccup should not stick
+		// A failure is remembered briefly, so a broken repo is not run through git on
+		// every request; ErrMissing is remembered for the full TTL.
+		c := cached{at: now().Add(errBackoff - ttl), err: err}
+		r.mu.Lock()
+		if r.cache == nil {
+			r.cache = map[string]cached{}
+		}
+		r.cache[key] = c
+		r.mu.Unlock()
+		return Brief{}, err
 	}
 	r.mu.Lock()
 	if r.cache == nil {
@@ -79,13 +92,14 @@ func (r *Reader) Read(ctx context.Context, dir, ref, file string) (Brief, error)
 	return b, err
 }
 
-// DefaultRef finds the tip of the repo's default branch: the remote's HEAD when known,
-// else main or master, remote-tracking first.
+// DefaultRef finds the tip of the remote's default branch: origin's HEAD when known,
+// else origin/main or origin/master. A local branch is never used, since it can hold
+// commits that were not pushed and so not approved.
 func DefaultRef(ctx context.Context, dir string) (string, error) {
 	if out, err := git.Run(ctx, dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil && out != "" {
 		return out, nil
 	}
-	for _, c := range []string{"origin/main", "origin/master", "main", "master"} {
+	for _, c := range []string{"origin/main", "origin/master"} {
 		if git.RefExists(ctx, dir, c) {
 			return c, nil
 		}

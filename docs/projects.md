@@ -93,7 +93,9 @@ the store's approved brief is used, and drafts and approvals through the front d
 as before. The view says which source it used (`file` or `store`).
 
 For now the brief given to agents in their standing instruction still comes from the
-store; it reads the file in a follow-up.
+store; it reads the file in a follow-up. The view's `agents_get` field names the source
+agents get (`store`), so a file brief shown as approved is not mistaken for what governs
+them. Only the remote's default branch counts: a local branch is never read.
 
 ## Spend
 
