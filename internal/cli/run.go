@@ -204,7 +204,106 @@ func printRun(env Env, r api.RunView) {
 	fmt.Fprintf(w, "  log       %s\n", r.Log)
 }
 
-// printLog prints a run's whole log as it is now.
+// statusLogLines is how many lines of the run's log `run status` prints.
+const statusLogLines = 40
+
+// runStatusView is a run's view with what `run status` leads with added alongside:
+// the agent's final report, what needs the person, and the log's tail. The run view
+// itself is unchanged, so JSON readers see the same fields as GET /v1/runs/{id}.
+type runStatusView struct {
+	api.RunView
+	ReportStatus string `json:"report_status,omitempty"`
+	ReportText   string `json:"report_text,omitempty"`
+	NeedsPerson  string `json:"needs_person,omitempty"`
+	LogTail      string `json:"log_tail,omitempty"`
+}
+
+// runRunStatus prints a run report first: the agent's final report and what needs the
+// person, then the run's header fields, then the log's tail.
+func runRunStatus(ctx context.Context, env Env, c *client.Client, id int64, asJSON bool) error {
+	r, err := c.Run(ctx, id)
+	if err != nil {
+		return err
+	}
+	ev, err := c.RunEvents(ctx, id)
+	if err != nil {
+		return err
+	}
+	report := finalReport(ev.Events)
+	needs, err := needsPerson(ctx, c, id, ev.Decisions)
+	if err != nil {
+		return err
+	}
+	tail, err := tailLog(ctx, c, id, statusLogLines)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		return printJSON(env, runStatusView{
+			RunView:      r,
+			ReportStatus: report.Status,
+			ReportText:   report.Text,
+			NeedsPerson:  needs,
+			LogTail:      strings.Join(tail, "\n"),
+		})
+	}
+	w := env.Stdout
+	if report.Status == "" {
+		fmt.Fprintln(w, "report    none yet: the agent has not reported")
+	} else {
+		fmt.Fprintf(w, "report    %s\n", report.Status)
+		for _, l := range strings.Split(strings.TrimSuffix(report.Text, "\n"), "\n") {
+			fmt.Fprintf(w, "  | %s\n", l)
+		}
+	}
+	fmt.Fprintf(w, "needs     %s\n\n", orNone(needs))
+	printRun(env, r)
+	fmt.Fprintf(w, "\n--- log tail (last %d lines) ---\n", statusLogLines)
+	for _, l := range tail {
+		fmt.Fprintln(w, l)
+	}
+	return nil
+}
+
+// finalReport is the agent's latest report that is not progress: its final word,
+// whether done or blocked.
+func finalReport(events []store.Event) store.Event {
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Kind == dispatch.EventReport && events[i].Status != "progress" {
+			return events[i]
+		}
+	}
+	return store.Event{}
+}
+
+// needsPerson says what the run waits on the person for: the open decisions asked in
+// it, and the questions it asked that are still open. A question another agent or the
+// front desk is working (routed, needs routing) does not wait on the person. Empty when
+// nothing does.
+func needsPerson(ctx context.Context, c *client.Client, id int64, decisions []store.Decision) (string, error) {
+	var out []string
+	for _, d := range decisions {
+		if d.State != store.DecisionOpen {
+			continue
+		}
+		out = append(out, fmt.Sprintf("decision %d: %s", d.ID, oneLine(d.Question, 110)))
+	}
+	states := strings.Join([]string{store.RequestPending, store.RequestReplyReady}, ",")
+	reqs, err := c.Requests(ctx, states)
+	if err != nil {
+		return "", err
+	}
+	for _, q := range reqs {
+		if q.FromRun != id || q.Kind != store.RequestQuestion {
+			continue
+		}
+		out = append(out, fmt.Sprintf("request %d (%s): %s", q.ID, q.State, oneLine(q.Message, 110)))
+	}
+	return strings.Join(out, "; "), nil
+}
+
+// printLog prints a run's whole log as it is now, writing each chunk as it arrives so
+// a long log is never held whole.
 func printLog(ctx context.Context, env Env, c *client.Client, id int64) error {
 	var offset int64
 	for {
@@ -218,6 +317,43 @@ func printLog(ctx context.Context, env Env, c *client.Client, id int64) error {
 		}
 		offset = chunk.Offset
 	}
+}
+
+// tailLog reads a run's log and keeps its last n lines. It pages through the log
+// and keeps only the tail, so a long log never sits whole in memory.
+func tailLog(ctx context.Context, c *client.Client, id int64, n int) ([]string, error) {
+	var offset int64
+	var tail []string
+	var pending strings.Builder
+	keep := func() {
+		tail = append(tail, pending.String())
+		pending.Reset()
+		if len(tail) > n {
+			tail = tail[len(tail)-n:]
+		}
+	}
+	for {
+		chunk, err := c.RunLog(ctx, id, offset)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range chunk.Data {
+			if r == '\n' {
+				keep()
+				continue
+			}
+			pending.WriteRune(r)
+		}
+		if chunk.Data == "" || chunk.Offset == offset {
+			break
+		}
+		offset = chunk.Offset
+	}
+	// A log ending mid-line still carries that line; a trailing newline adds none.
+	if pending.Len() > 0 {
+		keep()
+	}
+	return tail, nil
 }
 
 func short(sha string) string {
@@ -257,6 +393,11 @@ func runRun(ctx context.Context, env Env, args []string) error {
 	fixPrompt := fs.String("prompt", "", "fix continue: the follow-up to send instead of the suggested one")
 	forRestart := fs.Bool("for-restart", false, "stop: for the front desk hurrying a restart's drain (a person's stop is plain): the run is continued after the restart")
 	detach := fs.Bool("detach", false, "continue: start it and return")
+	// Only status takes --json; every other subcommand refuses it as before.
+	var asJSON *bool
+	if sub == "status" {
+		asJSON = fs.Bool("json", false, "print the run's view with its report, needs and log tail added as JSON")
+	}
 	pos, err := parse(fs, args[1:])
 	if err != nil {
 		return err
@@ -321,6 +462,8 @@ func runRun(ctx context.Context, env Env, args []string) error {
 		return fmt.Errorf("run id %q is not a number", pos[0])
 	}
 	switch sub {
+	case "status":
+		return runRunStatus(ctx, env, c, id, *asJSON)
 	case "why":
 		return runWhy(ctx, env, c, id)
 	case "show":

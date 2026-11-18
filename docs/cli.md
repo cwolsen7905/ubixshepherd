@@ -3,6 +3,24 @@
 Commands that this page documents. `shepherd` with no arguments lists every command;
 each is a client of the daemon's HTTP API.
 
+## run
+
+```sh
+shepherd run status <id> [--json]
+```
+
+`run status` reports on one agent run, leading with what matters: the agent's final
+report (its latest report that is not progress, with the full summary text), then a
+`needs` line naming what waits on the person (open decisions the run asked and the
+questions it asked that are pending or have a reply ready for it to read, or `none`;
+questions already routed to another lane or waiting on the front desk are not listed), then the run's header fields
+(state, agent, time, cost, commits), then the last 40 lines of its log. With `--json`
+it prints the run's view as `GET /v1/runs/{id}` answers it, with `report_status`,
+`report_text`, `needs_person` and `log_tail` added; the view's own fields are
+unchanged.
+
+The same report is the `run_status` MCP tool (`id`).
+
 ## workspace
 
 ```sh
