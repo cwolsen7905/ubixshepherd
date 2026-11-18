@@ -39,6 +39,61 @@ const (
 	PathWebSessions      = "/v1/web/sessions"
 )
 
+// Hosted mode (daemon.public, docs/hosted.md): the owner account and what hangs from it.
+//
+//	POST /v1/account              operator, loopback only: AccountSet in, AccountSetup out
+//	POST /v1/web/login            public listener: a page's password and code for a session
+//	POST /v1/device/login         public listener: the CLI's password and code for a device token
+//	GET  /v1/devices              the device tokens: DeviceList
+//	POST /v1/devices/{id}/revoke  end one: DeviceRevoked
+//	POST /v1/web/signout-all      end every session and device token: SignedOutEverywhere
+const (
+	PathAccount       = "/v1/account"
+	PathWebLogin      = "/v1/web/login"
+	PathDeviceLogin   = "/v1/device/login"
+	PathDevices       = "/v1/devices"
+	PathWebSignoutAll = "/v1/web/signout-all"
+)
+
+// AccountSet is the body of POST /v1/account.
+type AccountSet struct {
+	Password string `json:"password"`
+}
+
+// AccountSetup is shown once, when an account is set: the authenticator's enrolment
+// address and typed secret, and ten single-use recovery codes.
+type AccountSetup struct {
+	URI           string   `json:"uri"`
+	Secret        string   `json:"secret"`
+	RecoveryCodes []string `json:"recovery_codes"`
+}
+
+// Device is a device token as listed: never the token or its hash.
+type Device struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Created    time.Time `json:"created"`
+	LastUsed   time.Time `json:"last_used"`
+	Expires    time.Time `json:"expires"`
+	MaxExpires time.Time `json:"max_expires"`
+}
+
+// DeviceList answers GET /v1/devices.
+type DeviceList struct {
+	Devices []Device `json:"devices"`
+}
+
+// DeviceRevoked answers POST /v1/devices/{id}/revoke.
+type DeviceRevoked struct {
+	Revoked bool `json:"revoked"`
+}
+
+// SignedOutEverywhere answers POST /v1/web/signout-all.
+type SignedOutEverywhere struct {
+	Sessions int `json:"sessions"`
+	Devices  int `json:"devices"`
+}
+
 // CSRFHeader carries a browser session's CSRF token on every request that changes
 // something.
 const CSRFHeader = "X-Shepherd-CSRF"

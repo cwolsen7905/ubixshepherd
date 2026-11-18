@@ -46,9 +46,27 @@ const (
 	openCodeLocal = "local"
 )
 
-// openCodeSettings is the machine's opencode configuration. It reads config.yaml each
-// time, so a change applies to the next run; tests replace it.
-var openCodeSettings = func() config.OpenCode {
+// OpenCodeHost is what the OpenCode adapter needs from the machine: its settings, the
+// version probe, and the probe's remembered answers. A Runner holds one and hands it to
+// the adapter through Opts, so tests inject fakes instead of swapping globals. A nil
+// host, and any nil field, behaves as on a real machine (without remembering versions).
+type OpenCodeHost struct {
+	// Settings is the machine's opencode configuration. Nil reads config.yaml each time,
+	// so a change applies to the next run.
+	Settings func() config.OpenCode
+	// Probe asks the executable its version. Nil runs `bin --version`.
+	Probe func(bin string) (string, error)
+	// IdleLimit is the idle limit of a run. Nil uses the settings' own.
+	IdleLimit func() time.Duration
+
+	mu   sync.Mutex
+	seen map[string]string // path, size and mtime -> version
+}
+
+func (h *OpenCodeHost) settings() config.OpenCode {
+	if h != nil && h.Settings != nil {
+		return h.Settings()
+	}
 	home, err := paths.Home()
 	if err != nil {
 		return config.OpenCode{}
@@ -60,8 +78,12 @@ var openCodeSettings = func() config.OpenCode {
 	return c.OpenCode
 }
 
-// openCodeIdle is the idle limit of a run; tests replace it.
-var openCodeIdle = func() time.Duration { return openCodeSettings().Idle() }
+func (h *OpenCodeHost) idle() time.Duration {
+	if h != nil && h.IdleLimit != nil {
+		return h.IdleLimit()
+	}
+	return h.settings().Idle()
+}
 
 // openCodeBin finds the executable: opencode.bin, else PATH, else the standalone
 // installer's ~/.opencode/bin. "" when there is none.
@@ -81,14 +103,10 @@ func openCodeBin(s config.OpenCode) string {
 	return ""
 }
 
-var (
-	openCodeVersionRE = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
-	versionMu         sync.Mutex
-	versionSeen       = map[string]string{} // path, size and mtime -> version
-)
+var openCodeVersionRE = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
 
-// openCodeProbe asks the executable its version; tests replace it.
-var openCodeProbe = func(bin string) (string, error) {
+// openCodeProbe runs the executable's `--version`.
+func openCodeProbe(bin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, "--version").Output()
@@ -102,32 +120,42 @@ var openCodeProbe = func(bin string) (string, error) {
 	return m[0], nil
 }
 
-// openCodeVersion runs `bin --version`, remembering the answer for as long as the file
-// is unchanged.
-func openCodeVersion(bin string) (string, error) {
+// version runs `bin --version`, remembering the answer for as long as the file is
+// unchanged.
+func (h *OpenCodeHost) version(bin string) (string, error) {
+	probe := openCodeProbe
+	if h != nil && h.Probe != nil {
+		probe = h.Probe
+	}
+	if h == nil {
+		return probe(bin)
+	}
 	key := bin
 	if st, err := os.Stat(bin); err == nil {
 		key = fmt.Sprintf("%s|%d|%d", bin, st.Size(), st.ModTime().UnixNano())
 	}
-	versionMu.Lock()
-	v, ok := versionSeen[key]
-	versionMu.Unlock()
+	h.mu.Lock()
+	v, ok := h.seen[key]
+	h.mu.Unlock()
 	if ok {
 		return v, nil
 	}
-	v, err := openCodeProbe(bin)
+	v, err := probe(bin)
 	if err != nil {
 		return "", err
 	}
-	versionMu.Lock()
-	versionSeen[key] = v
-	versionMu.Unlock()
+	h.mu.Lock()
+	if h.seen == nil {
+		h.seen = map[string]string{}
+	}
+	h.seen[key] = v
+	h.mu.Unlock()
 	return v, nil
 }
 
-// checkOpenCode refuses an opencode of another major version than the one tested.
-func checkOpenCode(bin string) (string, error) {
-	v, err := openCodeVersion(bin)
+// check refuses an opencode of another major version than the one tested.
+func (h *OpenCodeHost) check(bin string) (string, error) {
+	v, err := h.version(bin)
 	if err != nil {
 		return "", err
 	}
@@ -140,15 +168,15 @@ func checkOpenCode(bin string) (string, error) {
 	return v, nil
 }
 
-// openCodeFor completes the adapter for this machine: the executable it found, which the
+// adapter completes the adapter for this machine: the executable it found, which the
 // runner then looks up as given, and the version check. With no opencode installed it is
 // left as is, so the runner says opencode is not installed.
-func openCodeFor(ad Adapter) (Adapter, error) {
-	bin := openCodeBin(openCodeSettings())
+func (h *OpenCodeHost) adapter(ad Adapter) (Adapter, error) {
+	bin := openCodeBin(h.settings())
 	if bin == "" {
 		return ad, nil
 	}
-	if _, err := checkOpenCode(bin); err != nil {
+	if _, err := h.check(bin); err != nil {
 		return ad, err
 	}
 	ad.Bin = bin
@@ -164,7 +192,7 @@ func openCodeArgs(o Opts) []string {
 	if o.Resume {
 		a = append(a, "-s", o.Session)
 	}
-	s := openCodeSettings()
+	s := o.OpenCode.settings()
 	if m := openCodeModel(o.Model, s.Endpoint != ""); m != "" {
 		a = append(a, "-m", m)
 	}
@@ -200,7 +228,7 @@ func openCodeLocalModel(model string) (string, bool) {
 
 // openCodeRunEnv is the run's environment: its config, in OPENCODE_CONFIG_CONTENT.
 func openCodeRunEnv(o Opts) []string {
-	return []string{openCodeEnvVar + "=" + openCodeConfig(o, openCodeSettings())}
+	return []string{openCodeEnvVar + "=" + openCodeConfig(o, o.OpenCode.settings())}
 }
 
 // kv is one JSON object member; objects are built in order because OpenCode's
@@ -260,6 +288,20 @@ func openCodeExternal(worktree string) any {
 	return r
 }
 
+var openCodeGlabReadOnly = []string{"glab ci list*", "glab ci view*", "glab ci status*", "glab ci trace*",
+	"glab api projects/*/pipelines*", "glab api projects/*/jobs*"}
+
+// The flag denies do not assume a space before the flag, since the shell splits on a tab
+// too; they over-deny a path that merely contains one of these strings, which is the safe
+// side. --hostname and -H/--header are refused so a call stays on the repo's own forge.
+var openCodeGlabDeny = []string{"glab api*-X*", "glab api*--method*", "glab api*-f*", "glab api*-F*",
+	"glab api*--field*", "glab api*--raw-field*", "glab api*--input*",
+	"glab api*-h*", "glab api*--hostname*", "glab api*-H*", "glab api*--header*",
+	"glab api*/retry*", "glab api*/cancel*", "glab api*/erase*", "glab api*/play*",
+	"glab api*/variables*", "glab api*/artifacts*",
+	// Dot segments and percent-encoding could walk out of the allowed endpoints.
+	"glab api*..*", "glab api*%*"}
+
 // openCodeConfig is the run's opencode.json. The permissions are the evaluated set for
 // mechanical edits: files may be edited, shell commands are denied except the repo's
 // build and test tools (npm included), reading git state and committing, and everything that reaches
@@ -278,6 +320,15 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 	}
 	for _, p := range allow {
 		bash = append(bash, kv{p, "allow"})
+	}
+	// Read-only glab access to pipelines and jobs, so a run can see why a pipeline failed.
+	// Rules are last match wins, so these denies follow every glab allow above: a glab api
+	// call is a GET unless it names another method or sends fields or a body.
+	for _, p := range openCodeGlabReadOnly {
+		bash = append(bash, kv{p, "allow"})
+	}
+	for _, p := range openCodeGlabDeny {
+		bash = append(bash, kv{p, "deny"})
 	}
 	// Explicitly deny interactive rebases to prevent hangs
 	bash = append(bash, kv{"git rebase -i*", "deny"})
@@ -398,7 +449,7 @@ var editTools = map[string]bool{"edit": true, "write": true, "patch": true, "mul
 var printedToolCall = regexp.MustCompile(`<tool_call>|<function=|"name"\s*:\s*"(edit|write|bash|read)"\s*,\s*"arguments"`)
 
 // openCodeOutput reads a line for a run whose model is not known: the local case.
-func openCodeOutput(line string) Output { return openCodeReader("")(line) }
+func openCodeOutput(line string) Output { return openCodeReader("", nil)(line) }
 
 // openCodeHosted says a run's model is served by a hosted provider (openrouter/...,
 // say) rather than the local endpoint.
@@ -437,9 +488,9 @@ func openCodeNote(model string) string {
 }
 
 // openCodeReader is the adapter's Read for a run on model.
-func openCodeReader(model string) func(string) Output {
+func openCodeReader(model string, h *OpenCodeHost) func(string) Output {
 	hosted := openCodeHosted(model)
-	return func(line string) Output { return openCodeRead(line, hosted) }
+	return func(line string) Output { return openCodeRead(line, hosted, h) }
 }
 
 // openCodeRead turns one line of the run's output into the run log's line and cost.
@@ -449,7 +500,7 @@ func openCodeReader(model string) func(string) Output {
 // events carry no billed cost or generation id): it is passed on, summed per run and
 // labelled as an estimate. A final step with no edit or commit in the run is called out
 // in the log, since the process exits 0 either way.
-func openCodeRead(line string, hosted bool) Output {
+func openCodeRead(line string, hosted bool, h *OpenCodeHost) Output {
 	var e openCodeEvent
 	if json.Unmarshal([]byte(line), &e) != nil || e.Type == "" {
 		return Output{Show: line}
@@ -481,7 +532,7 @@ func openCodeRead(line string, hosted bool) Output {
 		if e.Part.Reason == "tool-calls" {
 			return o
 		}
-		o.Show = openCodeEnd(e.SessionID, run, e.Part.Reason, hosted)
+		o.Show = openCodeEnd(e.SessionID, run, e.Part.Reason, hosted, h)
 		return o
 	case "error":
 		msg := e.Error.Data.Message
@@ -494,13 +545,13 @@ func openCodeRead(line string, hosted bool) Output {
 }
 
 // openCodeEnd closes a session's run in the log and forgets its state.
-func openCodeEnd(session string, run *openCodeRun, reason string, hosted bool) string {
+func openCodeEnd(session string, run *openCodeRun, reason string, hosted bool, h *OpenCodeHost) string {
 	runsMu.Lock()
 	delete(openRuns, session)
 	runsMu.Unlock()
 	ver := ""
-	if bin := openCodeBin(openCodeSettings()); bin != "" {
-		if v, err := openCodeVersion(bin); err == nil {
+	if bin := openCodeBin(h.settings()); bin != "" {
+		if v, err := h.version(bin); err == nil {
 			ver = ", opencode " + v
 		}
 	}

@@ -113,7 +113,7 @@ var upgradeChecks = []upgradeCheck{
 	{26, `SELECT t.title || '|' || t.status || '|' || t.summary || '|' || t.cleared_at || '|' || t.merged_into || '|' || l.kind || '|' || l.ref FROM topics t JOIN topic_links l ON l.topic_id = t.id`,
 		`t|open|||0|lane|live`},
 	{37, `SELECT path || '|' || blob || '|' || base_commit || '|' || item_id || '|' || set_name || '|' || approved_by || '|' || released || '|' || release_why FROM check_files WHERE id = 1`,
-		`t/a_test.go|b1|c1|0|||person (cli)||`},
+		`t/a_test.go|b1|c1|0||person (cli)||`},
 }
 
 func schemaRows(t *testing.T, db *sql.DB) []string {

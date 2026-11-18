@@ -339,3 +339,27 @@ describe('SettingsPage sections', () => {
     expect(screen.getByText('1 unsaved change')).toBeInTheDocument()
   })
 })
+
+describe('SettingsPage devices', () => {
+  const hosted = () =>
+    doc({ effective: { daemon: { max_runs: 4, budget: 20, poll: '60s', public: { listen: '0.0.0.0:8443', url: 'https://shepherd.example.com' } }, keep_going: { cap: 5 }, desk: {}, chat: {}, opencode: {} } })
+
+  it('lists device tokens on a hosted daemon', async () => {
+    daemon(hosted(), (m, p) =>
+      m === 'GET' && p === '/v1/devices'
+        ? json({ devices: [{ id: 'd1', name: 'laptop', created: '2026-11-01T00:00:00Z', last_used: '2026-11-04T00:00:00Z', expires: '2026-12-04T00:00:00Z', max_expires: '2027-01-30T00:00:00Z' }] })
+        : undefined,
+    )
+    render(<SettingsPage />)
+    expect(await screen.findByText('laptop')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Sign out everywhere' })).toBeTruthy()
+  })
+
+  it('shows no device list on a loopback-only daemon', async () => {
+    const seen = daemon(doc())
+    render(<SettingsPage />)
+    await screen.findByText('Settings')
+    expect(screen.queryByText('Signed-in devices')).toBeNull()
+    expect(seen.some((s) => s.path === '/v1/devices')).toBe(false)
+  })
+})

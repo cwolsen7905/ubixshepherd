@@ -132,6 +132,31 @@ The `web:` section holds settings for the browser UI.
 
 Examples: `vscode://file/{path}:{line}`, `cursor://file/{path}`, `{path}:{line}`.
 
+## Hosted mode (`daemon.public`)
+
+Off by default: the daemon listens on loopback only. Setting `daemon.public` adds a second
+listener beyond loopback, with TLS and a login. See [hosted.md](hosted.md) for what it does.
+
+```yaml
+daemon:
+  public:
+    listen: 0.0.0.0:8443
+    url: https://shepherd.example.com
+    tls: {cert: /etc/shepherd/tls.crt, key: /etc/shepherd/tls.key}   # or trusted_proxies
+    trusted_proxies: [10.0.0.5]
+    totp_key_file: /run/secrets/shepherd-totp-key
+```
+
+| Key | Meaning |
+|---|---|
+| `listen` | `host:port` of the public listener, with a fixed port that is not `daemon.listen`'s |
+| `url` | The public address: `https://` with no path other than `/`, no query or fragment. A trailing slash is dropped |
+| `tls.cert`, `tls.key` | PEM files for the daemon's own HTTPS. Both or neither; not with `trusted_proxies` |
+| `trusted_proxies` | IPs or CIDRs of a TLS-terminating proxy; the daemon accepts plain HTTP only from them |
+| `totp_key_file` | Absolute path to a 0600 file that encrypts the TOTP secret; without it the key is `totp.key` in the Shepherd home, with a warning |
+
+One of `tls` and `trusted_proxies` is required. `daemon.listen` must still be a loopback address.
+
 ## Unknown and retired keys
 
 The file is read strictly: a key Shepherd does not know is an error, so a typo cannot

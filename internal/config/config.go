@@ -72,6 +72,9 @@ type Daemon struct {
 	CreditUSD *float64 `yaml:"credit_usd" json:"credit_usd"`
 	// LogLevel is what the daemon logs: debug, info, warn or error (one of LogLevels).
 	LogLevel string `yaml:"log_level" json:"log_level"`
+	// Public turns on hosted mode: a listener beyond loopback with TLS and a login
+	// (see Public). Nil leaves the daemon loopback-only.
+	Public *Public `yaml:"public,omitempty" json:"public,omitempty"`
 }
 
 // OpenCode says where the OpenCode CLI is and which model host it talks to. It is a
@@ -883,6 +886,8 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	if file.Daemon.LogLevel != "" {
 		c.Daemon.LogLevel = file.Daemon.LogLevel
 	}
+	c.Daemon.Public = file.Daemon.Public
+	c.Daemon.Public.normalize()
 	c.Desk = file.Desk
 	c.Chat = file.Chat
 	c.Update = file.Update
@@ -913,6 +918,7 @@ func (c Config) Validate() error {
 		// Authentication is a local token today; logins come with the hosted service.
 		errs = append(errs, fmt.Errorf("daemon.listen: %q is not a loopback address", c.Daemon.Listen))
 	}
+	errs = append(errs, c.Daemon.Public.validate(c.Daemon.Listen)...)
 	if c.Daemon.Poll != "off" {
 		if d, err := time.ParseDuration(c.Daemon.Poll); err != nil || d < 10*time.Second {
 			errs = append(errs, fmt.Errorf("daemon.poll: %q; a duration of at least 10s, or off", c.Daemon.Poll))

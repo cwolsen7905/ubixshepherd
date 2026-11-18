@@ -11,6 +11,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- OpenCode runs can read pipelines and jobs with `glab ci list`, `view`, `status` and
+  `trace`, and with `glab api` GET calls on a project's pipelines and jobs. Retry, cancel,
+  run, delete and any `glab api` call with another method, fields or a body stay refused.
+
 - Every item in Waiting on you carries a short stable id, shown the same way in the web
   Inbox, the chat strip and the desk's `[Waiting on you (N)]` line, so a reply such as
   "D410 yes" or "Q271 a" names one item. It is derived from the item's kind and record id
@@ -29,6 +33,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Fixed
 
+- Answering a decision continues the asking run once. The direct answer and the sweep that
+  runs when a run ends could both deliver it, starting two follow-up runs. Delivery is now
+  serialized and skipped once an answer run is recorded, and a failed write of that record
+  is retried without starting the run again. A daemon that dies between starting the
+  continuation and recording it can still repeat it on its next start.
 - `make clean` removes only build outputs: `bin/shepherd`, `dist/`, `web/dist` and the
   embedded web UI. It no longer deletes the tracked scripts in `bin/` such as
   `bin/install.sh` and `bin/promote.sh`.

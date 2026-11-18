@@ -96,6 +96,46 @@ describe('BoardPage by project', () => {
     expect(screen.getByText('docs-pass')).toBeInTheDocument()
   })
 
+  it('names each lane’s repo on its card when the project holds more than one', async () => {
+    daemon([project({ name: 'sys', repos: ['ubixshepherd', 'ubixvault'], lanes: 2, spend_today: 0 })])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'fix/board-repo-label', laneId: 1, repo: 'ubixshepherd', lane: lane({ id: 1, name: 'fix/board-repo-label', repo: 'ubixshepherd' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+      { key: 'lane:2', group: 'working', name: 'docs-pass', laneId: 2, repo: 'ubixvault', lane: lane({ id: 2, name: 'docs-pass', repo: 'ubixvault' }), detail: 'run 11', at: '2026-10-08T10:01:00Z' },
+    ])
+    const shop = screen.getByRole('region', { name: /sys/ })
+    const labels = within(shop).getAllByText(/^(ubixshepherd|ubixvault)$/)
+    expect(labels.map((e) => e.textContent).sort()).toEqual(['ubixshepherd', 'ubixvault'])
+  })
+
+  it('leaves the repo off the cards when the project holds a single repo', async () => {
+    daemon()
+    await show()
+    const shop = screen.getByRole('region', { name: /shop/ })
+    expect(within(shop).queryByText('acme-api')).toBeNull()
+  })
+
+  it('names each lane’s repo in the flat view when the board holds more than one', async () => {
+    window.localStorage.setItem(VIEW_KEY, 'flat')
+    daemon([project({ name: 'sys', repos: ['ubixshepherd', 'ubixvault'], lanes: 2, spend_today: 0 })])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'fix/board-repo-label', laneId: 1, repo: 'ubixshepherd', lane: lane({ id: 1, name: 'fix/board-repo-label', repo: 'ubixshepherd' }), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+      { key: 'lane:2', group: 'working', name: 'docs-pass', laneId: 2, repo: 'ubixvault', lane: lane({ id: 2, name: 'docs-pass', repo: 'ubixvault' }), detail: 'run 11', at: '2026-10-08T10:01:00Z' },
+    ])
+    expect(screen.queryByRole('region', { name: /sys/ })).toBeNull()
+    const labels = screen.getAllByText(/^(ubixshepherd|ubixvault)$/)
+    expect(labels.map((e) => e.textContent).sort()).toEqual(['ubixshepherd', 'ubixvault'])
+  })
+
+  it('leaves the repo off the flat-view cards when the board holds a single repo', async () => {
+    window.localStorage.setItem(VIEW_KEY, 'flat')
+    daemon([unassigned()])
+    await show([
+      { key: 'lane:1', group: 'working', name: 'feat/login', laneId: 1, repo: 'acme-api', lane: lane(), detail: 'run 10', at: '2026-10-08T10:00:00Z' },
+    ])
+    expect(screen.getByText('feat/login')).toBeInTheDocument()
+    expect(screen.queryByText('acme-api')).toBeNull()
+  })
+
   it('opens flat when the stored choice is flat, and when no project exists', async () => {
     window.localStorage.setItem(VIEW_KEY, 'flat')
     daemon()

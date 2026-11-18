@@ -159,7 +159,7 @@ func (r *Runner) RouteRequest(ctx context.Context, id int64, lane, agent string)
 		return q, refuse("request %d is %s", q.ID, q.State)
 	}
 	if agent != "" {
-		if _, err := AdapterFor(agent); err != nil {
+		if _, err := adapterFor(agent, r.openCodeHost()); err != nil {
 			return q, refuse("%v", err)
 		}
 	}

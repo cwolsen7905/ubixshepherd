@@ -540,6 +540,38 @@ var migrations = []string{
 		release_why TEXT NOT NULL DEFAULT ''
 	);
 	CREATE UNIQUE INDEX check_files_live ON check_files (repo_id, path) WHERE released = '';`,
+
+	// The owner account of a hosted daemon: one password hash, its second factors (the
+	// secret sealed with a key kept outside the database), single-use recovery codes
+	// (hashes only), and device tokens (hashes only) for the CLI.
+	`CREATE TABLE IF NOT EXISTS owner_account (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		password_hash TEXT NOT NULL,
+		created TEXT NOT NULL,
+		updated TEXT NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS account_factors (
+		id TEXT PRIMARY KEY,
+		kind TEXT NOT NULL,
+		label TEXT NOT NULL,
+		secret BLOB NOT NULL,
+		created TEXT NOT NULL,
+		last_step INTEGER NOT NULL DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS account_recovery (
+		id TEXT PRIMARY KEY,
+		hash TEXT NOT NULL,
+		used INTEGER NOT NULL DEFAULT 0,
+		seq INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS device_tokens (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		hash TEXT NOT NULL UNIQUE,
+		created TEXT NOT NULL,
+		last_used TEXT NOT NULL,
+		expires TEXT NOT NULL
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.

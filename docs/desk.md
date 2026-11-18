@@ -102,7 +102,7 @@ the thread.
 ## The next-up list
 
 `next_list`, `next_add` and `next_update` are the desk's tools for the list of work that is
-planned but not being acted on ([backlog-next.md](backlog-next.md)).
+planned but not being acted on.
 
 | Tool | What it does | Who decides |
 |---|---|---|

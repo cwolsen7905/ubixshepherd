@@ -102,10 +102,8 @@ func TestDiagnoseLimitWordsInWorkAreNotQuota(t *testing.T) {
 }
 
 func TestDiagnoseHungAndNoChange(t *testing.T) {
-	old := openCodeIdle
-	openCodeIdle = func() time.Duration { return 400 * time.Millisecond }
-	t.Cleanup(func() { openCodeIdle = old })
 	f := openCodeFixture(t, "hang")
+	f.runner.OpenCode.IdleLimit = func() time.Duration { return 400 * time.Millisecond }
 	_, d := startAndDiagnose(t, f, "opencode")
 	if d.Kind != store.DiagHung || !strings.Contains(d.Summary, "printed nothing for 400ms") {
 		t.Errorf("hung = %+v", d)

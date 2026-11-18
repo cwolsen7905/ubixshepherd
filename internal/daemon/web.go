@@ -51,6 +51,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/login"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/webui"
 )
@@ -92,6 +93,8 @@ type webAuth struct {
 	warn func(msg string, err error)
 	// now is the clock, for tests.
 	now func() time.Time
+	// hosted is hosted mode's state (account.go); empty without daemon.public.
+	hosted hostedState
 }
 
 type signinCode struct {
@@ -160,7 +163,7 @@ func (a *webAuth) lastPort() string {
 	var newest *webSession
 	now := a.clock()
 	for _, s := range a.sessions {
-		if now.Before(s.expires) && (newest == nil || s.created.After(newest.created)) {
+		if s.port != publicPort && now.Before(s.expires) && (newest == nil || s.created.After(newest.created)) {
 			newest = s
 		}
 	}
@@ -388,7 +391,10 @@ func (a *webAuth) end(ws *webSession) int {
 
 // cookieName is the session cookie's name. Browsers share cookies across a host's ports,
 // so it carries the daemon's port: two daemons on one machine do not sign each other out.
-func (s *Server) cookieName() string {
+func (s *Server) cookieName(r *http.Request) string {
+	if isPublic(r) {
+		return login.CookieName
+	}
 	if port := s.listenPort(); port != "" {
 		return "shepherd_" + port
 	}
@@ -445,6 +451,9 @@ func (s *Server) allowedHost(hostport string) bool {
 
 // sameOrigin says whether a request's Origin is the origin it was sent to.
 func sameOrigin(r *http.Request) bool {
+	if isPublic(r) {
+		return publicOrigin(r)
+	}
 	return strings.EqualFold(r.Header.Get("Origin"), "http://"+r.Host)
 }
 
@@ -474,7 +483,7 @@ func browserCheck(r *http.Request, ws *webSession) error {
 // browser checks. No cookie, or a dead session, is no principal; a live session from the
 // wrong origin is an error.
 func (s *Server) webPrincipal(r *http.Request) (principal, error) {
-	c, err := r.Cookie(s.cookieName())
+	c, err := r.Cookie(s.cookieName(r))
 	if err != nil {
 		return principal{}, nil
 	}
@@ -497,7 +506,7 @@ func (s *Server) slideWebSession(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path == api.PathWebSessionExtend || r.URL.Path == api.PathWebSessionActive {
 		return
 	}
-	c, err := r.Cookie(s.cookieName())
+	c, err := r.Cookie(s.cookieName(r))
 	if err != nil {
 		return
 	}
@@ -506,17 +515,21 @@ func (s *Server) slideWebSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.web.slide(ws) {
-		s.setSessionCookie(w, c.Value, ws)
+		s.setSessionCookie(w, r, c.Value, ws)
 	}
 }
 
 // setSessionCookie sets the session cookie to last as long as the session does.
-func (s *Server) setSessionCookie(w http.ResponseWriter, val string, ws *webSession) {
+func (s *Server) setSessionCookie(w http.ResponseWriter, r *http.Request, val string, ws *webSession) {
 	s.web.mu.Lock()
 	left := ws.expires.Sub(s.web.clock())
 	s.web.mu.Unlock()
+	if isPublic(r) {
+		http.SetCookie(w, login.Cookie(val, left))
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name: s.cookieName(), Value: val, Path: "/v1", MaxAge: max(int(left/time.Second), 1),
+		Name: s.cookieName(r), Value: val, Path: "/v1", MaxAge: max(int(left/time.Second), 1),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 }
@@ -561,8 +574,8 @@ func (s *Server) webRenew(w http.ResponseWriter, r *http.Request, what string, r
 		return
 	}
 	if moved {
-		if c, err := r.Cookie(s.cookieName()); err == nil {
-			s.setSessionCookie(w, c.Value, p.web)
+		if c, err := r.Cookie(s.cookieName(r)); err == nil {
+			s.setSessionCookie(w, r, c.Value, p.web)
 		}
 		s.Log.Debug("web session "+what, "expires", p.web.expires.UTC().Format(time.RFC3339))
 	}
@@ -578,7 +591,8 @@ func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
-		if !s.allowedHost(r.Host) {
+		// The public listener's guard has checked the Host against the public name.
+		if !isPublic(r) && !s.allowedHost(r.Host) {
 			writeError(w, http.StatusMisdirectedRequest, fmt.Errorf("host %q is not this daemon's; reach it at 127.0.0.1 or localhost", r.Host))
 			return
 		}
@@ -586,6 +600,10 @@ func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
 			s.slideWebSession(w, r)
 		}
 		switch {
+		case s.accountRoute(w, r):
+		case r.URL.Path == api.PathWebSignin && r.Method == http.MethodGet && isPublic(r):
+			// Sessions on the public listener come from the login, never from a link.
+			http.NotFound(w, r)
 		case r.URL.Path == api.PathWebSignin && r.Method == http.MethodGet:
 			s.webExchange(w, r)
 		case r.URL.Path == api.PathWebSessionExtend && r.Method == http.MethodPost:
@@ -636,7 +654,7 @@ func (s *Server) webExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A browser signing in again leaves its old session behind: end it.
-	if c, err := r.Cookie(s.cookieName()); err == nil {
+	if c, err := r.Cookie(s.cookieName(r)); err == nil {
 		if old, ok := s.web.session(c.Value); ok {
 			s.web.end(old)
 		}
@@ -647,7 +665,7 @@ func (s *Server) webExchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: s.cookieName(), Value: val, Path: "/v1", MaxAge: int(webSessionTTL / time.Second),
+		Name: s.cookieName(r), Value: val, Path: "/v1", MaxAge: int(webSessionTTL / time.Second),
 		HttpOnly: true, SameSite: http.SameSiteStrictMode,
 	})
 	s.Log.Info("web session started", "expires", ws.expires.UTC().Format(time.RFC3339), "allow_settings", allowSettings)
@@ -685,7 +703,11 @@ func (s *Server) webSignout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := s.web.end(p.web)
-	http.SetCookie(w, &http.Cookie{Name: s.cookieName(), Value: "", Path: "/v1", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	if isPublic(r) {
+		http.SetCookie(w, login.ClearCookie())
+	} else {
+		http.SetCookie(w, &http.Cookie{Name: s.cookieName(r), Value: "", Path: "/v1", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	}
 	s.Log.Info("web session ended")
 	writeJSON(w, http.StatusOK, api.WebSignedOut{Ended: n})
 }

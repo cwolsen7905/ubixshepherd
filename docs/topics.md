@@ -88,7 +88,7 @@ Rules the daemon enforces, not the brief:
 - `topic_set` outside a turn the person started is allowed to *tag into an existing
   topic* and to create one (an event turn can name the matter it concerns), and is
   refused for rename, merge, move, clear and reopen. The origin check is the one
-  `decision_answer` and Next-up approval use ([backlog-next.md](backlog-next.md)).
+  `decision_answer` and Next-up approval use.
 - An agent's token reaches no topic tool. Agents do not know topics exist; their lane
   and run are linked for them.
 - A link set by the person is never overwritten by the desk or Shepherd (`by: person`
@@ -219,7 +219,7 @@ keeps the names.
 | One thread | Kept. Topics are a filter and a fold over the one thread and one session |
 | Item 29, the desk registers work discussed in chat on Next up | The new item is linked to the turn's topic when added, so "put X on the list" lands under the matter that raised it, and the topic's row lists the item |
 | Item 28, alerts for items waiting on approval | The count of items awaiting the person's approval is per topic and shown in the topic's "waits on you" number, so the alert says which matter it is about |
-| Next up ([backlog-next.md](backlog-next.md)) | Items carry no new field: the link is in `topic_links`. State, rank and approval are unchanged |
+| Next up | Items carry no new field: the link is in `topic_links`. State, rank and approval are unchanged |
 | Keep-going ([keep-going.md](keep-going.md)) | Unchanged. Its audit rows take the topic of the item or lane they act on |
 | Decisions and requests | Linked like lanes. Answering one is the same action in the rail, the thread or the topic |
 | Rotation ([desk.md](desk.md)) | The summary lists open topics; the new session keeps the vocabulary |

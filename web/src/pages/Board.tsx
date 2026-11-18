@@ -120,6 +120,11 @@ export function BoardPage({
   const [view, setView] = useState<BoardView | null>(() => readView(window.localStorage))
   const list = projects.data?.projects
   const hasProjects = !!list?.some((p) => !p.unassigned)
+  /** A card names its repo when the project holds more than one: with a single repo the group already says which. */
+  const showRepoFor = (g: ProjectGroup): boolean => {
+    if (!g.unassigned) return (list?.find((p) => !p.unassigned && p.name === g.name)?.repos.length ?? 0) > 1
+    return new Set(g.items.map((it) => it.repo)).size > 1
+  }
   const grouped = hasProjects && (view ?? 'grouped') === 'grouped'
   const groups = useMemo(() => (grouped && list ? groupByProject(items, list) : []), [grouped, list, items])
   const [quietOpen, setQuietOpen] = useState(false)
@@ -172,7 +177,11 @@ export function BoardPage({
   ].filter(Boolean).join(' · ')
 
   let index = -1
-  const renderGroups = (its: Row[]) => {
+  // In the flat view the group is gone, so a card names its repo whenever several
+  // repos are on the board; under a project the group already names a single repo.
+  const flatRepos = new Set(items.map((it) => it.repo).filter(Boolean)).size
+  const flatShowRepo = flatRepos > 1
+  const renderGroups = (its: Row[], showRepo: boolean) => {
     const byGroup = new Map<RowGroup, Row[]>()
     for (const it of its) byGroup.set(rowGroup(it), [...(byGroup.get(rowGroup(it)) ?? []), it])
     return ROW_GROUPS.flatMap((g) => {
@@ -208,6 +217,7 @@ export function BoardPage({
                   title={it.name}
                   titleAttr={it.key}
                   sub={agentSub(it)}
+                  badge={showRepo && it.repo ? <span className="board-repo">{it.repo}</span> : undefined}
                   right={it.lane ? <><MrBadge lane={it.lane} /> {it.lane.gate && <GateBadge gate={it.lane.gate} />}</> : undefined}
                   age={since(it.at, now)}
                   selected={op ? isOpenNow(op) : i === clamped}
@@ -313,12 +323,12 @@ export function BoardPage({
                   )}
                 />
                 <div className="project-group-body">
-                  {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items as Row[])}
+                  {g.items.length === 0 ? <p className="project-group-empty faint">Nothing needs attention here.</p> : renderGroups(g.items as Row[], showRepoFor(g))}
                 </div>
               </section>
             )
           })
-        : renderGroups(items)}
+        : renderGroups(items, flatShowRepo)}
       {grouped && quiet.length > 0 && (
         <section className="quiet-projects" aria-label="Quiet projects">
           <button
