@@ -97,6 +97,7 @@ func TestResolvedOwnerThreadsClearAndRaiseAgainLater(t *testing.T) {
 	if blocking(t, f) != "" {
 		t.Fatalf("not cleared: %q", blocking(t, f))
 	}
+	f.f.mr.MergeStatus = ""
 	f.f.threads = []forge.Thread{botThread("1", 11)}
 	f.w.Check(f.ctx)
 	if n := raised(t, f); n != 2 {
@@ -125,6 +126,8 @@ func TestNotRaisedWithoutApprovalOrWithOtherThreads(t *testing.T) {
 			f.f.threads = append(f.f.threads, forge.Thread{ID: "9", Author: "pat", Body: "fix", Notes: 1,
 				Entries: []forge.Note{{Author: "pat", Text: "fix"}}})
 		},
+		"pipeline red too": func(f *fixture, _ *mergingForge) { f.f.mr.Pipeline.Status = "failed" },
+		"conflict too":     func(f *fixture, _ *mergingForge) { f.f.mr.MergeStatus = "conflict" },
 		"no owner configured": func(f *fixture, _ *mergingForge) {
 			cfg := config.Default()
 			cfg.Defaults.Autonomy.Merge = config.AfterApproval
@@ -141,5 +144,24 @@ func TestNotRaisedWithoutApprovalOrWithOtherThreads(t *testing.T) {
 				t.Fatalf("raised: %s / %q", f.feed(t), blocking(t, f))
 			}
 		})
+	}
+}
+
+func TestOtherBlockerAppearingClearsTheRaise(t *testing.T) {
+	f, _ := ownerFixture(t)
+	f.f.threads = []forge.Thread{botThread("1", 11)}
+	f.w.Check(f.ctx)
+	if blocking(t, f) != "1" {
+		t.Fatalf("not raised: %q", blocking(t, f))
+	}
+	f.f.mr.MergeStatus = "checking" // may settle: the record stands
+	f.w.Check(f.ctx)
+	if blocking(t, f) != "1" {
+		t.Fatalf("cleared by a passing status: %q", blocking(t, f))
+	}
+	f.f.mr.MergeStatus = "need_rebase"
+	f.w.Check(f.ctx)
+	if blocking(t, f) != "" {
+		t.Fatalf("not cleared: %q", blocking(t, f))
 	}
 }

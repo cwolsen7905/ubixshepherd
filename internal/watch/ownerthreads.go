@@ -32,7 +32,7 @@ func ownedByFollowThrough(t forge.Thread, ft config.FollowThrough) bool {
 // item naming the request and linking each thread's first note, and records the thread
 // ids in next.OwnerBlocking, which the waiting list reads. It files again only when the
 // set of threads changes, and clears the record once the threads are resolved, the
-// approval is gone or the request is not open. A read that did not settle (forge error,
+// approval is gone, another blocker holds the merge or the request is not open. A read that did not settle (forge error,
 // head pipeline still running) leaves the record as it was.
 func (w *Watcher) raiseOwnerThreads(ctx context.Context, lane store.Lane, mr *forge.MR, next *store.LaneForge, who []string, rd waitRead, ft config.FollowThrough) {
 	if !rd.settled {
@@ -52,6 +52,17 @@ func (w *Watcher) raiseOwnerThreads(ctx context.Context, lane store.Lane, mr *fo
 	}
 	slices.Sort(ids)
 	set := strings.Join(ids, ",")
+	// Resolving the threads must be all that is left: a red head pipeline, a conflict or
+	// a needed rebase also holds the merge, so the person is not told the threads do. A
+	// status that may yet settle (checking) leaves the record as it was.
+	if set != "" {
+		switch {
+		case otherBlocker(mr):
+			set = ""
+		case mr.MergeStatus != "" && mr.MergeStatus != "mergeable":
+			return
+		}
+	}
 	if set == next.OwnerBlocking {
 		return
 	}
@@ -61,4 +72,17 @@ func (w *Watcher) raiseOwnerThreads(ctx context.Context, lane store.Lane, mr *fo
 	}
 	w.feed(ctx, store.FeedMR, lane.ID, "!%d (%s) is approved by %s and waits only on %d review thread(s) %s has not resolved; they are yours: %s",
 		mr.IID, mr.URL, strings.Join(who, ", "), len(ids), ft.Label(), threadLinks(ids, byID))
+}
+
+// otherBlocker says something besides open threads holds the request's merge for good:
+// a failed head pipeline, a conflict, a needed rebase or a draft.
+func otherBlocker(mr *forge.MR) bool {
+	if mr.Draft || (mr.Pipeline != nil && mr.Pipeline.Status != "success") {
+		return true
+	}
+	switch mr.MergeStatus {
+	case "need_rebase", "conflict", "draft_status":
+		return true
+	}
+	return false
 }
