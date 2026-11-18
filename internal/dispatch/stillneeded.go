@@ -3,6 +3,7 @@ package dispatch
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -121,23 +122,34 @@ func (r *Runner) landedOnBase(ctx context.Context, lane store.Lane, repo store.R
 	if hit := find("--grep='" + lane.Branch + "'"); hit != "" {
 		return fmt.Sprintf("next-up item %d looks already done: origin/%s has %s, which names the lane's branch", it.ID, lane.Base, redact.String(hit))
 	}
-	if num := mrNumber(it.MR); num != "" {
-		out, err := git.Run(ctx, repo.Path, "log", "-n", "1", "--format=%h %s", since, "--extended-regexp", "--grep=!"+num+"([^0-9]|$)", ref)
+	if project, num := mrRef(it.MR); num != "" {
+		// A URL names the project, and the forge's merge commit cites "project!N": match
+		// that, so another project's !N does not count. A bare number cannot say.
+		pat := regexp.QuoteMeta(project) + "!" + num + "([^0-9]|$)"
+		out, err := git.Run(ctx, repo.Path, "log", "-n", "1", "--format=%h %s", since, "--extended-regexp", "--grep="+pat, ref)
 		if hit := strings.TrimSpace(out); err == nil && hit != "" {
-			return fmt.Sprintf("next-up item %d looks already done: origin/%s has %s, which names its merge request !%s", it.ID, lane.Base, redact.String(hit), num)
+			return fmt.Sprintf("next-up item %d looks already done: origin/%s has %s, which names its merge request %s!%s", it.ID, lane.Base, redact.String(hit), project, num)
 		}
 	}
 	return ""
 }
 
-// mrNumber is the number in an item's MR field (a number, "!12" or a URL), or "".
-func mrNumber(mr string) string {
+// mrRef splits an item's MR field (a number, "!12" or a URL) into the project path, when
+// a URL gives one, and the number. The number is "" when the field is neither.
+func mrRef(mr string) (project, num string) {
 	mr = strings.TrimRight(strings.TrimSpace(mr), "/")
-	if i := strings.LastIndexAny(mr, "/!"); i >= 0 {
-		mr = mr[i+1:]
+	if i := strings.Index(mr, "/-/merge_requests/"); i >= 0 {
+		project, mr = mr[:i], mr[i+len("/-/merge_requests/"):]
+		project = strings.TrimPrefix(project[strings.Index(project, "://")+1:], "//")
+		if j := strings.Index(project, "/"); j >= 0 {
+			project = project[j+1:]
+		} else {
+			project = ""
+		}
 	}
+	mr = strings.TrimPrefix(mr, "!")
 	if _, err := strconv.Atoi(mr); err != nil {
-		return ""
+		return "", ""
 	}
-	return mr
+	return project, mr
 }

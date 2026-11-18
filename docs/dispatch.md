@@ -11,7 +11,10 @@ forge call, so it is cheap enough for every start.
 
 The item looks done when a commit on `origin/<base>`, made after the lane was opened,
 either names the lane's branch in quotes (a merge commit does) or names the item's merge request
-(`!<number>`, from the item's MR field). Matching is on the commit message.
+(`!<number>`, from the item's MR field). Matching is on the commit message. When the MR field is
+a URL, the commit must cite that project (`group/project!<number>`, as the forge's merge commit
+does), so another project's merge request with the same number does not count. A bare number
+cannot say which project, so any `!<number>` matches.
 
 A lane whose run would be checked is skipped when:
 
@@ -26,7 +29,7 @@ use `force`, and a plan line goes on the feed: `run not started in lane <name>: 
 start, so both are checked. A drive never forces: it reports the refusal like any other
 refused start.
 
-To start anyway, send `"force": true` in the run request to the daemon's HTTP API. This is the person's override. The `shepherd lane run` command and the `lane_run` tool do not take it yet.
+To start anyway, send `"force": true` in the run request to the daemon's HTTP API. This is a guard against wasted runs, not a security boundary: any caller allowed to start a run, the front desk included, can set it, and the desk acts for the person. The `shepherd lane run` command and the `lane_run` tool do not take it yet.
 
 This check is separate from the instruction in the run's brief, which asks the agent to check
 the base itself and report a summary that starts with `ALREADY DONE:`. The brief covers what

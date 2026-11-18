@@ -165,6 +165,16 @@ func TestRunIsNotStartedWhenTheBaseNamesTheItemsMR(t *testing.T) {
 	f := newFixture(t, "quick")
 	itemFor(t, f, "https://forge.example/g/p/-/merge_requests/42")
 	landOnBase(t, f, "feat: the thing\n\nSee merge request g/p!42")
+
+	// Another project's !42 does not count.
+	g := newFixture(t, "quick")
+	itemFor(t, g, "https://forge.example/g/p/-/merge_requests/42")
+	landOnBase(t, g, "feat: other\n\nSee merge request g/other!42")
+	if run, err := g.runner.Start(context.Background(), StartRequest{LaneID: g.lane.ID, Agent: "claude", Prompt: "w"}); err != nil {
+		t.Fatalf("another project's MR number refused the run: %v", err)
+	} else {
+		g.wait(t, run.ID)
+	}
 	if _, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "w"}); !errors.Is(err, ErrRefused) {
 		t.Fatalf("want a refusal, got %v", err)
 	}
@@ -191,10 +201,16 @@ func TestAlreadyDoneCheckLeavesOtherRunsAlone(t *testing.T) {
 	g.wait(t, run2.ID)
 }
 
-func TestMRNumber(t *testing.T) {
-	for in, want := range map[string]string{"12": "12", "!12": "12", "https://h/g/p/-/merge_requests/12/": "12", "": "", "abc": ""} {
-		if got := mrNumber(in); got != want {
-			t.Errorf("mrNumber(%q) = %q, want %q", in, got, want)
+func TestMRRef(t *testing.T) {
+	for in, want := range map[string][2]string{
+		"12":  {"", "12"},
+		"!12": {"", "12"},
+		"https://h.example/g/p/-/merge_requests/12/": {"g/p", "12"},
+		"":    {"", ""},
+		"abc": {"", ""},
+	} {
+		if p, n := mrRef(in); p != want[0] || n != want[1] {
+			t.Errorf("mrRef(%q) = %q, %q, want %q", in, p, n, want)
 		}
 	}
 }
