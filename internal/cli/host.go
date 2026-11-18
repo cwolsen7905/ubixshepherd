@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -11,8 +12,14 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/client"
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/remote"
 )
+
+// hostedHTTP is the HTTP client for hosted (https) daemons; nil is client.NewHTTPClient.
+// Tests set it to trust a test server's certificate. There is no flag or setting that
+// skips certificate checks.
+var hostedHTTP *http.Client
 
 // Environment variables that choose where and what a command acts on from a machine that
 // is not the daemon's. SHEPHERD_HOST is read by remote.HostEnv.
@@ -57,9 +64,11 @@ func splitGlobals(args []string) (globals, []string, error) {
 	return g, args, nil
 }
 
-// remoteHost is a daemon on another machine, reached through a tunnel that is opened
-// when a command first needs it and closed when the command line ends.
+// remoteHost is a daemon on another machine: reached through an ssh tunnel that is
+// opened when a command first needs it and closed when the command line ends, or, when
+// url is set, over https with the device token a login left in tokenDir.
 type remoteHost struct {
+	url, tokenDir   string
 	target          remote.Target
 	workspace, repo string
 	controlDir      string
@@ -69,7 +78,12 @@ type remoteHost struct {
 }
 
 // Label names the host in messages.
-func (r *remoteHost) Label() string { return r.target.Label() }
+func (r *remoteHost) Label() string {
+	if r.url != "" {
+		return r.url
+	}
+	return r.target.Label()
+}
 
 // Close ends the tunnel. Run defers it, so it also runs when a command panics.
 func (r *remoteHost) Close() {
@@ -93,7 +107,18 @@ func (r *remoteHost) client(ctx context.Context, name string) (*client.Client, e
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	fresh := false
-	if r.c == nil {
+	if r.c == nil && r.url != "" {
+		creds, err := client.LoadCredentials(r.tokenDir, r.url)
+		if errors.Is(err, client.ErrNotLoggedIn) {
+			return nil, &client.LoginAgain{URL: r.url}
+		}
+		if err != nil {
+			return nil, err
+		}
+		r.c = client.NewHTTPS(r.url, creds.Token, hostedHTTP)
+		r.c.SetScope(r.workspace, r.repo)
+		fresh = true
+	} else if r.c == nil {
 		r.tr = &remote.SSH{Target: r.target, ControlDir: r.controlDir}
 		ep, err := r.tr.Dial(ctx)
 		if err != nil {
@@ -113,7 +138,7 @@ func (r *remoteHost) client(ctx context.Context, name string) (*client.Client, e
 	probe, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	_, err := r.c.Status(probe)
-	if err != nil && !fresh && errors.Is(err, client.ErrNoDaemon) {
+	if err != nil && !fresh && r.url == "" && errors.Is(err, client.ErrNoDaemon) {
 		// The tunnel or the daemon went away between two commands (an MCP session lives
 		// across many): resolve again.
 		if rerr := r.c.Redial(); rerr != nil {
@@ -130,6 +155,9 @@ func (r *remoteHost) client(ctx context.Context, name string) (*client.Client, e
 // selectHost applies the global options and the environment: it returns the remote host
 // to use, or nil for the local daemon, which is how every command ran before hosts existed.
 func selectHost(env Env, g globals) (*remoteHost, error) {
+	if sel := firstOf(g.host, os.Getenv(remote.HostEnv)); !g.local && isHTTPURL(sel) {
+		return selectHTTPS(env, g, sel)
+	}
 	hosts := func() (remote.Hosts, error) { return remote.LoadHosts(env.Layout.Hosts()) }
 	t, ok, err := remote.Select(g.host, os.Getenv(remote.HostEnv), g.local, hosts)
 	if err != nil {
@@ -143,6 +171,25 @@ func selectHost(env Env, g globals) (*remoteHost, error) {
 	}
 	rh := &remoteHost{target: t, controlDir: env.Layout.SSHDir()}
 	rh.workspace = firstOf(g.workspace, os.Getenv(WorkspaceEnv), t.Workspace)
+	rh.repo = firstOf(g.repo, os.Getenv(RepoEnv))
+	return rh, nil
+}
+
+func isHTTPURL(s string) bool {
+	l := strings.ToLower(s)
+	return strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "http://")
+}
+
+// selectHTTPS is a hosted daemon named by its address. The address is normalised as
+// daemon.public.url is, so with or without a trailing slash it is one host. Plain http
+// is refused: a device token never crosses the network unencrypted.
+func selectHTTPS(env Env, g globals, sel string) (*remoteHost, error) {
+	u, err := config.NormalizeURL(sel)
+	if err != nil {
+		return nil, fmt.Errorf("bad host %q: it %v", sel, err)
+	}
+	rh := &remoteHost{url: u, tokenDir: tokenDir(env)}
+	rh.workspace = firstOf(g.workspace, os.Getenv(WorkspaceEnv))
 	rh.repo = firstOf(g.repo, os.Getenv(RepoEnv))
 	return rh, nil
 }
@@ -167,10 +214,20 @@ func firstOf(s ...string) string {
 var remoteOK = map[string]bool{
 	"status": true, "where": true, "lane": true, "run": true, "decision": true,
 	"request": true, "tag": true, "keep-going": true, "update": true, "stats": true, "mcp": true, "host": true, "version": true,
+	"login": true, "logout": true,
 }
 
 // remoteRefusal explains why a command cannot take --host, or returns "" if it can.
 func remoteRefusal(rh *remoteHost, cmd string, args []string) string {
+	if rh.url != "" {
+		switch {
+		case remoteOK[cmd] && !(cmd == "run" && len(args) > 0 && args[0] == "attach") && !(cmd == "session" && len(args) > 0 && args[0] == "attach"):
+			return ""
+		case cmd == "chat":
+			return fmt.Sprintf("shepherd chat cannot run against %s yet: its front desk starts on this machine, in a directory that exists only on the daemon's. Run it on the daemon's machine; status and decision answer work here", rh.url)
+		}
+		return fmt.Sprintf("shepherd %s works on this machine's own files or processes, or starts a program here, so it cannot be pointed at %s. Run it where the work is (or use --local)", cmd, rh.url)
+	}
 	ssh := "ssh " + rh.target.Dest
 	if cmd == "run" && len(args) > 0 && args[0] == "attach" || cmd == "session" && len(args) > 0 && args[0] == "attach" {
 		return fmt.Sprintf("shepherd %s attach opens the agent's own terminal session on this machine, and the run is on %s; run it there: %s shepherd %s attach", cmd, rh.Label(), ssh, cmd)
@@ -270,6 +327,10 @@ func hostCheck(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(env.Stdout, "%s: daemon %s, pid %d, reachable over ssh in %s\n", rh.Label(), st.Version, st.PID, time.Since(start).Round(time.Millisecond))
+	via := "ssh"
+	if rh.url != "" {
+		via = "https"
+	}
+	fmt.Fprintf(env.Stdout, "%s: daemon %s, pid %d, reachable over %s in %s\n", rh.Label(), st.Version, st.PID, via, time.Since(start).Round(time.Millisecond))
 	return nil
 }

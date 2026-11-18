@@ -1968,6 +1968,14 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	}
 	defer lock.Close()
 
+	// Hosted mode: a bad daemon.public stops the start before anything listens. With none
+	// configured this does nothing. The public listener opens when an account exists.
+	pubL, err := s.startPublic(ctx, filepath.Dir(runtimePath))
+	if err != nil {
+		return err
+	}
+	defer pubL.Stop()
+
 	ln, err := s.listen(s.LiveConfig().Daemon.Listen)
 	if err != nil {
 		return err
