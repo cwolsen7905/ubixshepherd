@@ -54,12 +54,12 @@ func (w *Watcher) raiseOwnerThreads(ctx context.Context, lane store.Lane, mr *fo
 	set := strings.Join(ids, ",")
 	// Resolving the threads must be all that is left: a red head pipeline, a conflict or
 	// a needed rebase also holds the merge, so the person is not told the threads do. A
-	// status that may yet settle (checking) leaves the record as it was.
+	// status that may yet settle leaves the record as it was.
 	if set != "" {
-		switch {
-		case otherBlocker(mr):
+		switch mergeVerdict(mr) {
+		case verdictBlocked:
 			set = ""
-		case mr.MergeStatus != "" && mr.MergeStatus != "mergeable":
+		case verdictSettling:
 			return
 		}
 	}
@@ -74,15 +74,27 @@ func (w *Watcher) raiseOwnerThreads(ctx context.Context, lane store.Lane, mr *fo
 		mr.IID, mr.URL, strings.Join(who, ", "), len(ids), ft.Label(), threadLinks(ids, byID))
 }
 
-// otherBlocker says something besides open threads holds the request's merge for good:
-// a failed head pipeline, a conflict, a needed rebase or a draft.
-func otherBlocker(mr *forge.MR) bool {
+type verdict int
+
+const (
+	verdictThreadsOnly verdict = iota // nothing but the open threads holds the merge
+	verdictBlocked                    // something else holds it for good
+	verdictSettling                   // the forge has not finished working it out
+)
+
+// mergeVerdict reads what else holds an owner-threaded request. The forge words open
+// threads as a merge status of their own (GitLab: discussions_not_resolved), which is
+// the case being raised, so it counts as threads only; known transient statuses settle;
+// any other status is another blocker, which is the safe way to read one not known.
+func mergeVerdict(mr *forge.MR) verdict {
 	if mr.Draft || (mr.Pipeline != nil && mr.Pipeline.Status != "success") {
-		return true
+		return verdictBlocked
 	}
 	switch mr.MergeStatus {
-	case "need_rebase", "conflict", "draft_status":
-		return true
+	case "", "mergeable", "discussions_not_resolved":
+		return verdictThreadsOnly
+	case "checking", "unchecked", "preparing", "approvals_syncing", "ci_still_running":
+		return verdictSettling
 	}
-	return false
+	return verdictBlocked
 }

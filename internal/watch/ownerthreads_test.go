@@ -147,6 +147,16 @@ func TestNotRaisedWithoutApprovalOrWithOtherThreads(t *testing.T) {
 	}
 }
 
+func TestRaisedWhenTheForgeWordsOpenThreadsAsItsMergeStatus(t *testing.T) {
+	f, _ := ownerFixture(t)
+	f.f.mr.MergeStatus = "discussions_not_resolved" // GitLab's detailed_merge_status for open threads
+	f.f.threads = []forge.Thread{botThread("1", 11)}
+	f.w.Check(f.ctx)
+	if raised(t, f) != 1 || blocking(t, f) != "1" {
+		t.Fatalf("not raised: %s / %q", f.feed(t), blocking(t, f))
+	}
+}
+
 func TestOtherBlockerAppearingClearsTheRaise(t *testing.T) {
 	f, _ := ownerFixture(t)
 	f.f.threads = []forge.Thread{botThread("1", 11)}
