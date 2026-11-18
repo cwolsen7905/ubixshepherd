@@ -31,15 +31,17 @@ type mergeTry struct {
 // which closes the lane as for any merge. When the only red is a require-approval job that
 // ran before the approval, it first retries that job (retryRequireApproval) and merges on
 // a later poll, once the pipeline is green. The squash path is inert: no forge implements SquashMerger yet, so the merge lands as the project is set to.
-func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo string, lane store.Lane, mr *forge.MR) {
+func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo string, lane store.Lane, mr *forge.MR, next *store.LaneForge, ft config.FollowThrough) {
 	prof := w.conf().Profile(repo)
 	if prof.Autonomy.Merge != config.AfterApproval || mr.State != "opened" {
+		next.OwnerBlocking = ""
 		return
 	}
 	if w.mergeTried[lane.ID] == (mergeTry{iid: mr.IID, sha: mr.SHA}) {
 		return
 	}
-	who, why := w.mergeWait(ctx, f, prof, mr)
+	who, why, rd := w.mergeWait(ctx, f, prof, mr)
+	w.raiseOwnerThreads(ctx, lane, mr, next, who, rd, ft)
 	if why == waitRequireApproval {
 		w.retryRequireApproval(ctx, f, lane, mr, who)
 		return
@@ -71,48 +73,51 @@ func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo st
 
 // mergeWait says why the request cannot be merged yet, or "" when it can, with the
 // people whose approval counts. It reads the forge only for what the request itself does
-// not carry: approvals and open threads.
-func (w *Watcher) mergeWait(ctx context.Context, f forge.Forge, prof config.Profile, mr *forge.MR) (who []string, why string) {
+// not carry: approvals and open threads. It also returns what it read of them.
+func (w *Watcher) mergeWait(ctx context.Context, f forge.Forge, prof config.Profile, mr *forge.MR) (who []string, why string, rd waitRead) {
 	ap, canApprove := f.(forge.Approver)
 	_, canMerge := f.(forge.Merger)
 	ha, canHead := f.(forge.HeadApprover)
 	tr, canThreads := f.(forge.ThreadReader)
 	switch {
 	case !canApprove || !canMerge || !canThreads || !canHead:
-		return nil, "the forge cannot read approvals and threads or merge"
+		return nil, "the forge cannot read approvals and threads or merge", rd
 	case mr.SHA == "":
-		return nil, "the forge did not name the head"
+		return nil, "the forge did not name the head", rd
 	case mr.Draft:
-		return nil, "draft"
+		return nil, "draft", rd
 	case mr.Author == "":
-		return nil, "the forge did not name the author"
+		return nil, "the forge did not name the author", rd
 	case mr.Pipeline == nil || (mr.Pipeline.Status != "success" && mr.Pipeline.Status != "failed"):
-		return nil, "no passed head pipeline"
+		return nil, "no passed head pipeline", rd
 	case mr.Pipeline.SHA != mr.SHA:
-		return nil, "the pipeline is not for the head"
+		return nil, "the pipeline is not for the head", rd
 	}
 	a, err := ap.Approvals(ctx, mr.IID)
 	if err != nil {
-		return nil, fmt.Sprintf("approvals unreadable: %v", err)
+		return nil, fmt.Sprintf("approvals unreadable: %v", err), rd
 	}
 	who = a.PersonApprovers(mr.Author, prof.Autonomy.MergeBots)
 	if len(who) == 0 {
-		return nil, "no approval by a person other than the author"
+		rd.settled = true
+		return nil, "no approval by a person other than the author", rd
 	}
 	// An approval counts only if given after the head was pushed: the forge may keep
 	// approvals across pushes, and the person never saw code pushed after theirs.
 	if who, err = ha.ApprovedHead(ctx, mr.IID, mr.SHA, who); err != nil {
-		return nil, fmt.Sprintf("approval time unreadable: %v", err)
+		return nil, fmt.Sprintf("approval time unreadable: %v", err), rd
 	}
 	if len(who) == 0 {
-		return nil, "no person approved the current head"
+		rd.settled = true
+		return nil, "no person approved the current head", rd
 	}
 	ts, err := tr.Threads(ctx, mr.IID)
 	if err != nil {
-		return nil, fmt.Sprintf("threads unreadable: %v", err)
+		return nil, fmt.Sprintf("threads unreadable: %v", err), rd
 	}
+	rd.settled, rd.threads = true, ts
 	if len(ts) > 0 {
-		return nil, fmt.Sprintf("%d review threads open", len(ts))
+		return who, fmt.Sprintf("%d review threads open", len(ts)), rd
 	}
 	// A pipeline that failed only because require-approval ran before the approval is
 	// the one red the person's approval clears: the caller retries that job. The forge
@@ -121,17 +126,25 @@ func (w *Watcher) mergeWait(ctx context.Context, f forge.Forge, prof config.Prof
 	if mr.Pipeline.Status == "failed" {
 		switch st := mr.MergeStatus; st {
 		case "need_rebase", "conflict", "draft_status":
-			return nil, "the forge says " + st
+			return nil, "the forge says " + st, rd
 		}
-		return who, waitRequireApproval
+		return who, waitRequireApproval, rd
 	}
 	switch {
 	case mr.MergeStatus != "" && mr.MergeStatus != "mergeable":
-		return nil, "the forge says " + mr.MergeStatus
+		return nil, "the forge says " + mr.MergeStatus, rd
 	case mr.Pipeline.Status != "success":
-		return nil, "no passed head pipeline"
+		return nil, "no passed head pipeline", rd
 	}
-	return who, ""
+	return who, "", rd
+}
+
+// waitRead is what mergeWait read about approval and threads. settled says the read got
+// as far as a firm answer on approval of the current head and, if approved, on the open
+// threads; threads are the open ones.
+type waitRead struct {
+	settled bool
+	threads []forge.Thread
 }
 
 // waitRequireApproval is mergeWait's answer when everything but a red head pipeline holds.

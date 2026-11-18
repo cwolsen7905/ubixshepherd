@@ -221,7 +221,8 @@ func Tidy(ctx context.Context, st store.Store) ([]store.MusterItem, error) {
 
 // mrItem is a lane's open merge request that only the person can move: its pipeline is
 // held (or failed) at the require-approval job with no approval, or it failed elsewhere
-// and no run is working on it. The first is approved from the web page; the second is
+// and no run is working on it, or it is approved and waits only on threads the
+// follow-through owner left open. The first is approved from the web page; the others are
 // only shown.
 func mrItem(l store.Lane, rp store.Repo, lf store.LaneForge, running bool) (api.WaitingItem, bool) {
 	if lf.MR == 0 || merged(lf) || strings.EqualFold(lf.MRState, "closed") {
@@ -239,6 +240,12 @@ func mrItem(l store.Lane, rp store.Repo, lf store.LaneForge, running bool) (api.
 		it.Title = fmt.Sprintf("MR !%d: pipeline failed", lf.MR)
 		it.Detail = "pipeline failed"
 		it.Since = firstTime(lf.PipelineFinished, lf.PipelineStarted, lf.MRUpdated, l.Created)
+	case lf.OwnerBlocking != "":
+		n := strings.Count(lf.OwnerBlocking, ",") + 1
+		it.Action = "open"
+		it.Title = fmt.Sprintf("MR !%d: approved, waits on %d review thread(s) the review service has not resolved", lf.MR, n)
+		it.Detail = "approved and waiting only on unresolved review threads nobody is handling; resolve them on the forge"
+		it.Since = firstTime(lf.MRUpdated, lf.PipelineFinished, lf.PipelineStarted, l.Created)
 	default:
 		return api.WaitingItem{}, false
 	}

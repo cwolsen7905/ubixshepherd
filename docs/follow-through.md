@@ -45,3 +45,35 @@ What the owner does counts as an attempt:
   Shepherd takes it over at once rather than waiting out the patience again.
 
 The feed says when a retry failed again, which attempt it was, and why Shepherd took over.
+
+## An approved request held only by the owner's threads
+
+In a repo set to `autonomy.merge: after_approval` (see [merging.md](merging.md)), an
+approved request can wait on review threads that nobody is going to resolve: the external
+owner's triage summaries, or findings it answered with a proposal or a dismissal. Shepherd
+does not merge past an open thread, and the agent is not asked to resolve what the owner
+wrote, so without a signal the merge would wait for ever.
+
+The watcher raises it to the person when all of these hold on one poll:
+
+- a person other than the author (and not a bot) approved the request's current head;
+- the head pipeline is finished;
+- the request has open review threads, and every one was opened by an account listed in
+  `watch.follow_through.author` or has a note from one (authorship is read from the notes,
+  never from their text).
+
+A thread of anyone else's keeps the request out of this: those go back to the agent as
+usual, and the person already knows about their own. With no `author` listed, nothing is
+raised.
+
+Raising does two things:
+
+- one feed item naming the request and linking each blocking thread's first note;
+- one entry in the waiting list ([waiting-on-you.md](waiting-on-you.md)), kept in the lane's
+  forge record, so it survives a restart.
+
+It is not repeated every poll. It is raised again only when the set of blocking threads
+changes (a new one arrives, or one is resolved but others remain). When the threads are
+resolved, the approval no longer holds, or the request is merged or closed, the entry
+clears. A poll that could not read the forge, or that found the head pipeline still
+running, leaves the entry as it was.

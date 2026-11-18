@@ -121,3 +121,8 @@ Shepherd never retries or merges when any of these holds: no approval by a perso
 approval older than the head, an open thread, a draft, a pipeline for another head, any
 other failed job, a merge status other than mergeable (a red pipeline alone is not one), or a repo not set to `after_approval`. The merge lands as the project is
 set to land merges: Shepherd has no squash option of its own yet.
+
+When the only thing holding an approved request is open review threads that the external
+follow-through owner wrote or answered, Shepherd does not wait silently: it raises the
+request to the person, once per set of threads, in the feed and the waiting list. See
+[follow-through.md](follow-through.md).
