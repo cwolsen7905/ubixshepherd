@@ -46,7 +46,7 @@ function QuestionActions({
   }
   // One click answers as a typed reply would: the same turn, linked to this question.
   const quick = async (word: 'Yes' | 'No') => {
-    if (busy) return
+    if (busy || q.state !== 'open') return
     setBusy(true)
     setProblem(null)
     const ok = await thread.send(word, topicId, q.id)
@@ -73,7 +73,7 @@ function QuestionActions({
       <IdChip kind="question" id={q.id} />
       {!replying && (
         <>
-          {isYesNo(q.text) && (
+          {q.state === 'open' && isYesNo(q.text) && (
             <>
               <Button size="small" onClick={() => void quick('Yes')} disabled={busy}>
                 Yes

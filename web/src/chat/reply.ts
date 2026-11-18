@@ -36,15 +36,21 @@ export async function closedQuestions(list: (state: 'answered' | 'skipped') => P
   return [...answered, ...skipped]
 }
 
-const yesNoStart = /^(?:do|does|did|is|are|was|were|can|could|should|shall|will|would|have|has|had|may|must|ok to|okay to|want me to|shall i|ready to)\b/i
+// Only openers that ask about a state of things. "Should I", "Can I", "Want me to" and the like
+// propose an action the desk would then take, so they are left to a typed reply.
+const yesNoStart = /^(?:is|are|was|were|does|do|did|has|have|had)\b/i
 
-const riskyWording = /\b(?:delet\w*|remov\w*|drop\w*|force\w*|overwrit\w*|reset\w*|wip\w*|destroy\w*|push\w*|merg\w*|releas\w*|publish\w*|deploy\w*|ship\w*|tag\w*|revert\w*)\b/i
+// A proposal to act, whoever acts: first person, "to <verb>", "go ahead".
+const proposal = /\b(?:i|me|we|us|my|let['’]s|to|go ahead|should|shall)\b/i
+
+const riskyWording = /\b(?:delet\w*|remov\w*|drop\w*|force\w*|overwrit\w*|reset\w*|wip\w*|destroy\w*|push\w*|merg\w*|releas\w*|publish\w*|deploy\w*|ship\w*|tag\w*|revert\w*|approv\w*|clos\w*|rebas\w*|kill\w*|stop\w*|migrat\w*|install\w*|commit\w*|run|runs|running|start\w*|restart\w*|apply|applied|accept\w*|enabl\w*|disabl\w*|cancel\w*|abort\w*|creat\w*|updat\w*|upgrad\w*|execut\w*|continu\w*|proceed\w*|resolv\w*|sign\w*|send\w*|sent|move\w*|renam\w*|clean\w*)\b/i
 
 /**
  * Whether a question reads as a plain yes-or-no one. The daemon keeps no flag for it, so this
  * is deliberately conservative: one short sentence that opens with an auxiliary verb, ends in a
  * question mark and offers no alternative ("or"), second clause or negation, and names no consequential action
- * (delete, force, push, merge, release and the like). A miss only means no buttons.
+ * (delete, force, push, merge, approve, run and the like; the list is not exhaustive, which is why
+ * only state-asking openers qualify at all). A miss only means no buttons.
  */
 export function isYesNo(text: string): boolean {
   const t = text.trim()
@@ -56,6 +62,6 @@ export function isYesNo(text: string): boolean {
   // A negative question ("Can't you...?", "Is it not...?") makes Yes ambiguous.
   if (/n['’]t\b|\bnot\b/i.test(t)) return false
   // Consequential actions get a typed or confirmed reply, never one click.
-  if (riskyWording.test(t)) return false
+  if (riskyWording.test(t) || proposal.test(t)) return false
   return yesNoStart.test(t)
 }

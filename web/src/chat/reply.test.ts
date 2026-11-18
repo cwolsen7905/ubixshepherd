@@ -53,9 +53,9 @@ describe('closedQuestions', () => {
 
 describe('isYesNo', () => {
   it('accepts a short single yes-or-no question', () => {
-    for (const t of ['Should I use the new config?', 'Is the gate green?', 'Want me to start the run?']) expect(isYesNo(t)).toBe(true)
+    for (const t of ['Is the config valid?', 'Is the gate green?', 'Does the build use the new config?', 'Are both repos on dev?']) expect(isYesNo(t)).toBe(true)
   })
   it('refuses open, either-or, multi-part and unfinished questions', () => {
-    for (const t of ['Which repo?', 'Should I merge or rebase?', 'Should I merge? Which branch?', 'Should I rebase it, and delete the branch?', 'Should I rebase it. Is the gate green?', "Can't you fix it?", 'Is it not ready?', 'Should I merge it?', 'Should I force-push?', 'Should I delete the branch?', 'Ready to release?', 'Should I merge', 'Is it ok?\nExplain.', '']) expect(isYesNo(t)).toBe(false)
+    for (const t of ['Which repo?', 'Should I merge or rebase?', 'Should I merge? Which branch?', 'Should I rebase it, and delete the branch?', 'Should I rebase it. Is the gate green?', "Can't you fix it?", 'Is it not ready?', 'Should I merge it?', 'Should I force-push?', 'Should I delete the branch?', 'Ready to release?', 'Should I approve the MR?', 'Should I rebase onto main?', 'Should I close the MR?', 'Should I kill the running agent?', 'Should I stop the daemon?', 'Should I run the migration?', 'Should I commit the changes?', 'Is it ok to run the migration?', 'Do you want me to install it?', 'Is the daemon stopped?', 'Should I merge', 'Is it ok?\nExplain.', '']) expect(isYesNo(t)).toBe(false)
   })
 })

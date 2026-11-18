@@ -28,7 +28,7 @@ describe('QuestionActions after a reply', () => {
 })
 
 describe('Yes and No buttons', () => {
-  const yn: DeskQuestion = { ...q, id: 7, text: 'Should I use the new config?' }
+  const yn: DeskQuestion = { ...q, id: 7, text: 'Is the config valid?' }
   it('send the word as a reply linked to the question and clear it', async () => {
     const send = vi.fn(async () => true)
     const replied = vi.fn()
@@ -49,6 +49,10 @@ describe('Yes and No buttons', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Yes' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Not sent')
     expect(replied).not.toHaveBeenCalled()
+  })
+  it('are absent on a question that is no longer open', () => {
+    render(<QuestionActions q={{ ...yn, state: 'answered' }} thread={{ send: async () => true } as unknown as DeskThread} onCleared={() => {}} />)
+    expect(screen.queryByRole('button', { name: 'Yes' })).toBeNull()
   })
   it('are absent on an open question', () => {
     render(<QuestionActions q={q} thread={{ send: async () => true } as unknown as DeskThread} onCleared={() => {}} />)
