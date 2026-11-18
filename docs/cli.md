@@ -18,6 +18,8 @@ it prints the run's view as `GET /v1/runs/{id}` answers it, with `report_status`
 `report_text`, `needs_person` and `log_tail` added; the view's own fields are
 unchanged.
 
+The same report is the `run_status` MCP tool (`id`).
+
 ## workspace
 
 ```sh

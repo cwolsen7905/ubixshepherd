@@ -270,14 +270,14 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "run_status",
-			Description: "One run: state, time, exit code, commits made, any files changed outside the lane's scope, and its log (long logs keep their start and end).",
+			Description: "One run, report first: the agent's final report with its full summary and what needs the person, then state, time, exit code, commits made, any files changed outside the lane's scope, and the log's last 40 lines.",
 			InputSchema: obj(map[string]any{"id": map[string]any{"type": "integer"}}, "id"),
 			args: func(a map[string]any) ([]string, error) {
 				id, ok := a["id"].(float64)
 				if !ok {
 					return nil, fmt.Errorf("id must be a number")
 				}
-				return []string{"run", "show", fmt.Sprint(int64(id)), "--with-log"}, nil
+				return []string{"run", "status", fmt.Sprint(int64(id))}, nil
 			},
 			more: "The whole log, redacted, is the file on the log line near the top: Read it with an offset and a limit, for the part you need.",
 		},

@@ -160,3 +160,27 @@ func TestRunStatusRejectsBadIDs(t *testing.T) {
 		t.Errorf("run status x: %d %s", code, h.err)
 	}
 }
+
+func TestRunStatusToolLeadsWithReport(t *testing.T) {
+	h := newHarness(t, "", false)
+	id, report := seedStatusRun(t, h)
+	resps := mcpExchange(t, h.env,
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"run_status","arguments":{"id":%d}}}`, id),
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_status","arguments":{"id":"x"}}}`,
+	)
+	text, isErr := toolText(t, resps[0])
+	if isErr {
+		t.Fatalf("run_status: %s", text)
+	}
+	for _, want := range []string{"report    done", report, "needs     decision", "line 50"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("run_status lacks %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "line 10\n") {
+		t.Errorf("run_status prints more than the tail:\n%s", text)
+	}
+	if _, isErr := toolText(t, resps[1]); !isErr {
+		t.Error("run_status with a string id was accepted")
+	}
+}
