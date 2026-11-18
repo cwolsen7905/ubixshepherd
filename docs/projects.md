@@ -87,9 +87,13 @@ landed there, so the merge is the approval. The commit that last changed the fil
 gives `approved_at`, and so the age and staleness. Shepherd does not fetch: the repo
 is as fresh as its last fetch. Reads are reused for 60 seconds.
 
-The file wins. When the repo, the ref or the file is missing or empty, the store's
-approved brief is used, and drafts and approvals through the front desk work as
-before. The project's brief view says which source it used (`file` or `store`).
+The file wins in the project's brief view (the project page and `GET
+/v1/projects/{name}/brief`). When the repo, the ref or the file is missing or empty,
+the store's approved brief is used, and drafts and approvals through the front desk work
+as before. The view says which source it used (`file` or `store`).
+
+For now the brief given to agents in their standing instruction still comes from the
+store; it reads the file in a follow-up.
 
 ## Spend
 

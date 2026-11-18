@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/project"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -119,5 +122,73 @@ func TestProjectsForWebSessionsAndNotWorkers(t *testing.T) {
 	}
 	if resp, _ := b.do("POST", api.PathProjects, map[string]any{}); resp.StatusCode == http.StatusOK {
 		t.Errorf("POST %s was allowed", api.PathProjects)
+	}
+}
+
+// TestProjectBriefFromFile: a brief_source file at the docs repo's default branch tip
+// wins over the store's brief, and the store's brief is the fallback when it is absent.
+func TestProjectBriefFromFile(t *testing.T) {
+	s, ts := newServer(t)
+	ctx := context.Background()
+	root, _ := paths.Canonical(t.TempDir())
+	docs := filepath.Join(root, "docs")
+	run := func(dir string, args ...string) {
+		t.Helper()
+		c := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false"}, args...)...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	bare := filepath.Join(root, "o.git")
+	if out, err := exec.Command("git", "init", "--bare", bare).CombinedOutput(); err != nil {
+		t.Fatal(string(out), err)
+	}
+	run(bare, "symbolic-ref", "HEAD", "refs/heads/main")
+	if out, err := exec.Command("git", "clone", bare, docs).CombinedOutput(); err != nil {
+		t.Fatal(string(out), err)
+	}
+	run(docs, "checkout", "-b", "main")
+	if _, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root},
+		[]store.Repo{{Name: "app", Path: filepath.Join(root, "app")}, {Name: "docs", Path: docs}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Default()
+	cfg.Repos = map[string]config.Profile{"app": {}, "docs": {}}
+	cfg.Projects = map[string]config.Project{"shop": {Repos: []string{"app"}, BriefSource: &config.BriefSource{Repo: "docs"}}}
+	s.applyConfig(cfg)
+	path := api.PathProjectBrief("shop")
+
+	// No file yet and no stored brief: nothing approved.
+	var v api.BriefView
+	if code := call(t, ts, s.Token, "GET", path, nil, &v); code != http.StatusOK || v.Approved != nil {
+		t.Fatalf("no file: %d %+v", code, v)
+	}
+
+	// A stored approved brief is the fallback while the file is missing.
+	d, err := s.Store.SaveBriefDraft(ctx, "shop", "Stored focus.", "desk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.ApproveBrief(ctx, d.ID, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	s.Briefs = project.Reader{} // forget the cached miss
+	v = api.BriefView{}
+	if code := call(t, ts, s.Token, "GET", path, nil, &v); code != http.StatusOK || v.Approved == nil || v.Approved.Text != "Stored focus." || v.Source != "store" {
+		t.Fatalf("fallback: %d %+v", code, v)
+	}
+
+	// Once the file lands on main it wins.
+	f := filepath.Join(docs, "projects", "shop", "brief.md")
+	os.MkdirAll(filepath.Dir(f), 0o755)
+	os.WriteFile(f, []byte("File focus.\n"), 0o644)
+	run(docs, "add", ".")
+	run(docs, "commit", "-m", "brief")
+	run(docs, "push", "-u", "origin", "main")
+	s.Briefs = project.Reader{}
+	v = api.BriefView{}
+	if code := call(t, ts, s.Token, "GET", path, nil, &v); code != http.StatusOK || v.Approved == nil || v.Approved.Text != "File focus." ||
+		v.Source != "file" || v.Commit == "" || v.Ref != "origin/main" || v.Stale {
+		t.Fatalf("file: %d %+v", code, v)
 	}
 }

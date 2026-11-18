@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"net/http"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/project"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -260,4 +262,57 @@ func (s *Server) getUnassigned(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, d.detail(""))
+}
+
+// approvedBriefResult is an approved brief with, for one read from a file, its commit
+// and ref.
+type approvedBriefResult struct {
+	store.ProjectBrief
+	commit, ref string
+}
+
+// approvedBrief is a project's approved brief: the file its brief_source names when it
+// can be read, else the store's. The bool says it came from the file.
+func (s *Server) approvedBrief(ctx context.Context, name string, p config.Project) (approvedBriefResult, bool, error) {
+	if src := p.BriefSource; src != nil {
+		dir, err := s.repoPath(ctx, src.Repo)
+		if err != nil {
+			return approvedBriefResult{}, false, err
+		}
+		if dir != "" {
+			fb, err := s.Briefs.ForProject(ctx, name, *src, dir)
+			switch {
+			case err == nil:
+				at := fb.Approved
+				return approvedBriefResult{
+					ProjectBrief: store.ProjectBrief{Project: name, Text: fb.Text, State: store.BriefApproved, ApprovedBy: "docs", Approved: &at, Created: at},
+					commit:       fb.Commit, ref: fb.Ref,
+				}, true, nil
+			case !errors.Is(err, project.ErrMissing):
+				s.Log.Warn("brief file unreadable; using the stored brief", "project", name, "err", err)
+			}
+		}
+	}
+	b, err := s.Store.ApprovedBrief(ctx, name)
+	return approvedBriefResult{ProjectBrief: b}, false, err
+}
+
+// repoPath is the path of a workspace repo by name; "" when no workspace has it.
+func (s *Server) repoPath(ctx context.Context, name string) (string, error) {
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, ws := range wss {
+		repos, err := s.Store.Repos(ctx, ws.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, rp := range repos {
+			if rp.Name == name {
+				return rp.Path, nil
+			}
+		}
+	}
+	return "", nil
 }
