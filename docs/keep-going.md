@@ -172,8 +172,16 @@ merely mentions a push waits.
 The answer says "Auto-approved under keep-going (rule plan-auto-approve), not by the
 person", so the agent and the decision's history carry it, and the feed gets a
 `keep_going` item naming the decision, the lane and the rule. It counts as activity for the
-idle limit. It never applies while the mode is off, and the person can still answer a
+idle limit, and because the answer resumes the agent it passes the same gate as any
+continued run (`Allow`, action `continue`): the spend cap, run cap, idle time, end of day
+and the lane's starts per day apply, and it counts one of them. A plan the gate refuses
+stays a decision. It never applies while the mode is off, and the person can still answer a
 decision first.
+
+This does not make an agent approve its own work. A plan is a go-ahead to start, not a
+review of the result: the lane's scope is still enforced on every commit and push by the
+hooks, and the merge request is still reviewed and merged by the person or the repo's
+rule. The daemon, not the agent, applies the rules above to what the agent wrote.
 
 The switch is `keep_going.plan_approve` in `config.yaml`: unset or `true` is on while
 keep-going is on, `false` leaves every plan to the person. It is reloaded on SIGHUP.

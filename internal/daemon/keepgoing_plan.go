@@ -152,6 +152,12 @@ func (k *KeepGoing) autoApprovePlans(ctx context.Context, ws int64) {
 			}
 			continue
 		}
+		// Answering resumes the agent, so it is an autonomous continuation: it passes the
+		// same gate as any other, and counts against the lane's starts for the day.
+		if a := k.Allow(ctx, ws, KeepContinue, lane.ID); !a.OK {
+			k.s.Log.Debug("keep-going: plan left for the person", "decision", d.ID, "why", a.Reason)
+			continue
+		}
 		text := fmt.Sprintf("Auto-approved under keep-going (rule %s), not by the person: the plan names only files inside the lane's scope, follows its approved item, and you recommended going ahead. Proceed with your plan, and stay inside your scope.", PlanRule)
 		if err := k.answerDecision(ctx, d.ID, text); err != nil {
 			k.s.Log.Warn("keep-going: auto-approve a plan", "decision", d.ID, "err", err)

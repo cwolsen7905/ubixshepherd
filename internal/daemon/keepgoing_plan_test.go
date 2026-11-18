@@ -144,3 +144,21 @@ func TestPlanNeverWhenKeepGoingOffOrSwitchOff(t *testing.T) {
 		t.Fatalf("answered with the switch off: %v", *got)
 	}
 }
+
+func TestPlanCountsAndRespectsLaneStarts(t *testing.T) {
+	s, ws, lane, got := planFixture(t)
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	day := s.KeepGoing().day(s.KeepGoing().Now())
+	n := config.DefaultKeepLaneStarts
+	for i := 0; i < n; i++ {
+		askPlan(t, s, lane, goodPlan, "Proceed")
+	}
+	askPlan(t, s, lane, goodPlan, "Proceed")
+	s.KeepGoing().autoApprovePlans(context.Background(), ws.ID)
+	if len(*got) != n {
+		t.Fatalf("answered %d, want the lane's %d starts", len(*got), n)
+	}
+	if c, _ := s.Store.LaneStarts(context.Background(), lane.ID, day); c != n {
+		t.Errorf("starts counted %d", c)
+	}
+}
