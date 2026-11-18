@@ -143,3 +143,19 @@ func TestLaneStallIgnoresClosedLanesAndWiresInWithOneCall(t *testing.T) {
 		t.Fatalf("closed lane alerted: %v", got)
 	}
 }
+
+func TestLaneStallSetOptionsKeepsWhatWasAnnounced(t *testing.T) {
+	s, _ := newServer(t)
+	seedLane(t, s, "kept")
+	clk := &fakeClock{t: time.Now().UTC()}
+	opts := LaneStallOptions{After: time.Hour, Now: clk.Now, Unpushed: func(context.Context, store.Lane) int { return 1 }}
+	s.SetLaneStallOptions(opts)
+	ctx := context.Background()
+	clk.Add(2 * time.Hour)
+	s.CheckLaneStalls(ctx)
+	s.SetLaneStallOptions(opts)
+	s.CheckLaneStalls(ctx)
+	if got := stallFeed(t, s); len(got) != 1 {
+		t.Fatalf("one stall, one alert, even across an options change: %v", got)
+	}
+}

@@ -42,6 +42,11 @@ type LaneStall struct {
 
 // NewLaneStall returns the check for a server.
 func NewLaneStall(s *Server, opts LaneStallOptions) *LaneStall {
+	return &LaneStall{s: s, opts: opts.withDefaults(), told: map[int64]string{}}
+}
+
+// withDefaults fills what opts leaves unset.
+func (opts LaneStallOptions) withDefaults() LaneStallOptions {
 	if opts.After <= 0 {
 		opts.After = DefaultLaneStallAfter
 	}
@@ -51,7 +56,21 @@ func NewLaneStall(s *Server, opts LaneStallOptions) *LaneStall {
 	if opts.Unpushed == nil {
 		opts.Unpushed = dispatch.Unpushed
 	}
-	return &LaneStall{s: s, opts: opts, told: map[int64]string{}}
+	return opts
+}
+
+// setOptions replaces the options in place, keeping what was announced.
+func (ls *LaneStall) setOptions(opts LaneStallOptions) {
+	ls.mu.Lock()
+	ls.opts = opts.withDefaults()
+	ls.mu.Unlock()
+}
+
+// options is the options as they stand now.
+func (ls *LaneStall) options() LaneStallOptions {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	return ls.opts
 }
 
 // laneStalls holds each server's check, so wiring needs no field on Server.
@@ -65,10 +84,11 @@ func (s *Server) CheckLaneStalls(ctx context.Context) {
 	v.(*LaneStall).Check(ctx)
 }
 
-// SetLaneStallOptions replaces the server's check with one using opts, forgetting what
-// it had announced.
+// SetLaneStallOptions sets the options of the server's check, creating it if need be.
+// It keeps what the check had announced, and never loses to a pass racing it.
 func (s *Server) SetLaneStallOptions(opts LaneStallOptions) {
-	laneStalls.Store(s, NewLaneStall(s, opts))
+	v, _ := laneStalls.LoadOrStore(s, NewLaneStall(s, opts))
+	v.(*LaneStall).setOptions(opts)
 }
 
 // Check looks at every open lane in every workspace.
@@ -110,6 +130,7 @@ func (ls *LaneStall) Check(ctx context.Context) {
 }
 
 func (ls *LaneStall) checkLane(ctx context.Context, rp store.Repo, l store.Lane) {
+	opts := ls.options()
 	runs, err := ls.s.Store.Runs(ctx, l.ID, "", 1)
 	if err != nil {
 		ls.s.Log.Warn("lane stall: read runs", "lane", l.Name, "err", err)
@@ -127,11 +148,11 @@ func (ls *LaneStall) checkLane(ctx context.Context, rp store.Repo, l store.Lane)
 			quiet = *r.Ended
 		}
 	}
-	if ls.opts.Now().Sub(quiet) < ls.opts.After {
+	if opts.Now().Sub(quiet) < opts.After {
 		ls.clear(l.ID) // a run started or ended inside the window: not stalled
 		return
 	}
-	cause := ls.cause(ctx, l)
+	cause := ls.cause(ctx, l, opts)
 	if cause == "" {
 		ls.clear(l.ID)
 		return
@@ -145,13 +166,13 @@ func (ls *LaneStall) checkLane(ctx context.Context, rp store.Repo, l store.Lane)
 	}
 	ls.s.postFeed(ctx, FeedLaneStall, l.ID, redact.String(fmt.Sprintf(
 		"lane %s in %s has had no run for %s and %s: open it, then push, fix or close it.",
-		l.Name, rp.Name, ls.opts.Now().Sub(quiet).Round(time.Minute), cause)))
+		l.Name, rp.Name, opts.Now().Sub(quiet).Round(time.Minute), cause)))
 }
 
 // cause says what holds the lane, or "" when nothing does.
-func (ls *LaneStall) cause(ctx context.Context, l store.Lane) string {
+func (ls *LaneStall) cause(ctx context.Context, l store.Lane, opts LaneStallOptions) string {
 	var parts []string
-	if n := ls.opts.Unpushed(ctx, l); n > 0 {
+	if n := opts.Unpushed(ctx, l); n > 0 {
 		parts = append(parts, fmt.Sprintf("%d commit(s) are not pushed", n))
 	}
 	if lf, err := ls.s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 && lf.PipelineStatus == "failed" {
