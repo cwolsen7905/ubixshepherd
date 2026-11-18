@@ -56,12 +56,18 @@ func (p *publicListener) open(ctx context.Context) error {
 	if err := p.s.PreparePublic(ctx, p.home); err != nil {
 		return err
 	}
+	h := p.s.hostedNow()
 	lctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	p.cancel, p.done = cancel, done
 	go func() {
 		defer close(done)
-		if err := p.s.ServePublic(lctx); err != nil {
+		err := p.s.ServePublic(lctx)
+		// Not serving any more, whatever the reason: stop reporting an address.
+		if h != nil {
+			h.addr.Store(nil)
+		}
+		if err != nil {
 			p.s.Log.Error("public listener stopped", "err", err)
 			p.s.Store.AddFeed(context.Background(), store.FeedSession, fmt.Sprintf("the public listener is not serving: %v", err), 0)
 		}

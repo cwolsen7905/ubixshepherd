@@ -146,6 +146,9 @@ func TestRunOpensPublicListenerOnlyWithAnAccountAndStopsItOnStop(t *testing.T) {
 	if _, err := net.DialTimeout("tcp", pub.Listen, 200*time.Millisecond); err == nil {
 		t.Fatal("the public listener survived the daemon's stop")
 	}
+	if r.s.PublicAddr() != "" {
+		t.Error("PublicAddr still reports an address after the listener stopped")
+	}
 }
 
 func TestRunRefusesToStartOnAnUnsafePublicConfig(t *testing.T) {
@@ -201,7 +204,7 @@ func TestReloadRestartsThePublicListenerOnlyWhenItChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for r.s.PublicAddr() == first && time.Now().Before(deadline) {
+	for (r.s.PublicAddr() == first || r.s.PublicAddr() == "") && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if r.s.PublicAddr() == first || r.s.PublicAddr() == "" {
@@ -228,7 +231,7 @@ func callAddr(t *testing.T, addr, token, method, path string) int {
 	t.Helper()
 	req, _ := http.NewRequest(method, "http://"+addr+path, strings.NewReader("{}"))
 	req.Header.Set("Authorization", "Bearer "+token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noKeepAlive.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +244,7 @@ func (r *runRig) setAccountOnLoopback(rt api.Runtime) {
 	b, _ := json.Marshal(api.AccountSet{Password: ownPW})
 	req, _ := http.NewRequest("POST", "http://"+rt.Addr+api.PathAccount, bytes.NewReader(b))
 	req.Header.Set("Authorization", "Bearer "+rt.Token)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noKeepAlive.Do(req)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -288,3 +291,6 @@ func TestReloadToAnUnpreparableConfigLeavesNoListenerAndNoAddress(t *testing.T) 
 		t.Error("the public port still listens")
 	}
 }
+
+// noKeepAlive leaves no idle connection to hold the daemon's shutdown open.
+var noKeepAlive = &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
