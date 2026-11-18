@@ -74,6 +74,10 @@ func (s RuleSet) View() RulesView {
 func (v RulesView) Text() string {
 	var b strings.Builder
 	for _, l := range v.Layers {
+		if l.Layer == LayerBuiltin && len(l.Rules) == 0 {
+			b.WriteString("builtin: compiled into Shepherd, not rule files; see crook why\n")
+			continue
+		}
 		fmt.Fprintf(&b, "%s (%d)\n", l.Layer, len(l.Rules))
 		if len(l.Rules) == 0 {
 			b.WriteString("  none\n")

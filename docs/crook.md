@@ -40,10 +40,21 @@ rules folder at the base branch simply has no repo rules.
 
 ## Where the folders are
 
-The repo's layer folder defaults to `.shepherd`; the loader accepts another relative
-path of plain names (no `..`, no absolute path, no `.git` part). The workspace and
-project folders are directories handed to the loader. Nothing outside these places is
-read.
+The repo layer's folder is `.shepherd` in each repo, read from its base branch. Config
+keys for the workspace and project folders and for a different repo folder come in a
+follow-up; until then `shepherd crook layers` shows the repo layer only.
+
+## Seeing the effective rules
+
+```
+shepherd crook layers [--repo R] [--json]
+```
+
+Prints the repo's effective rules by layer (for now the repo layer), each replaced rule and what it replaced
+(marked when it loosens), each rule switched off, and every rule file that did not load.
+The repo layer is read from `origin/<base branch>` as of the repo's last fetch, so run
+`git fetch` to see what has just merged. `shepherd crook rules` is a different view: it
+counts verdicts per rule.
 
 ## Replacing and loosening
 

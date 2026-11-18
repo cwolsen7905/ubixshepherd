@@ -33,9 +33,11 @@ shepherd crook why <id> | why run <id> | why lane <name>
 shepherd crook log [--rule R] [--action A]
 shepherd crook rules [--since 7d]
 shepherd crook shadow [--rule R] [--since 14d] [--limit N]
+shepherd crook layers [--repo R]
 ```
 
 Reads of Crook's verdict log, described in [crook-why.md](crook-why.md). `rules` counts
 shadow rows apart from what Shepherd did, and `shadow` lists them: see
 [merge-rules.md](merge-rules.md). Every form takes `--json`. `shadow` is also the
-`crook_shadow` MCP tool (`rule`, `since`).
+`crook_shadow` MCP tool (`rule`, `since`). `layers` shows the effective rule files for a
+repo, by layer, and is described in [crook.md](crook.md).

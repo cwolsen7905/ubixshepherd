@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -10,11 +11,13 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// runCrook is `shepherd crook why|log|rules|shadow`: a read of Crook's verdict log
-// (docs/crook-why.md). It is a client of the daemon's /v1/crook routes.
+// runCrook is `shepherd crook why|log|rules|shadow|layers`: a read of Crook's verdict log
+// (docs/crook-why.md) and of its rule layers (docs/crook.md). It is a client of the daemon's /v1/crook routes.
 func runCrook(ctx context.Context, env Env, args []string) error {
 	if len(args) == 0 {
 		return errUsage
@@ -22,7 +25,7 @@ func runCrook(ctx context.Context, env Env, args []string) error {
 	sub, args := args[0], args[1:]
 	fs := flags("crook "+sub, env)
 	asJSON := fs.Bool("json", false, "print JSON")
-	var rule, kind, action, since *string
+	var rule, kind, action, since, repo *string
 	var limit *int
 	switch sub {
 	case "why", "log":
@@ -35,6 +38,8 @@ func runCrook(ctx context.Context, env Env, args []string) error {
 		}
 	case "rules":
 		since = fs.String("since", "", "from when: RFC 3339 or a number of days like 7d (default 7d)")
+	case "layers":
+		repo = fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
 	case "shadow":
 		rule = fs.String("rule", "", "only this rule id")
 		since = fs.String("since", "", "from when: RFC 3339 or a number of days like 7d (default 14d)")
@@ -68,6 +73,11 @@ func runCrook(ctx context.Context, env Env, args []string) error {
 	}
 
 	switch sub {
+	case "layers":
+		if len(pos) > 0 {
+			return errUsage
+		}
+		return crookLayers(ctx, env, *repo, *asJSON)
 	case "rules":
 		if len(pos) > 0 {
 			return errUsage
@@ -215,4 +225,37 @@ func writeCrookRules(w io.Writer, r api.CrookRules) {
 	for _, c := range r.Rules {
 		fmt.Fprintf(w, "  %-32s %8d %5d %5d %7d\n", c.Rule, c.Proceed, c.Ask, c.Hold, c.Refuse)
 	}
+}
+
+// crookLayers is `shepherd crook layers`: the effective rules for a repo, by layer. The
+// repo layer is read from the repo's base branch as of its last fetch (origin/<base>),
+// never from the worktree you are standing in.
+func crookLayers(ctx context.Context, env Env, repoFlag string, asJSON bool) error {
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, repoFlag)
+	if err != nil {
+		return err
+	}
+	if h.Repo == nil {
+		return errors.New("which repo? name it with --repo, or run this inside one")
+	}
+	cfg, _, err := config.LoadWarn(env.Layout.Config())
+	if err != nil {
+		return err
+	}
+	// Only the repo layer for now: the workspace and project folders and a different repo
+	// folder come from config keys that are not in yet, so the default folder is used.
+	src := crook.Sources{
+		Repo: &crook.RepoSource{Dir: h.Repo.Path, Ref: "origin/" + cfg.Profile(h.Repo.Name).BaseBranch},
+	}
+	view := crook.Load(ctx, src).View()
+	if asJSON {
+		return printJSON(env, view)
+	}
+	fmt.Fprintf(env.Stdout, "Rules for repo %s, by layer (repo layer from %s in %s):\n\n", h.Repo.Name, src.Repo.Ref, crook.DefaultRepoFolder)
+	fmt.Fprint(env.Stdout, view.Text())
+	return nil
 }
