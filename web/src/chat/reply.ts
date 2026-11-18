@@ -43,7 +43,7 @@ const yesNoStart = /^(?:is|are|was|were|does|do|did|has|have|had)\b/i
 // A proposal to act, whoever acts: first person, "to <verb>", "go ahead".
 const proposal = /\b(?:i|me|we|us|my|let['’]s|to|go ahead|should|shall)\b/i
 
-const riskyWording = /\b(?:delet\w*|remov\w*|drop\w*|force\w*|overwrit\w*|reset\w*|wip\w*|destroy\w*|push\w*|merg\w*|releas\w*|publish\w*|deploy\w*|ship\w*|tag\w*|revert\w*|approv\w*|clos\w*|rebas\w*|kill\w*|stop\w*|migrat\w*|install\w*|commit\w*|run|runs|running|start\w*|restart\w*|apply|applied|accept\w*|enabl\w*|disabl\w*|cancel\w*|abort\w*|creat\w*|updat\w*|upgrad\w*|execut\w*|continu\w*|proceed\w*|resolv\w*|sign\w*|send\w*|sent|move\w*|renam\w*|clean\w*)\b/i
+const riskyWording = /\b(?:delet\w*|remov\w*|drop\w*|force\w*|overwrit\w*|reset\w*|wip\w*|destroy\w*|push\w*|merg\w*|releas\w*|publish\w*|deploy\w*|ship\w*|tag\w*|revert\w*|approv\w*|clos\w*|rebas\w*|kill\w*|stop\w*|migrat\w*|install\w*|commit\w*|run|runs|running|start\w*|restart\w*|apply|applied|accept\w*|enabl\w*|disabl\w*|cancel\w*|abort\w*|creat\w*|updat\w*|upgrad\w*|execut\w*|continu\w*|proceed\w*|resolv\w*|sign\w*|send\w*|sent|move\w*|renam\w*|clean\w*|land\w*|hand\w*|live)\b/i
 
 /**
  * Whether a question reads as a plain yes-or-no one. The daemon keeps no flag for it, so this
