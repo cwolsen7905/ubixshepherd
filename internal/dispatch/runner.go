@@ -412,7 +412,7 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	if !req.Force && req.Continue == 0 && !fromQueue {
 		if why := r.landedOnBase(ctx, lane, repo); why != "" {
 			r.feed(ctx, store.FeedPlan, lane.ID, "run not started in lane %s: %s", lane.Name, why)
-			return store.Run{}, refuse("%s; start it anyway with force", why)
+			return store.Run{}, refuse("%s; to start anyway, set force in the run request (the HTTP API; the CLI has no flag for it yet)", why)
 		}
 	}
 	if prof := cfg.Profile(repo.Name); !prof.AgentAllowed(ad.Name) {

@@ -26,7 +26,7 @@ use `force`, and a plan line goes on the feed: `run not started in lane <name>: 
 start, so both are checked. A drive never forces: it reports the refusal like any other
 refused start.
 
-To start anyway, send `"force": true` in the run request. This is the person's override.
+To start anyway, send `"force": true` in the run request to the daemon's HTTP API. This is the person's override. The `shepherd lane run` command and the `lane_run` tool do not take it yet.
 
 This check is separate from the instruction in the run's brief, which asks the agent to check
 the base itself and report a summary that starts with `ALREADY DONE:`. The brief covers what
