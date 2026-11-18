@@ -38,15 +38,24 @@ export async function closedQuestions(list: (state: 'answered' | 'skipped') => P
 
 const yesNoStart = /^(?:do|does|did|is|are|was|were|can|could|should|shall|will|would|have|has|had|may|must|ok to|okay to|want me to|shall i|ready to)\b/i
 
+const riskyWording = /\b(?:delet\w*|remov\w*|drop\w*|force\w*|overwrit\w*|reset\w*|wip\w*|destroy\w*|push\w*|merg\w*|releas\w*|publish\w*|deploy\w*|ship\w*|tag\w*|revert\w*)\b/i
+
 /**
  * Whether a question reads as a plain yes-or-no one. The daemon keeps no flag for it, so this
  * is deliberately conservative: one short sentence that opens with an auxiliary verb, ends in a
- * question mark and offers no alternative ("or"). A miss only means no buttons.
+ * question mark and offers no alternative ("or"), second clause or negation, and names no consequential action
+ * (delete, force, push, merge, release and the like). A miss only means no buttons.
  */
 export function isYesNo(text: string): boolean {
   const t = text.trim()
   if (!t || t.length > 200 || /\n/.test(t)) return false
   if (!t.endsWith('?') || t.indexOf('?') !== t.length - 1) return false
   if (/\bor\b/i.test(t)) return false
+  // One ask only: no second clause or sentence, so a Yes cannot approve half of it.
+  if (/[,;]|\.\s|\band\b/i.test(t)) return false
+  // A negative question ("Can't you...?", "Is it not...?") makes Yes ambiguous.
+  if (/n['’]t\b|\bnot\b/i.test(t)) return false
+  // Consequential actions get a typed or confirmed reply, never one click.
+  if (riskyWording.test(t)) return false
   return yesNoStart.test(t)
 }

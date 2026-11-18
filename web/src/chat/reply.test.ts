@@ -53,9 +53,9 @@ describe('closedQuestions', () => {
 
 describe('isYesNo', () => {
   it('accepts a short single yes-or-no question', () => {
-    for (const t of ['Should I merge it?', 'Is the gate green?', 'Want me to push the branch?']) expect(isYesNo(t)).toBe(true)
+    for (const t of ['Should I use the new config?', 'Is the gate green?', 'Want me to start the run?']) expect(isYesNo(t)).toBe(true)
   })
   it('refuses open, either-or, multi-part and unfinished questions', () => {
-    for (const t of ['Which repo?', 'Should I merge or rebase?', 'Should I merge? Which branch?', 'Should I merge', 'Is it ok?\nExplain.', '']) expect(isYesNo(t)).toBe(false)
+    for (const t of ['Which repo?', 'Should I merge or rebase?', 'Should I merge? Which branch?', 'Should I rebase it, and delete the branch?', 'Should I rebase it. Is the gate green?', "Can't you fix it?", 'Is it not ready?', 'Should I merge it?', 'Should I force-push?', 'Should I delete the branch?', 'Ready to release?', 'Should I merge', 'Is it ok?\nExplain.', '']) expect(isYesNo(t)).toBe(false)
   })
 })

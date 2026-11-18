@@ -28,7 +28,7 @@ describe('QuestionActions after a reply', () => {
 })
 
 describe('Yes and No buttons', () => {
-  const yn: DeskQuestion = { ...q, id: 7, text: 'Should I merge it?' }
+  const yn: DeskQuestion = { ...q, id: 7, text: 'Should I use the new config?' }
   it('send the word as a reply linked to the question and clear it', async () => {
     const send = vi.fn(async () => true)
     const replied = vi.fn()
