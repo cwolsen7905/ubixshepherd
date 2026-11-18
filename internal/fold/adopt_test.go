@@ -140,3 +140,19 @@ func TestFailedAdoptOpenLeavesNoMarker(t *testing.T) {
 		t.Errorf("lanes = %d, want 0", len(lanes))
 	}
 }
+
+func TestOpenAdoptSetsUpstreamOnAnExistingLocalBranch(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.pushBranch("fix/local")
+	gitT(t, f.repo.Path, "fetch", "-q", "origin")
+	// A local copy equal to origin's, made without tracking, and not checked out.
+	gitT(t, f.repo.Path, "branch", "--no-track", "fix/local", "origin/fix/local")
+	res, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "fix/local", Scope: []string{"src/**"}, Adopt: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := gitT(t, res.Lane.Worktree, "rev-parse", "--abbrev-ref", "@{upstream}"); got != "origin/fix/local" {
+		t.Errorf("upstream = %q", got)
+	}
+}

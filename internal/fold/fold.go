@@ -222,6 +222,13 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	switch {
 	case req.Adopt && localExists:
 		_, addErr = git.Run(ctx, repo.Path, "worktree", "add", "--quiet", wt, req.Branch)
+		if addErr == nil {
+			// The local copy may have been made without tracking.
+			_, addErr = git.Run(ctx, repo.Path, "branch", "--set-upstream-to=origin/"+req.Branch, req.Branch)
+			if addErr != nil {
+				git.Run(ctx, repo.Path, "worktree", "remove", "--force", wt)
+			}
+		}
 	case req.Adopt:
 		_, addErr = git.Run(ctx, repo.Path, "worktree", "add", "--quiet", "--track", "-b", req.Branch, wt, start)
 	default:
