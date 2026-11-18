@@ -116,17 +116,25 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 		}
 		// The failure is over (fixed, canceled, skipped): its attempts do not carry to
 		// whatever fails next.
-		if len(items) > 0 && p.Status != "running" && p.Status != "pending" {
+		if len(items) > 0 && !items[0].taken && p.Status != "running" && p.Status != "pending" {
 			w.saveOwnerItems(ctx, lane.ID, "pipeline", nil)
 		}
+		// Any change from failed ends a sign-off mark: what fails next is judged afresh.
+		if len(w.ownerItems(ctx, lane.ID, "signoff")) > 0 {
+			w.saveOwnerItems(ctx, lane.ID, "signoff", nil)
+		}
 		return tries
+	}
+	if so := w.ownerItems(ctx, lane.ID, "signoff"); len(so) > 0 && so[0].id == id {
+		return tries // raised already; still waiting on the person
 	}
 	limit := wc.Tries()
 	if len(items) == 0 || items[0].id != id {
 		if w.signoffOnly(ctx, f, p) {
 			// Awaiting the person's sign-off: no owner or agent can clear it, so there is
-			// nothing to wait out. Recorded as taken so later polls read nothing.
-			w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{{id: id, since: w.now(), finished: p.Finished, taken: true}})
+			// nothing to wait out. The mark is its own record, apart from the owner's
+			// items, and ends when the pipeline leaves the failed state.
+			w.saveOwnerItems(ctx, lane.ID, "signoff", []ownerItem{{id: id, since: w.now()}})
 			return w.pipelineFailed(ctx, f, lane, mr, p, tries, limit)
 		}
 		it := ownerItem{id: id, since: w.now(), finished: p.Finished}

@@ -238,3 +238,21 @@ func TestSignoffMarkIsDroppedWhenTheSamePipelineGoesGreenAndFailsAgain(t *testin
 		t.Errorf("later real failure was hidden: %s", got)
 	}
 }
+
+func TestSignoffRetriedOnTheSamePipelineThenFailingElsewhereIsFollowed(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.external(t)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 9, Name: forge.RequireApprovalJob}}
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "running"} // approved, job retried
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed"}
+	f.f.jobs = []forge.Job{{ID: 1, Name: "go-check"}}
+	f.w.Check(f.ctx)
+	if got := f.feed(t); !strings.Contains(got, "reviewbot follows it through") {
+		t.Errorf("later real failure was hidden: %s", got)
+	}
+}
