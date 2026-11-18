@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -22,43 +23,55 @@ const PlanRule = "plan-auto-approve"
 
 var (
 	planWord   = regexp.MustCompile(`(?i)\bplan\b`)
-	fileTicks  = regexp.MustCompile("`([^`\n]+)`")
-	pathLike   = regexp.MustCompile(`^[\w.@+\-/]+$`)
-	bareSlash  = regexp.MustCompile(`(?:^|[\s(,])((?:\.\.?/|/)?[\w.@+\-]+(?:/[\w.@+\-*]+)+)`)
+	fileName   = regexp.MustCompile(`^[\w@+\-]*[A-Za-z_][\w@+\-]*(\.[\w@+\-]+)*\.[A-Za-z][A-Za-z0-9]{0,5}$`)
 	proceedRec = regexp.MustCompile(`(?i)^\W*(proceed|approve|approved|go ahead|go-ahead|yes|ok|okay|continue|build it|go)\b`)
 	notRec     = regexp.MustCompile(`(?i)\b(do not|don't|not proceed|wait|hold|reject|no\b|decline|stop)\b`)
 	// sensitive are words that put a plan back in the person's hands: anything about
 	// merging, pushing, tagging, releasing, deploying, money, widening scope or
 	// destroying data. A plan that merely mentions one waits; it is the cautious side.
+	rootFiles = map[string]bool{"Makefile": true, "Dockerfile": true, "Jenkinsfile": true, "LICENSE": true, "README": true, "CHANGELOG": true, "CODEOWNERS": true}
 	sensitive = regexp.MustCompile(`(?i)\b(merge|merges|merging|push|pushes|pushing|tag|tags|tagging|release|releases|releasing|deploy|deploys|deploying|publish|publishing|price|pricing|payment|billing|budget|spend|spending|cost|costs|money|widen|widening|force|delete|deleting|production|credential|credentials|secret|secrets)\b|\$\s?\d|(outside|beyond|expand\w*|extend\w*)\s+(the\s+|my\s+|its\s+)?scope`)
 	// departs marks a plan that says it does not follow the brief.
 	departs = regexp.MustCompile(`(?i)\b(deviat\w*|differs? from|instead of the (brief|item|task)|not in the (brief|item|task)|beyond the (brief|item|task)|outside the (brief|item|task)|ambiguous|conflicts? with|unclear|contradict\w*)\b`)
 )
 
-// planFiles are the files a plan names: backticked paths and bare paths with a slash.
-// It is cautious: any token that looks like a path counts, so one outside the scope
-// holds the plan.
+// planFiles are the files a plan names. It is cautious and reads every word: any token
+// with a path separator, a backslash, "~" or "$" counts, and so does a token that looks
+// like a file name (a dot and a short extension, or a well-known root file such as
+// Makefile), ticked or not. A false hit only holds the plan for the person.
 func planFiles(text string) []string {
 	seen := map[string]bool{}
 	var out []string
-	add := func(p string) {
-		p = strings.TrimRight(strings.TrimSpace(p), ".,;:)")
-		if p == "" || seen[p] {
-			return
+	for _, tok := range strings.FieldsFunc(text, func(r rune) bool {
+		return unicode.IsSpace(r) || strings.ContainsRune("`,;()[]{}<>\"'", r)
+	}) {
+		tok = strings.TrimRight(tok, ".,:;!?")
+		tok = strings.TrimLeft(tok, ":")
+		if tok == "" || seen[tok] || !fileLike(tok) {
+			continue
 		}
-		seen[p] = true
-		out = append(out, p)
-	}
-	for _, m := range fileTicks.FindAllStringSubmatch(text, -1) {
-		p := strings.TrimSpace(m[1])
-		if pathLike.MatchString(p) && (strings.Contains(p, "/") || (len(p) > 1 && strings.Contains(p[1:], "."))) {
-			add(p)
-		}
-	}
-	for _, m := range bareSlash.FindAllStringSubmatch(text, -1) {
-		add(m[1])
+		seen[tok] = true
+		out = append(out, tok)
 	}
 	return out
+}
+
+// fileLike reports whether a token reads as a file or path.
+func fileLike(tok string) bool {
+	if strings.ContainsAny(tok, "/\\~$") {
+		return true
+	}
+	if rootFiles[tok] {
+		return true
+	}
+	if fileName.MatchString(tok) {
+		switch strings.ToLower(tok) {
+		case "e.g", "i.e", "etc", "vs":
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 // planVerdict says whether the decision is a plan that may proceed, and why not when it
@@ -77,7 +90,7 @@ func planVerdict(d store.Decision, lane store.Lane, item *store.NextItem) (bool,
 		return false, "it names no files, so its scope cannot be checked"
 	}
 	for _, f := range files {
-		if strings.HasPrefix(f, "/") || strings.HasPrefix(f, "..") || !scope.Any(lane.Scope, f) {
+		if strings.ContainsAny(f, "\\~$:") || strings.HasPrefix(f, "/") || strings.HasPrefix(f, "..") || !scope.Any(lane.Scope, f) {
 			return false, "it names " + f + ", outside the lane's scope"
 		}
 	}

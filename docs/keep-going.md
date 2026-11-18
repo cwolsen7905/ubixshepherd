@@ -161,7 +161,7 @@ and when a run ends:
 | Rule | Check |
 |---|---|
 | It is a plan | the first line of the question says "plan" |
-| Inside the scope | it names at least one file, and every file it names (backticked paths and bare paths with a slash) is inside the lane's scope; an absolute path or `..` is outside |
+| Inside the scope | it names at least one file, and every file it names (any word with a slash, backslash, `~` or `$`, or that looks like a file name, ticked or not, such as `go.mod` or `Makefile`) is inside the lane's scope; an absolute path, `..`, `~`, `$` or a drive letter is outside |
 | Follows the brief | the lane serves an approved Next-up item, and the plan, its reason and its options do not say they deviate, conflict with it or are unsure of it |
 | The agent agrees | the agent's own recommendation says to proceed or approve, and does not say wait, hold or no |
 | Nothing the person owns | no mention of merge, push, tag, release, deploy, publish, money, widening scope or leaving the scope, deleting, production or credentials |
