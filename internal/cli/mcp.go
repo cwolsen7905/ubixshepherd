@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/version"
@@ -201,7 +202,7 @@ func mcpTools() []mcpTool {
 			InputSchema: obj(map[string]any{
 				"repo":        propRepo,
 				"lane":        map[string]any{"type": "string", "description": "The lane's name; open it first with lane_open."},
-				"agent":       map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor", "opencode"}},
+				"agent":       map[string]any{"type": "string", "enum": config.Agents},
 				"task":        map[string]any{"type": "string", "description": "What the agent should do, as you would brief a colleague. Shepherd adds the lane, scope and rules."},
 				"model":       map[string]any{"type": "string", "description": "Model, if not the repo's default for this agent. Choose it from models_list for the repo; a model the policy does not permit is refused."},
 				"effort":      map[string]any{"type": "string", "description": "Effort, in the agent's own words (Claude Code: low, medium, high, xhigh, max), from models_list. Omit for the repo's default. Not every agent or model takes one; then it is not applied and the run's log says so."},
@@ -226,7 +227,7 @@ func mcpTools() []mcpTool {
 			Description: "The models each agent may run in a repo, what each is for, and the default model and effort, under the person's policy in config.yaml. Call it before lane_run and choose model and effort per task from it; a model not listed is refused.",
 			InputSchema: obj(map[string]any{
 				"repo":  propRepo,
-				"agent": map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor", "opencode"}, "description": "Only this agent. Default: all."},
+				"agent": map[string]any{"type": "string", "enum": config.Agents, "description": "Only this agent. Default: all."},
 			}, "repo"),
 			args: func(a map[string]any) ([]string, error) {
 				out := []string{"models", "--repo", str(a, "repo")}
@@ -939,7 +940,7 @@ func mcpTools() []mcpTool {
 			InputSchema: obj(map[string]any{
 				"id":    map[string]any{"type": "integer"},
 				"lane":  map[string]any{"type": "string"},
-				"agent": map[string]any{"type": "string", "enum": []string{"claude", "copilot", "cursor", "opencode"}},
+				"agent": map[string]any{"type": "string", "enum": config.Agents},
 			}, "id", "lane"),
 			args: func(a map[string]any) ([]string, error) {
 				id, ok := a["id"].(float64)

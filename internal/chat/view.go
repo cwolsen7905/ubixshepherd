@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -119,7 +120,7 @@ func tintAgents(s string) string {
 }
 
 func tintPlain(s string) string {
-	for _, a := range []string{"claude", "copilot", "cursor", "opencode"} {
+	for _, a := range config.Agents {
 		if i := indexFold(s, a); i >= 0 {
 			before, mid, after := s[:i], s[i:i+len(a)], s[i+len(a):]
 			return before + styleAgent(a).Render(mid) + tintPlain(after)

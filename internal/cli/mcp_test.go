@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -180,5 +181,28 @@ func TestMCPWorkspaceRename(t *testing.T) {
 	}
 	if text, isErr := toolText(t, resps[2]); !isErr || !strings.Contains(text, "non-empty") {
 		t.Errorf("empty name: %v %s", isErr, text)
+	}
+}
+
+// TestMCPAgentEnumsMatchConfig fails when a tool's agent enum drifts from config.Agents.
+func TestMCPAgentEnumsMatchConfig(t *testing.T) {
+	found := 0
+	for _, tool := range append(mcpTools(), workerTools()...) {
+		props, _ := tool.InputSchema["properties"].(map[string]any)
+		agent, ok := props["agent"].(map[string]any)
+		if !ok {
+			continue
+		}
+		enum, ok := agent["enum"].([]string)
+		if !ok {
+			continue
+		}
+		found++
+		if !slices.Equal(enum, config.Agents) {
+			t.Errorf("%s: agent enum %v differs from config.Agents %v", tool.Name, enum, config.Agents)
+		}
+	}
+	if found == 0 {
+		t.Fatal("no agent enums found")
 	}
 }

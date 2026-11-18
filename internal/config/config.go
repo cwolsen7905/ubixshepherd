@@ -414,6 +414,15 @@ func (d Desk) WakeMode() string {
 // Agents are the agent CLIs Shepherd can start.
 var Agents = []string{"claude", "copilot", "cursor", "opencode"}
 
+// agentChoices reads Agents as "a, b, c or d" for error messages.
+func agentChoices() string {
+	n := len(Agents)
+	if n < 2 {
+		return strings.Join(Agents, "")
+	}
+	return strings.Join(Agents[:n-1], ", ") + " or " + Agents[n-1]
+}
+
 // LogLevels are daemon.log_level's choices, quietest last.
 var LogLevels = []string{"debug", "info", "warn", "error"}
 
@@ -1073,12 +1082,12 @@ func (p Profile) validate(at string) []error {
 	}
 	for i, a := range p.Agents {
 		if !slices.Contains(Agents, a) {
-			errs = append(errs, fmt.Errorf("%s.agents[%d]: %q is not claude, copilot, cursor or opencode", at, i, a))
+			errs = append(errs, fmt.Errorf("%s.agents[%d]: %q is not %s", at, i, a, agentChoices()))
 		}
 	}
 	for agent, m := range p.Agent.Model {
 		if !slices.Contains(Agents, agent) {
-			errs = append(errs, fmt.Errorf("%s.agent.model: %q is not claude, copilot, cursor or opencode", at, agent))
+			errs = append(errs, fmt.Errorf("%s.agent.model: %q is not %s", at, agent, agentChoices()))
 		}
 		if m == "" || badModel(m) {
 			errs = append(errs, fmt.Errorf("%s.agent.model.%s: %q is not a model name", at, agent, m))
@@ -1158,7 +1167,7 @@ func (p Profile) validate(at string) []error {
 			errs = append(errs, fmt.Errorf("%s.after: %q is not %s or %s", at, f.After, Published, Tagged))
 		}
 		if !slices.Contains(Agents, f.Agent) {
-			errs = append(errs, fmt.Errorf("%s.agent: %q is not claude, copilot, cursor or opencode", at, f.Agent))
+			errs = append(errs, fmt.Errorf("%s.agent: %q is not %s", at, f.Agent, agentChoices()))
 		}
 	}
 	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
