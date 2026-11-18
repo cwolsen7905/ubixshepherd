@@ -17,7 +17,6 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/convo"
-	"github.com/ubixsys/ubixshepherd/internal/daemon"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -62,7 +61,7 @@ func New(base, token string) *Client {
 
 // FromRuntime returns a client for the daemon described by the runtime file at path.
 func FromRuntime(path string) (*Client, error) {
-	rt, err := daemon.ReadRuntime(path)
+	rt, err := api.ReadRuntime(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNoDaemon
 	}
@@ -116,7 +115,7 @@ func (c *Client) Redial() error {
 	if c == nil || c.runtime == "" {
 		return ErrNoDaemon
 	}
-	rt, err := daemon.ReadRuntime(c.runtime)
+	rt, err := api.ReadRuntime(c.runtime)
 	if errors.Is(err, os.ErrNotExist) {
 		return ErrNoDaemon
 	}

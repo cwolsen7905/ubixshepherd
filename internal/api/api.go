@@ -3,7 +3,9 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -309,6 +311,17 @@ type Runtime struct {
 	Token   string    `json:"token"`
 	Version string    `json:"version"`
 	Started time.Time `json:"started"`
+}
+
+// ReadRuntime reads a daemon's runtime file. It lives here so a client can find the
+// daemon without importing the daemon package.
+func ReadRuntime(path string) (Runtime, error) {
+	var rt Runtime
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return rt, err
+	}
+	return rt, json.Unmarshal(b, &rt)
 }
 
 // Status answers GET /v1/status.
