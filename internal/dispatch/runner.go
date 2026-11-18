@@ -591,6 +591,9 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		Session: session, Resume: resume, Worker: worker,
 		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge,
 		OpenCode: r.openCodeHost()}
+	if ad.Name == "opencode" {
+		opts.ReadPaths = openCodeReadPaths(lane.Worktree, req.Prompt, prof.Brief)
+	}
 	cmd := exec.Command(bin, ad.Args(opts)...)
 	cmd.Dir = lane.Worktree
 	// The prompt, then end of input: headless, and off the command line (see Adapter).

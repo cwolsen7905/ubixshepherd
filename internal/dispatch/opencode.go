@@ -269,23 +269,84 @@ func (o obj) MarshalJSON() ([]byte, error) {
 // it refuses even the worktree's own files, and the model then reaches for the main checkout.
 // Rules are last match wins, so the allows follow the deny. Both the path as given and
 // its symlink-resolved form are allowed, since OpenCode compares the path it is handed.
-func openCodeExternal(worktree string) any {
+// readOnly are further paths the run may read (see openCodeReadPaths); the rule cannot say
+// read-only, so openCodeEditRule denies editing them.
+func openCodeExternal(worktree string, readOnly []string) any {
 	if worktree == "" {
 		return "deny"
 	}
 	r := obj{{"*", "deny"}}
 	seen := map[string]bool{}
-	paths := []string{filepath.Clean(worktree)}
-	if real, err := filepath.EvalSymlinks(worktree); err == nil {
-		paths = append(paths, real)
-	}
-	for _, p := range paths {
-		if !seen[p] {
-			seen[p] = true
-			r = append(r, kv{p, "allow"}, kv{filepath.Join(p, "*"), "allow"})
+	for _, p := range append([]string{worktree}, readOnly...) {
+		for _, q := range openCodePathForms(p) {
+			if !seen[q] {
+				seen[q] = true
+				r = append(r, kv{q, "allow"}, kv{filepath.Join(q, "*"), "allow"})
+			}
 		}
 	}
 	return r
+}
+
+// openCodePathForms is a path as given and, when different, its symlink-resolved form.
+func openCodePathForms(p string) []string {
+	out := []string{filepath.Clean(p)}
+	if real, err := filepath.EvalSymlinks(p); err == nil && real != out[0] {
+		out = append(out, real)
+	}
+	return out
+}
+
+// openCodeEditRule allows editing anywhere except the read-only external paths: those
+// are denied after the allow, last match wins.
+func openCodeEditRule(readOnly []string) any {
+	if len(readOnly) == 0 {
+		return "allow"
+	}
+	r := obj{{"*", "allow"}}
+	seen := map[string]bool{}
+	for _, p := range readOnly {
+		for _, q := range openCodePathForms(p) {
+			if !seen[q] {
+				seen[q] = true
+				r = append(r, kv{q, "deny"}, kv{filepath.Join(q, "*"), "deny"})
+			}
+		}
+	}
+	return r
+}
+
+var openCodeAbsPath = regexp.MustCompile("(?:^|[\\s\"'`(\\[<])(/[^\\s\"'`)\\]>,;:*?]+)")
+
+// openCodeReadPaths are the absolute paths the texts (the run's brief and the repo's
+// brief) name that exist outside the worktree: the run may read them and never write them.
+// A path needs two segments, so "/" and "/etc" are not enough, and one that contains the
+// worktree is skipped, since denying edits there would deny the worktree's own files.
+func openCodeReadPaths(worktree string, texts ...string) []string {
+	var out []string
+	seen := map[string]bool{}
+	wt := filepath.Clean(worktree)
+	for _, t := range texts {
+		for _, m := range openCodeAbsPath.FindAllStringSubmatch(t, -1) {
+			p := strings.TrimRight(m[1], ".")
+			p = filepath.Clean(p)
+			if seen[p] || strings.Count(p, "/") < 2 {
+				continue
+			}
+			seen[p] = true
+			if _, err := os.Stat(p); err != nil {
+				continue
+			}
+			if worktree != "" {
+				inside := func(a, b string) bool { return a == b || strings.HasPrefix(a, b+"/") }
+				if inside(p, wt) || inside(wt, p) {
+					continue
+				}
+			}
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 var openCodeGlabReadOnly = []string{"glab ci list*", "glab ci view*", "glab ci status*", "glab ci trace*",
@@ -340,11 +401,11 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 	}
 	perm := obj{
 		{"bash", bash},
-		{"edit", "allow"},
+		{"edit", openCodeEditRule(o.ReadPaths)},
 		{"question", "deny"},
 		{"webfetch", "deny"},
 		{"websearch", "deny"},
-		{"external_directory", openCodeExternal(o.Worktree)},
+		{"external_directory", openCodeExternal(o.Worktree, o.ReadPaths)},
 		{"doom_loop", "deny"},
 	}
 	cfg := obj{

@@ -900,3 +900,54 @@ func TestOpenCodeHostedRunIsMarkedEstimated(t *testing.T) {
 		t.Errorf("usage = %+v, %v: the record lacks the estimate mark", u, err)
 	}
 }
+
+// A path the briefs name outside the worktree may be read and never written: it is allowed
+// in external_directory and denied in edit; a path no brief names stays denied.
+func TestOpenCodeReadsPathsTheBriefNames(t *testing.T) {
+	wt := t.TempDir()
+	docs := t.TempDir()
+	other := t.TempDir()
+	paths := openCodeReadPaths(wt, "Read "+docs+"/ for the design.", "Repo rules: see \""+docs+"\".")
+	if len(paths) != 1 || paths[0] != filepath.Clean(docs) {
+		t.Fatalf("paths = %v, want only %s", paths, docs)
+	}
+	if got := openCodeReadPaths(wt, "inside "+wt+"/x and "+filepath.Dir(wt)); len(got) != 0 {
+		t.Errorf("worktree itself or its parent must not be read-only: %v", got)
+	}
+	var cfg struct {
+		Permission map[string]json.RawMessage `json:"permission"`
+	}
+	s := openCodeConfig(Opts{Worktree: wt, ReadPaths: paths}, config.OpenCode{})
+	if err := json.Unmarshal([]byte(s), &cfg); err != nil {
+		t.Fatalf("not JSON: %v\n%s", err, s)
+	}
+	var ext, edit map[string]string
+	if err := json.Unmarshal(cfg.Permission["external_directory"], &ext); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(cfg.Permission["edit"], &edit); err != nil {
+		t.Fatalf("edit should be a rule set: %s", cfg.Permission["edit"])
+	}
+	if ext[filepath.Join(docs, "*")] != "allow" || ext[filepath.Clean(docs)] != "allow" {
+		t.Errorf("named path not readable: %v", ext)
+	}
+	if ext["*"] != "deny" {
+		t.Errorf("default must stay deny: %v", ext)
+	}
+	for k := range ext {
+		if strings.Contains(k, filepath.Base(other)) {
+			t.Errorf("unnamed path allowed: %s", k)
+		}
+	}
+	if edit["*"] != "allow" || edit[filepath.Join(docs, "*")] != "deny" || edit[filepath.Clean(docs)] != "deny" {
+		t.Errorf("write to a named path not denied: %v", edit)
+	}
+	// Deny rules must come after the allow-all: last match wins.
+	if e := string(cfg.Permission["edit"]); !strings.HasPrefix(e, `{"*":"allow",`) {
+		t.Errorf("edit order: %s", e)
+	}
+	// With no named paths, edit stays a plain allow.
+	if got := openCodeConfig(Opts{Worktree: wt}, config.OpenCode{}); !strings.Contains(got, `"edit":"allow"`) {
+		t.Errorf("edit changed without read paths: %s", got)
+	}
+}

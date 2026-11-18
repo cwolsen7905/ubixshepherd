@@ -156,7 +156,12 @@ than failing with an authentication error, shows it is.
   lane's own worktree path, which is allowed by exact path (the path as given and its
   symlink-resolved form). OpenCode 1.18.35 refuses the files of a linked git worktree as
   external (observed with the worktree as its working directory), so without that allow
-  it refuses even the worktree's own files, and the model falls back to editing the main checkout. The run also gets
+  it refuses even the worktree's own files, and the model falls back to editing the main checkout.
+  Paths outside the worktree that the run's brief or the repo's brief names are readable too:
+  an absolute path that exists, has at least two segments and is not inside or around the
+  worktree is allowed in `external_directory` (itself and everything under it), so a brief can
+  point the run at a docs directory. They are never writable: the `edit` rule is `allow` and then
+  `deny` for each of those paths, last match wins. Any other path outside the worktree stays denied. The run also gets
   `--dir <worktree>`, and the process starts there. A chained command such as `ls && touch x` is judged
   per command, so `touch` is refused.
 - **Sessions**: every JSON event carries the session id, which Shepherd records; the next
