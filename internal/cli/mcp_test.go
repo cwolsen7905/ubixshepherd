@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -62,7 +63,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_ship", "lane_list", "fold_gc", "shepherd_where", "workspace_rename"} {
+	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_narrow", "lane_ship", "lane_list", "fold_gc", "shepherd_where", "workspace_rename"} {
 		if !names[n] {
 			t.Errorf("tool %s missing", n)
 		}
@@ -113,6 +114,57 @@ func TestMCPLaneTools(t *testing.T) {
 	text, isErr = toolText(t, resps[5])
 	if isErr || !strings.Contains(text, "closed lane feat/mcp") {
 		t.Errorf("lane_close: %v %s", isErr, text)
+	}
+}
+
+func TestMCPLaneNarrow(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, _ := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	call := func(id int, name, args string) string {
+		return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, id, name, args)
+	}
+	resps := mcpExchange(t, h.env,
+		call(1, "lane_open", `{"repo":"app","name":"feat/big","scope":["src/**","docs/*.md"]}`),
+		call(2, "lane_open", `{"repo":"app","name":"feat/small","scope":["src/b/**"]}`),
+		call(3, "lane_narrow", `{"repo":"app","name":"feat/big","to":["src/a/**"]}`),
+		call(4, "lane_narrow", `{"repo":"app","name":"feat/big","to":["cmd/**"]}`),
+		call(5, "lane_narrow", `{"repo":"app","name":"feat/big","drop":["src/**"],"to":["src/a/**"]}`),
+		call(6, "lane_open", `{"repo":"app","name":"feat/small","scope":["src/b/**"]}`),
+		call(7, "lane_narrow", `{"repo":"app","name":"feat/big","drop":["nope/**"]}`),
+		call(8, "lane_narrow", `{"repo":"app","name":"feat/big","drop":["src/a/**","docs/*.md"]}`),
+		call(9, "lane_narrow", `{"repo":"app","name":"feat/big"}`),
+	)
+	if text, isErr := toolText(t, resps[0]); isErr {
+		t.Fatalf("open big: %s", text)
+	}
+	if text, isErr := toolText(t, resps[1]); !isErr || !strings.Contains(text, "overlaps lane feat/big") {
+		t.Errorf("small before narrowing: %v %s", isErr, text)
+	}
+	// Adding a subset while keeping src/** changes nothing: src/a/** is already held.
+	if text, isErr := toolText(t, resps[2]); isErr {
+		t.Errorf("subset kept beside its parent: %s", text)
+	}
+	if text, isErr := toolText(t, resps[3]); !isErr || !strings.Contains(text, "only shrinks") {
+		t.Errorf("widening narrow: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[4]); isErr || !strings.Contains(text, "src/a/**") || strings.Contains(text, "src/**,") {
+		t.Errorf("narrow: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[5]); isErr {
+		t.Errorf("a freed path should be open to another lane at once: %s", text)
+	}
+	if text, isErr := toolText(t, resps[6]); !isErr || !strings.Contains(text, "not in the lane's scope") {
+		t.Errorf("drop a glob not held: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[7]); !isErr || !strings.Contains(text, "needs a scope") {
+		t.Errorf("drop everything: %v %s", isErr, text)
+	}
+	if _, isErr := toolText(t, resps[8]); !isErr {
+		t.Error("narrow with nothing to do accepted")
 	}
 }
 
