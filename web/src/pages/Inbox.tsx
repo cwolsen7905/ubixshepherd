@@ -12,18 +12,24 @@ import { Button, Chip, Count, EmptyState, GroupHeader, IdChip, Kbd, ListRow, Loa
 import type { GlyphTone } from '../ui'
 import './Inbox.css'
 
-type Group = 'answer' | 'approve' | 'broken' | 'other'
+type Group = 'answer' | 'signoff' | 'approve' | 'broken' | 'other'
 type Show = 'waiting' | 'broken' | 'done'
 
-const GROUPS: { key: Group; title: string; kinds: WaitingItem['kind'][] }[] = [
+/** A merge request that waits only on the person's sign-off: it has its own section, apart from next-up, ship and scope. */
+const isSignoff = (it: WaitingItem) => it.kind === 'mr' && it.action === 'approve'
+
+type GroupDef = { key: Group; title: string; kinds: WaitingItem['kind'][]; match?: (it: WaitingItem) => boolean }
+
+const GROUPS: GroupDef[] = [
   { key: 'answer', title: 'Answer', kinds: ['decision', 'question', 'request'] },
-  { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope'] },
+  { key: 'signoff', title: 'Sign-off', kinds: ['mr'], match: isSignoff },
+  { key: 'approve', title: 'Approve', kinds: ['mr', 'next', 'ship', 'scope'], match: (it) => !isSignoff(it) },
   { key: 'broken', title: 'Broken', kinds: ['blocked'] },
 ]
 
 /** Kinds some group lists; housekeeping (a merged lane's undecided files) and any kind a newer daemon adds go under To tidy, so the rows match the count. */
 const GROUPED = new Set<string>(GROUPS.flatMap((g) => g.kinds))
-const OTHER = { key: 'other' as Group, title: 'To tidy', kinds: [] as WaitingItem['kind'][] }
+const OTHER: GroupDef = { key: 'other', title: 'To tidy', kinds: [] }
 
 const KIND_LABEL: Record<WaitingItem['kind'], string> = {
   decision: 'decision',
@@ -66,6 +72,8 @@ export interface InboxContext {
   /** Kind label, repo and lane. */
   what: string
   mr?: { number: number; url?: string }
+  /** The merge request's pipeline state as of the last forge poll, from the lane. */
+  pipeline?: string
   why: string
   options: string[]
   recommendation?: string
@@ -87,6 +95,7 @@ export function inboxContext(it: WaitingItem, decisions: DecisionView[], lanes: 
   return {
     what: [KIND_LABEL[it.kind] ?? it.kind, where].filter(Boolean).join(' · '),
     mr: mrNumber ? { number: mrNumber, url: lane?.mr_url } : undefined,
+    pipeline: lane?.pipeline_status,
     why: [WHY[it.kind], it.kind === 'decision' || it.kind === 'question' || isSuggestion(it) ? '' : it.detail].filter(Boolean).join(' '),
     options: d?.options?.filter((o) => o.trim()) ?? [],
     recommendation: d?.recommendation?.trim() || undefined,
@@ -289,6 +298,7 @@ export function InboxPage({ kind }: { kind?: string }) {
         ) : null}
         {typed?.id ? <IdChip kind={typed.kind} id={typed.id} /> : (KIND_LABEL[it.kind] ?? it.kind)}
         {where ? ` · ${where}` : ''}
+        {it.kind === 'mr' && cx.pipeline ? ` · pipeline ${cx.pipeline}` : ''}
         {it.kind === 'request' && it.request_id && !actionable ? (
           <>
             {' · route it with '}
@@ -383,7 +393,7 @@ export function InboxPage({ kind }: { kind?: string }) {
       {loaded && items.length === 0 && all.length > 0 && <p className="faint">Nothing of this kind waits on you.</p>}
 
       {[...GROUPS, OTHER].map((g) => {
-        const rows = items.filter((it) => (g.key === 'other' ? !GROUPED.has(it.kind) : g.kinds.includes(it.kind)))
+        const rows = items.filter((it) => (g.key === 'other' ? !GROUPED.has(it.kind) : g.kinds.includes(it.kind) && (g.match ? g.match(it) : true)))
         if (rows.length === 0 || !shown(g.key === 'broken' ? 'broken' : 'waiting')) return null
         return (
           <section key={g.key} className="inbox-group" aria-labelledby={`inbox-${g.key}`}>
