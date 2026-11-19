@@ -35,3 +35,25 @@ To start anyway, send `"force": true` in the run request to the daemon's HTTP AP
 This check is separate from the instruction in the run's brief, which asks the agent to check
 the base itself and report a summary that starts with `ALREADY DONE:`. The brief covers what
 git history cannot show, such as work that landed under another branch and wording.
+
+## Queued follow-ups
+
+A lane runs one agent at a time. A start the person asks for while the lane's agent is
+still going (`run continue` on the running run, or `lane run` in a busy lane) is queued,
+not refused. The answer says `queued behind run N`, with HTTP status 202, and the run
+starts as soon as run N ends.
+
+- **Order.** The queue is first in, first out per lane. A start asked for while earlier
+  follow-ups wait goes behind them, even if the lane is idle for a moment.
+- **Session.** A queued follow-up continues the lane's latest session with the same agent,
+  which is the session the running run was using. A different agent asked for starts its
+  own session.
+- **Restarts.** A queued follow-up is a row in the store's held starts, so it survives a
+  daemon restart and starts once the daemon is back and a run ends or the held starts are
+  replayed.
+- **Closing the lane.** Closing a lane drops its queued follow-ups and says so in the feed.
+  A follow-up whose lane was closed by another route is dropped, and noted in the feed, the
+  next time the queue is tried (when any run ends).
+- **Not queued.** Starts Shepherd makes on its own (fixes, routed requests, nudges) are
+  still held and retried by whatever began them, never queued. A continue of a run that
+  has ended is unchanged.

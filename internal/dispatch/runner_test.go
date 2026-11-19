@@ -192,9 +192,10 @@ func TestRunRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "y"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "one agent per lane") {
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "y"}); !errors.Is(err, ErrQueued) || !strings.Contains(err.Error(), "queued behind run") {
 		t.Errorf("second run in lane: %v", err)
 	}
+	f.runner.DropQueued(ctx, f.lane.ID, "test")
 	// The lane cannot be closed, nor pushed from, while the agent runs.
 	fo := &fold.Fold{Store: f.st, Config: f.runner.Config}
 	if _, err := fo.Close(ctx, f.lane.ID, true); !errors.Is(err, fold.ErrRefused) {
@@ -613,8 +614,8 @@ func TestContinueRefusals(t *testing.T) {
 	f := newFixture(t, "sleep")
 	ctx := context.Background()
 	run, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "x"})
-	if _, err := f.runner.Start(ctx, StartRequest{Continue: run.ID, Prompt: "y"}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "still going") {
-		t.Errorf("continue a running run: %v", err)
+	if _, err := f.runner.Start(ctx, StartRequest{Continue: run.ID, Prompt: "y", Auto: true}); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "still going") {
+		t.Errorf("Shepherd's own continue of a running run: %v", err)
 	}
 	f.runner.Stop(ctx, run.ID)
 	f.wait(t, run.ID)

@@ -265,7 +265,11 @@ func (r *Runner) RunHeld(ctx context.Context) {
 		switch {
 		case err == nil:
 			r.dropHeld(ctx, h.ID)
-			r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started after the restart (%s)", run.ID, h.Why)
+			if isFollowUp(h) {
+				r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started from the queue (%s)", run.ID, h.Why)
+			} else {
+				r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started after the restart (%s)", run.ID, h.Why)
+			}
 		case errors.Is(err, ErrHeld):
 			r.Log.Info("held start waits", "id", h.ID, "why", err)
 		case errors.Is(err, ErrRefused):
@@ -273,7 +277,11 @@ func (r *Runner) RunHeld(ctx context.Context) {
 			if req.Continue != 0 {
 				r.Store.SetRunReason(ctx, req.Continue, store.ReasonRestartDropped)
 			}
-			r.feed(ctx, store.FeedRunInterrupted, req.Continue, "a start held for the restart was dropped: %s", firstLine(fmt.Sprint(err)))
+			if isFollowUp(h) {
+				r.feed(ctx, store.FeedRunInterrupted, 0, "a queued follow-up was dropped: %s", firstLine(fmt.Sprint(err)))
+			} else {
+				r.feed(ctx, store.FeedRunInterrupted, req.Continue, "a start held for the restart was dropped: %s", firstLine(fmt.Sprint(err)))
+			}
 		default:
 			r.Log.Error("start held run", "id", h.ID, "err", err)
 		}
