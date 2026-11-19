@@ -44,16 +44,18 @@ not refused. The answer says `queued behind run N`, with HTTP status 202, and th
 starts as soon as run N ends.
 
 - **Order.** The queue is first in, first out per lane. A start asked for while earlier
-  follow-ups wait goes behind them, even if the lane is idle for a moment.
+  follow-ups wait goes behind them, even if the lane is idle for a moment. If the oldest follow-up in a lane is held (its
+  agent is out of quota, say), later ones in that lane wait behind it. Starts Shepherd makes
+  on its own wait for queued follow-ups too.
 - **Session.** A queued follow-up continues the lane's latest session with the same agent,
   which is the session the running run was using. A different agent asked for starts its
   own session.
 - **Restarts.** A queued follow-up is a row in the store's held starts, so it survives a
   daemon restart and starts once the daemon is back and a run ends or the held starts are
   replayed.
-- **Closing the lane.** Closing a lane drops its queued follow-ups and says so in the feed.
-  A follow-up whose lane was closed by another route is dropped, and noted in the feed, the
-  next time the queue is tried (when any run ends).
+- **Closing the lane.** A follow-up queued in a lane that has closed is dropped, and
+  noted in the feed, the next time the queue is tried (when any run ends). It never runs
+  in a closed lane. Dropping the queue at the moment of closing is not wired yet.
 - **Not queued.** Starts Shepherd makes on its own (fixes, routed requests, nudges) are
   still held and retried by whatever began them, never queued. A continue of a run that
   has ended is unchanged.

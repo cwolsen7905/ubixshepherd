@@ -248,6 +248,8 @@ func (r *Runner) RunHeld(ctx context.Context) {
 		r.Log.Error("load held starts", "err", err)
 		return
 	}
+	// stuck: lanes whose oldest queued follow-up is held; later ones wait behind it.
+	stuck := map[int64]bool{}
 	for _, h := range held {
 		var req StartRequest
 		if err := json.Unmarshal([]byte(h.Request), &req); err != nil {
@@ -261,6 +263,9 @@ func (r *Runner) RunHeld(ctx context.Context) {
 			continue
 		}
 		req.Auto = h.Auto
+		if isFollowUp(h) && stuck[req.LaneID] {
+			continue
+		}
 		run, err := r.start(ctx, req, true)
 		switch {
 		case err == nil:
@@ -271,6 +276,9 @@ func (r *Runner) RunHeld(ctx context.Context) {
 				r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started after the restart (%s)", run.ID, h.Why)
 			}
 		case errors.Is(err, ErrHeld):
+			if isFollowUp(h) {
+				stuck[req.LaneID] = true
+			}
 			r.Log.Info("held start waits", "id", h.ID, "why", err)
 		case errors.Is(err, ErrRefused):
 			r.Store.DeleteHeldStart(ctx, h.ID)

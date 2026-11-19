@@ -140,3 +140,46 @@ func waitRunWithPrompt(t *testing.T, f *fixture, prompt string) store.Run {
 	t.Fatalf("no run with prompt %q started", prompt)
 	return store.Run{}
 }
+
+func TestQueuedFollowUpKeepsTheAgentAsked(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	first, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "first"})
+	if _, err := f.runner.Start(ctx, StartRequest{Continue: first.ID, Agent: "copilot", Prompt: "other"}); !errors.Is(err, ErrQueued) {
+		t.Fatal(err)
+	}
+	f.runner.Stop(ctx, first.ID)
+	f.wait(t, first.ID)
+	got := waitRunWithPrompt(t, f, "other")
+	if got.Agent != "copilot" || got.Parent == first.ID {
+		t.Errorf("run = agent %s parent %d, want copilot in its own session", got.Agent, got.Parent)
+	}
+	f.runner.Stop(ctx, got.ID)
+	f.wait(t, got.ID)
+}
+
+func TestHeldFollowUpBlocksLaterOnesInItsLane(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	first, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "first"})
+	for _, p := range []string{"a", "b"} {
+		if _, err := f.runner.Start(ctx, StartRequest{Continue: first.ID, Prompt: p}); !errors.Is(err, ErrQueued) {
+			t.Fatal(err)
+		}
+	}
+	// Shepherd's own start waits for the queue in an idle lane too.
+	f.runner.Stop(ctx, first.ID)
+	f.wait(t, first.ID)
+	a := waitRunWithPrompt(t, f, "a")
+	if _, err := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "auto", Auto: true}); !errors.Is(err, ErrHeld) {
+		t.Errorf("auto start with a follow-up queued: %v", err)
+	}
+	if got := runsWithPrompt(t, f, "b"); got != nil {
+		t.Errorf("b started while a was going: %+v", got)
+	}
+	f.runner.Stop(ctx, a.ID)
+	f.wait(t, a.ID)
+	b := waitRunWithPrompt(t, f, "b")
+	f.runner.Stop(ctx, b.ID)
+	f.wait(t, b.ID)
+}
