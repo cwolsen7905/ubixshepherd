@@ -235,7 +235,7 @@ func mrItem(l store.Lane, rp store.Repo, lf store.LaneForge, running bool) (api.
 		it.Title = fmt.Sprintf("approve MR !%d, then retry its approval job", lf.MR)
 		it.Detail = "approve it, then retry the require-approval job"
 		if lf.PipelineStatus != "" {
-			it.Detail += fmt.Sprintf(" (pipeline %s)", lf.PipelineStatus)
+			it.Detail += fmt.Sprintf(" (pipeline %s)", api.PipelineStatus(lf.PipelineStatus))
 		}
 		it.Since = firstTime(lf.PipelineFinished, lf.PipelineStarted, lf.MRUpdated, l.Created)
 	case lf.PipelineStatus == "failed" && !running:

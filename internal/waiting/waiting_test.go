@@ -139,7 +139,7 @@ func TestCollectGathersWhatWaitsOnThePerson(t *testing.T) {
 	}
 	if approve == nil || approve.MR != 175 || approve.Lane != "held" || approve.LaneID != held.ID {
 		t.Errorf("approve item: %+v", approve)
-	} else if !strings.Contains(approve.Detail, "pipeline blocked") {
+	} else if !strings.Contains(approve.Detail, "pipeline unknown") {
 		t.Errorf("approve item should say its pipeline state: %q", approve.Detail)
 	}
 	if failed == nil || failed.MR != 177 || failed.Action != "open" {
