@@ -73,6 +73,14 @@ func TestPlanScope(t *testing.T) {
 	if !reflect.DeepEqual(got, []string{"internal/x/**", "docs/y.md"}) {
 		t.Errorf("got %v", got)
 	}
+	// Prose is not a scope; a later real line still is.
+	got = PlanScope("Scope: see the section below\n\nScope: docs/y.md\n")
+	if !reflect.DeepEqual(got, []string{"docs/y.md"}) {
+		t.Errorf("prose then real: %v", got)
+	}
+	if PlanScope("Scope: see the section below\n") != nil {
+		t.Error("prose taken as globs")
+	}
 	if PlanScope("no scope here\n") != nil {
 		t.Error("expected nil")
 	}

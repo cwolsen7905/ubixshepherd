@@ -205,7 +205,7 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 	if note := excludedNote(excluded); note != "" {
 		out.Notes = append(out.Notes, note)
 	}
-	out.Notes = append(out.Notes, f.itemScopeWarnings(ctx, repo, req.Name, req.ForItem, req.Scope, files, CheckPaths(protected))...)
+	out.Notes = append(out.Notes, f.itemScopeWarnings(ctx, repo, start, req.Name, req.ForItem, req.Scope, files, CheckPaths(protected))...)
 
 	// Record first, so a concurrent open of the same name loses at the store.
 	lane, err := f.Store.CreateLane(ctx, store.Lane{

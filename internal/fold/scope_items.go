@@ -3,10 +3,11 @@ package fold
 import (
 	"context"
 	"fmt"
-	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -17,7 +18,7 @@ import (
 // cannot be read or one with no "Scope:" line carries no scope data and is not judged.
 // The item the lane is opened for (forItem, or an item whose lane hint is the lane's
 // name) is not a conflict.
-func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, laneName string, forItem int64, laneScope, files []string, protected []string) []string {
+func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, start, laneName string, forItem int64, laneScope, files []string, protected []string) []string {
 	items, err := f.Store.NextItems(ctx)
 	if err != nil {
 		return nil
@@ -30,7 +31,7 @@ func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, laneName 
 		if it.ID == forItem || (it.Lane != "" && it.Lane == laneName) {
 			continue
 		}
-		planned := planScopeOf(repo.Path, it.Plan)
+		planned := planScopeAt(ctx, repo.Path, start, it.Plan)
 		if len(planned) == 0 {
 			continue
 		}
@@ -50,16 +51,17 @@ func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, laneName 
 	return out
 }
 
-// planScopeOf reads the "Scope:" line of a plan doc under the repo; nil when there is
-// none or the doc cannot be read.
-func planScopeOf(repoPath, plan string) []string {
-	clean := filepath.Clean(plan)
-	if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+// planScopeAt reads the "Scope:" line of a plan doc as committed at the lane's starting
+// point, like everything else the open judges, so a working-copy edit or a symlink in
+// the checkout changes nothing. nil when there is none or the doc is not at that ref.
+func planScopeAt(ctx context.Context, repoPath, start, plan string) []string {
+	clean := path.Clean(filepath.ToSlash(plan))
+	if path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") {
 		return nil
 	}
-	b, err := os.ReadFile(filepath.Join(repoPath, clean))
+	text, err := git.Run(ctx, repoPath, "show", start+":"+clean)
 	if err != nil {
 		return nil
 	}
-	return scope.PlanScope(string(b))
+	return scope.PlanScope(text)
 }

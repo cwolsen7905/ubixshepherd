@@ -107,8 +107,10 @@ func Narrow(current, drop, to []string) ([]string, error) {
 }
 
 // PlanScope reads the scope a plan document names: the first line of the form
-// "Scope: internal/x/**, docs/y.md" (the label may be bold or in a list). It returns
-// nil when the text names none.
+// "Scope: internal/x/**, docs/y.md" (the label may be bold or in a list) whose values
+// all look like paths: each has a "/", a ".", or a wildcard. A prose line such as
+// "Scope: see the section below" is skipped, and so is a line that mixes the two.
+// It returns nil when the text names none.
 func PlanScope(text string) []string {
 	for _, line := range strings.Split(text, "\n") {
 		l := strings.TrimLeft(strings.TrimSpace(line), "-*> ")
@@ -123,9 +125,18 @@ func PlanScope(text string) []string {
 				out = append(out, g)
 			}
 		}
-		if len(out) > 0 {
+		if len(out) > 0 && allPathLike(out) {
 			return out
 		}
 	}
 	return nil
+}
+
+func allPathLike(globs []string) bool {
+	for _, g := range globs {
+		if !strings.ContainsAny(g, "/.*?[") {
+			return false
+		}
+	}
+	return true
 }

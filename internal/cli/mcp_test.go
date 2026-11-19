@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -182,6 +183,13 @@ func TestLaneOpenWarnsAboutApprovedItemButNotItsOwn(t *testing.T) {
 		}
 		if err := os.WriteFile(filepath.Join(app, plan), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
+		}
+	}
+	for _, a := range [][]string{{"add", "plans"}, {"commit", "-q", "-m", "plans"}, {"push", "-q", "origin", "HEAD:main"}} {
+		cmd := exec.Command("git", append([]string{"-C", app}, a...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", a, err, out)
 		}
 	}
 	for _, a := range [][]string{

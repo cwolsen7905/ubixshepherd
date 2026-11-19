@@ -18,6 +18,10 @@ func (f *fixture) addItem(title, plan, state string, planBody string) store.Next
 		if err := os.WriteFile(p, []byte(planBody), 0o644); err != nil {
 			f.t.Fatal(err)
 		}
+		// Plans are read as committed at the lane's start, so land it on origin.
+		gitT(f.t, f.repo.Path, "add", plan)
+		gitT(f.t, f.repo.Path, "commit", "-q", "-m", "plan "+plan)
+		gitT(f.t, f.repo.Path, "push", "-q", "origin", "HEAD:main")
 	}
 	it, err := f.fold.Store.AddNextItem(context.Background(), store.NextItem{Title: title, Repo: f.repo.Name, Plan: plan, State: state})
 	if err != nil {
@@ -85,5 +89,21 @@ func TestOpenNoWarningOnceItemHasLane(t *testing.T) {
 	o, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "other", Scope: []string{"docs/**"}})
 	if err != nil || warnings(o) != "" {
 		t.Errorf("%v %q", err, warnings(o))
+	}
+}
+
+func TestPlanScopeReadFromStartNotWorkingCopy(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.addItem("committed", "plans/c.md", store.NextApproved, "Scope: src/a/**\n")
+	// An uncommitted edit to the plan must not change the warning.
+	os.WriteFile(filepath.Join(f.repo.Path, "plans/c.md"), []byte("Scope: docs/**\n"), 0o644)
+	o, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "x", Scope: []string{"docs/**"}})
+	if err != nil || warnings(o) != "" {
+		t.Errorf("working-copy edit used: %v %q", err, warnings(o))
+	}
+	o, err = f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "y", Scope: []string{"src/a/**"}})
+	if err != nil || warnings(o) == "" {
+		t.Errorf("committed scope missed: %v %q", err, warnings(o))
 	}
 }
