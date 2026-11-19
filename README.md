@@ -564,6 +564,7 @@ tags to GitHub, so GitHub is the public home but not where work lands.
 |---|---|
 | [docs/INSTALL.md](docs/INSTALL.md) | Install, first run, upgrade and uninstall on macOS, Linux and Windows, and how to report a problem |
 | [docs/push-gate.md](docs/push-gate.md) | How an agent's push waits for a passing gate on its exact commit, and how it records one |
+| [docs/crook-why.md](docs/crook-why.md) | Why Shepherd did, held or refused something: Crook's verdict log and the `shepherd crook why` commands |
 | [docs/update-check.md](docs/update-check.md) | The daily release check: what it asks, the notice, dismissing it, turning it off |
 | [docs/](docs/) | One page per feature: the CLI, config, the desk, keep going, next up, topics, the web UI and more |
 | [docs/naming.md](docs/naming.md) | Why "Shepherd", the names we rejected, and the family vocabulary (Flock, Fold, Crook, Pasture) |
