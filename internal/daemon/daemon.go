@@ -30,6 +30,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
+	"github.com/ubixsys/ubixshepherd/internal/project"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/update"
@@ -49,6 +50,10 @@ type Server struct {
 	Log        *slog.Logger
 	Fold       *fold.Fold
 	Runner     *dispatch.Runner
+	// Briefs reads project briefs kept as files (brief_source); its zero value works.
+	Briefs      project.Reader
+	briefWarnMu sync.Mutex
+	briefWarned map[string]time.Time
 	// Level is the level Log writes at, when it was opened with this one; a reload sets
 	// it from daemon.log_level.
 	Level     *slog.LevelVar
@@ -1787,13 +1792,22 @@ func (s *Server) getBrief(w http.ResponseWriter, r *http.Request) {
 
 // briefView is a project's brief as getBrief and the project view give it.
 func (s *Server) briefView(ctx context.Context, name string, p config.Project) (api.BriefView, error) {
-	view := api.BriefView{Project: name, MaxAge: p.MaxAge()}
-	b, err := s.Store.ApprovedBrief(ctx, name)
+	view := api.BriefView{Project: name, MaxAge: p.MaxAge(), AgentsGet: BriefAgentsGet}
+	// A brief kept as a file wins; the store's approved brief is the fallback.
+	b, fromFile, err := s.approvedBrief(ctx, name, p)
 	switch {
 	case err == nil:
 		now := time.Now().UTC()
-		view.Approved, view.Age = &b, b.Age(now)
+		view.Approved, view.Age = &b.ProjectBrief, b.Age(now)
 		view.AgeText, view.Stale = "approved "+dispatch.AgeText(view.Age), b.Stale(now, view.MaxAge)
+		view.Source = "store"
+		if fromFile {
+			view.Source, view.Commit, view.Ref = "file", b.commit, b.ref
+			if src := p.BriefSource; src != nil && s.LiveConfig().Profile(src.Repo).Autonomy.Merge == config.Agent {
+				view.Warning = "agents may merge in " + src.Repo + ", so a merge there is not necessarily a person's approval"
+				s.warnBrief(name, view.Warning, nil)
+			}
+		}
 	case !errors.Is(err, store.ErrNotFound):
 		return view, err
 	}

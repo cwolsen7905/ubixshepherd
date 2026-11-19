@@ -2,14 +2,17 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
 	"net/http"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
+	"github.com/ubixsys/ubixshepherd/internal/project"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -261,3 +264,82 @@ func (s *Server) getUnassigned(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, d.detail(""))
 }
+
+// approvedBriefResult is an approved brief with, for one read from a file, its commit
+// and ref.
+type approvedBriefResult struct {
+	store.ProjectBrief
+	commit, ref string
+}
+
+// approvedBrief is a project's approved brief: the file its brief_source names when it
+// can be read, else the store's. The bool says it came from the file.
+func (s *Server) approvedBrief(ctx context.Context, name string, p config.Project) (approvedBriefResult, bool, error) {
+	if src := p.BriefSource; src != nil {
+		dir, err := s.repoPath(ctx, src.Repo)
+		if err != nil {
+			return approvedBriefResult{}, false, err
+		}
+		if dir == "" {
+			s.warnBrief(name, "brief_source.repo "+src.Repo+" is not a repo of any workspace; using the stored brief", nil)
+		} else {
+			fb, err := s.Briefs.ForProject(ctx, name, *src, dir)
+			switch {
+			case err == nil:
+				at := fb.Approved
+				return approvedBriefResult{
+					ProjectBrief: store.ProjectBrief{Project: name, Text: fb.Text, State: store.BriefApproved, ApprovedBy: "docs", Approved: &at, Created: at},
+					commit:       fb.Commit, ref: fb.Ref,
+				}, true, nil
+			case !errors.Is(err, project.ErrMissing):
+				s.warnBrief(name, "brief file unreadable; using the stored brief", err)
+			}
+		}
+	}
+	b, err := s.Store.ApprovedBrief(ctx, name)
+	return approvedBriefResult{ProjectBrief: b}, false, err
+}
+
+// repoPath is the path of a workspace repo by name; "" when no workspace has it.
+func (s *Server) repoPath(ctx context.Context, name string) (string, error) {
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, ws := range wss {
+		repos, err := s.Store.Repos(ctx, ws.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, rp := range repos {
+			if rp.Name == name {
+				return rp.Path, nil
+			}
+		}
+	}
+	return "", nil
+}
+
+// warnBrief logs a brief source problem at most once a minute per project and message,
+// since the brief is read on every project view.
+func (s *Server) warnBrief(name, msg string, err error) {
+	key := name + "\x00" + msg
+	now := time.Now()
+	s.briefWarnMu.Lock()
+	last, seen := s.briefWarned[key]
+	if !seen || now.Sub(last) >= time.Minute {
+		if s.briefWarned == nil {
+			s.briefWarned = map[string]time.Time{}
+		}
+		s.briefWarned[key] = now
+		seen = false
+	}
+	s.briefWarnMu.Unlock()
+	if !seen {
+		s.Log.Warn(msg, "project", name, "err", err)
+	}
+}
+
+// BriefAgentsGet is what agents are given as the project brief: the store's approved
+// brief, until dispatch reads the brief file too.
+const BriefAgentsGet = "store"

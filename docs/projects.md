@@ -40,8 +40,9 @@ repos:
         task: "Move the pin, run the gate, fix what breaks."
 ```
 
-The brief is not in this file. It is text with an author and an approval, so it
-lives in the store and is drafted through the front desk.
+The brief text is not in this file. It is text with an author and an approval, so it
+lives in the store and is drafted through the front desk, or in a file in a repo that
+`brief_source` names (see below).
 
 ## The brief
 
@@ -64,6 +65,43 @@ Staleness is visible. Each approved brief records `approved_at`. Shepherd shows 
 age in the project page and in the brief itself as it is given to agents, so a
 stale focus is a stated fact to the agent too. Past `brief_max_age` the front desk
 drafts a refresh and the project page marks it; nothing is blocked.
+
+### Keeping the brief in a file
+
+A project can keep its approved brief as a file in a repo of the workspace, such as a
+docs repo, instead of in the store:
+
+```yaml
+projects:
+  shop:
+    repos: [api, web]
+    brief_source:
+      repo: docs                      # a repo of the workspace, by name
+      path: projects/{name}/brief.md  # default; {name} is the project's name
+      ref: ""                         # a branch of origin; default: its default branch
+```
+
+The file is read at the tip of the ref (the remote's default branch when `ref` is
+empty), never from the working tree. A brief change counts as approved once it has
+landed there, so the merge is the approval. The commit that last changed the file
+gives `approved_at`, and so the age and staleness. Shepherd does not fetch: the repo
+is as fresh as its last fetch. Reads are reused for 60 seconds.
+
+The file wins in the project's brief view (the project page and `GET
+/v1/projects/{name}/brief`). When the repo, the ref or the file is missing or empty,
+the store's approved brief is used, and drafts and approvals through the front desk work
+as before. The view says which source it used (`file` or `store`).
+
+For now the brief given to agents in their standing instruction still comes from the
+store; it reads the file in a follow-up. The view's `agents_get` field names the source
+agents get (`store`), so a file brief shown as approved is not mistaken for what governs
+them. Only the remote's default branch counts: a local branch is never read.
+
+Because a merge is the approval, keep the source repo's merges with a person: leave
+`autonomy.merge` at `human` for that repo (or require forge approvals), so an agent
+cannot approve a brief by merging a change to the file. Shepherd does not check who
+merged it, but the brief view's `warning` says so when the source repo has
+`autonomy.merge: agent`.
 
 ## Spend
 
