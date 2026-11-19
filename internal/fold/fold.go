@@ -98,8 +98,8 @@ type OpenRequest struct {
 	// Origin is who asks, and from where; the lane keeps it.
 	Origin store.Origin `json:"origin"`
 	// ForItem is the next-up item the lane is opened for, so the warning about approved
-	// items a scope would block leaves it out. Not part of the wire format.
-	ForItem int64 `json:"-"`
+	// items a scope would block leaves it out. Clients set it when they open with an item.
+	ForItem int64 `json:"for_item,omitempty"`
 }
 
 // A lane name is a branch-like slug with at most one slash: fix-login, feat/m2-leases.

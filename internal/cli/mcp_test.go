@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -165,6 +166,43 @@ func TestMCPLaneNarrow(t *testing.T) {
 	}
 	if _, isErr := toolText(t, resps[8]); !isErr {
 		t.Error("narrow with nothing to do accepted")
+	}
+}
+
+func TestLaneOpenWarnsAboutApprovedItemButNotItsOwn(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, app := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	for plan, body := range map[string]string{"plans/own.md": "Scope: src/own/**\n", "plans/other.md": "Scope: docs/**\n"} {
+		if err := os.MkdirAll(filepath.Join(app, "plans"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(app, plan), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, a := range [][]string{
+		{"next", "add", "own work", "--repo", "app", "--plan", "plans/own.md", "--approved"},
+		{"next", "add", "other work", "--repo", "app", "--plan", "plans/other.md", "--approved"},
+	} {
+		if code := h.run(a...); code != 0 {
+			t.Fatalf("%v: %s", a, h.err)
+		}
+	}
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lane_open","arguments":{"repo":"app","name":"feat/own","scope":["src/own/**"],"item":1}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lane_open","arguments":{"repo":"app","name":"feat/doc","scope":["docs/x/**"]}}}`,
+	)
+	text, isErr := toolText(t, resps[0])
+	if isErr || strings.Contains(text, "warning") {
+		t.Errorf("a lane opened for its own item warned about it: %v %s", isErr, text)
+	}
+	text, isErr = toolText(t, resps[1])
+	if isErr || !strings.Contains(text, "warning") || !strings.Contains(text, "other work") || !strings.Contains(text, "docs/x/**") {
+		t.Errorf("an overlapping open should succeed with a warning: %v %s", isErr, text)
 	}
 }
 

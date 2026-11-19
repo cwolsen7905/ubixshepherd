@@ -204,7 +204,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Adopt: *adopt, Origin: callerOrigin(env)}, *item)
+	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Adopt: *adopt, Origin: callerOrigin(env), ForItem: *item}, *item)
 	if err != nil {
 		return err
 	}
