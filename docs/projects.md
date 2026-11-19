@@ -100,7 +100,8 @@ them. Only the remote's default branch counts: a local branch is never read.
 Because a merge is the approval, keep the source repo's merges with a person: leave
 `autonomy.merge` at `human` for that repo (or require forge approvals), so an agent
 cannot approve a brief by merging a change to the file. Shepherd does not check who
-merged it.
+merged it, but the brief view's `warning` says so when the source repo has
+`autonomy.merge: agent`.
 
 ## Spend
 

@@ -1803,6 +1803,10 @@ func (s *Server) briefView(ctx context.Context, name string, p config.Project) (
 		view.Source = "store"
 		if fromFile {
 			view.Source, view.Commit, view.Ref = "file", b.commit, b.ref
+			if src := p.BriefSource; src != nil && s.LiveConfig().Profile(src.Repo).Autonomy.Merge == config.Agent {
+				view.Warning = "agents may merge in " + src.Repo + ", so a merge there is not necessarily a person's approval"
+				s.warnBrief(name, view.Warning, nil)
+			}
 		}
 	case !errors.Is(err, store.ErrNotFound):
 		return view, err

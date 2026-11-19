@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -190,5 +191,16 @@ func TestProjectBriefFromFile(t *testing.T) {
 	if code := call(t, ts, s.Token, "GET", path, nil, &v); code != http.StatusOK || v.Approved == nil || v.Approved.Text != "File focus." ||
 		v.Source != "file" || v.AgentsGet != "store" || v.Commit == "" || v.Ref != "origin/main" || v.Stale {
 		t.Fatalf("file: %d %+v", code, v)
+	}
+	if v.Warning != "" {
+		t.Errorf("warning with merges left to a person: %q", v.Warning)
+	}
+
+	// Agents merging in the source repo is called out beside the file brief.
+	cfg.Repos["docs"] = config.Profile{Autonomy: config.Autonomy{Merge: config.Agent}}
+	s.applyConfig(cfg)
+	v = api.BriefView{}
+	if code := call(t, ts, s.Token, "GET", path, nil, &v); code != http.StatusOK || v.Source != "file" || !strings.Contains(v.Warning, "docs") {
+		t.Errorf("no warning for an agent-merged source repo: %d %+v", code, v)
 	}
 }

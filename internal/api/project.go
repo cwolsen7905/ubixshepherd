@@ -53,6 +53,9 @@ type BriefView struct {
 	// AgentsGet is the source of the brief agents are given: "store". While it is not
 	// Source, the view's approved brief does not yet govern the agents.
 	AgentsGet string `json:"agents_get,omitempty"`
+	// Warning says why the approved brief may not be a person's: the source repo lets
+	// agents merge (autonomy.merge: agent). Empty when there is nothing to say.
+	Warning string `json:"warning,omitempty"`
 	// Age is the time since approval, in nanoseconds as a Go duration; AgeText is the
 	// same as agents read it ("approved 41 days ago").
 	Age     time.Duration `json:"age,omitempty"`
