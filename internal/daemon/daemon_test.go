@@ -687,3 +687,37 @@ func TestDockSettings(t *testing.T) {
 		}
 	}
 }
+
+// The desk attachment routes are on the real mux: an empty upload is refused by the
+// handler (400), where an unregistered route would answer the API's 404.
+func TestHandlerRoutesDeskAttachments(t *testing.T) {
+	s, ts := newServer(t)
+	t.Setenv("SHEPHERD_HOME", t.TempDir())
+	if code := call(t, ts, s.Token, "POST", api.PathDeskAttachments, nil, nil); code == http.StatusNotFound {
+		t.Fatalf("POST %s is not routed: %d", api.PathDeskAttachments, code)
+	}
+}
+
+// The daemon's timer runs the lane-stall check, and the state it keeps lives on the Server.
+func TestCheckLaneStallsEveryRunsTheCheck(t *testing.T) {
+	s, _ := newServer(t)
+	seedLane(t, s, "timer")
+	clk := &fakeClock{t: time.Now().UTC()}
+	s.SetLaneStallOptions(LaneStallOptions{After: time.Hour, Now: clk.Now, Unpushed: func(context.Context, store.Lane) (int, error) { return 2, nil }})
+	clk.Add(2 * time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); s.checkLaneStallsEvery(ctx, 10*time.Millisecond) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(stallFeed(t, s)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if got := stallFeed(t, s); len(got) != 1 {
+		t.Fatalf("want one stall alert from the timer, got %v", got)
+	}
+	if s.laneStall == nil {
+		t.Fatal("check state is not on the Server")
+	}
+}
