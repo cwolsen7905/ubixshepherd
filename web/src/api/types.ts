@@ -949,3 +949,45 @@ export interface LaneShipped {
   url?: string
   message: string
 }
+
+/** What a review bot did in one repo (GET /v1/review-bots, internal/reviewbot). */
+export interface ReviewBotCounts {
+  jobs: number
+  working: number
+  proposals: number
+  dismissals: number
+  needs_you: number
+  fixes: number
+  spend_usd: number
+  /** Merge requests that carried a cost stamp. */
+  stamped: number
+}
+
+export interface ReviewBotItem {
+  iid: number
+  title: string
+  url: string
+}
+
+export interface ReviewBotProject extends ReviewBotCounts {
+  name: string
+  needs_you_items?: ReviewBotItem[]
+  /** The repo had more merge requests in the window than were read. */
+  truncated?: boolean
+  /** Why the repo could not be read, or only in part. */
+  error?: string
+}
+
+export interface ReviewBot {
+  name: string
+  user: string
+  label_prefix: string
+  window_days: number
+  projects: ReviewBotProject[]
+  total: ReviewBotCounts
+}
+
+export interface ReviewBots {
+  as_of: string
+  bots: ReviewBot[]
+}

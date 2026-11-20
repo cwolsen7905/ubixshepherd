@@ -11,6 +11,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- A Review bots page in the web UI: per repo, what a review bot did (jobs, proposals,
+  dismissals, what needs you, fixes pushed, spend), read from the forge's labels, threads and
+  notes with nothing stored. Bots are named under the new `review_bots:` config section.
+  Interface changes: config `review_bots`, HTTP `GET /v1/review-bots`. See
+  [docs/review-bots.md](docs/review-bots.md).
 - Crook posts a `crook` line to the feed when it allows a consequential action: an
   agent's push or a tag push, once per action, lane and run in ten minutes. It names the action, the lane,
   the rule and the reason, and has its own glyph in the web timeline and the chat thread.

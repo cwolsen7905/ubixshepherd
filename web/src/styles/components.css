@@ -538,3 +538,23 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-attach-thumb { width: 2.4em; height: 2.4em; object-fit: cover; border-radius: var(--sh-r); border: 1px solid var(--sh-rule); }
 .sh-conv-composer.is-drop .sh-composer { border-color: var(--sh-lichen); }
 .sh-attach-hint { font-size: var(--sh-t-meta); color: var(--sh-muted); }
+
+/* Review bots page (web/src/reviewbots): a tab per bot, a table of counts per project. */
+.sh-bots-page { max-width: 72rem; }
+.sh-bots-summary { color: var(--sh-muted); font-size: var(--sh-t-small); }
+.sh-bots-meta { margin: var(--sh-s5) 0; color: var(--sh-muted); font-size: var(--sh-t-small); }
+.sh-bots-scroll { overflow-x: auto; }
+.sh-bots-table { width: 100%; border-collapse: collapse; font-size: var(--sh-t-small); }
+.sh-bots-table th { text-align: left; font-weight: 600; color: var(--sh-muted); padding: var(--sh-s3) var(--sh-s4); border-bottom: 1px solid var(--sh-rule); white-space: nowrap; }
+.sh-bots-table td { padding: var(--sh-s4); border-bottom: 1px solid var(--sh-rule); vertical-align: top; }
+.sh-bots-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sh-bots-table tfoot th, .sh-bots-table tfoot td { color: var(--sh-ink); font-weight: 600; border-bottom: 0; }
+.sh-bots-name { color: var(--sh-ink); font-weight: 600; }
+.sh-bots-zero { color: var(--sh-faint); }
+.sh-bots-waiting { color: var(--sh-lantern-ink); font-weight: 600; }
+.sh-bots-error td { color: var(--sh-broken); }
+.sh-bots-note { color: var(--sh-faint); font-size: var(--sh-t-meta); }
+p.sh-bots-note { margin: var(--sh-s6) 0 0; max-width: var(--sh-measure); }
+.sh-bots-waiting-list { margin: var(--sh-s7) 0 0; }
+.sh-bots-waiting-list h2 { margin: 0 0 var(--sh-s3); font-size: var(--sh-t-card); font-weight: 600; }
+.sh-bots-waiting-list ul { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sh-s2); font-size: var(--sh-t-small); }
