@@ -183,3 +183,15 @@ func TestHeldFollowUpBlocksLaterOnesInItsLane(t *testing.T) {
 	f.runner.Stop(ctx, b.ID)
 	f.wait(t, b.ID)
 }
+
+func TestFollowUpQueuedAfterTheRunEndedStillStarts(t *testing.T) {
+	f := newFixture(t, "quick")
+	ctx := context.Background()
+	// The lane is idle, as if the run ended between start's check and the write.
+	err := f.runner.queueFollowUp(ctx, StartRequest{Agent: "claude", Prompt: "stranded"}, f.lane, 99)
+	if !errors.Is(err, ErrQueued) {
+		t.Fatal(err)
+	}
+	got := waitRunWithPrompt(t, f, "stranded")
+	f.wait(t, got.ID)
+}

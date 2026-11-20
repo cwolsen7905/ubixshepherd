@@ -32,6 +32,16 @@ func (r *Runner) queueFollowUp(ctx context.Context, asked StartRequest, lane sto
 	if _, err := r.Store.AddHeldStart(ctx, store.HeldStart{Request: string(b), Why: why}); err != nil {
 		return err
 	}
+	// The run may have ended after start looked and before the row was written: its
+	// RunHeld pass then found nothing. Look again, and kick the queue if the lane is
+	// free. start holds the runner's lock here, so the pass goes on its own.
+	if going, err := r.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(going) == 0 {
+		r.wg.Add(1)
+		go func() {
+			defer r.wg.Done()
+			r.RunHeld(context.Background())
+		}()
+	}
 	r.feed(ctx, store.FeedRunStarted, behind, "follow-up queued in lane %s (%s): %s", lane.Name, why, clip(asked.Prompt, 120))
 	return refusal{msg: msg, held: true, queued: true}
 }
