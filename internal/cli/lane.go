@@ -13,6 +13,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
+	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -58,6 +59,8 @@ func runLane(ctx context.Context, env Env, args []string) error {
 		return laneScope(ctx, env, args[1:])
 	case "widen":
 		return laneWiden(ctx, env, args[1:])
+	case "narrow":
+		return laneNarrow(ctx, env, args[1:])
 	case "review":
 		return laneReview(ctx, env, args[1:])
 	case "ship":
@@ -201,7 +204,7 @@ func laneOpen(ctx context.Context, env Env, args []string) error {
 	if h.Repo == nil {
 		return errors.New("which repo? run this inside one, or pass --repo")
 	}
-	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Adopt: *adopt, Origin: callerOrigin(env)}, *item)
+	lane, err := c.OpenLaneForItem(ctx, fold.OpenRequest{RepoID: h.Repo.ID, Name: pos[0], Branch: *branch, Scope: scope, Adopt: *adopt, Origin: callerOrigin(env), ForItem: *item}, *item)
 	if err != nil {
 		return err
 	}
@@ -563,6 +566,79 @@ func laneScope(ctx context.Context, env Env, args []string) error {
 		return err
 	}
 	fmt.Fprintf(env.Stdout, "lane %s scope: %s\n", lane.Name, strings.Join(lane.Scope, ", "))
+	return nil
+}
+
+// laneNarrow shrinks a lane's own scope: shepherd lane narrow [lane] --drop G --to G.
+// --drop removes a glob the scope holds; --to adds a glob that lies inside the scope as
+// it was, so a broad glob can be replaced by a subset. It never takes new ground (that
+// is `lane widen`, on a decision), and the paths it frees are open to other lanes at once.
+func laneNarrow(ctx context.Context, env Env, args []string) error {
+	fs := flags("lane narrow", env)
+	var drop, to listFlag
+	fs.Var(&drop, "drop", "glob of the lane's scope to drop (repeatable)")
+	fs.Var(&to, "to", "glob inside the current scope to keep in place of what is dropped (repeatable)")
+	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
+	pos, err := parse(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) > 1 || (len(drop) == 0 && len(to) == 0) {
+		return errUsage
+	}
+	c, err := dial(ctx, env)
+	if err != nil {
+		return err
+	}
+	h, err := locate(ctx, env, c, *repo)
+	if err != nil {
+		return err
+	}
+	var lane api.LaneView
+	if len(pos) == 1 {
+		if lane, err = findLane(ctx, c, h, pos[0]); err != nil {
+			return err
+		}
+	} else if h.Lane != nil {
+		if lane, err = findLane(ctx, c, h, h.Lane.Name); err != nil {
+			return err
+		}
+	} else {
+		return errors.New("which lane? run this inside its worktree, or name it")
+	}
+	next, err := scope.Narrow(lane.Scope, drop, to)
+	if err != nil {
+		return fmt.Errorf("lane %s: %w", lane.Name, err)
+	}
+	// The daemon applies add then remove; send exactly the difference.
+	in := func(list []string, g string) bool {
+		for _, x := range list {
+			if x == g {
+				return true
+			}
+		}
+		return false
+	}
+	var add, remove []string
+	for _, g := range next {
+		if !in(lane.Scope, g) {
+			add = append(add, g)
+		}
+	}
+	for _, g := range lane.Scope {
+		if !in(next, g) {
+			remove = append(remove, g)
+		}
+	}
+	if len(add) == 0 && len(remove) == 0 {
+		fmt.Fprintf(env.Stdout, "lane %s scope unchanged: %s\n", lane.Name, strings.Join(lane.Scope, ", "))
+		return nil
+	}
+	updated, err := c.RescopeLane(ctx, lane.ID, add, remove)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(env.Stdout, "lane %s scope narrowed: %s\n", updated.Name, strings.Join(updated.Scope, ", "))
 	return nil
 }
 

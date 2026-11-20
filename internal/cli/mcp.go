@@ -116,7 +116,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "lane_open",
-			Description: "Open a lane: fetch, cut the branch from origin/<base>, add the worktree, record the scope. Returns the worktree path to work in. Refused if the scope overlaps an open lane's. With adopt, the branch must already exist on origin (an open merge request's, say): the worktree checks it out instead of cutting a new branch, so you can push fixes to it; closing the lane keeps the branch. Refused if another open lane holds it.",
+			Description: "Open a lane: fetch, cut the branch from origin/<base>, add the worktree, record the scope. Returns the worktree path to work in. Refused if the scope overlaps an open lane's. The reply carries a warning, without refusing, when the scope would block an approved next-up item that has no lane yet and whose plan doc names a scope. With adopt, the branch must already exist on origin (an open merge request's, say): the worktree checks it out instead of cutting a new branch, so you can push fixes to it; closing the lane keeps the branch. Refused if another open lane holds it.",
 			InputSchema: obj(map[string]any{
 				"repo":   propRepo,
 				"adopt":  map[string]any{"type": "boolean", "description": "Adopt the existing origin branch named by branch (or name) instead of creating one."},
@@ -167,6 +167,37 @@ func mcpTools() []mcpTool {
 				out := []string{"lane", "widen", str(a, "name"), "--repo", str(a, "repo"), "--decision", fmt.Sprint(int64(d))}
 				for _, g := range add {
 					out = append(out, "--add", g)
+				}
+				return out, nil
+			},
+		},
+		{
+			Name:        "lane_narrow",
+			Description: "Shrink an open lane's own scope: drop globs it no longer needs, or replace a broad glob with a subset of it. It can only shrink: a glob that is not inside the current scope is refused (widening is lane_widen, on a person's decision), and so is dropping every glob. The freed paths are open to other lanes at once, so use it when the work turned out smaller than the scope it opened with.",
+			InputSchema: obj(map[string]any{
+				"repo": propRepo,
+				"name": map[string]any{"type": "string", "description": "The lane's name."},
+				"drop": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Globs of the lane's current scope to drop, written exactly as in the scope."},
+				"to":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Globs inside the current scope to hold in place of the dropped ones (internal/** narrowed to internal/fold/**)."},
+			}, "repo", "name"),
+			args: func(a map[string]any) ([]string, error) {
+				drop, err := strsOpt(a, "drop")
+				if err != nil {
+					return nil, err
+				}
+				to, err := strsOpt(a, "to")
+				if err != nil {
+					return nil, err
+				}
+				if len(drop) == 0 && len(to) == 0 {
+					return nil, fmt.Errorf("give drop, to, or both")
+				}
+				out := []string{"lane", "narrow", str(a, "name"), "--repo", str(a, "repo")}
+				for _, g := range drop {
+					out = append(out, "--drop", g)
+				}
+				for _, g := range to {
+					out = append(out, "--to", g)
 				}
 				return out, nil
 			},
@@ -1350,4 +1381,12 @@ func capOutput(text string, max int, more string) string {
 	head := room * 2 / 5
 	tail := room - head
 	return string(r[:head]) + fmt.Sprintf(note, len(r)-head-tail, max) + string(r[len(r)-tail:])
+}
+
+// strsOpt is strs for an argument that may be left out.
+func strsOpt(a map[string]any, k string) ([]string, error) {
+	if _, ok := a[k]; !ok {
+		return nil, nil
+	}
+	return strs(a, k)
 }

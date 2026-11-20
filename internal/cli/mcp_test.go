@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -62,7 +65,7 @@ func TestMCPHandshakeAndList(t *testing.T) {
 	for _, tl := range tools {
 		names[tl.(map[string]any)["name"].(string)] = true
 	}
-	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_ship", "lane_list", "fold_gc", "shepherd_where", "workspace_rename"} {
+	for _, n := range []string{"shepherd_status", "lane_open", "lane_close", "lane_widen", "lane_narrow", "lane_ship", "lane_list", "fold_gc", "shepherd_where", "workspace_rename"} {
 		if !names[n] {
 			t.Errorf("tool %s missing", n)
 		}
@@ -113,6 +116,101 @@ func TestMCPLaneTools(t *testing.T) {
 	text, isErr = toolText(t, resps[5])
 	if isErr || !strings.Contains(text, "closed lane feat/mcp") {
 		t.Errorf("lane_close: %v %s", isErr, text)
+	}
+}
+
+func TestMCPLaneNarrow(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, _ := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	call := func(id int, name, args string) string {
+		return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, id, name, args)
+	}
+	resps := mcpExchange(t, h.env,
+		call(1, "lane_open", `{"repo":"app","name":"feat/big","scope":["src/**","docs/*.md"]}`),
+		call(2, "lane_open", `{"repo":"app","name":"feat/small","scope":["src/b/**"]}`),
+		call(3, "lane_narrow", `{"repo":"app","name":"feat/big","to":["src/a/**"]}`),
+		call(4, "lane_narrow", `{"repo":"app","name":"feat/big","to":["cmd/**"]}`),
+		call(5, "lane_narrow", `{"repo":"app","name":"feat/big","drop":["src/**"],"to":["src/a/**"]}`),
+		call(6, "lane_open", `{"repo":"app","name":"feat/small","scope":["src/b/**"]}`),
+		call(7, "lane_narrow", `{"repo":"app","name":"feat/big","drop":["nope/**"]}`),
+		call(8, "lane_narrow", `{"repo":"app","name":"feat/big","drop":["src/a/**","docs/*.md"]}`),
+		call(9, "lane_narrow", `{"repo":"app","name":"feat/big"}`),
+	)
+	if text, isErr := toolText(t, resps[0]); isErr {
+		t.Fatalf("open big: %s", text)
+	}
+	if text, isErr := toolText(t, resps[1]); !isErr || !strings.Contains(text, "overlaps lane feat/big") {
+		t.Errorf("small before narrowing: %v %s", isErr, text)
+	}
+	// Adding a subset while keeping src/** changes nothing: src/a/** is already held.
+	if text, isErr := toolText(t, resps[2]); isErr {
+		t.Errorf("subset kept beside its parent: %s", text)
+	}
+	if text, isErr := toolText(t, resps[3]); !isErr || !strings.Contains(text, "only shrinks") {
+		t.Errorf("widening narrow: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[4]); isErr || !strings.Contains(text, "src/a/**") || strings.Contains(text, "src/**,") {
+		t.Errorf("narrow: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[5]); isErr {
+		t.Errorf("a freed path should be open to another lane at once: %s", text)
+	}
+	if text, isErr := toolText(t, resps[6]); !isErr || !strings.Contains(text, "not in the lane's scope") {
+		t.Errorf("drop a glob not held: %v %s", isErr, text)
+	}
+	if text, isErr := toolText(t, resps[7]); !isErr || !strings.Contains(text, "needs a scope") {
+		t.Errorf("drop everything: %v %s", isErr, text)
+	}
+	if _, isErr := toolText(t, resps[8]); !isErr {
+		t.Error("narrow with nothing to do accepted")
+	}
+}
+
+func TestLaneOpenWarnsAboutApprovedItemButNotItsOwn(t *testing.T) {
+	h := newHarness(t, "", false)
+	root, app := laneWorkspace(t)
+	if code := h.run("init", root, "--yes"); code != 0 {
+		t.Fatalf("init: %s", h.err)
+	}
+	h.env.Cwd = root
+	for plan, body := range map[string]string{"plans/own.md": "Scope: src/own/**\n", "plans/other.md": "Scope: docs/**\n"} {
+		if err := os.MkdirAll(filepath.Join(app, "plans"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(app, plan), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, a := range [][]string{{"add", "plans"}, {"commit", "-q", "-m", "plans"}, {"push", "-q", "origin", "HEAD:main"}} {
+		cmd := exec.Command("git", append([]string{"-C", app}, a...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@e", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@e")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", a, err, out)
+		}
+	}
+	for _, a := range [][]string{
+		{"next", "add", "own work", "--repo", "app", "--plan", "plans/own.md", "--approved"},
+		{"next", "add", "other work", "--repo", "app", "--plan", "plans/other.md", "--approved"},
+	} {
+		if code := h.run(a...); code != 0 {
+			t.Fatalf("%v: %s", a, h.err)
+		}
+	}
+	resps := mcpExchange(t, h.env,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"lane_open","arguments":{"repo":"app","name":"feat/own","scope":["src/own/**"],"item":1}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"lane_open","arguments":{"repo":"app","name":"feat/doc","scope":["docs/x/**"]}}}`,
+	)
+	text, isErr := toolText(t, resps[0])
+	if isErr || strings.Contains(text, "warning") {
+		t.Errorf("a lane opened for its own item warned about it: %v %s", isErr, text)
+	}
+	text, isErr = toolText(t, resps[1])
+	if isErr || !strings.Contains(text, "warning") || !strings.Contains(text, "other work") || !strings.Contains(text, "docs/x/**") {
+		t.Errorf("an overlapping open should succeed with a warning: %v %s", isErr, text)
 	}
 }
 
