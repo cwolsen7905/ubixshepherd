@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -307,5 +308,102 @@ func TestExternalOwnerAttemptsDoNotCarryPastAFixedPipeline(t *testing.T) {
 	f.settle(t)
 	if n := f.runs(t); n != 2 {
 		t.Fatalf("runs = %d after the full wait, want 2", n)
+	}
+}
+
+// idleAgent makes the fixture's agent exit cleanly without committing anything.
+func (f *fixture) idleAgent(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(f.agent, []byte("#!/bin/sh\necho nothing to do\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTakeoverThatCommittedAFixIsNotSpent(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Errorf("a committed fix waiting to be pushed was raised as spent: %s", got)
+	}
+}
+
+func TestSpentTakeoverIsRaisedToThePersonOnce(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.idleAgent(t)
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx) // takes over; the agent's run is started
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d, want 2", n)
+	}
+	// The run ended without a commit and the pipeline still fails: raised, once.
+	for i := 0; i < 3; i++ {
+		*now = now.Add(10 * time.Minute)
+		f.w.Check(f.ctx)
+		f.settle(t)
+	}
+	got := f.feed(t)
+	if n := strings.Count(got, "takeover from reviewbot is spent"); n != 1 {
+		t.Fatalf("raised %d times, want once: %s", n, got)
+	}
+	if !strings.Contains(got, "ended without a commit, so it is yours") {
+		t.Errorf("feed = %s", got)
+	}
+	if n := f.runs(t); n != 2 {
+		t.Errorf("the agent was asked again: %d runs", n)
+	}
+	// A fresh watcher does not repeat it either.
+	f.w.Check(f.ctx)
+	if n := strings.Count(f.feed(t), "takeover from reviewbot is spent"); n != 1 {
+		t.Errorf("raised again after a restart: %d", n)
+	}
+}
+
+func TestSpentTakeoverWithNoAgentConversationIsRaised(t *testing.T) {
+	f := newFixture(t)
+	now := f.external(t)
+	f.f.mr = &forge.MR{IID: 7, State: "opened", URL: "https://gl/mr/7", Pipeline: &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.w.Check(f.ctx)
+	got := f.feed(t)
+	if n := strings.Count(got, "takeover from reviewbot is spent"); n != 1 || !strings.Contains(got, "no agent run could be started") {
+		t.Errorf("feed = %s", got)
+	}
+}
+
+func TestSpentTakeoverRecordEndsWhenThePipelineStopsFailing(t *testing.T) {
+	f := newFixture(t)
+	now := f.external(t)
+	f.f.mr = &forge.MR{IID: 7, State: "opened", URL: "https://gl/mr/7", Pipeline: &forge.Pipeline{ID: 100, Status: "failed"}}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "success"}
+	f.w.Check(f.ctx)
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 0 {
+		t.Error("handoff record outlived the failure")
+	}
+	// A later failure is judged afresh and raised again.
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 102, Status: "failed"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	if n := strings.Count(f.feed(t), "takeover from reviewbot is spent"); n != 2 {
+		t.Errorf("raised %d times across two failures, want 2", n)
 	}
 }
