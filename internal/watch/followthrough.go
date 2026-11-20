@@ -185,7 +185,11 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 	if w.now().Sub(it.since) < ft.Wait() {
 		return tries
 	}
-	it.taken, it.notes, it.since = true, w.latestRun(ctx, lane.ID), w.now()
+	last, ok := w.latestRun(ctx, lane.ID)
+	if !ok {
+		return tries
+	}
+	it.taken, it.notes, it.since = true, last, w.now()
 	w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
 	w.feed(ctx, store.FeedPipeline, lane.ID, "%s did not act on pipeline %d within %s; Shepherd takes it over (lane %s)", ft.Label(), p.ID, ft.Wait(), lane.Name)
 	tries = w.pipelineFailed(ctx, f, lane, mr, p, tries, limit)
@@ -195,7 +199,11 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 
 // takeOverPipeline takes a failed pipeline from the owner once it has used its attempts.
 func (w *Watcher) takeOverPipeline(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, tries int, wc config.Watch, it ownerItem, why string) int {
-	it.taken, it.notes, it.since = true, w.latestRun(ctx, lane.ID), w.now()
+	last, ok := w.latestRun(ctx, lane.ID)
+	if !ok {
+		return tries
+	}
+	it.taken, it.notes, it.since = true, last, w.now()
 	w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
 	w.feed(ctx, store.FeedPipeline, lane.ID, "%s "+why+" and pipeline %s still fails; Shepherd takes it over (lane %s)", wc.FollowThrough.Label(), it.attempts, it.id, lane.Name)
 	tries = w.pipelineFailed(ctx, f, lane, mr, mr.Pipeline, tries, wc.Tries())
@@ -203,17 +211,20 @@ func (w *Watcher) takeOverPipeline(ctx context.Context, f forge.Forge, lane stor
 	return tries
 }
 
-// latestRun is the newest run id of the lane, 0 when it has none. A taken pipeline keeps it
-// in notes, so only runs started by the takeover are judged.
-func (w *Watcher) latestRun(ctx context.Context, lane int64) int {
-	var max int
-	runs, _ := w.Store.Runs(ctx, lane, "", 20)
-	for _, r := range runs {
-		if int(r.ID) > max {
-			max = int(r.ID)
-		}
+// latestRun is the newest run id of the lane, 0 when it has none, and false when the runs
+// could not be read (the takeover waits for the next poll rather than judge old runs as
+// its own). A taken pipeline keeps it in notes, so only runs started by the takeover are
+// judged. Runs lists newest first.
+func (w *Watcher) latestRun(ctx context.Context, lane int64) (int, bool) {
+	runs, err := w.Store.Runs(ctx, lane, "", 1)
+	if err != nil {
+		w.Log.Error("watch: runs", "lane", lane, "err", err)
+		return 0, false
 	}
-	return max
+	if len(runs) == 0 {
+		return 0, true
+	}
+	return int(runs[0].ID), true
 }
 
 // takeoverSpent hands a taken pipeline on when the takeover is spent, so it never goes
@@ -233,11 +244,19 @@ func (w *Watcher) takeoverSpent(ctx context.Context, lane store.Lane, mr *forge.
 	if ho := w.ownerItems(ctx, lane.ID, "handoff"); len(ho) > 0 && ho[0].id == id {
 		return
 	}
-	runs, _ := w.Store.Runs(ctx, lane.ID, "", 20)
+	runs, err := w.Store.Runs(ctx, lane.ID, "", 20)
+	if err != nil {
+		w.Log.Error("watch: runs", "lane", lane.ID, "err", err)
+		return
+	}
+	wait := wc.FollowThrough.Wait()
 	var last *store.Run
 	session := false
 	for i := range runs {
-		if runs[i].State == store.RunRunning {
+		// A run the takeover started is working for as long as it runs. One already going
+		// (the person's, or a stale record) holds the check for a patience only, so it
+		// cannot keep the person from hearing of a takeover that never began.
+		if runs[i].State == store.RunRunning && (int(runs[i].ID) > it.notes || w.now().Sub(it.since) < wait) {
 			return
 		}
 		session = session || runs[i].Session != ""
@@ -255,7 +274,6 @@ func (w *Watcher) takeoverSpent(ctx context.Context, lane store.Lane, mr *forge.
 		w.saveOwnerItems(ctx, lane.ID, "handoff", []ownerItem{{id: id, since: w.now()}})
 		return
 	case last == nil:
-		wait := wc.FollowThrough.Wait()
 		if w.now().Sub(it.since) < wait {
 			return // the start may be held and still run
 		}

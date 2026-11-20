@@ -10,6 +10,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // external makes the fixture's repo followed through by an outside owner, with a clock
@@ -438,5 +439,30 @@ func TestSpentTakeoverRecordEndsWhenThePipelineStopsFailing(t *testing.T) {
 	f.w.Check(f.ctx)
 	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
 		t.Error("a later failure was not judged afresh")
+	}
+}
+
+func TestStaleRunningRecordDoesNotHoldTheHandoffForever(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	if _, err := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "by hand", State: store.RunRunning, Started: *now}); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx) // takes over; a run is going, so no start
+	*now = now.Add(10 * time.Minute)
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Fatalf("raised while a run was going: %s", got)
+	}
+	*now = now.Add(30 * time.Minute)
+	f.w.Check(f.ctx)
+	f.w.Check(f.ctx)
+	if n := strings.Count(f.feed(t), "is spent: no agent run began"); n != 1 {
+		t.Errorf("raised %d times, want once", n)
 	}
 }
