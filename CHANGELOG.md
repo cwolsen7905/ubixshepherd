@@ -47,6 +47,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Fixed
 
+- The daemon now serves the desk chat's attachment routes, so uploading an image no longer
+  answers "no endpoint POST /v1/desk/attachments", and it runs the lane-stall check every
+  five minutes. The check's state is held on the server, not in a package-level map.
 - Answering a decision continues the asking run once. The direct answer and the sweep that
   runs when a run ends could both deliver it, starting two follow-up runs. Delivery is now
   serialized and skipped once an answer run is recorded, and a failed write of that record

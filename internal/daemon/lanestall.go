@@ -77,22 +77,27 @@ func (ls *LaneStall) options() LaneStallOptions {
 	return ls.opts
 }
 
-// laneStalls holds each server's check, so wiring needs no field on Server.
-var laneStalls sync.Map // *Server to *LaneStall
+// laneStallFor returns the server's check, building it with opts on first use.
+func (s *Server) laneStallFor(opts LaneStallOptions) *LaneStall {
+	s.laneStallMu.Lock()
+	defer s.laneStallMu.Unlock()
+	if s.laneStall == nil {
+		s.laneStall = NewLaneStall(s, opts)
+	}
+	return s.laneStall
+}
 
-// CheckLaneStalls is the one call that wires the check in: run it on each pass of the
-// daemon's periodic work. The check is built on first use with the default options;
+// CheckLaneStalls is the one call that wires the check in: the daemon runs it on a timer
+// (checkLaneStallsEvery). The check is built on first use with the default options;
 // to tune them, call SetLaneStallOptions before the first pass.
 func (s *Server) CheckLaneStalls(ctx context.Context) {
-	v, _ := laneStalls.LoadOrStore(s, NewLaneStall(s, LaneStallOptions{}))
-	v.(*LaneStall).Check(ctx)
+	s.laneStallFor(LaneStallOptions{}).Check(ctx)
 }
 
 // SetLaneStallOptions sets the options of the server's check, creating it if need be.
 // It keeps what the check had announced, and never loses to a pass racing it.
 func (s *Server) SetLaneStallOptions(opts LaneStallOptions) {
-	v, _ := laneStalls.LoadOrStore(s, NewLaneStall(s, opts))
-	v.(*LaneStall).setOptions(opts)
+	s.laneStallFor(opts).setOptions(opts)
 }
 
 // Check looks at every open lane in every workspace.

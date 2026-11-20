@@ -71,6 +71,9 @@ type Server struct {
 	// repoMu serialises adding and unmanaging repos.
 	repoMu  sync.Mutex
 	commits fold.CommitClock // lane commit times, for last activity
+	// laneStall is the lane-stall check and what it has announced (see CheckLaneStalls).
+	laneStallMu sync.Mutex
+	laneStall   *LaneStall
 	// DeskAgent runs the front desk's turns; nil is Claude Code. DeskGrace is how long
 	// the desk still wakes after its last client leaves; 0 is the default.
 	DeskAgent desk.Agent
@@ -319,6 +322,7 @@ func (s *Server) Handler() http.Handler {
 	handle("GET "+api.PathDeskStatus, web, s.deskStatus)
 	handle("POST "+api.PathDeskInterrupt, web, s.deskInterrupt)
 	handle("POST "+api.PathDeskNew, web, s.deskNew)
+	s.deskAttachRoutes(handle)
 	// Browser sign-in and sessions (api/web.go, web.go). The link's exchange, a GET with
 	// no token, is browserGate's.
 	handle("POST "+api.PathWebSignin, operatorOnly, s.webSignin)
@@ -2073,6 +2077,7 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	defer stopUpdates()
 	s.startUpdateCheck(updateCtx)
 	s.startUpgradeVerify(updateCtx)
+	go s.checkLaneStallsEvery(updateCtx, laneStallEvery)
 	defer s.clearOwnMarker()
 	srv := &http.Server{Handler: s.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	defer s.Close()
@@ -2100,6 +2105,25 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return srv.Shutdown(shutdown)
+}
+
+// laneStallEvery is how often the daemon looks for stalled lanes. The stall threshold is
+// hours, so a pass every few minutes is plenty.
+const laneStallEvery = 5 * time.Minute
+
+// checkLaneStallsEvery runs CheckLaneStalls each interval until ctx ends. The first pass
+// waits one interval, so a daemon that is starting is not also reading every lane's git.
+func (s *Server) checkLaneStallsEvery(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.CheckLaneStalls(ctx)
+		}
+	}
 }
 
 // ReadRuntime reads a daemon's runtime file. It is runtimefile.Read, kept here for callers
