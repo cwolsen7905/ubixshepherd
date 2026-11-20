@@ -1,12 +1,16 @@
 package watch
 
 import (
+	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // external makes the fixture's repo followed through by an outside owner, with a clock
@@ -307,5 +311,175 @@ func TestExternalOwnerAttemptsDoNotCarryPastAFixedPipeline(t *testing.T) {
 	f.settle(t)
 	if n := f.runs(t); n != 2 {
 		t.Fatalf("runs = %d after the full wait, want 2", n)
+	}
+}
+
+// idleAgent makes the fixture's agent exit cleanly without committing anything.
+func (f *fixture) idleAgent(t *testing.T) {
+	t.Helper()
+	if err := os.WriteFile(f.agent, []byte("#!/bin/sh\necho nothing to do\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTakeoverThatCommittedAFixIsNotSpent(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.settle(t)
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Errorf("a committed fix waiting to be pushed was raised as spent: %s", got)
+	}
+}
+
+func TestSpentTakeoverIsRaisedToThePersonOnce(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.idleAgent(t)
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx) // takes over; the agent's run is started
+	f.settle(t)
+	if n := f.runs(t); n != 2 {
+		t.Fatalf("runs = %d, want 2", n)
+	}
+	// The run ended without a commit and the pipeline still fails: raised, once.
+	for i := 0; i < 3; i++ {
+		*now = now.Add(10 * time.Minute)
+		f.w.Check(f.ctx)
+		f.settle(t)
+	}
+	got := f.feed(t)
+	if n := strings.Count(got, "takeover from reviewbot is spent"); n != 1 {
+		t.Fatalf("raised %d times, want once: %s", n, got)
+	}
+	if !strings.Contains(got, "ended without a commit, so it is yours") {
+		t.Errorf("feed = %s", got)
+	}
+	if n := f.runs(t); n != 2 {
+		t.Errorf("the agent was asked again: %d runs", n)
+	}
+	// A fresh watcher does not repeat it either.
+	f.w.Check(f.ctx)
+	if n := strings.Count(f.feed(t), "takeover from reviewbot is spent"); n != 1 {
+		t.Errorf("raised again after a restart: %d", n)
+	}
+}
+
+func TestSpentTakeoverWithNoAgentConversationIsNotSaidTwice(t *testing.T) {
+	f := newFixture(t)
+	now := f.external(t)
+	f.f.mr = &forge.MR{IID: 7, State: "opened", URL: "https://gl/mr/7", Pipeline: &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	f.w.Check(f.ctx)
+	got := f.feed(t)
+	if strings.Contains(got, "is spent") || strings.Count(got, "it is yours") != 1 {
+		t.Errorf("feed = %s", got)
+	}
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
+		t.Error("the handoff was not recorded")
+	}
+}
+
+func TestTakeoverWhoseStartIsRefusedIsRaisedOnlyAfterAPatience(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	dispatch.SetLookPath(f.run, func(string) (string, error) { return "", errors.New("held") })
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx) // takes over; the start is refused
+	*now = now.Add(10 * time.Minute)
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Fatalf("a held start was called spent at once: %s", got)
+	}
+	for i := 0; i < 3; i++ {
+		*now = now.Add(21 * time.Minute)
+		f.w.Check(f.ctx)
+	}
+	got := f.feed(t)
+	if n := strings.Count(got, "is spent: no agent run began within 30m0s"); n != 1 {
+		t.Errorf("raised %d times, want once: %s", n, got)
+	}
+}
+
+func TestSpentTakeoverRecordEndsWhenThePipelineStopsFailing(t *testing.T) {
+	f := newFixture(t)
+	now := f.external(t)
+	f.f.mr = &forge.MR{IID: 7, State: "opened", URL: "https://gl/mr/7", Pipeline: &forge.Pipeline{ID: 100, Status: "failed"}}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
+		t.Fatal("the handoff was not recorded")
+	}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "success"}
+	f.w.Check(f.ctx)
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 0 {
+		t.Error("handoff record outlived the failure")
+	}
+	// A later failure is judged afresh and raised again.
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 102, Status: "failed"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx)
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
+		t.Error("a later failure was not judged afresh")
+	}
+}
+
+func TestStaleRunningRecordDoesNotHoldTheHandoffForever(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	if _, err := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "by hand", State: store.RunRunning, Started: *now}); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx) // takes over; a run is going, so no start
+	*now = now.Add(10 * time.Minute)
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Fatalf("raised while a run was going: %s", got)
+	}
+	*now = now.Add(30 * time.Minute)
+	f.w.Check(f.ctx)
+	f.w.Check(f.ctx)
+	if n := strings.Count(f.feed(t), "is spent: no agent run began"); n != 1 {
+		t.Errorf("raised %d times, want once", n)
+	}
+}
+
+func TestTakeoverStoredWithoutARunBaselineDoesNotJudgeOldRuns(t *testing.T) {
+	f := newFixture(t)
+	f.idleAgent(t)
+	f.withSession(t) // an old run in the lane, ended without a commit
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	// A takeover recorded before takeovers kept a run baseline (notes 0).
+	f.w.saveOwnerItems(f.ctx, f.lane.ID, "pipeline", []ownerItem{{id: "100", taken: true, since: now.Add(-time.Hour)}})
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Fatalf("an old run was judged as the takeover's: %s", got)
+	}
+	if items := f.w.ownerItems(f.ctx, f.lane.ID, "pipeline"); len(items) != 1 || items[0].notes == 0 {
+		t.Errorf("no baseline taken: %+v", items)
 	}
 }

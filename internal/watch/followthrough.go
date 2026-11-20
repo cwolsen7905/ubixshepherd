@@ -28,7 +28,7 @@ const UnfixedMarker = "Unfixed:"
 // taken the item over.
 type ownerItem struct {
 	id    string
-	notes int       // a thread's note count when last seen; 0 for a pipeline
+	notes int       // a thread's note count when last seen; a taken pipeline's run baseline
 	since time.Time // when the wait began, or restarted by the owner acting
 	taken bool
 
@@ -123,6 +123,9 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 		if len(w.ownerItems(ctx, lane.ID, "signoff")) > 0 {
 			w.saveOwnerItems(ctx, lane.ID, "signoff", nil)
 		}
+		if len(w.ownerItems(ctx, lane.ID, "handoff")) > 0 {
+			w.saveOwnerItems(ctx, lane.ID, "handoff", nil)
+		}
 		return tries
 	}
 	// Judged on every poll of a failed pipeline, whatever its history: a failure that is
@@ -159,6 +162,15 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 	}
 	it := items[0]
 	if it.taken {
+		if it.notes == 0 && len(w.ownerItems(ctx, lane.ID, "handoff")) == 0 {
+			// Taken before takeovers kept their run baseline: take it now, so the lane's
+			// older runs are not judged as the takeover's own.
+			if last, ok := w.latestRun(ctx, lane.ID); ok && last > 0 {
+				it.notes, it.since = last, w.now()
+				w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+			}
+		}
+		w.takeoverSpent(ctx, lane, mr, p, it, wc, tries)
 		return tries
 	}
 	if it.finished.IsZero() && !p.Finished.IsZero() && !it.retried {
@@ -181,18 +193,108 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 	if w.now().Sub(it.since) < ft.Wait() {
 		return tries
 	}
-	it.taken = true
+	last, ok := w.latestRun(ctx, lane.ID)
+	if !ok {
+		return tries
+	}
+	it.taken, it.notes, it.since = true, last, w.now()
 	w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
 	w.feed(ctx, store.FeedPipeline, lane.ID, "%s did not act on pipeline %d within %s; Shepherd takes it over (lane %s)", ft.Label(), p.ID, ft.Wait(), lane.Name)
-	return w.pipelineFailed(ctx, f, lane, mr, p, tries, limit)
+	tries = w.pipelineFailed(ctx, f, lane, mr, p, tries, limit)
+	w.takeoverSpent(ctx, lane, mr, p, it, wc, tries)
+	return tries
 }
 
 // takeOverPipeline takes a failed pipeline from the owner once it has used its attempts.
 func (w *Watcher) takeOverPipeline(ctx context.Context, f forge.Forge, lane store.Lane, mr *forge.MR, tries int, wc config.Watch, it ownerItem, why string) int {
-	it.taken = true
+	last, ok := w.latestRun(ctx, lane.ID)
+	if !ok {
+		return tries
+	}
+	it.taken, it.notes, it.since = true, last, w.now()
 	w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
 	w.feed(ctx, store.FeedPipeline, lane.ID, "%s "+why+" and pipeline %s still fails; Shepherd takes it over (lane %s)", wc.FollowThrough.Label(), it.attempts, it.id, lane.Name)
-	return w.pipelineFailed(ctx, f, lane, mr, mr.Pipeline, tries, wc.Tries())
+	tries = w.pipelineFailed(ctx, f, lane, mr, mr.Pipeline, tries, wc.Tries())
+	w.takeoverSpent(ctx, lane, mr, mr.Pipeline, it, wc, tries)
+	return tries
+}
+
+// latestRun is the newest run id of the lane, 0 when it has none, and false when the runs
+// could not be read (the takeover waits for the next poll rather than judge old runs as
+// its own). A taken pipeline keeps it in notes, so only runs started by the takeover are
+// judged. Runs lists newest first.
+func (w *Watcher) latestRun(ctx context.Context, lane int64) (int, bool) {
+	runs, err := w.Store.Runs(ctx, lane, "", 1)
+	if err != nil {
+		w.Log.Error("watch: runs", "lane", lane, "err", err)
+		return 0, false
+	}
+	if len(runs) == 0 {
+		return 0, true
+	}
+	return int(runs[0].ID), true
+}
+
+// takeoverSpent hands a taken pipeline on when the takeover is spent, so it never goes
+// quiet. The lane's agent is the last owner there is, so the next owner is the person: it
+// is raised once, as a feed event, and recorded apart from the owner's items so later polls
+// stay silent. A takeover is spent when the run it started ended without a commit or did
+// not succeed. A run still going (any run in the lane), or one that committed a fix for
+// the person to push, is not spent.
+//
+// With no run started for it, pipelineFailed has either told the person already (no agent
+// conversation, no tries left), which is only recorded here, or its start was refused or
+// held (a quota hold, a restart, one agent per lane), which may still run: that is raised
+// only when no run has begun a patience after the takeover, and the reason says so. The
+// record ends when the pipeline leaves the failed state.
+func (w *Watcher) takeoverSpent(ctx context.Context, lane store.Lane, mr *forge.MR, p *forge.Pipeline, it ownerItem, wc config.Watch, tries int) {
+	id := it.id
+	if ho := w.ownerItems(ctx, lane.ID, "handoff"); len(ho) > 0 && ho[0].id == id {
+		return
+	}
+	runs, err := w.Store.Runs(ctx, lane.ID, "", 20)
+	if err != nil {
+		w.Log.Error("watch: runs", "lane", lane.ID, "err", err)
+		return
+	}
+	wait := wc.FollowThrough.Wait()
+	var last *store.Run
+	session := false
+	for i := range runs {
+		// A run the takeover started is working for as long as it runs. One already going
+		// (the person's, or a stale record) holds the check for a patience only, so it
+		// cannot keep the person from hearing of a takeover that never began.
+		if runs[i].State == store.RunRunning && (int(runs[i].ID) > it.notes || w.now().Sub(it.since) < wait) {
+			return
+		}
+		session = session || runs[i].Session != ""
+		if int(runs[i].ID) <= it.notes {
+			continue
+		}
+		if last == nil || runs[i].ID > last.ID {
+			last = &runs[i]
+		}
+	}
+	var why string
+	switch {
+	case last == nil && (!session || tries >= wc.Tries()):
+		// pipelineFailed said the lane is the person's; do not say it twice.
+		w.saveOwnerItems(ctx, lane.ID, "handoff", []ownerItem{{id: id, since: w.now()}})
+		return
+	case last == nil:
+		if w.now().Sub(it.since) < wait {
+			return // the start may be held and still run
+		}
+		why = fmt.Sprintf("no agent run began within %s of the takeover (its start was refused or is held)", wait)
+	case last.State != store.RunSucceeded:
+		why = fmt.Sprintf("the agent's run %d ended %s", last.ID, last.State)
+	case last.Commits == 0:
+		why = fmt.Sprintf("the agent's run %d ended without a commit", last.ID)
+	default:
+		return // a fix is committed: the person pushes it
+	}
+	w.saveOwnerItems(ctx, lane.ID, "handoff", []ownerItem{{id: id, since: w.now()}})
+	w.feed(ctx, store.FeedPipeline, lane.ID, "pipeline %s (%s) for !%d (%s) (lane %s) is still failing and Shepherd's takeover from %s is spent: %s, so it is yours", id, p.URL, mr.IID, mr.URL, lane.Name, wc.FollowThrough.Label(), why)
 }
 
 func attemptNote(attempts, limit int) string {
