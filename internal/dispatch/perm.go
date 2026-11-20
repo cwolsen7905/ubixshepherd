@@ -8,6 +8,11 @@ import "fmt"
 //
 // A reply is `glab api projects/:id/merge_requests/<iid>/discussions/<discussion>/notes -f body=<text>`:
 // glab sends a POST when a field is given, so no method flag is needed or allowed.
+// The denies that keep a reply a reply are scoped to the reply form, so the read-only
+// glab api calls a run already had (query strings with & included) are untouched.
+//
+// `glab ci lint` sends a file to the forge, so it takes no flags and a path only inside
+// the worktree: none, a relative one, or (OpenCode) an absolute one under the worktree.
 
 // glabLint is the CI lint command.
 const glabLint = "glab ci lint"
@@ -20,53 +25,82 @@ func glabReplyPath(iid int) string {
 
 const glabReplyTail = "/notes -f body="
 
+// glabShellDenies are fragments no forge command of the run may carry: shell
+// substitution, redirects, separators and line breaks.
+var glabShellDenies = []string{"$", "`", ">", "<", "|", ";", "&", "\n", "\r", "\\"}
+
+// glabReplyDenies are fragments that turn a note POST into something else, or smuggle a
+// command in its body.
+var glabReplyDenies = append([]string{"-X", "--method", "--input", "-F", "--field", "--raw-field",
+	"-h", "--hostname", "-H", "--header", "..", "%", "/resolve"}, glabShellDenies...)
+
+// glabLintDenies are what a lint path or argument may not hold: a flag, a home or parent
+// reference, an absolute path (second positional included), or shell syntax.
+var glabLintDenies = append([]string{" -", "..", "~", " /", "%"}, glabShellDenies...)
+
 // claudeForgeAllow is the Claude Code allow rules for the forge, empty unless the agent
 // pushes. The reply rule needs the lane's merge request iid.
 func claudeForgeAllow(o Opts) []string {
 	if !o.Push {
 		return nil
 	}
-	a := []string{"Bash(" + glabLint + ":*)"}
+	a := []string{"Bash(" + glabLint + " *)"}
 	if o.MR > 0 {
 		a = append(a, "Bash(glab api "+glabReplyPath(o.MR)+"*"+glabReplyTail+"*)")
 	}
 	return a
 }
 
-// claudeForgeDeny is what keeps a reply a reply: with a reply rule granted, any glab api
-// call naming another method, a body file, another host, header or a path that could walk
-// out of the merge request is refused. Deny wins over allow in Claude Code.
+// claudeForgeDeny: in Claude Code a deny wins over an allow, so each deny is scoped to the
+// command it guards.
 func claudeForgeDeny(o Opts) []string {
-	if !o.Push || o.MR <= 0 {
-		return nil
-	}
-	var d []string
-	for _, p := range glabApiFlagDenies {
-		d = append(d, "Bash(glab api*"+p+"*)")
-	}
-	d = append(d, "Bash(glab mr approve:*)", "Bash(glab mr note:*)", "Bash(glab api*/resolve*)")
-	return d
-}
-
-// glabApiFlagDenies are fragments that turn a note POST into something else.
-var glabApiFlagDenies = []string{"-X", "--method", "--input", "-F", "--field", "--raw-field",
-	"-h", "--hostname", "-H", "--header", "..", "%",
-	// Shell substitution, redirects and command separators in the body.
-	"$", "`", ">", "<", "|", ";", "&", "\n", "\r"}
-
-// openCodeForgeAllow is the OpenCode bash rules to append after every deny already in the
-// list (last match wins), then followed by openCodeForgeReplyDeny.
-func openCodeForgeAllow(o Opts) []kv {
 	if !o.Push {
 		return nil
 	}
-	r := []kv{{glabLint + "*", "allow"}}
+	var d []string
+	for _, p := range glabLintDenies {
+		d = append(d, "Bash("+glabLint+"*"+p+"*)")
+	}
+	if o.MR > 0 {
+		for _, p := range glabReplyDenies {
+			d = append(d, "Bash(glab api "+glabReplyPath(o.MR)+"*"+p+"*)")
+		}
+		d = append(d, "Bash(glab mr approve:*)", "Bash(glab mr note:*)")
+	}
+	return d
+}
+
+// openCodeForgeAllow is the OpenCode bash rules to append after every deny already in the
+// list (last match wins). worktrees are the forms of the worktree path.
+func openCodeForgeAllow(o Opts, worktrees []string) []kv {
+	if !o.Push {
+		return nil
+	}
+	lintDenies := func(abs bool) (r []kv) {
+		for _, p := range glabLintDenies {
+			if p == " /" && !abs {
+				continue
+			}
+			r = append(r, kv{glabLint + "*" + p + "*", "deny"})
+		}
+		return r
+	}
+	r := []kv{{glabLint + " *", "allow"}}
+	r = append(r, lintDenies(true)...)
+	// An absolute path is allowed only under the worktree, then the denies run again so
+	// it cannot carry a second path, a flag or a dot segment.
+	for _, w := range worktrees {
+		r = append(r, kv{glabLint + " " + w + "/*", "allow"})
+	}
+	if len(worktrees) > 0 {
+		r = append(r, lintDenies(false)...)
+		r = append(r, kv{glabLint + "*/* /*", "deny"})
+	}
 	if o.MR > 0 {
 		r = append(r, kv{"glab api " + glabReplyPath(o.MR) + "*" + glabReplyTail + "*", "allow"})
-		for _, p := range glabApiFlagDenies {
-			r = append(r, kv{"glab api*" + p + "*", "deny"})
+		for _, p := range glabReplyDenies {
+			r = append(r, kv{"glab api " + glabReplyPath(o.MR) + "*" + p + "*", "deny"})
 		}
-		r = append(r, kv{"glab api*/resolve*", "deny"})
 	}
 	return r
 }
