@@ -155,11 +155,11 @@ func TestShadowRecorderWritesTheRowAtOnce(t *testing.T) {
 
 func TestCrookFeedText(t *testing.T) {
 	e := crook.Entry{Action: crook.ActionPush, Kind: crook.Proceed, Rule: crook.RulePushAutonomy, Lane: "feat-x", Run: 7, Reason: "the repo lets agents push"}
-	want := "crook let push.agent proceed on lane feat-x (run 7) by builtin/push-autonomy: the repo lets agents push"
+	want := "crook allowed push.agent on lane feat-x (run 7) by builtin/push-autonomy: the repo lets agents push"
 	if got := crookFeedText(e); got != want {
 		t.Fatalf("got %q, want %q", got, want)
 	}
-	if got := crookFeedText(crook.Entry{Action: crook.ActionShip, Rule: "r", Repo: "api"}); got != "crook let lane.ship proceed in api by r" {
+	if got := crookFeedText(crook.Entry{Action: crook.ActionShip, Rule: "r", Repo: "api"}); got != "crook allowed lane.ship in api by r" {
 		t.Fatalf("repo only: %q", got)
 	}
 }
@@ -170,8 +170,16 @@ func TestCrookFeedPostsConsequentialProceeds(t *testing.T) {
 	s, _ := newServer(t)
 	stop := s.startCrookLog(context.Background())
 	ctx := context.Background()
+	push := func(mode string, run int64) {
+		crook.Check(ctx, crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker, Facts: crook.Facts{Push: mode, ToOrigin: mode == crook.AutonomyAgent, Repo: "r", Lane: "feat-x", Run: run}})
+	}
+	push(crook.AutonomyAgent, 7)
+	push(crook.AutonomyAgent, 7) // the same run and lane again: told once
+	push(crook.AutonomyAgent, 8)
+	push(crook.AutonomyShepherd, 9) // refused: no line
+	// A ship proceed runs after every successful run, before anything is known to be
+	// pushed, so it is not told; nor is a proceed on a route.
 	crook.Check(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyShepherd, Repo: "r", Lane: "feat-x"}})
-	crook.Check(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyAgent, Repo: "r2"}})
 	crook.Check(ctx, crook.Request{Action: crook.RouteAction("GET /v1/x"), Actor: crook.ActorDesk})
 	stop()
 	items, err := s.Store.Feed(ctx, 0, 100)
@@ -184,7 +192,7 @@ func TestCrookFeedPostsConsequentialProceeds(t *testing.T) {
 			got = append(got, it.Text)
 		}
 	}
-	if len(got) != 1 || !strings.Contains(got[0], "lane.ship") || !strings.Contains(got[0], "feat-x") {
+	if len(got) != 2 || !strings.Contains(got[0], "push.agent") || !strings.Contains(got[0], "run 7") || !strings.Contains(got[1], "run 8") {
 		t.Fatalf("crook feed lines = %q", got)
 	}
 }

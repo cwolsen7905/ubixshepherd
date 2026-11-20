@@ -32,7 +32,7 @@ const FeedCrook = "crook"
 // through, where, and the rule that said so. The reason is already redacted.
 func crookFeedText(e crook.Entry) string {
 	var b strings.Builder
-	b.WriteString("crook let " + string(e.Action) + " proceed")
+	b.WriteString("crook allowed " + string(e.Action))
 	if e.Lane != "" {
 		b.WriteString(" on lane " + e.Lane)
 	} else if e.Repo != "" {
@@ -46,6 +46,25 @@ func crookFeedText(e crook.Entry) string {
 		b.WriteString(": " + e.Reason)
 	}
 	return b.String()
+}
+
+// crookFeedWindow is how long the same allowed action on the same lane and run is told to
+// the feed once, so a run that pushes often does not fill it.
+const crookFeedWindow = 10 * time.Minute
+
+// crookFeedSeen remembers what was last told to the feed. Only the writer goroutine uses it.
+type crookFeedSeen struct{ at map[string]time.Time }
+
+func (c *crookFeedSeen) repeated(e crook.Entry) bool {
+	key := string(e.Action) + "|" + e.Repo + "|" + e.Lane + "|" + strconv.FormatInt(e.Run, 10)
+	if t, ok := c.at[key]; ok && e.At.Sub(t) < crookFeedWindow {
+		return true
+	}
+	if len(c.at) >= 1024 {
+		clear(c.at)
+	}
+	c.at[key] = e.At
+	return false
 }
 
 // crookRecorder queues Crook's verdicts and a goroutine writes them to the store.
@@ -81,6 +100,7 @@ func (s *Server) startCrookLog(ctx context.Context) func() {
 	restore := crook.SetRecorder(rec, func(err error) { s.Log.Warn("log a crook verdict", "err", err) })
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
+	feeds := &crookFeedSeen{at: map[string]time.Time{}}
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
@@ -89,7 +109,7 @@ func (s *Server) startCrookLog(ctx context.Context) func() {
 				s.Log.Warn("write a crook verdict", "err", err)
 				continue
 			}
-			if e.Kind == crook.Proceed && crook.Consequential(e.Action) {
+			if e.Kind == crook.Proceed && crook.Consequential(e.Action) && !feeds.repeated(e) {
 				s.postFeed(context.Background(), FeedCrook, e.Run, crookFeedText(e))
 			}
 		}
