@@ -212,6 +212,17 @@ describe('SettingsPage sections', () => {
     expect(seen.find((s) => s.method === 'PUT')?.body).toMatchObject({ etag: 'e1', ops: [{ path: ['daemon', 'max_runs'], value: 5 }], confirm: [] })
   })
 
+  it('offers after_approval in the merge-rule dropdown, and saves it', async () => {
+    const seen = daemon(doc(), (_m, p) => (p === '/v1/config/preview' ? diffOf('+        merge: after_approval\n') : undefined))
+    const user = userEvent.setup()
+    render(<SettingsPage />)
+    await user.click(await screen.findByRole('button', { name: /^Merging for api/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: 'After approval' }))
+    expect(screen.getByText('Not saved · was By a person')).toBeInTheDocument()
+    expect(screen.getByText('Shepherd merges once a person approves and the checks hold.')).toBeInTheDocument()
+    expect(await previewed(seen)).toEqual([{ path: ['repos', 'api', 'autonomy', 'merge'], value: 'after_approval' }])
+  })
+
   it('marks a risky line with why, and confirms in the modal before it saves', async () => {
     const seen = daemon(doc(), (m, p) => {
       if (p === '/v1/config/preview') {
