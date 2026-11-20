@@ -31,3 +31,13 @@ describe('prefixed ids at the end of a sentence', () => {
     expect(splitPrefixedIds('(see Q-1). Then D-2.')).toHaveLength(5)
   })
 })
+
+// The trade-off: an ID is linked on its shape alone, not checked against what exists, so
+// prose that happens to match ("vitamin D-2", "test T-1") becomes a link that opens an
+// empty or unrelated item in the side column. The shape rules above keep the common
+// glued forms out; checking each ID against known items would need a read per render.
+describe('prefixed ids in ordinary prose', () => {
+  it('are linked by shape alone, a known false positive', () => {
+    expect(splitPrefixedIds('vitamin D-2')).toEqual(['vitamin ', { kind: 'decision', id: 2, text: 'D-2' }])
+  })
+})
