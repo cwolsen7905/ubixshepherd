@@ -1,5 +1,7 @@
 import { Fragment, type ReactNode } from 'react'
 import { CopyButton } from '../components/CopyButton'
+import { splitPrefixedIds } from '../lib/ids'
+import { IdLink } from '../ui/IdLink'
 
 // What an agent wrote is text, never markup: elements are built here, so nothing of it
 // reaches innerHTML, and a link survives only as an http or https anchor, or as a route of
@@ -19,11 +21,16 @@ const APP_ROUTE = /^#\/[\w\-./%:?=&]*$/
 
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\s]+\))/
 
+/** Plain text with its prefixed IDs (Q-196) as links that open in the side column. */
+function withIds(text: string): ReactNode[] {
+  return splitPrefixedIds(text).map((p, i) => (typeof p === 'string' ? <Fragment key={i}>{p}</Fragment> : <IdLink key={i} to={p} />))
+}
+
 /** Inline markdown only (code, bold, links), for a line that sits inside a heading or a button. */
 export function inline(text: string): ReactNode[] {
   return text.split(INLINE).map((part, i) => {
     if (part.length > 2 && part.startsWith('`') && part.endsWith('`')) return <code key={i}>{part.slice(1, -1)}</code>
-    if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>
+    if (part.length > 4 && part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{withIds(part.slice(2, -2))}</strong>
     const m = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(part)
     if (m) {
       const target = m[2] ?? ''
@@ -44,7 +51,7 @@ export function inline(text: string): ReactNode[] {
       }
       return <Fragment key={i}>{`${m[1] ?? ''} (${m[2] ?? ''})`}</Fragment>
     }
-    return <Fragment key={i}>{part}</Fragment>
+    return <Fragment key={i}>{withIds(part)}</Fragment>
   })
 }
 

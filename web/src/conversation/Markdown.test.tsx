@@ -66,3 +66,30 @@ describe('Markdown lists', () => {
     expect(lists('1. one\n   more of one\n   - nested\n2. two')).toEqual(['ol(one\nmore of one ul(nested) two)'])
   })
 })
+
+describe('Markdown prefixed ids', () => {
+  it('links an id in prose and in bold, to the side column', () => {
+    window.location.hash = '#/chat'
+    const c = html('Answer **D-370** and look at Q-196.')
+    const links = Array.from(c.querySelectorAll('a[data-component="IdLink"]'))
+    expect(links.map((a) => a.textContent)).toEqual(['D-370', 'Q-196'])
+    expect(links[0]?.getAttribute('href')).toBe('#/chat?open=decision%3A370')
+  })
+
+  it('keeps the current page and its other parameters', () => {
+    window.location.hash = '#/runs?range=week'
+    const a = html('R-1674').querySelector('a')
+    expect(a?.getAttribute('href')).toBe('#/runs?range=week&open=run%3A1674')
+  })
+
+  it('does not link in code spans, fenced code or link labels', () => {
+    const c = html('`Q-1` and [N-2](https://example.com)\n\n```\nD-3\n```')
+    expect(c.querySelectorAll('a[data-component="IdLink"]')).toHaveLength(0)
+    expect(c.textContent).toContain('Q-1')
+  })
+
+  it('links in lists, headings and tables', () => {
+    const c = html('# L-5\n\n- T-6\n\n| a |\n|---|\n| N-7 |')
+    expect(c.querySelectorAll('a[data-component="IdLink"]')).toHaveLength(3)
+  })
+})
