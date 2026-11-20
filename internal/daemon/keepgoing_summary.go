@@ -36,9 +36,22 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 			byLane[it.LaneID] = append(byLane[it.LaneID], it)
 		}
 	}
-	runs, err := st.Runs(ctx, 0, "", 1000) // newest first
-	if err != nil {
-		return "", err
+	// Runs are newest first across every workspace: widen the window until it reaches
+	// back past the time keep-going was turned on, so this workspace's runs are not cut
+	// off by another's. At the cap the summary says it is partial.
+	var runs []store.Run
+	truncated := false
+	for limit := runWindow; ; limit *= 2 {
+		if runs, err = st.Runs(ctx, 0, "", limit); err != nil {
+			return "", err
+		}
+		if len(runs) < limit || runs[len(runs)-1].Started.Before(row.Since) {
+			break
+		}
+		if limit >= runWindowMax {
+			truncated = true
+			break
+		}
 	}
 	forge := map[int64]*store.LaneForge{} // read once per lane, nil for none
 	var started, finished, failed, mrs []string
@@ -113,6 +126,9 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 	list("finished", finished)
 	list("failed", failed)
 	list("merge requests opened or merged", mrs)
+	if truncated {
+		fmt.Fprintf(&b, "  only the newest %d runs in all workspaces were read: earlier ones are not listed\n", runWindowMax)
+	}
 	if row.On {
 		b.WriteString("  it is still on\n")
 	} else if row.ReasonOff != "" {
@@ -161,6 +177,12 @@ func runWhat(l store.Lane, it *store.NextItem, r store.Run) string {
 	}
 	return s
 }
+
+// runWindow is how many runs the summary reads first, runWindowMax the most it reads.
+const (
+	runWindow    = 1000
+	runWindowMax = 16000
+)
 
 func inRepos(repos []store.Repo, id int64) bool {
 	for _, r := range repos {

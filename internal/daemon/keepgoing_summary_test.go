@@ -92,11 +92,10 @@ func TestSinceYouLeftAttributesEachRunToItsLaneItemAndAgent(t *testing.T) {
 }
 
 func TestSinceYouLeftReadsAreBoundedByLanesNotRuns(t *testing.T) {
-	s, _, _, _, _ := keepSetup(t)
+	s, _, clk, _, _ := keepSetup(t)
 	ctx := context.Background()
 	ws, _ := driveRepos(t, s, 3)
 	rs, _ := s.Store.Repos(ctx, ws.ID)
-	keepOn(t, s, ws, api.KeepGoingSet{})
 	var lanes []store.Lane
 	for i := 0; i < 4; i++ {
 		l, err := s.Store.CreateLane(ctx, store.Lane{RepoID: rs[i%3].ID, Name: fmt.Sprintf("l%d", i), Branch: "b", Base: "main", Worktree: filepath.Join(rs[i%3].Path, fmt.Sprint(i)), State: store.LaneOpen})
@@ -105,18 +104,24 @@ func TestSinceYouLeftReadsAreBoundedByLanesNotRuns(t *testing.T) {
 		}
 		lanes = append(lanes, l)
 	}
+	// A run from before keep-going was turned on is stored first (the store stamps the
+	// start itself), so the summary stops there. The clock then moves to now.
+	if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: lanes[0].ID, Agent: "claude", State: store.RunSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	clk.t = time.Now()
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	time.Sleep(2 * time.Millisecond)
 	for i := 0; i < 200; i++ {
 		if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: lanes[i%4].ID, Agent: "claude", State: store.RunSucceeded, Started: time.Now()}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// Runs from before keep-going was turned on are not read past.
-	if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: lanes[0].ID, Agent: "claude", State: store.RunSucceeded, Started: time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)}); err != nil {
-		t.Fatal(err)
-	}
 	cs := &countStore{Store: s.Store}
 	s.Store = cs
-	if _, err := s.KeepGoing().SinceYouLeft(ctx, ws.ID); err != nil {
+	sum, err := s.KeepGoing().SinceYouLeft(ctx, ws.ID)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if n := cs.lane.Load(); n > int64(len(lanes)) {
@@ -124,6 +129,9 @@ func TestSinceYouLeftReadsAreBoundedByLanesNotRuns(t *testing.T) {
 	}
 	if n := cs.laneForge.Load(); n > int64(len(lanes)) {
 		t.Errorf("LaneForge called %d times for %d lanes over 200 runs", n, len(lanes))
+	}
+	if !strings.Contains(sum, "started: 4") || strings.Count(sum, "(run ") != 200 {
+		t.Errorf("the summary should list the 4 lanes and 200 runs, not the old one:\n%s", sum)
 	}
 	if n := cs.runs.Load(); n != 1 {
 		t.Errorf("Runs called %d times, want 1", n)
@@ -157,5 +165,33 @@ func TestSinceYouLeftKeepsRunsOfClosedLanes(t *testing.T) {
 		if !strings.Contains(sum, want) {
 			t.Errorf("summary lacks %q:\n%s", want, sum)
 		}
+	}
+}
+
+// Another workspace's newer runs do not push this workspace's out of the window.
+func TestSinceYouLeftWindowWidensPastOtherWorkspacesRuns(t *testing.T) {
+	s, _, _, _, other := keepSetup(t)
+	ctx := context.Background()
+	ws, _ := driveRepos(t, s, 1)
+	rs, _ := s.Store.Repos(ctx, ws.ID)
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	mine, err := s.Store.CreateLane(ctx, store.Lane{RepoID: rs[0].ID, Name: "mine", Branch: "b", Base: "main", Worktree: filepath.Join(rs[0].Path, "mine"), State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: mine.ID, Agent: "claude", State: store.RunSucceeded, Started: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < runWindow+50; i++ {
+		if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: other.ID, Agent: "claude", State: store.RunSucceeded, Started: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sum, err := s.KeepGoing().SinceYouLeft(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sum, "lane mine by claude") || strings.Contains(sum, "not listed") {
+		t.Errorf("summary:\n%s", sum)
 	}
 }
