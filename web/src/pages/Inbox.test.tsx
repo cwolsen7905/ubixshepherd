@@ -67,6 +67,28 @@ describe('InboxPage', () => {
     expect(screen.getByText(/move/)).toBeInTheDocument()
   })
 
+  it('lists a merge request that waits on the person\'s sign-off in its own section, apart from next-up and ship', async () => {
+    await show()
+    const signoff = screen.getByRole('heading', { name: /Sign-off/ }).closest('section') as HTMLElement
+    expect(within(signoff).getByText('Add retries')).toBeInTheDocument()
+    expect(within(signoff).queryByText('Proposed item')).toBeNull()
+    const approve = screen.getByRole('heading', { name: /Approve/ }).closest('section') as HTMLElement
+    expect(within(approve).queryByText('Add retries')).toBeNull()
+    expect(within(approve).getByText('Ship lane d')).toBeInTheDocument()
+  })
+
+  it('does not put a failed-pipeline merge request in the sign-off section', async () => {
+    await show(undefined, { ...waiting, items: [{ kind: 'mr', action: 'open', lane_id: 3, lane: 'b', title: 'MR !12: pipeline failed', mr: 12 }] })
+    expect(screen.queryByRole('heading', { name: /Sign-off/ })).toBeNull()
+    expect(screen.getByRole('heading', { name: /Approve/ })).toBeInTheDocument()
+  })
+
+  it('carries the merge request\'s pipeline state from its lane', () => {
+    const it = waiting.items[1] as WaitingItem
+    expect(inboxContext(it, [], [lane({ id: 3, mr: 12, mr_state: 'open', pipeline_status: 'passed' })]).pipeline).toBe('passed')
+    expect(inboxContext(it, [], []).pipeline).toBeUndefined()
+  })
+
   it('shows each item\'s stable id, as the daemon sent it', async () => {
     await show()
     const ids = Array.from(document.querySelectorAll('[data-component="StableId"]')).map((e) => e.textContent)
