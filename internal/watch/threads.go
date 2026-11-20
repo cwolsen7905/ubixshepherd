@@ -205,19 +205,22 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 // opens with one is never handed back.
 var MachineMarkers = []string{"<!-- ai-review:summary", "<!-- ai-review:triage"}
 
-// machineThread says a thread's first note, read from its entries (the body is cleaned,
-// the entry text is not), begins with a machine marker. Anyone can type a marker, so
-// when follow_through names the owner's authors the note must also be by one of them;
-// with none named the marker alone decides, as no bot identity is configured to check.
+// machineThread says a thread is a review bot's own note and nothing else: the owner's
+// authors come from follow_through (set only with an external owner), the first note,
+// read from the entries because the body is cleaned and prefixed, opens with a machine
+// marker, and every note in the thread is by those authors. Anyone can type a marker, so
+// with no authors configured nothing is skipped, and a person's reply in the thread
+// brings it back to the agent.
 func machineThread(t forge.Thread, ft config.FollowThrough) bool {
-	text, author := t.Body, t.Author
-	if len(t.Entries) > 0 {
-		text, author = t.Entries[0].Text, t.Entries[0].Author
-	}
-	if len(ft.Author) > 0 && !ft.OwnsAuthor(author) {
+	if len(ft.Author) == 0 || len(t.Entries) == 0 {
 		return false
 	}
-	text = strings.TrimSpace(text)
+	for _, n := range t.Entries {
+		if !ft.OwnsAuthor(n.Author) {
+			return false
+		}
+	}
+	text := strings.TrimSpace(t.Entries[0].Text)
 	for _, m := range MachineMarkers {
 		if strings.HasPrefix(text, m) {
 			return true

@@ -295,6 +295,7 @@ func TestSignoffMarkEndsWhenAnotherJobFailsInTheSamePollGap(t *testing.T) {
 func TestReviewThreadsSkipMachineNotes(t *testing.T) {
 	f := newFixture(t)
 	f.withSession(t)
+	f.external(t)
 	f.f.threads = []forge.Thread{
 		{ID: "s1", Notes: 1, Body: "Summary: 3 findings", Entries: []forge.Note{{Author: "review-bot", Text: "<!-- ai-review:summary v1 -->\nSummary: 3 findings"}}},
 		{ID: "s2", Notes: 1, Body: "Triage", Entries: []forge.Note{{Author: "review-bot", Text: "  <!-- ai-review:triage -->\nTriage"}}},
@@ -314,14 +315,27 @@ func TestReviewThreadsSkipMachineNotes(t *testing.T) {
 	}
 }
 
-func TestReviewThreadsMarkerFromAPersonStillGoes(t *testing.T) {
+func TestMachineThreadNeedsTheBotAlone(t *testing.T) {
 	ft := config.FollowThrough{Owner: config.OwnerExternal, Name: "reviewbot", Author: []string{"review-bot"}}
-	bot := forge.Thread{ID: "s1", Entries: []forge.Note{{Author: "review-bot", Text: "<!-- ai-review:summary -->\nx"}}}
-	person := forge.Thread{ID: "p1", Entries: []forge.Note{{Author: "alice", Text: "<!-- ai-review:summary -->\nplease rename"}}}
-	if !machineThread(bot, ft) || machineThread(person, ft) {
-		t.Fatalf("bot = %v, person = %v", machineThread(bot, ft), machineThread(person, ft))
+	marked := func(author string, more ...forge.Note) forge.Thread {
+		return forge.Thread{ID: "x", Body: author + ": <!-- ai-review:summary -->", Entries: append([]forge.Note{{Author: author, Text: "<!-- ai-review:summary -->\nx"}}, more...)}
 	}
-	if !machineThread(person, config.FollowThrough{}) {
-		t.Fatal("with no bot named the marker alone decides")
+	cases := []struct {
+		name string
+		t    forge.Thread
+		ft   config.FollowThrough
+		want bool
+	}{
+		{"bot's marked note", marked("review-bot"), ft, true},
+		{"a person typing the marker", marked("alice"), ft, false},
+		{"a person replied in the bot's thread", marked("review-bot", forge.Note{Author: "alice", Text: "please rename"}), ft, false},
+		{"no entries, marker only in the cleaned body", forge.Thread{ID: "x", Body: "review-bot: <!-- ai-review:summary -->"}, ft, false},
+		{"no authors configured", marked("review-bot"), config.FollowThrough{}, false},
+		{"bot's note without a marker", forge.Thread{ID: "x", Entries: []forge.Note{{Author: "review-bot", Text: "handle nil"}}}, ft, false},
+	}
+	for _, c := range cases {
+		if got := machineThread(c.t, c.ft); got != c.want {
+			t.Errorf("%s: machineThread = %v, want %v", c.name, got, c.want)
+		}
 	}
 }
