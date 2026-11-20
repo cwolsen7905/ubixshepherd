@@ -70,6 +70,8 @@ func TestOpenCodeForgeRules(t *testing.T) {
 		{"agent, iid", Opts{Push: true, MR: 12}, replyCmd + " | sh", "deny"},
 		{"agent, iid", Opts{Push: true, MR: 12}, replyCmd + "; rm x", "deny"},
 		{"agent, iid", Opts{Push: true, MR: 12}, replyCmd + " && ls", "deny"},
+		{"agent, iid", Opts{Push: true, MR: 12}, replyCmd + "\nrm x", "deny"},
+		{"agent, iid", Opts{Push: true, MR: 12}, replyCmd + "\r\nrm x", "deny"},
 		{"agent, iid", Opts{Push: true, MR: 12}, "glab mr approve 12", "deny"},
 		{"agent, iid", Opts{Push: true, MR: 12}, "glab mr merge 12", "deny"},
 		{"agent, iid", Opts{Push: true, MR: 12}, "glab mr note 12 -m hi", "deny"},

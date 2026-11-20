@@ -52,7 +52,7 @@ func claudeForgeDeny(o Opts) []string {
 var glabApiFlagDenies = []string{"-X", "--method", "--input", "-F", "--field", "--raw-field",
 	"-h", "--hostname", "-H", "--header", "..", "%",
 	// Shell substitution, redirects and command separators in the body.
-	"$", "`", ">", "<", "|", ";", "&"}
+	"$", "`", ">", "<", "|", ";", "&", "\n", "\r"}
 
 // openCodeForgeAllow is the OpenCode bash rules to append after every deny already in the
 // list (last match wins), then followed by openCodeForgeReplyDeny.
