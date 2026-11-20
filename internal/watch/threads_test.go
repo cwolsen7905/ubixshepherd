@@ -313,3 +313,15 @@ func TestReviewThreadsSkipMachineNotes(t *testing.T) {
 		t.Fatalf("runs = %+v", runs)
 	}
 }
+
+func TestReviewThreadsMarkerFromAPersonStillGoes(t *testing.T) {
+	ft := config.FollowThrough{Owner: config.OwnerExternal, Name: "reviewbot", Author: []string{"review-bot"}}
+	bot := forge.Thread{ID: "s1", Entries: []forge.Note{{Author: "review-bot", Text: "<!-- ai-review:summary -->\nx"}}}
+	person := forge.Thread{ID: "p1", Entries: []forge.Note{{Author: "alice", Text: "<!-- ai-review:summary -->\nplease rename"}}}
+	if !machineThread(bot, ft) || machineThread(person, ft) {
+		t.Fatalf("bot = %v, person = %v", machineThread(bot, ft), machineThread(person, ft))
+	}
+	if !machineThread(person, config.FollowThrough{}) {
+		t.Fatal("with no bot named the marker alone decides")
+	}
+}

@@ -73,7 +73,13 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 		w.Log.Debug("watch: review threads", "lane", lane.Name, "err", err)
 		return
 	}
-	threads = slices.DeleteFunc(slices.Clone(threads), machineThread)
+	threads = slices.DeleteFunc(slices.Clone(threads), func(t forge.Thread) bool {
+		skip := machineThread(t, wc.FollowThrough)
+		if skip {
+			w.Log.Debug("watch: review thread is a bot's note, not handed back", "lane", lane.Name, "thread", t.ID)
+		}
+		return skip
+	})
 	if ft := wc.FollowThrough; ft.External() {
 		threads = w.ownerThreads(ctx, lane, mr, threads, ft)
 	}
@@ -200,11 +206,16 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 var MachineMarkers = []string{"<!-- ai-review:summary", "<!-- ai-review:triage"}
 
 // machineThread says a thread's first note, read from its entries (the body is cleaned,
-// the entry text is not), begins with a machine marker.
-func machineThread(t forge.Thread) bool {
-	text := t.Body
+// the entry text is not), begins with a machine marker. Anyone can type a marker, so
+// when follow_through names the owner's authors the note must also be by one of them;
+// with none named the marker alone decides, as no bot identity is configured to check.
+func machineThread(t forge.Thread, ft config.FollowThrough) bool {
+	text, author := t.Body, t.Author
 	if len(t.Entries) > 0 {
-		text = t.Entries[0].Text
+		text, author = t.Entries[0].Text, t.Entries[0].Author
+	}
+	if len(ft.Author) > 0 && !ft.OwnsAuthor(author) {
+		return false
 	}
 	text = strings.TrimSpace(text)
 	for _, m := range MachineMarkers {
