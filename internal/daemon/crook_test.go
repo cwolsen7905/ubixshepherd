@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -149,5 +150,49 @@ func TestShadowRecorderWritesTheRowAtOnce(t *testing.T) {
 	vs, err := s.Store.CrookVerdicts(context.Background(), store.CrookFilter{})
 	if err != nil || len(vs) != 1 || vs[0].Stage != "shadow" || vs[0].Rule != "r1" || vs[0].Repo != "app" {
 		t.Fatalf("rows = %+v, %v", vs, err)
+	}
+}
+
+func TestCrookFeedText(t *testing.T) {
+	e := crook.Entry{Action: crook.ActionPush, Kind: crook.Proceed, Rule: crook.RulePushAutonomy, Lane: "feat-x", Run: 7, Reason: "the repo lets agents push"}
+	want := "crook allowed push.agent on lane feat-x (run 7) by builtin/push-autonomy: the repo lets agents push"
+	if got := crookFeedText(e); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := crookFeedText(crook.Entry{Action: crook.ActionShip, Rule: "r", Repo: "api"}); got != "crook allowed lane.ship in api by r" {
+		t.Fatalf("repo only: %q", got)
+	}
+}
+
+// A proceed on a consequential action is told to the feed once its verdict is stored; a
+// proceed on a route, and a refusal, are not.
+func TestCrookFeedPostsConsequentialProceeds(t *testing.T) {
+	s, _ := newServer(t)
+	stop := s.startCrookLog(context.Background())
+	ctx := context.Background()
+	push := func(mode string, run int64) {
+		crook.Check(ctx, crook.Request{Action: crook.ActionPush, Actor: crook.ActorWorker, Facts: crook.Facts{Push: mode, ToOrigin: mode == crook.AutonomyAgent, Repo: "r", Lane: "feat-x", Run: run}})
+	}
+	push(crook.AutonomyAgent, 7)
+	push(crook.AutonomyAgent, 7) // the same run and lane again: told once
+	push(crook.AutonomyAgent, 8)
+	push(crook.AutonomyShepherd, 9) // refused: no line
+	// A ship proceed runs after every successful run, before anything is known to be
+	// pushed, so it is not told; nor is a proceed on a route.
+	crook.Check(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyShepherd, Repo: "r", Lane: "feat-x"}})
+	crook.Check(ctx, crook.Request{Action: crook.RouteAction("GET /v1/x"), Actor: crook.ActorDesk})
+	stop()
+	items, err := s.Store.Feed(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range items {
+		if it.Kind == FeedCrook {
+			got = append(got, it.Text)
+		}
+	}
+	if len(got) != 2 || !strings.Contains(got[0], "push.agent") || !strings.Contains(got[0], "run 7") || !strings.Contains(got[1], "run 8") {
+		t.Fatalf("crook feed lines = %q", got)
 	}
 }

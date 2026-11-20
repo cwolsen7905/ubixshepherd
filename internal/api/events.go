@@ -26,6 +26,7 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	checks_released    the person released approved check files, with the reason
 //	keep_going         keep-going mode went on or off (with its reason), or took an
 //	                   autonomous action, or handed a lane back
+//	crook              Crook allowed a consequential action: a push or tag push
 //	mr, budget, tag, release, config, desk_rotated
 //	info               anything else, and any kind a newer daemon adds
 const (
@@ -57,6 +58,7 @@ const (
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
 	EventKeepGoing        = "keep_going"   // keep-going mode on, off, or an autonomous action
+	EventCrook            = "crook"        // Crook allowed a consequential action: a push or tag push
 	EventInfo             = "info"         // anything else, such as a session note
 )
 
@@ -92,6 +94,7 @@ var eventKinds = map[string]string{
 	store.FeedChecksReleased: EventChecksReleased,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
 	"keep_going":             EventKeepGoing,   // the daemon's own kind (daemon.FeedKeepGoing)
+	"crook":                  EventCrook,       // the daemon's own kind (daemon.FeedCrook)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)
 }
 
