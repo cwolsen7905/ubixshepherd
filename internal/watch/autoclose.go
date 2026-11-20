@@ -33,6 +33,9 @@ func (w *Watcher) autoClose(ctx context.Context, lane store.Lane) bool {
 	if w.NoAutoClose || w.Fold == nil {
 		return false
 	}
+	if w.closeForgeMerged(ctx, lane) {
+		return true
+	}
 	if why := w.notIdle(ctx, lane); why != "" {
 		w.Log.Debug("watch: lane not auto-closed", "lane", lane.Name, "why", why)
 		return false
