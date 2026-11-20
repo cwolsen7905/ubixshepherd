@@ -74,7 +74,7 @@ func fixture() fakeForge {
 
 func TestReport(t *testing.T) {
 	bad := fakeForge{mrs: []forge.MRSummary{{IID: 1, Labels: []string{"bot::pushed"}}}, fail: map[int]error{1: errors.New("boom")}}
-	c := &Collector{Forge: func(repo string) (forge.Forge, error) {
+	c := &Collector{Interval: -1, Forge: func(repo string) (forge.Forge, error) {
 		switch repo {
 		case "app":
 			return fixture(), nil
@@ -135,7 +135,7 @@ func TestCacheAndTruncation(t *testing.T) {
 	f := fixture()
 	f.calls, f.more = &calls, true
 	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
-	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, Now: func() time.Time { return now }, TTL: time.Minute}
+	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, Now: func() time.Time { return now }, TTL: time.Minute, Interval: -1}
 	one := config.ReviewBot{Name: "A", User: "review-bot", LabelPrefix: "bot::", Projects: []string{"app"}}
 	rep := c.Report(context.Background(), []config.ReviewBot{one}, false)
 	if !rep.Bots[0].Projects[0].Truncated {
@@ -183,7 +183,7 @@ func TestFailedAndPartialReports(t *testing.T) {
 	f.calls = &calls
 	f.cut = map[int]bool{1: true, 2: true}
 	f.fail = map[int]error{3: errors.New("blip")}
-	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, TTL: time.Hour}
+	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, TTL: time.Hour, Interval: -1}
 	one := config.ReviewBot{Name: "A", User: "review-bot", LabelPrefix: "bot::", Projects: []string{"app"}}
 	rep := c.Report(context.Background(), []config.ReviewBot{one}, false)
 	if p := rep.Bots[0].Projects[0]; p.Error == "" || p.PartialMRs != 2 {
@@ -198,5 +198,61 @@ func TestFailedAndPartialReports(t *testing.T) {
 	c.Report(context.Background(), []config.ReviewBot{one}, false)
 	if calls != 3 {
 		t.Errorf("a whole report was not cached: %d reads", calls)
+	}
+}
+
+func TestRefreshAndFailuresAreThrottled(t *testing.T) {
+	calls := 0
+	f := fixture()
+	f.calls = &calls
+	f.fail = map[int]error{3: errors.New("blip")}
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, Now: func() time.Time { return now }}
+	one := config.ReviewBot{Name: "A", User: "review-bot", LabelPrefix: "bot::", Projects: []string{"app"}}
+	for range 5 {
+		c.Report(context.Background(), []config.ReviewBot{one}, true)
+	}
+	if calls != 1 {
+		t.Errorf("five refreshes inside the interval read the forge %d times", calls)
+	}
+	now = now.Add(MinInterval + time.Second)
+	c.Report(context.Background(), []config.ReviewBot{one}, false)
+	if calls != 2 {
+		t.Errorf("a failed report was kept past the interval: %d reads", calls)
+	}
+}
+
+func TestWaitingCallerGivesUp(t *testing.T) {
+	c := &Collector{Forge: func(string) (forge.Forge, error) { return fixture(), nil }}
+	c.once.Do(func() { c.sem = make(chan struct{}, 1) })
+	c.sem <- struct{}{} // a read in progress
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rep := c.Report(ctx, []config.ReviewBot{bot}, false)
+	if len(rep.Bots) != 0 {
+		t.Errorf("a caller that gave up waiting got %+v", rep)
+	}
+}
+
+func TestPartialReadIsMarked(t *testing.T) {
+	f := fixture()
+	f.fail = map[int]error{3: errors.New("blip")}
+	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, Interval: -1}
+	one := config.ReviewBot{Name: "A", User: "review-bot", LabelPrefix: "bot::", Projects: []string{"app"}}
+	p := c.Report(context.Background(), []config.ReviewBot{one}, false).Bots[0].Projects[0]
+	if p.FailedMRs != 1 || p.Error == "" || p.Jobs == 0 {
+		t.Errorf("project = %+v; the counts of what was read stay, marked incomplete", p)
+	}
+}
+
+func TestRemoteFor(t *testing.T) {
+	repos := []Repo{{"app", "git@h:g/app.git"}, {"app", "git@h:g/app.git"}, {"fork", "git@h:a/x.git"}, {"fork", "git@h:b/x.git"}, {"bare", ""}}
+	if r, err := RemoteFor(repos, "app"); err != nil || r != "git@h:g/app.git" {
+		t.Errorf("app = %q, %v", r, err)
+	}
+	for _, name := range []string{"fork", "bare", "none"} {
+		if r, err := RemoteFor(repos, name); err == nil {
+			t.Errorf("%s = %q, want an error", name, r)
+		}
 	}
 }

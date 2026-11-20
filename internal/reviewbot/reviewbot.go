@@ -87,7 +87,10 @@ type Project struct {
 	// PartialMRs is how many requests had more discussions than could be read, so their
 	// dismissals and spend are undercounted.
 	PartialMRs int `json:"partial_mrs,omitempty"`
-	// Error is why the repo could not be read; its counts are zero then.
+	// FailedMRs is how many requests could not be read; the counts leave them out.
+	FailedMRs int `json:"failed_mrs,omitempty"`
+	// Error is why the repo could not be read, or only in part (FailedMRs above 0, then
+	// the counts are an undercount). A repo that could not be listed has zero counts.
 	Error string `json:"error,omitempty"`
 }
 
@@ -119,17 +122,25 @@ func (r Report) failed() bool {
 	return false
 }
 
-// Collector reads the forge for bots and keeps the answer for TTL.
+// MinInterval is the least time between two reads of the forge for the same configuration:
+// a Refresh, a reload after a failure or a second client inside it gets the last report.
+const MinInterval = 15 * time.Second
+
+// Collector reads the forge for bots and keeps the answer.
 type Collector struct {
 	// Forge is the forge for a repo name, as Shepherd knows it.
 	Forge func(repo string) (forge.Forge, error)
-	// Now and TTL are for tests; the zero values are time.Now and DefaultTTL.
-	Now func() time.Time
-	TTL time.Duration
+	// Now, TTL and Interval are for tests; the zero values are time.Now, DefaultTTL and
+	// MinInterval, and a negative Interval turns the throttle off.
+	Now      func() time.Time
+	TTL      time.Duration
+	Interval time.Duration
 
-	mu   sync.Mutex
+	once sync.Once
+	sem  chan struct{} // held while reading and while the fields below are used
 	key  string
 	at   time.Time
+	ok   bool // the last report was whole
 	last Report
 }
 
@@ -140,33 +151,47 @@ func (c *Collector) now() time.Time {
 	return time.Now().UTC()
 }
 
-// Report answers for the bots, from the cache when it is the same configuration and
-// younger than TTL, unless refresh. Only whole reports are cached. One read runs at a
-// time: a caller that arrives during a slow read waits for it, then gets its report. Reads of one repo that fail are in that repo's
-// Error: the report is always whole.
+// Report answers for the bots. A whole report (no repo failed) is reused for TTL; any
+// report, failed or not, is reused for MinInterval, so neither Refresh nor a reload after
+// a failure can make the daemon hammer the forge. One read runs at a time: a caller that
+// arrives during a slow read waits for it, or for its own context, and then gets the
+// report. Reads of one repo that fail are in that repo's Error: the report is always whole
+// in shape.
 func (c *Collector) Report(ctx context.Context, bots []config.ReviewBot, refresh bool) Report {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.once.Do(func() { c.sem = make(chan struct{}, 1) })
+	select {
+	case c.sem <- struct{}{}:
+		defer func() { <-c.sem }()
+	case <-ctx.Done():
+		// Gave up waiting: the last report, even if old, or an empty one.
+		return Report{AsOf: c.now(), Bots: []Bot{}}
+	}
 	raw, _ := json.Marshal(bots)
 	key := string(raw)
 	ttl := c.TTL
 	if ttl <= 0 {
 		ttl = DefaultTTL
 	}
-	if !refresh && key == c.key && !c.at.IsZero() && c.now().Sub(c.at) < ttl {
-		return c.last
+	gap := c.Interval
+	if gap == 0 {
+		gap = MinInterval
+	}
+	if key == c.key && !c.at.IsZero() {
+		age := c.now().Sub(c.at)
+		if age < gap || (c.ok && !refresh && age < ttl) {
+			return c.last
+		}
 	}
 	rep := Report{AsOf: c.now(), Bots: []Bot{}}
 	for _, b := range bots {
 		rep.Bots = append(rep.Bots, c.bot(ctx, b))
 	}
-	// A report with a failed read, or one the request's own deadline cut short, is not kept:
-	// the next load reads again instead of showing the error for the whole TTL.
-	if ctx.Err() != nil || rep.failed() {
+	if ctx.Err() != nil {
+		// Cut short by the request's own deadline: not kept, so the next load reads again.
 		c.key, c.at = "", time.Time{}
 		return rep
 	}
-	c.key, c.at, c.last = key, rep.AsOf, rep
+	c.key, c.at, c.ok, c.last = key, rep.AsOf, !rep.failed(), rep
 	return rep
 }
 
@@ -239,7 +264,8 @@ func (c *Collector) project(ctx context.Context, b config.ReviewBot, name string
 		}
 	}
 	if failed > 0 {
-		p.Error = fmt.Sprintf("%d of %d merge requests could not be read: %v", failed, len(mrs), firstErr)
+		p.FailedMRs = failed
+		p.Error = fmt.Sprintf("%d of %d merge requests could not be read, first: %v", failed, len(mrs), firstErr)
 	}
 	sort.Slice(p.NeedsYouItems, func(i, j int) bool { return p.NeedsYouItems[i].IID > p.NeedsYouItems[j].IID })
 	return p
@@ -323,4 +349,32 @@ func stampedCost(text string) (float64, bool) {
 	}
 	v, err := strconv.ParseFloat(m[1], 64)
 	return v, err == nil
+}
+
+// Repo is a managed repo as the daemon knows it, for RemoteFor.
+type Repo struct {
+	Name, Remote string
+}
+
+// RemoteFor is the remote of the repo called name. The same name in two workspaces is fine
+// when they share a remote, and an error when they do not: the page would otherwise read
+// whichever the store listed first.
+func RemoteFor(repos []Repo, name string) (string, error) {
+	remote, found := "", false
+	for _, r := range repos {
+		if r.Name != name {
+			continue
+		}
+		if found && r.Remote != remote {
+			return "", fmt.Errorf("repo name %s is in more than one workspace with different remotes", name)
+		}
+		remote, found = r.Remote, true
+	}
+	switch {
+	case !found:
+		return "", fmt.Errorf("no repo named %s", name)
+	case remote == "":
+		return "", fmt.Errorf("repo %s has no remote", name)
+	}
+	return remote, nil
 }

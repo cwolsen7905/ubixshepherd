@@ -976,6 +976,8 @@ export interface ReviewBotProject extends ReviewBotCounts {
   truncated?: boolean
   /** Merge requests with more discussions than could be read: their dismissals and spend are undercounted. */
   partial_mrs?: number
+  /** Merge requests that could not be read: the counts leave them out. */
+  failed_mrs?: number
   /** Why the repo could not be read, or only in part. */
   error?: string
 }

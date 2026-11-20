@@ -26,6 +26,7 @@ function Row({ p }: { p: ReviewBotProject }) {
         <td>
           <code className="sh-bots-name">{p.name}</code>
           {p.truncated && <span className="sh-bots-note"> newest merge requests only</span>}
+          {!!p.failed_mrs && <span className="sh-bots-note"> counts incomplete: {plural(p.failed_mrs, 'merge request')} not read</span>}
           {!!p.partial_mrs && <span className="sh-bots-note"> counts partial on {plural(p.partial_mrs, 'merge request')}</span>}
         </td>
         {COLUMNS.map((c) => (

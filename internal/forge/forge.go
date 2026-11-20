@@ -192,7 +192,7 @@ type MRLister interface {
 	// first, at most limit of them. More says the forge had more than limit.
 	MergeRequests(ctx context.Context, since time.Time, limit int) (mrs []MRSummary, more bool, err error)
 	// Discussions is the non-system discussions on the request: up to 1000, and more
-	// says the request had more than that, so the list is partial.
+	// says the request had at least one beyond that, so the list is partial.
 	Discussions(ctx context.Context, mr int) (ds []Discussion, more bool, err error)
 }
 
@@ -676,7 +676,15 @@ func (g *GitLab) Discussions(ctx context.Context, mr int) ([]Discussion, bool, e
 		if len(ds) < 100 {
 			break
 		}
-		more = page == 10
+		if page == 10 {
+			// A full tenth page: look for one more before saying the list is cut.
+			var next []glDiscussion
+			q := fmt.Sprintf("%s/merge_requests/%d/discussions?per_page=100&page=11", g.project(), mr)
+			if err := g.api(ctx, q, &next); err != nil {
+				return nil, false, err
+			}
+			more = len(next) > 0
+		}
 	}
 	return out, more, nil
 }

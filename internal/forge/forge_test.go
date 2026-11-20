@@ -222,12 +222,23 @@ func TestGitLabMergeRequestsAndDiscussions(t *testing.T) {
 }
 
 func TestGitLabDiscussionsSaysWhenCut(t *testing.T) {
-	page := `[` + strings.TrimSuffix(strings.Repeat(`{"id":"d","notes":[{"id":1,"body":"x","author":{"username":"u"}}]},`, 100), ",") + `]`
-	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(context.Context, ...string) ([]byte, error) {
-		return []byte(page), nil
-	}}
-	ds, more, err := g.Discussions(context.Background(), 7)
-	if err != nil || !more || len(ds) != 1000 {
-		t.Errorf("a full ten pages = %d discussions, more %v, %v", len(ds), more, err)
+	full := `[` + strings.TrimSuffix(strings.Repeat(`{"id":"d","notes":[{"id":1,"body":"x","author":{"username":"u"}}]},`, 100), ",") + `]`
+	for name, tc := range map[string]struct {
+		eleventh string
+		more     bool
+	}{
+		"exactly a thousand": {`[]`, false},
+		"one more":           {`[{"id":"e","notes":[{"id":2,"body":"y","author":{"username":"u"}}]}]`, true},
+	} {
+		g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+			if strings.HasSuffix(args[len(args)-1], "page=11") {
+				return []byte(tc.eleventh), nil
+			}
+			return []byte(full), nil
+		}}
+		ds, more, err := g.Discussions(context.Background(), 7)
+		if err != nil || more != tc.more || len(ds) != 1000 {
+			t.Errorf("%s: %d discussions, more %v, %v", name, len(ds), more, err)
+		}
 	}
 }

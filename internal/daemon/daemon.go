@@ -1613,22 +1613,21 @@ func (s *Server) reviewBots(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
+			var all []reviewbot.Repo
 			for _, ws := range wss {
 				repos, err := s.Store.Repos(context.Background(), ws.ID)
 				if err != nil {
 					return nil, err
 				}
 				for _, repo := range repos {
-					if repo.Name != name {
-						continue
-					}
-					if repo.Remote == "" {
-						return nil, fmt.Errorf("repo %s has no remote", name)
-					}
-					return forge.For(repo.Remote)
+					all = append(all, reviewbot.Repo{Name: repo.Name, Remote: repo.Remote})
 				}
 			}
-			return nil, fmt.Errorf("no repo named %s", name)
+			remote, err := reviewbot.RemoteFor(all, name)
+			if err != nil {
+				return nil, err
+			}
+			return forge.For(remote)
 		}
 	})
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)

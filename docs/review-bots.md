@@ -6,7 +6,7 @@ person dismissed, what waits on you, the fixes it pushed and what it cost. It is
 
 Shepherd reads the forge through its own CLI (`glab`) and your login in it, keeps nothing
 and stores nothing: the answer is cached in the daemon for five minutes, and the page's
-Refresh button reads the forge again. Only GitLab repos can be read today.
+Refresh button reads the forge again, at most once every 15 seconds. Only GitLab repos can be read today.
 
 ## Configure a bot
 
@@ -51,8 +51,9 @@ is now `pushed` counts as a fix. A bot that edits one summary note per request l
 stamp, so spend is the latest round's cost, not the sum of every round.
 
 Shepherd reads the newest 60 merge requests in the window for each repo and says so when a
-repo had more. A merge request with more than 1000 discussions is read in part, and its repo's row says its counts are partial. A repo it cannot read shows the reason in its row and zero counts, and the
-other repos still show. A report with a failed read is not cached, so the next load tries again.
+repo had more. A merge request with more than 1000 discussions (it checks for the 1001st) is read in part, and its repo's row says its counts are partial. A repo it cannot list shows the reason in its row and zero counts. When only some of a
+repo's merge requests fail to read, the row keeps the counts of the rest, says how many were
+not read and marks the counts incomplete. The other repos still show. A report with a failed read is kept for only 15 seconds, so the next load after that tries again.
 
 ## The API
 
