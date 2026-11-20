@@ -132,6 +132,13 @@ The `web:` section holds settings for the browser UI.
 
 Examples: `vscode://file/{path}:{line}`, `cursor://file/{path}`, `{path}:{line}`.
 
+## Review bots
+
+`review_bots:` names the review bots whose merge request work the web UI's Review bots page
+counts: each has a `name`, the bot's forge `user`, the `label_prefix` of its status labels,
+the `projects` (repo names) to read and an optional `window_days` (30). It changes nothing
+about how a lane runs. See [review-bots.md](review-bots.md).
+
 ## Hosted mode (`daemon.public`)
 
 Off by default: the daemon listens on loopback only. Setting `daemon.public` adds a second
