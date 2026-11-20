@@ -49,6 +49,10 @@ func (r *reapStore) AddFeed(_ context.Context, _, text string, _ int64) error {
 	return nil
 }
 
+func (r *reapStore) SweepAttachments(context.Context, time.Time) ([]string, error) {
+	return nil, nil
+}
+
 // sleeper starts a process that waits a minute; its channel closes when it exits.
 func sleeper(t *testing.T, group bool) (int, <-chan struct{}) {
 	t.Helper()
