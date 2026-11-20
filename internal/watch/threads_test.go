@@ -291,3 +291,25 @@ func TestSignoffMarkEndsWhenAnotherJobFailsInTheSamePollGap(t *testing.T) {
 		t.Errorf("real failure hidden by the mark: %s", got)
 	}
 }
+
+func TestReviewThreadsSkipMachineNotes(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	f.f.threads = []forge.Thread{
+		{ID: "s1", Notes: 1, Body: "Summary: 3 findings", Entries: []forge.Note{{Author: "review-bot", Text: "<!-- ai-review:summary v1 -->\nSummary: 3 findings"}}},
+		{ID: "s2", Notes: 1, Body: "Triage", Entries: []forge.Note{{Author: "review-bot", Text: "  <!-- ai-review:triage -->\nTriage"}}},
+	}
+	f.w.Check(f.ctx)
+	f.settle(t)
+	if n, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10); len(n) != 1 {
+		t.Fatalf("machine notes were handed to the agent: %d runs", len(n))
+	}
+	// A thread that asks for a change still goes, beside them.
+	f.f.threads = append(f.f.threads, forge.Thread{ID: "c1", Notes: 1, Body: "bot: handle nil", Entries: []forge.Note{{Author: "review-bot", Text: "handle nil"}}})
+	f.w.Check(f.ctx)
+	f.settle(t)
+	runs, _ := f.st.Runs(f.ctx, f.lane.ID, "", 10)
+	if len(runs) != 2 || strings.Contains(runs[0].Prompt, "s1") || strings.Contains(runs[0].Prompt, "Triage") || !strings.Contains(runs[0].Prompt, "handle nil") {
+		t.Fatalf("runs = %+v", runs)
+	}
+}

@@ -73,6 +73,7 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 		w.Log.Debug("watch: review threads", "lane", lane.Name, "err", err)
 		return
 	}
+	threads = slices.DeleteFunc(slices.Clone(threads), machineThread)
 	if ft := wc.FollowThrough; ft.External() {
 		threads = w.ownerThreads(ctx, lane, mr, threads, ft)
 	}
@@ -191,6 +192,27 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 	next.FixTries = tries + 1
 	handed(false)
 	w.feed(ctx, store.FeedPipeline, lane.ID, "asked %s to address %d review thread(s) on !%d (run %d, try %d of %d)", last.Agent, len(all), mr.IID, run.ID, next.FixTries, limit)
+}
+
+// MachineMarkers begin a note a review bot writes for the record (a triage or summary),
+// not to ask for a change. The agent replies to threads as the person, so a thread that
+// opens with one is never handed back.
+var MachineMarkers = []string{"<!-- ai-review:summary", "<!-- ai-review:triage"}
+
+// machineThread says a thread's first note, read from its entries (the body is cleaned,
+// the entry text is not), begins with a machine marker.
+func machineThread(t forge.Thread) bool {
+	text := t.Body
+	if len(t.Entries) > 0 {
+		text = t.Entries[0].Text
+	}
+	text = strings.TrimSpace(text)
+	for _, m := range MachineMarkers {
+		if strings.HasPrefix(text, m) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseSeenOne(e string) string {
