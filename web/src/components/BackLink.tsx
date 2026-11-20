@@ -8,7 +8,6 @@ export function routeName(r: Route): string {
     case 'runs': return 'Runs'
     case 'inbox': return 'Inbox'
     case 'usage': return 'Usage'
-    case 'reviewbots': return 'Review bots'
     case 'timeline': return 'Timeline'
     case 'next': return 'Next'
     case 'artifacts': return 'Artifacts'
