@@ -28,7 +28,7 @@ const UnfixedMarker = "Unfixed:"
 // taken the item over.
 type ownerItem struct {
 	id    string
-	notes int       // a thread's note count when last seen; 0 for a pipeline
+	notes int       // a thread's note count when last seen; a taken pipeline's run baseline
 	since time.Time // when the wait began, or restarted by the owner acting
 	taken bool
 
@@ -162,6 +162,14 @@ func (w *Watcher) ownerPipeline(ctx context.Context, f forge.Forge, lane store.L
 	}
 	it := items[0]
 	if it.taken {
+		if it.notes == 0 && len(w.ownerItems(ctx, lane.ID, "handoff")) == 0 {
+			// Taken before takeovers kept their run baseline: take it now, so the lane's
+			// older runs are not judged as the takeover's own.
+			if last, ok := w.latestRun(ctx, lane.ID); ok && last > 0 {
+				it.notes, it.since = last, w.now()
+				w.saveOwnerItems(ctx, lane.ID, "pipeline", []ownerItem{it})
+			}
+		}
 		w.takeoverSpent(ctx, lane, mr, p, it, wc, tries)
 		return tries
 	}

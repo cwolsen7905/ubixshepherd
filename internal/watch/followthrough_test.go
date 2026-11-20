@@ -466,3 +466,20 @@ func TestStaleRunningRecordDoesNotHoldTheHandoffForever(t *testing.T) {
 		t.Errorf("raised %d times, want once", n)
 	}
 }
+
+func TestTakeoverStoredWithoutARunBaselineDoesNotJudgeOldRuns(t *testing.T) {
+	f := newFixture(t)
+	f.idleAgent(t)
+	f.withSession(t) // an old run in the lane, ended without a commit
+	now := f.external(t)
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	// A takeover recorded before takeovers kept a run baseline (notes 0).
+	f.w.saveOwnerItems(f.ctx, f.lane.ID, "pipeline", []ownerItem{{id: "100", taken: true, since: now.Add(-time.Hour)}})
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Fatalf("an old run was judged as the takeover's: %s", got)
+	}
+	if items := f.w.ownerItems(f.ctx, f.lane.ID, "pipeline"); len(items) != 1 || items[0].notes == 0 {
+		t.Errorf("no baseline taken: %+v", items)
+	}
+}
