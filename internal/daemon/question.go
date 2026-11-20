@@ -56,7 +56,98 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			topic = l.TopicID
 		}
 	}
-	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text})
+	// The links must exist, and a repo given with them must be theirs: the repo is
+	// taken from the lane or the item when not given.
+	repo := req.Repo
+	link := func(what string, id int64, name string) bool {
+		if name == "" {
+			return true
+		}
+		if repo == "" {
+			repo = name
+		}
+		if repo != name {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%s %d is in repo %q, not %q", what, id, name, repo))
+			return false
+		}
+		return true
+	}
+	if req.LaneID != 0 {
+		l, err := s.Store.Lane(ctx, req.LaneID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d", req.LaneID))
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		r, err := s.Store.Repo(ctx, l.RepoID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("lane %d has no repo", l.ID))
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if r.WorkspaceID != d.Workspace().ID {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d in this workspace", l.ID))
+			return
+		}
+		if !link("lane", l.ID, r.Name) {
+			return
+		}
+	}
+	if req.NextID != 0 {
+		it, err := s.Store.NextItem(ctx, req.NextID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no next-up item %d", req.NextID))
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if it.LaneID != 0 && req.LaneID != 0 && it.LaneID != req.LaneID {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("next-up item %d is linked to lane %d, not lane %d", it.ID, it.LaneID, req.LaneID))
+			return
+		}
+		if it.Repo != "" {
+			repos, err := s.Store.Repos(ctx, d.Workspace().ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			found := false
+			for _, r := range repos {
+				found = found || r.Name == it.Repo
+			}
+			if !found {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("no next-up item %d in this workspace", it.ID))
+				return
+			}
+		}
+		if !link("next-up item", it.ID, it.Repo) {
+			return
+		}
+	}
+	// Whatever repo the question ends up with, a standalone one included, is one of
+	// the desk's workspace.
+	if repo != "" {
+		repos, err := s.Store.Repos(ctx, d.Workspace().ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		found := false
+		for _, r := range repos {
+			found = found || r.Name == repo
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no repo %q in this workspace", repo))
+			return
+		}
+	}
+	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text,
+		Repo: repo, LaneID: req.LaneID, NextID: req.NextID})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

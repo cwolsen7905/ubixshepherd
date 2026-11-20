@@ -24,6 +24,9 @@ func runQuestion(ctx context.Context, env Env, args []string) error {
 	all := fs.Bool("all", false, "list: include answered and skipped questions")
 	topic := fs.Int64("topic", 0, "open: the topic the question belongs to (the turn's topic by default)")
 	turn := fs.Int64("turn", 0, "open: the desk turn it is asked in (the turn in progress by default)")
+	lane := fs.Int64("lane", 0, "open: the lane the question is about (optional)")
+	item := fs.Int64("item", 0, "open: the next-up item the question is about (optional)")
+	repo := fs.String("repo", "", "open: the repo it is about (taken from the lane or item by default)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -59,7 +62,7 @@ func runQuestion(ctx context.Context, env Env, args []string) error {
 		if len(pos) != 1 {
 			return errUsage
 		}
-		q, err := c.OpenQuestion(ctx, api.QuestionOpen{Text: pos[0], Turn: *turn, TopicID: *topic})
+		q, err := c.OpenQuestion(ctx, api.QuestionOpen{Text: pos[0], Turn: *turn, TopicID: *topic, LaneID: *lane, NextID: *item, Repo: *repo})
 		if err != nil {
 			return err
 		}
@@ -84,7 +87,17 @@ func runQuestion(ctx context.Context, env Env, args []string) error {
 }
 
 func writeQuestion(w io.Writer, q store.Question) {
-	fmt.Fprintf(w, "%d  %s  turn %d  %s\n", q.ID, q.State, q.Turn, q.Text)
+	about := ""
+	if q.Repo != "" {
+		about += "  " + q.Repo
+	}
+	if q.LaneID != 0 {
+		about += fmt.Sprintf("  lane %d", q.LaneID)
+	}
+	if q.NextID != 0 {
+		about += fmt.Sprintf("  item %d", q.NextID)
+	}
+	fmt.Fprintf(w, "%d  %s  turn %d%s  %s\n", q.ID, q.State, q.Turn, about, q.Text)
 }
 
 func printQuestion(env Env, q store.Question, asJSON bool, what string) error {

@@ -724,6 +724,8 @@ func mcpTools() []mcpTool {
 			InputSchema: obj(map[string]any{
 				"text":  map[string]any{"type": "string", "description": "The question, as you asked it."},
 				"topic": map[string]any{"type": "integer", "description": "The topic it belongs to; the turn's topic by default."},
+				"lane":  map[string]any{"type": "integer", "description": "Optional: the id of the lane the question is about."},
+				"item":  map[string]any{"type": "integer", "description": "Optional: the id of the next-up item the question is about."},
 			}, "text"),
 			args: func(a map[string]any) ([]string, error) {
 				t := str(a, "text")
@@ -733,6 +735,12 @@ func mcpTools() []mcpTool {
 				out := []string{"question", "open", t}
 				if v, ok := a["topic"].(float64); ok && v > 0 {
 					out = append(out, "--topic", fmt.Sprint(int64(v)))
+				}
+				if v, ok := a["lane"].(float64); ok && v > 0 {
+					out = append(out, "--lane", fmt.Sprint(int64(v)))
+				}
+				if v, ok := a["item"].(float64); ok && v > 0 {
+					out = append(out, "--item", fmt.Sprint(int64(v)))
 				}
 				return out, nil
 			},
