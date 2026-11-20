@@ -1,19 +1,6 @@
 import { Button, Dialog, Kbd } from '../ui'
+import { KEYS } from '../lib/keys'
 import { Legend } from './Legend'
-
-const KEYS: [string, string][] = [
-  ['Ctrl+K / ⌘K', 'Search or act: go to a page, open a lane, run or decision'],
-  ['j / k', 'Move down and up the board'],
-  ['Enter', 'Open the lane or decision'],
-  ['g b', 'Go to the board'],
-  ['g d', 'Go to decisions'],
-  ['g t', 'Go to timeline'],
-  ['g n', 'Go to next up'],
-  ['c', 'Mark everything done as seen'],
-  ['/', 'Search a run log'],
-  ['f', 'Follow a run log as it grows'],
-  ['?', 'Show or hide these keys'],
-]
 
 /** The keys and glyphs sheet: a modal with the keys table and the glyph legend. `?` or Esc closes it. */
 export function Help({ onClose }: { onClose: () => void }) {
@@ -37,12 +24,17 @@ export function Help({ onClose }: { onClose: () => void }) {
       }
     >
       <dl className="sh-keys">
-        {KEYS.map(([k, what]) => (
-          <div key={k} className="sh-keys-row">
+        {KEYS.map((k) => (
+          <div key={k.combos.map((c) => c.join(' ')).join('|')} className="sh-keys-row">
             <dt>
-              {k.split(' ').map((p) => (p === '/' && k !== '/' ? ' / ' : <Kbd key={p} keys={p} />))}
+              {k.combos.map((c, i) => (
+                <span key={i}>
+                  {i > 0 && ' / '}
+                  <Kbd keys={c} />
+                </span>
+              ))}
             </dt>
-            <dd>{what}</dd>
+            <dd>{k.what}</dd>
           </div>
         ))}
       </dl>
