@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -111,4 +112,49 @@ func (r *Runner) DropQueued(ctx context.Context, laneID int64, why string) int {
 		r.feed(ctx, store.FeedRunInterrupted, 0, "%d queued follow-up(s) dropped: %s", n, why)
 	}
 	return n
+}
+
+// modelAtLimit says whether a run on model would pass the model's cap in
+// daemon.model_limits, given the runs now going: it returns the cap and whether the model
+// is full. A model with no cap, and a run with no resolved model, are never full.
+func modelAtLimit(cfg config.Config, model string, running []store.Run) (limit int, full bool) {
+	limit = cfg.Daemon.ModelLimits[model]
+	if model == "" || limit < 1 {
+		return 0, false
+	}
+	n := 0
+	for _, run := range running {
+		if run.Model == model {
+			n++
+		}
+	}
+	return limit, n >= limit
+}
+
+// queueForModel writes down a start the person asked for on a model that is at its cap.
+// Like a follow-up it lives in the held starts, so it survives a restart and RunHeld
+// starts it, oldest first, when a run ends. start holds the runner's lock here.
+func (r *Runner) queueForModel(ctx context.Context, asked StartRequest, lane store.Lane, model string, limit int) error {
+	asked.LaneID = lane.ID
+	b, err := json.Marshal(asked)
+	if err != nil {
+		return err
+	}
+	why := fmt.Sprintf("queued behind model %s (at its limit of %d)", model, limit)
+	if _, err := r.Store.AddHeldStart(ctx, store.HeldStart{Request: string(b), Why: why}); err != nil {
+		return err
+	}
+	// A run on the model may have ended after start counted and before the row was
+	// written; kick the queue so that is not missed.
+	if running, err := r.Store.Runs(ctx, 0, store.RunRunning, 1000); err == nil {
+		if _, full := modelAtLimit(r.Conf(), model, running); !full {
+			r.wg.Add(1)
+			go func() {
+				defer r.wg.Done()
+				r.RunHeld(context.Background())
+			}()
+		}
+	}
+	r.feed(ctx, store.FeedRunStarted, 0, "run queued in lane %s: model %s is at its limit of %d: %s", lane.Name, model, limit, clip(asked.Prompt, 120))
+	return refusal{msg: fmt.Sprintf("queued: model %s is at its limit of %d; it starts when a run on that model ends", model, limit), held: true, queued: true}
 }

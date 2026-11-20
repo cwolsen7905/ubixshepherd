@@ -512,6 +512,15 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 			return store.Run{}, r.queueFollowUp(ctx, asked, lane, 0)
 		}
 	}
+	// A model at its cap in daemon.model_limits holds the start: the person's queues
+	// (first in, first out with the other queued starts), one Shepherd starts on its own
+	// waits to be tried again.
+	if limit, full := modelAtLimit(cfg, req.Model, running); full {
+		if req.Auto || fromQueue {
+			return store.Run{}, held("model %s is at its limit of %d runs at once", req.Model, limit)
+		}
+		return store.Run{}, r.queueForModel(ctx, asked, lane, req.Model, limit)
+	}
 	// The budget and the caps are Crook's limits. The budget is read only for a run
 	// Shepherd starts on its own, and the repo's count only when it can matter.
 	facts := crook.Facts{Runs: &crook.RunCounts{Running: len(running), Max: cfg.Daemon.MaxRuns, Repo: repo.Name}}

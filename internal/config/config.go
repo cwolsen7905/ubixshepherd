@@ -130,6 +130,11 @@ type Daemon struct {
 	Listen string `yaml:"listen" json:"listen"`
 	// MaxRuns is how many agents may run at once on this machine.
 	MaxRuns int `yaml:"max_runs" json:"max_runs"`
+	// ModelLimits caps how many runs may be going on one model at once, by model id as
+	// a run resolves it (for example a local model that serves one request at a time).
+	// A start past the cap queues until a run on that model ends. A model left out has
+	// no cap.
+	ModelLimits map[string]int `yaml:"model_limits,omitempty" json:"model_limits,omitempty"`
 	// Poll is how often open lanes' merge requests are checked: "60s", "2m"; "off" stops it.
 	Poll string `yaml:"poll" json:"poll"`
 	// Budget is the daily spend, in dollars, past which Shepherd holds the runs it would
@@ -952,6 +957,9 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	if file.Daemon.MaxRuns != 0 {
 		c.Daemon.MaxRuns = file.Daemon.MaxRuns
 	}
+	if file.Daemon.ModelLimits != nil {
+		c.Daemon.ModelLimits = file.Daemon.ModelLimits
+	}
 	if file.Daemon.Poll != "" {
 		c.Daemon.Poll = file.Daemon.Poll
 	}
@@ -1066,6 +1074,14 @@ func (c Config) Validate() error {
 	}
 	if c.Daemon.MaxRuns < 1 {
 		errs = append(errs, fmt.Errorf("daemon.max_runs: %d; at least 1", c.Daemon.MaxRuns))
+	}
+	for model, n := range c.Daemon.ModelLimits {
+		switch {
+		case model == "" || strings.TrimSpace(model) != model:
+			errs = append(errs, fmt.Errorf("daemon.model_limits: model name %q is empty or padded with spaces", model))
+		case n < 1:
+			errs = append(errs, fmt.Errorf("daemon.model_limits.%s: %d; at least 1, or leave the model out for no limit", model, n))
+		}
 	}
 	errs = append(errs, c.Defaults.validate("defaults")...)
 	for name := range c.Repos {
