@@ -2,7 +2,6 @@ package watch
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -82,6 +81,12 @@ func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
 	if res.BranchDeleted {
 		note = ", local branch deleted"
 	}
+	delete(w.reviewed, openedBase+lane.ID)
+	delete(w.reviewed, -lane.ID)
+	// The merge poll posts these before its own try, once it has the merge commit.
+	if lf.MergeSHA != "" {
+		problems = nil
+	}
 	for _, p := range problems {
 		w.feed(ctx, store.FeedMR, lane.ID, "!%d merged, but %s", mr.IID, p)
 	}
@@ -93,22 +98,23 @@ func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
 	return true
 }
 
-// opened is, per watcher and lane, the request last seen open in it (noteOpen). It is
-// kept in memory: a merge that began before the daemon started is not retried, which
-// leaves the lane to the person, the safe side. A watcher's entries are few (one per
-// open lane).
-var opened sync.Map // key openKey, value int (request number)
-
-type openKey struct {
-	w    *Watcher
-	lane int64
-}
+// The request last seen open in a lane (noteOpen) lives in the watcher's reviewed map
+// under a key range of its own, beside the throttle times, as the request number in the
+// seconds of the time. It is in memory: a merge that began before the daemon started is
+// not retried, which leaves the lane to the person, the safe side. It is dropped when
+// the retry closes the lane.
+const openedBase = int64(1) << 40
 
 // noteOpen records that the lane's request iid was seen open, called from the merge poll.
-func (w *Watcher) noteOpen(laneID int64, iid int) { opened.Store(openKey{w, laneID}, iid) }
+func (w *Watcher) noteOpen(laneID int64, iid int) {
+	if w.reviewed == nil {
+		w.reviewed = map[int64]time.Time{}
+	}
+	w.reviewed[openedBase+laneID] = time.Unix(int64(iid), 0)
+}
 
 // sawOpen reports whether request iid was seen open in the lane by this watcher.
 func (w *Watcher) sawOpen(laneID int64, iid int) bool {
-	v, ok := opened.Load(openKey{w, laneID})
-	return ok && v.(int) == iid
+	at, ok := w.reviewed[openedBase+laneID]
+	return ok && at.Unix() == int64(iid)
 }
