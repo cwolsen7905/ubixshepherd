@@ -695,16 +695,20 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
           {Object.keys(doc.repos).sort().map((r) => {
             const path = ['repos', r, 'autonomy', 'merge']
             const v = String(staged(path) ?? 'human')
-            const person = v !== 'agent'
+            const desc = v === 'agent'
+              ? 'An agent arms merge when the pipeline passes; the forge still gates it.'
+              : v === 'after_approval'
+                ? 'Shepherd merges once a person approves and the checks hold.'
+                : 'A person approves each merge request.'
             return (
               <SettingRow
                 key={r}
                 name={`merge-${r}`}
                 label={<><code>{r}</code> {projectOf.has(r) && <span className="sh-setting-desc">in {projectOf.get(r)}</span>}</>}
-                desc={person ? 'A person approves each merge request.' : 'An agent arms merge when the pipeline passes; the forge still gates it.'}
-                was={was(path, (x) => (x === 'agent' ? 'By an agent' : 'By a person'))}
+                desc={desc}
+                was={was(path, (x) => (x === 'agent' ? 'By an agent' : x === 'after_approval' ? 'After approval' : 'By a person'))}
               >
-                <Menu label={`Merging for ${r}`} value={person ? 'human' : 'agent'} options={[['human', 'By a person'], ['agent', 'By an agent']]} onPick={(x) => stage(path, x)} />
+                <Menu label={`Merging for ${r}`} value={v as 'human' | 'after_approval' | 'agent'} options={[['human', 'By a person'], ['after_approval', 'After approval'], ['agent', 'By an agent']]} onPick={(x) => stage(path, x)} />
               </SettingRow>
             )
           })}
