@@ -102,8 +102,18 @@ func TestPlanScopeReadFromStartNotWorkingCopy(t *testing.T) {
 	if err != nil || warnings(o) != "" {
 		t.Errorf("working-copy edit used: %v %q", err, warnings(o))
 	}
-	o, err = f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "y", Scope: []string{"src/a/**"}})
+	o, err = f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "y", Scope: []string{"src/a/y/**"}})
 	if err != nil || warnings(o) == "" {
 		t.Errorf("committed scope missed: %v %q", err, warnings(o))
+	}
+}
+
+func TestOpenWithExactPlanScopeIsNotBlocking(t *testing.T) {
+	f := newFixture(t)
+	f.addItem("drive item", "plans/d.md", store.NextApproved, "Scope: src/d/**, docs/d.md\n")
+	// The keep-going drive opens with the plan's scope and no item id.
+	o, err := f.fold.Open(context.Background(), OpenRequest{RepoID: f.repo.ID, Name: "item-1-drive", Scope: []string{"docs/d.md", "src/d/**"}})
+	if err != nil || warnings(o) != "" {
+		t.Errorf("%v %q", err, warnings(o))
 	}
 }

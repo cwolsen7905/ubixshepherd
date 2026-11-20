@@ -16,8 +16,8 @@ import (
 // and whose plan doc's "Scope:" line overlaps the new lane's scope: opening this lane
 // would hold their paths. It warns, never refuses. An item with no plan doc, a plan that
 // cannot be read or one with no "Scope:" line carries no scope data and is not judged.
-// The item the lane is opened for (forItem, or an item whose lane hint is the lane's
-// name) is not a conflict.
+// The item the lane is opened for (forItem, an item whose lane hint is the lane's name,
+// or one whose plan scope the lane takes exactly) is not a conflict.
 func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, start, laneName string, forItem int64, laneScope, files []string, protected []string) []string {
 	items, err := f.Store.NextItems(ctx)
 	if err != nil {
@@ -35,6 +35,11 @@ func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, start, la
 		if len(planned) == 0 {
 			continue
 		}
+		if sameGlobs(laneScope, planned) {
+			// A lane that takes exactly what the plan names is the item's own lane, as
+			// the keep-going drive opens it: it is not blocking the item.
+			continue
+		}
 		var pairs []string
 		for _, g := range laneScope {
 			for _, p := range planned {
@@ -49,6 +54,21 @@ func (f *Fold) itemScopeWarnings(ctx context.Context, repo store.Repo, start, la
 		}
 	}
 	return out
+}
+
+func sameGlobs(a, b []string) bool {
+	set := map[string]bool{}
+	for _, g := range a {
+		set[g] = true
+	}
+	other := map[string]bool{}
+	for _, g := range b {
+		if !set[g] {
+			return false
+		}
+		other[g] = true
+	}
+	return len(set) == len(other)
 }
 
 // planScopeAt reads the "Scope:" line of a plan doc as committed at the lane's starting
