@@ -32,6 +32,9 @@ type mergeTry struct {
 // ran before the approval, it first retries that job (retryRequireApproval) and merges on
 // a later poll, once the pipeline is green. The squash path is inert: no forge implements SquashMerger yet, so the merge lands as the project is set to.
 func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo string, lane store.Lane, mr *forge.MR, next *store.LaneForge, ft config.FollowThrough) {
+	if mr.State == "opened" {
+		w.noteOpen(lane.ID, mr.IID)
+	}
 	prof := w.conf().Profile(repo)
 	if prof.Autonomy.Merge != config.AfterApproval || mr.State != "opened" {
 		next.OwnerBlocking = ""

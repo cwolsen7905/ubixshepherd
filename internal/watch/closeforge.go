@@ -1,0 +1,120 @@
+package watch
+
+import (
+	"context"
+	"time"
+
+	"github.com/ubixsys/ubixshepherd/internal/store"
+)
+
+// closeForgeMerged finishes a close the merge poll could not. checkLane closes a lane on
+// the poll that sees its request go from open to merged; if that close was refused (a
+// dirty worktree the person has since cleaned, an agent run still going, a forge that
+// had not yet named the merge commit), the request is already recorded as merged and no
+// later poll acts on it. This retries from the forge's own word, merge commit or squash
+// alike (git cannot see a squash as merged), without force: Fold.CloseMerged still
+// refuses a dirty worktree and work beyond the request's head.
+//
+// It acts only for the request the lane was seen with (the recorded one), merged and
+// created after the lane, so a request merged before the lane existed proves nothing,
+// and only on a merge seen happening: checkLane reports a request already merged when
+// first seen and never acts on it, and so does this (sawOpen).
+// It is tried at most once per AutoCloseSettle per lane, and reports whether it closed
+// the lane.
+func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
+	if w.Fold == nil {
+		return false
+	}
+	lf, err := w.Store.LaneForge(ctx, lane.ID)
+	if err != nil || lf.MR == 0 || lf.MRState != "merged" {
+		return false
+	}
+	// Keyed by the negated id so it does not share autoClose's throttle slot.
+	if w.reviewed == nil {
+		w.reviewed = map[int64]time.Time{}
+	}
+	key := -lane.ID
+	// The first sight starts the clock: the poll that saw the merge has just tried.
+	at, ok := w.reviewed[key]
+	if !ok {
+		w.reviewed[key] = w.now()
+		return false
+	}
+	if w.now().Sub(at) < AutoCloseSettle {
+		return false
+	}
+	w.reviewed[key] = w.now()
+	repo, err := w.Store.Repo(ctx, lane.RepoID)
+	if err != nil {
+		return false
+	}
+	// The poll's backoff holds here too: a host that is down is not called again.
+	host := hostOf(repo)
+	if w.skipHost(host) {
+		return false
+	}
+	f, err := w.forgeFor(repo)
+	if err != nil {
+		return false
+	}
+	mr, err := f.MRForBranch(ctx, lane.Branch)
+	if !w.result(host, err) || err != nil || mr == nil {
+		return false
+	}
+	if !w.sawOpen(lane.ID, lf.MR) || mr.IID != lf.MR || mr.State != "merged" || mr.MergeSHA == "" || mr.Created.IsZero() || !mr.Created.After(lane.Created) {
+		return false
+	}
+	// Quiet until it works: a refusal that lasts (uncommitted work the person keeps, a
+	// run left going) must not post the same feed entry every interval. The merge poll
+	// has already said why it could not close.
+	problems := w.Fold.VerifyTags(ctx, lane, mr.MergeSHA)
+	res, err := w.Fold.CloseMerged(ctx, lane.ID, mr.MergeSHA, mr.SHA)
+	if err != nil {
+		w.Log.Debug("watch: merged lane not closed", "lane", lane.Name, "mr", mr.IID, "why", firstLine(err.Error()))
+		return false
+	}
+	w.Log.Info("watch: lane closed on merge, retried", "lane", lane.Name, "mr", mr.IID, "merge", mr.MergeSHA)
+	if err := w.Fold.WriteView(ctx, lane.RepoID); err != nil {
+		w.Log.Error("watch: coordination view", "err", err)
+	}
+	note := ""
+	if res.BranchDeleted {
+		note = ", local branch deleted"
+	}
+	delete(w.reviewed, openedBase+lane.ID)
+	delete(w.reviewed, -lane.ID)
+	// The merge poll posts these before its own try, once it has the merge commit.
+	if lf.MergeSHA != "" {
+		problems = nil
+	}
+	for _, p := range problems {
+		w.feed(ctx, store.FeedMR, lane.ID, "!%d merged, but %s", mr.IID, p)
+	}
+	w.feed(ctx, store.FeedLaneClosed, lane.ID, "!%d merged at %s; lane %s closed%s", mr.IID, short(mr.MergeSHA), lane.Name, note)
+	lf.MergeSHA = mr.MergeSHA
+	if err := w.Store.PutLaneForge(ctx, lf); err != nil {
+		w.Log.Error("watch: save", "lane", lane.Name, "err", err)
+	}
+	return true
+}
+
+// The request last seen open in a lane (noteOpen) lives in the watcher's reviewed map
+// under a key range of its own, beside the throttle times, as the request number in the
+// seconds of the time. It is in memory: a merge that began before the daemon started is
+// not retried, which leaves the lane to the person, the safe side. It is dropped when
+// the retry closes the lane.
+const openedBase = int64(1) << 40
+
+// noteOpen records that the lane's request iid was seen open, called from the merge poll.
+func (w *Watcher) noteOpen(laneID int64, iid int) {
+	if w.reviewed == nil {
+		w.reviewed = map[int64]time.Time{}
+	}
+	w.reviewed[openedBase+laneID] = time.Unix(int64(iid), 0)
+}
+
+// sawOpen reports whether request iid was seen open in the lane by this watcher.
+func (w *Watcher) sawOpen(laneID int64, iid int) bool {
+	at, ok := w.reviewed[openedBase+laneID]
+	return ok && at.Unix() == int64(iid)
+}
