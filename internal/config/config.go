@@ -104,10 +104,17 @@ func (c Config) validateReviewBots() []error {
 		if len(b.Projects) == 0 {
 			errs = append(errs, fmt.Errorf("%s.projects: name at least one repo", at))
 		}
+		repos := map[string]bool{}
 		for _, p := range b.Projects {
-			if strings.TrimSpace(p) == "" {
+			switch {
+			case strings.TrimSpace(p) == "":
 				errs = append(errs, fmt.Errorf("%s.projects: a repo name is empty", at))
+			case p != strings.TrimSpace(p):
+				errs = append(errs, fmt.Errorf("%s.projects: %q has blanks around it", at, p))
+			case repos[p]:
+				errs = append(errs, fmt.Errorf("%s.projects: %q is listed twice", at, p))
 			}
+			repos[p] = true
 		}
 		if b.WindowDays < 0 || b.WindowDays > MaxReviewWindow {
 			errs = append(errs, fmt.Errorf("%s.window_days: %d; 1 to %d, or leave it out for 30", at, b.WindowDays, MaxReviewWindow))

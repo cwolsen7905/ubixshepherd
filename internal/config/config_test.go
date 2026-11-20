@@ -597,12 +597,14 @@ review_bots:
 
 func TestReviewBotsValidate(t *testing.T) {
 	cases := map[string]string{
-		"no user":      "review_bots:\n  - {name: A, label_prefix: 'a::', projects: [x]}\n",
-		"no prefix":    "review_bots:\n  - {name: A, user: u, projects: [x]}\n",
-		"no projects":  "review_bots:\n  - {name: A, user: u, label_prefix: 'a::'}\n",
-		"twice":        "review_bots:\n  - {name: A, user: u, label_prefix: 'a::', projects: [x]}\n  - {name: A, user: v, label_prefix: 'b::', projects: [x]}\n",
-		"long window":  "review_bots:\n  - {name: A, user: u, label_prefix: 'a::', projects: [x], window_days: 900}\n",
-		"bad username": "review_bots:\n  - {name: A, user: '@u', label_prefix: 'a::', projects: [x]}\n",
+		"no user":       "review_bots:\n  - {name: A, label_prefix: 'a::', projects: [x]}\n",
+		"no prefix":     "review_bots:\n  - {name: A, user: u, projects: [x]}\n",
+		"no projects":   "review_bots:\n  - {name: A, user: u, label_prefix: 'a::'}\n",
+		"twice":         "review_bots:\n  - {name: A, user: u, label_prefix: 'a::', projects: [x]}\n  - {name: A, user: v, label_prefix: 'b::', projects: [x]}\n",
+		"long window":   "review_bots:\n  - {name: A, user: u, label_prefix: 'a::', projects: [x], window_days: 900}\n",
+		"repeated repo": "review_bots:\n  - {name: A, user: u, label_prefix: 'a::', projects: [x, y, x]}\n",
+		"padded repo":   "review_bots:\n  - {name: A, user: u, label_prefix: 'a::', projects: [' x']}\n",
+		"bad username":  "review_bots:\n  - {name: A, user: '@u', label_prefix: 'a::', projects: [x]}\n",
 	}
 	for name, doc := range cases {
 		if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), "review_bots[") {
