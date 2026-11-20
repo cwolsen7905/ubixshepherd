@@ -1,12 +1,14 @@
 package watch
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
+	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
 )
 
@@ -372,7 +374,7 @@ func TestSpentTakeoverIsRaisedToThePersonOnce(t *testing.T) {
 	}
 }
 
-func TestSpentTakeoverWithNoAgentConversationIsRaised(t *testing.T) {
+func TestSpentTakeoverWithNoAgentConversationIsNotSaidTwice(t *testing.T) {
 	f := newFixture(t)
 	now := f.external(t)
 	f.f.mr = &forge.MR{IID: 7, State: "opened", URL: "https://gl/mr/7", Pipeline: &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}}
@@ -381,8 +383,36 @@ func TestSpentTakeoverWithNoAgentConversationIsRaised(t *testing.T) {
 	f.w.Check(f.ctx)
 	f.w.Check(f.ctx)
 	got := f.feed(t)
-	if n := strings.Count(got, "takeover from reviewbot is spent"); n != 1 || !strings.Contains(got, "no agent run could be started") {
+	if strings.Contains(got, "is spent") || strings.Count(got, "it is yours") != 1 {
 		t.Errorf("feed = %s", got)
+	}
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
+		t.Error("the handoff was not recorded")
+	}
+}
+
+func TestTakeoverWhoseStartIsRefusedIsRaisedOnlyAfterAPatience(t *testing.T) {
+	f := newFixture(t)
+	f.withSession(t)
+	dispatch.SetLookPath(f.run, func(string) (string, error) { return "", errors.New("held") })
+	now := f.external(t)
+	f.f.jobs = []forge.Job{{ID: 1, Name: "test", URL: "https://gl/j/1"}}
+	f.f.mr.Pipeline = &forge.Pipeline{ID: 100, Status: "failed", URL: "https://gl/p/100"}
+	f.w.Check(f.ctx)
+	*now = now.Add(31 * time.Minute)
+	f.w.Check(f.ctx) // takes over; the start is refused
+	*now = now.Add(10 * time.Minute)
+	f.w.Check(f.ctx)
+	if got := f.feed(t); strings.Contains(got, "is spent") {
+		t.Fatalf("a held start was called spent at once: %s", got)
+	}
+	for i := 0; i < 3; i++ {
+		*now = now.Add(21 * time.Minute)
+		f.w.Check(f.ctx)
+	}
+	got := f.feed(t)
+	if n := strings.Count(got, "is spent: no agent run began within 30m0s"); n != 1 {
+		t.Errorf("raised %d times, want once: %s", n, got)
 	}
 }
 
@@ -393,6 +423,9 @@ func TestSpentTakeoverRecordEndsWhenThePipelineStopsFailing(t *testing.T) {
 	f.w.Check(f.ctx)
 	*now = now.Add(31 * time.Minute)
 	f.w.Check(f.ctx)
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
+		t.Fatal("the handoff was not recorded")
+	}
 	f.f.mr.Pipeline = &forge.Pipeline{ID: 101, Status: "success"}
 	f.w.Check(f.ctx)
 	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 0 {
@@ -403,7 +436,7 @@ func TestSpentTakeoverRecordEndsWhenThePipelineStopsFailing(t *testing.T) {
 	f.w.Check(f.ctx)
 	*now = now.Add(31 * time.Minute)
 	f.w.Check(f.ctx)
-	if n := strings.Count(f.feed(t), "takeover from reviewbot is spent"); n != 2 {
-		t.Errorf("raised %d times across two failures, want 2", n)
+	if len(f.w.ownerItems(f.ctx, f.lane.ID, "handoff")) != 1 {
+		t.Error("a later failure was not judged afresh")
 	}
 }
