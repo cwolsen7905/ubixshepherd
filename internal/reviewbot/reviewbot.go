@@ -84,6 +84,9 @@ type Project struct {
 	NeedsYouItems []Item `json:"needs_you_items,omitempty"`
 	// Truncated says the repo had more than MaxMRs requests in the window.
 	Truncated bool `json:"truncated,omitempty"`
+	// PartialMRs is how many requests had more discussions than could be read, so their
+	// dismissals and spend are undercounted.
+	PartialMRs int `json:"partial_mrs,omitempty"`
 	// Error is why the repo could not be read; its counts are zero then.
 	Error string `json:"error,omitempty"`
 }
@@ -102,6 +105,18 @@ type Bot struct {
 type Report struct {
 	AsOf time.Time `json:"as_of"`
 	Bots []Bot     `json:"bots"`
+}
+
+// failed says some repo could not be read.
+func (r Report) failed() bool {
+	for _, b := range r.Bots {
+		for _, p := range b.Projects {
+			if p.Error != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Collector reads the forge for bots and keeps the answer for TTL.
@@ -126,7 +141,8 @@ func (c *Collector) now() time.Time {
 }
 
 // Report answers for the bots, from the cache when it is the same configuration and
-// younger than TTL, unless refresh. Reads of one repo that fail are in that repo's
+// younger than TTL, unless refresh. Only whole reports are cached. One read runs at a
+// time: a caller that arrives during a slow read waits for it, then gets its report. Reads of one repo that fail are in that repo's
 // Error: the report is always whole.
 func (c *Collector) Report(ctx context.Context, bots []config.ReviewBot, refresh bool) Report {
 	c.mu.Lock()
@@ -143,6 +159,12 @@ func (c *Collector) Report(ctx context.Context, bots []config.ReviewBot, refresh
 	rep := Report{AsOf: c.now(), Bots: []Bot{}}
 	for _, b := range bots {
 		rep.Bots = append(rep.Bots, c.bot(ctx, b))
+	}
+	// A report with a failed read, or one the request's own deadline cut short, is not kept:
+	// the next load reads again instead of showing the error for the whole TTL.
+	if ctx.Err() != nil || rep.failed() {
+		c.key, c.at = "", time.Time{}
+		return rep
 	}
 	c.key, c.at, c.last = key, rep.AsOf, rep
 	return rep
@@ -193,8 +215,9 @@ func (c *Collector) project(ctx context.Context, b config.ReviewBot, name string
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			ds, err := l.Discussions(ctx, m.IID)
+			ds, more, err := l.Discussions(ctx, m.IID)
 			results[i] = readMR(b, m, ds, err)
+			results[i].partial = more
 		}()
 	}
 	wg.Wait()
@@ -208,6 +231,9 @@ func (c *Collector) project(ctx context.Context, b config.ReviewBot, name string
 			}
 		}
 		p.Counts.add(r.Counts)
+		if r.partial {
+			p.PartialMRs++
+		}
 		if r.needsYouOpen {
 			p.NeedsYouItems = append(p.NeedsYouItems, r.item)
 		}
@@ -222,6 +248,7 @@ func (c *Collector) project(ctx context.Context, b config.ReviewBot, name string
 type mrResult struct {
 	Counts
 	needsYouOpen bool
+	partial      bool
 	item         Item
 	err          error
 }

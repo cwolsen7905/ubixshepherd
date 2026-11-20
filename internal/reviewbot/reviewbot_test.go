@@ -16,6 +16,7 @@ type fakeForge struct {
 	more  bool
 	disc  map[int][]forge.Discussion
 	fail  map[int]error
+	cut   map[int]bool
 	calls *int
 }
 
@@ -35,8 +36,8 @@ func (f fakeForge) MergeRequests(context.Context, time.Time, int) ([]forge.MRSum
 	}
 	return f.mrs, f.more, nil
 }
-func (f fakeForge) Discussions(_ context.Context, mr int) ([]forge.Discussion, error) {
-	return f.disc[mr], f.fail[mr]
+func (f fakeForge) Discussions(_ context.Context, mr int) ([]forge.Discussion, bool, error) {
+	return f.disc[mr], f.cut[mr], f.fail[mr]
 }
 
 func note(author, text string) forge.Note { return forge.Note{Author: author, Text: text} }
@@ -173,5 +174,29 @@ func TestStampedCost(t *testing.T) {
 		if want < 0 && ok || want >= 0 && (!ok || v != want) {
 			t.Errorf("%q = %v, %v", text, v, ok)
 		}
+	}
+}
+
+func TestFailedAndPartialReports(t *testing.T) {
+	calls := 0
+	f := fixture()
+	f.calls = &calls
+	f.cut = map[int]bool{1: true, 2: true}
+	f.fail = map[int]error{3: errors.New("blip")}
+	c := &Collector{Forge: func(string) (forge.Forge, error) { return f, nil }, TTL: time.Hour}
+	one := config.ReviewBot{Name: "A", User: "review-bot", LabelPrefix: "bot::", Projects: []string{"app"}}
+	rep := c.Report(context.Background(), []config.ReviewBot{one}, false)
+	if p := rep.Bots[0].Projects[0]; p.Error == "" || p.PartialMRs != 2 {
+		t.Errorf("project = %+v", p)
+	}
+	c.Report(context.Background(), []config.ReviewBot{one}, false)
+	if calls != 2 {
+		t.Errorf("a report with a failed read was cached: %d reads", calls)
+	}
+	f.fail = nil
+	c.Report(context.Background(), []config.ReviewBot{one}, false)
+	c.Report(context.Background(), []config.ReviewBot{one}, false)
+	if calls != 3 {
+		t.Errorf("a whole report was not cached: %d reads", calls)
 	}
 }

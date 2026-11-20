@@ -974,6 +974,8 @@ export interface ReviewBotProject extends ReviewBotCounts {
   needs_you_items?: ReviewBotItem[]
   /** The repo had more merge requests in the window than were read. */
   truncated?: boolean
+  /** Merge requests with more discussions than could be read: their dismissals and spend are undercounted. */
+  partial_mrs?: number
   /** Why the repo could not be read, or only in part. */
   error?: string
 }

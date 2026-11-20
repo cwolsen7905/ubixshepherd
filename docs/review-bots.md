@@ -51,8 +51,8 @@ is now `pushed` counts as a fix. A bot that edits one summary note per request l
 stamp, so spend is the latest round's cost, not the sum of every round.
 
 Shepherd reads the newest 60 merge requests in the window for each repo and says so when a
-repo had more. A repo it cannot read shows the reason in its row and zero counts, and the
-other repos still show.
+repo had more. A merge request with more than 1000 discussions is read in part, and its repo's row says its counts are partial. A repo it cannot read shows the reason in its row and zero counts, and the
+other repos still show. A report with a failed read is not cached, so the next load tries again.
 
 ## The API
 

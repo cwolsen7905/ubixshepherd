@@ -212,11 +212,22 @@ func TestGitLabMergeRequestsAndDiscussions(t *testing.T) {
 	if _, more, _ := g.MergeRequests(context.Background(), since, 0); !more {
 		t.Error("a limit of 0 with one request should say more")
 	}
-	ds, err := g.Discussions(context.Background(), 7)
-	if err != nil || len(ds) != 3 {
+	ds, more, err := g.Discussions(context.Background(), 7)
+	if err != nil || more || len(ds) != 3 {
 		t.Fatalf("discussions = %+v, %v", ds, err)
 	}
 	if !ds[0].Resolved || ds[0].ResolvedBy != "sam" || ds[1].Resolved || !ds[1].Resolvable || ds[2].Resolvable {
 		t.Errorf("states = %+v", ds)
+	}
+}
+
+func TestGitLabDiscussionsSaysWhenCut(t *testing.T) {
+	page := `[` + strings.TrimSuffix(strings.Repeat(`{"id":"d","notes":[{"id":1,"body":"x","author":{"username":"u"}}]},`, 100), ",") + `]`
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(context.Context, ...string) ([]byte, error) {
+		return []byte(page), nil
+	}}
+	ds, more, err := g.Discussions(context.Background(), 7)
+	if err != nil || !more || len(ds) != 1000 {
+		t.Errorf("a full ten pages = %d discussions, more %v, %v", len(ds), more, err)
 	}
 }

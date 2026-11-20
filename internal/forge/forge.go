@@ -191,8 +191,9 @@ type MRLister interface {
 	// MergeRequests lists requests in any state updated since the time, newest update
 	// first, at most limit of them. More says the forge had more than limit.
 	MergeRequests(ctx context.Context, since time.Time, limit int) (mrs []MRSummary, more bool, err error)
-	// Discussions is every non-system discussion on the request.
-	Discussions(ctx context.Context, mr int) ([]Discussion, error)
+	// Discussions is the non-system discussions on the request: up to 1000, and more
+	// says the request had more than that, so the list is partial.
+	Discussions(ctx context.Context, mr int) (ds []Discussion, more bool, err error)
 }
 
 // Remote is a git remote URL split into host and repository path.
@@ -633,14 +634,15 @@ func (g *GitLab) MergeRequests(ctx context.Context, since time.Time, limit int) 
 	return out, false, nil
 }
 
-// Discussions reads up to 10 pages of 100 discussions.
-func (g *GitLab) Discussions(ctx context.Context, mr int) ([]Discussion, error) {
+// Discussions reads up to 10 pages of 100 discussions and says when there were more.
+func (g *GitLab) Discussions(ctx context.Context, mr int) ([]Discussion, bool, error) {
 	var out []Discussion
+	more := false
 	for page := 1; page <= 10; page++ {
 		var ds []glDiscussion
 		q := fmt.Sprintf("%s/merge_requests/%d/discussions?per_page=100&page=%d", g.project(), mr, page)
 		if err := g.api(ctx, q, &ds); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		for _, d := range ds {
 			if d.ID == "" {
@@ -674,6 +676,7 @@ func (g *GitLab) Discussions(ctx context.Context, mr int) ([]Discussion, error) 
 		if len(ds) < 100 {
 			break
 		}
+		more = page == 10
 	}
-	return out, nil
+	return out, more, nil
 }

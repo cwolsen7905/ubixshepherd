@@ -3,7 +3,7 @@ import type { ReviewBot, ReviewBotProject } from '../api/types'
 import { since } from '../format'
 import { useNow } from '../hooks'
 import { Button, Count, EmptyState, ErrorState, LoadingRows, StatusGlyph, Tabs } from '../ui'
-import { botMeta, COLUMNS, spend, summary } from './model'
+import { botMeta, COLUMNS, plural, spend, summary } from './model'
 import { useReviewBots } from './useReviewBots'
 
 /** A count: faint at zero, lantern for what waits on the person, with its glyph and words. */
@@ -26,6 +26,7 @@ function Row({ p }: { p: ReviewBotProject }) {
         <td>
           <code className="sh-bots-name">{p.name}</code>
           {p.truncated && <span className="sh-bots-note"> newest merge requests only</span>}
+          {!!p.partial_mrs && <span className="sh-bots-note"> counts partial on {plural(p.partial_mrs, 'merge request')}</span>}
         </td>
         {COLUMNS.map((c) => (
           <td key={c.key} className="num">

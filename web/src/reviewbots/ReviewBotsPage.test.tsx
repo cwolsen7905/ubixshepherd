@@ -15,7 +15,7 @@ const report: ReviewBots = {
       label_prefix: 'bot::',
       window_days: 30,
       projects: [
-        proj('app', { jobs: 6, proposals: 2, dismissals: 1, needs_you: 1, fixes: 3, spend_usd: 0.0122, stamped: 2, needs_you_items: [{ iid: 3, title: 'Stuck merge', url: 'https://gl.example/app/-/merge_requests/3' }] }),
+        proj('app', { partial_mrs: 2, truncated: true, jobs: 6, proposals: 2, dismissals: 1, needs_you: 1, fixes: 3, spend_usd: 0.0122, stamped: 2, needs_you_items: [{ iid: 3, title: 'Stuck merge', url: 'https://gl.example/app/-/merge_requests/3' }] }),
         proj('lib', { error: 'glab: not logged in' }),
       ],
       total: { ...zero, jobs: 6, proposals: 2, dismissals: 1, needs_you: 1, fixes: 3, spend_usd: 0.0122, stamped: 2 },
@@ -58,6 +58,14 @@ describe('ReviewBotsPage', () => {
     expect(within(row).getByText(/1 needs you/)).toHaveClass('sh-bots-waiting')
     const waiting = document.querySelector('[data-component="ReviewBotWaiting"]') as HTMLElement
     expect(within(waiting).getByRole('link', { name: 'app!3' })).toHaveAttribute('href', 'https://gl.example/app/-/merge_requests/3')
+  })
+
+  it('says when a repo was read in part', async () => {
+    daemon(report)
+    render(<ReviewBotsPage />)
+    const row = (await screen.findByRole('row', { name: 'app' })) as HTMLElement
+    expect(within(row).getByText(/counts partial on 2 merge requests/)).toBeInTheDocument()
+    expect(within(row).getByText(/newest merge requests only/)).toBeInTheDocument()
   })
 
   it('shows zero faint, and a repo it could not read as a failure with words', async () => {
