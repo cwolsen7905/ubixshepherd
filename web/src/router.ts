@@ -24,7 +24,7 @@ type Page =
   | { page: 'board'; range?: Range }
   | { page: 'runs'; range?: Range; agent?: string; lane?: number }
   | { page: 'inbox'; kind?: string }
-  | { page: 'usage'; range?: UsageRange; from?: string; to?: string }
+  | { page: 'usage'; range?: UsageRange; from?: string; to?: string; view?: 'review-bots' }
   | { page: 'timeline'; range?: TimelineRange; agent?: string }
   | { page: 'next'; focus?: number }
   | { page: 'artifacts'; repo?: number; lane?: number; run?: number; topic?: number }
@@ -107,6 +107,9 @@ function parsePage(hash: string): Page {
     }
   }
   if (path === '/inbox') return q.get('kind') ? { page: 'inbox', kind: q.get('kind') as string } : { page: 'inbox' }
+  // The review bots page is a view of Usage here, so the pages that name a route (the back link, the
+  // tab title) already know it; it can become its own route when they do.
+  if (path === '/review-bots') return { page: 'usage', view: 'review-bots' }
   if (path === '/usage') {
     const r = q.get('range')
     const usageRange = r === 'today' || r === 'week' || r === 'month' || r === 'custom' ? r : undefined
@@ -199,6 +202,7 @@ export const href = {
   inbox: (kind?: string) => (kind ? `#/inbox?kind=${encodeURIComponent(kind)}` : '#/inbox'),
   /** Old links keep working: `#/decisions` redirects to the Inbox. */
   decisions: (focus?: number) => (focus ? `#/decisions?d=${focus}` : '#/decisions'),
+  reviewbots: () => '#/review-bots',
   usage: (o: { range?: UsageRange; from?: string; to?: string } = {}) => {
     const q = new URLSearchParams()
     if (o.range) q.set('range', o.range)

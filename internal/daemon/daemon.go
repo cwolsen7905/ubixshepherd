@@ -32,6 +32,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/paths"
 	"github.com/ubixsys/ubixshepherd/internal/project"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
+	"github.com/ubixsys/ubixshepherd/internal/reviewbot"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/update"
 	"github.com/ubixsys/ubixshepherd/internal/version"
@@ -53,7 +54,10 @@ type Server struct {
 	// Briefs reads project briefs kept as files (brief_source); its zero value works.
 	Briefs      project.Reader
 	briefWarnMu sync.Mutex
-	briefWarned map[string]time.Time
+	// botReads reads the forge for the review bots page and caches the answer.
+	botReads     reviewbot.Collector
+	botReadsOnce sync.Once
+	briefWarned  map[string]time.Time
 	// Level is the level Log writes at, when it was opened with this one; a reload sets
 	// it from daemon.log_level.
 	Level     *slog.LevelVar
@@ -258,6 +262,7 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathTagsRelease, worker, s.releaseTag)
 	handle("GET "+api.PathSpend, desk, s.spendToday)
 	handle("GET "+api.PathUsage, desk, s.usageStats)
+	handle("GET "+api.PathReviewBots, desk, s.reviewBots)
 	handle("POST "+api.PathSpend, operatorOnly, s.withRunner(s.addSpend))
 	handle("GET "+api.PathSettings+"/{key}", operatorOnly, s.getSetting)
 	handle("PUT "+api.PathSettings+"/{key}", operatorOnly, s.putSetting)
@@ -1597,6 +1602,37 @@ func (s *Server) usageStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, st)
+}
+
+// reviewBots answers GET /v1/review-bots: what each configured review bot did, per repo,
+// read from the forge (internal/reviewbot) and cached for a few minutes.
+func (s *Server) reviewBots(w http.ResponseWriter, r *http.Request) {
+	s.botReadsOnce.Do(func() {
+		s.botReads.Forge = func(name string) (forge.Forge, error) {
+			wss, err := s.Store.Workspaces(context.Background())
+			if err != nil {
+				return nil, err
+			}
+			var all []reviewbot.Repo
+			for _, ws := range wss {
+				repos, err := s.Store.Repos(context.Background(), ws.ID)
+				if err != nil {
+					return nil, err
+				}
+				for _, repo := range repos {
+					all = append(all, reviewbot.Repo{Name: repo.Name, Remote: repo.Remote})
+				}
+			}
+			remote, err := reviewbot.RemoteFor(all, name)
+			if err != nil {
+				return nil, err
+			}
+			return forge.For(remote)
+		}
+	})
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	writeJSON(w, http.StatusOK, s.botReads.Report(ctx, s.LiveConfig().ReviewBots, r.URL.Query().Get("refresh") == "1"))
 }
 
 // addSpend records what a client spent outside a run: the front desk's turns.

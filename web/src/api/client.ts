@@ -5,7 +5,7 @@
 // its CSRF token, read once from /v1/web/session.
 import type { TopicList, TopicUpdateBody, TopicView } from '../model/topic'
 import type {
-  ConfigChange, ConfigDoc, DeskQuestion, LaneFileNode, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, Request, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
+  ConfigChange, ConfigDoc, DeskQuestion, LaneFileNode, NextAddBody, NextItem, NextList, NextUpdateBody, ConfigPreview, ConfigSaved, Decision, DecisionView, Diagnosis, Feed, FixResult, LaneApproval, LaneApproved, LaneClosed, LaneDiff, LaneRecord, LaneReview, LaneShipped, LaneView, ProjectDetail, ProjectList, ProjectWork, Request, ReviewBots, RequestView, RunEvents, RunHistory, RunLog, RunView, SpendToday, Status, UpdateStatus, UsageStats, Waiting, WebSession,
 } from './types'
 
 export class ApiError extends Error {
@@ -288,6 +288,13 @@ export const projects = {
 
 /** Tokens and context sizes of the daemon's runs and desk turns over a range of local days ("2006-01-02", inclusive). */
 export const usage = (from: string, to: string) => get<UsageStats>(`/v1/usage?${qs({ from, to })}`)
+
+/** What each configured review bot did, per repo; refresh reads the forge again instead of the daemon's cache. */
+export const reviewBots = (refresh = false) =>
+  get<unknown>(refresh ? '/v1/review-bots?refresh=1' : '/v1/review-bots').then((v): ReviewBots => {
+    const o = asObject(v)
+    return { as_of: typeof o.as_of === 'string' ? o.as_of : '', bots: asList(o.bots) }
+  })
 
 /** The config editor: read the settings, preview a change, save it. */
 export const config = {

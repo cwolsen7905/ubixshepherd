@@ -164,6 +164,38 @@ type Forge interface {
 	RefPipeline(ctx context.Context, ref string) (*Pipeline, error)
 }
 
+// MRSummary is a merge request as a list shows it: enough to count by label.
+type MRSummary struct {
+	IID     int       `json:"iid"`
+	Title   string    `json:"title"`
+	State   string    `json:"state"`
+	URL     string    `json:"url"`
+	Labels  []string  `json:"labels,omitempty"`
+	Updated time.Time `json:"updated,omitempty"`
+}
+
+// Discussion is one discussion on a merge request with who resolved it, system notes
+// aside.
+type Discussion struct {
+	ID         string `json:"id"`
+	Resolvable bool   `json:"resolvable"`
+	Resolved   bool   `json:"resolved"`
+	// ResolvedBy is the username that resolved it, empty when unresolved or unknown.
+	ResolvedBy string `json:"resolved_by,omitempty"`
+	Notes      []Note `json:"notes"`
+}
+
+// MRLister is a Forge that can list merge requests by recent activity and read their
+// discussions. GitLab can.
+type MRLister interface {
+	// MergeRequests lists requests in any state updated since the time, newest update
+	// first, at most limit of them. More says the forge had more than limit.
+	MergeRequests(ctx context.Context, since time.Time, limit int) (mrs []MRSummary, more bool, err error)
+	// Discussions is the non-system discussions on the request: up to 1000, and more
+	// says the request had at least one beyond that, so the list is partial.
+	Discussions(ctx context.Context, mr int) (ds []Discussion, more bool, err error)
+}
+
 // Remote is a git remote URL split into host and repository path.
 type Remote struct {
 	Host, Path string
@@ -477,7 +509,10 @@ type glNote struct {
 	System     bool   `json:"system"`
 	Resolvable bool   `json:"resolvable"`
 	Resolved   bool   `json:"resolved"`
-	Author     struct {
+	ResolvedBy *struct {
+		Username string `json:"username"`
+	} `json:"resolved_by"`
+	Author struct {
 		ID       int64  `json:"id"`
 		Username string `json:"username"`
 	} `json:"author"`
@@ -565,4 +600,91 @@ func (d glDiscussion) thread() (Thread, bool) {
 		t.Body = strings.ToValidUTF8(t.Body[:MaxThreadBody], "") + " [cut]"
 	}
 	return t, true
+}
+
+type glMRSummary struct {
+	IID       int      `json:"iid"`
+	Title     string   `json:"title"`
+	State     string   `json:"state"`
+	WebURL    string   `json:"web_url"`
+	Labels    []string `json:"labels"`
+	UpdatedAt string   `json:"updated_at"`
+}
+
+// MergeRequests reads one page of 100 at a time, up to the limit.
+func (g *GitLab) MergeRequests(ctx context.Context, since time.Time, limit int) ([]MRSummary, bool, error) {
+	var out []MRSummary
+	for page := 1; len(out) <= limit; page++ {
+		var ms []glMRSummary
+		q := fmt.Sprintf("%s/merge_requests?state=all&order_by=updated_at&sort=desc&updated_after=%s&per_page=100&page=%d",
+			g.project(), url.QueryEscape(since.UTC().Format(time.RFC3339)), page)
+		if err := g.api(ctx, q, &ms); err != nil {
+			return nil, false, err
+		}
+		for _, m := range ms {
+			out = append(out, MRSummary{IID: m.IID, Title: m.Title, State: m.State, URL: m.WebURL, Labels: m.Labels, Updated: glTime(m.UpdatedAt)})
+		}
+		if len(ms) < 100 {
+			break
+		}
+	}
+	if len(out) > limit {
+		return out[:limit], true, nil
+	}
+	return out, false, nil
+}
+
+// Discussions reads up to 10 pages of 100 discussions and says when there were more.
+func (g *GitLab) Discussions(ctx context.Context, mr int) ([]Discussion, bool, error) {
+	var out []Discussion
+	more := false
+	for page := 1; page <= 10; page++ {
+		var ds []glDiscussion
+		q := fmt.Sprintf("%s/merge_requests/%d/discussions?per_page=100&page=%d", g.project(), mr, page)
+		if err := g.api(ctx, q, &ds); err != nil {
+			return nil, false, err
+		}
+		for _, d := range ds {
+			if d.ID == "" {
+				continue
+			}
+			disc := Discussion{ID: d.ID}
+			for _, n := range d.Notes {
+				if n.System {
+					continue
+				}
+				if n.Resolvable {
+					disc.Resolvable = true
+				}
+				disc.Notes = append(disc.Notes, Note{ID: n.ID, Author: n.Author.Username, AuthorID: n.Author.ID, Text: strings.TrimSpace(n.Body)})
+			}
+			if len(disc.Notes) == 0 {
+				continue
+			}
+			resolved := disc.Resolvable
+			for _, n := range d.Notes {
+				if n.Resolvable && !n.Resolved {
+					resolved = false
+				}
+				if n.ResolvedBy != nil && n.ResolvedBy.Username != "" {
+					disc.ResolvedBy = n.ResolvedBy.Username
+				}
+			}
+			disc.Resolved = resolved
+			out = append(out, disc)
+		}
+		if len(ds) < 100 {
+			break
+		}
+		if page == 10 {
+			// A full tenth page: look for one more before saying the list is cut.
+			var next []glDiscussion
+			q := fmt.Sprintf("%s/merge_requests/%d/discussions?per_page=100&page=11", g.project(), mr)
+			if err := g.api(ctx, q, &next); err != nil {
+				return nil, false, err
+			}
+			more = len(next) > 0
+		}
+	}
+	return out, more, nil
 }

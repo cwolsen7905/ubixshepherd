@@ -2,7 +2,7 @@ import { href, type Route } from '../router'
 import { attentionOf, inboxCount } from '../state/attention'
 import type { Waiting } from '../api/types'
 
-export type NavKey = 'inbox' | 'chat' | 'board' | 'next' | 'artifacts' | 'runs' | 'timeline' | 'history' | 'files' | 'rules' | 'projects' | 'usage' | 'settings' | 'status'
+export type NavKey = 'inbox' | 'chat' | 'board' | 'next' | 'artifacts' | 'runs' | 'timeline' | 'history' | 'files' | 'rules' | 'projects' | 'reviewbots' | 'usage' | 'settings' | 'status'
 
 export interface NavItem {
   key: NavKey
@@ -54,7 +54,8 @@ export const NAV: NavGroup[] = [
         current: (r) => r.page === 'projects' || r.page === 'project' || r.page === 'unassigned',
       },
       { key: 'rules', label: 'Rules', mark: 'L', to: () => href.rules(), current: (r) => r.page === 'rules' },
-      { key: 'usage', label: 'Usage', mark: 'U', to: () => href.usage(), current: (r) => r.page === 'usage' },
+      { key: 'reviewbots', label: 'Review bots', mark: 'B', to: () => href.reviewbots(), current: (r) => r.page === 'usage' && r.view === 'review-bots' },
+      { key: 'usage', label: 'Usage', mark: 'U', to: () => href.usage(), current: (r) => r.page === 'usage' && r.view !== 'review-bots' },
       { key: 'settings', label: 'Settings', mark: 'S', to: () => href.settings(), current: (r) => r.page === 'settings' },
       { key: 'status', label: 'Status', mark: 'D', to: () => href.status(), current: (r) => r.page === 'status' },
     ],

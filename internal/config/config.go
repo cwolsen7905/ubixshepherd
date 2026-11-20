@@ -51,6 +51,76 @@ type Config struct {
 	// Models is the model policy by agent: the catalogue the front desk chooses from,
 	// and the defaults. Projects and repos narrow it (see docs/models.md).
 	Models map[string]AgentModels `yaml:"models,omitempty" json:"models,omitempty"`
+	// ReviewBots names the review bots whose merge request work the Review bots page
+	// counts (docs/review-bots.md). Read only: nothing here changes how a lane runs.
+	ReviewBots []ReviewBot `yaml:"review_bots,omitempty" json:"review_bots,omitempty"`
+}
+
+// ReviewBot is one review bot Shepherd reads on a forge: the account it posts as and the
+// label prefix it marks merge requests with. It names no product: a person writes the
+// values for the bot they run.
+type ReviewBot struct {
+	// Name is the tab's title and the bot's key; unique.
+	Name string `yaml:"name" json:"name"`
+	// User is the bot's forge username. Its threads and notes are the ones counted.
+	User string `yaml:"user" json:"user"`
+	// LabelPrefix starts the bot's status labels, for example "bot::". The labels are the
+	// prefix followed by working, pushed, proposed and needs-you.
+	LabelPrefix string `yaml:"label_prefix" json:"label_prefix"`
+	// Projects are the repo names to read, as Shepherd knows them.
+	Projects []string `yaml:"projects" json:"projects"`
+	// WindowDays is how far back, by last update, merge requests count. 0 means 30.
+	WindowDays int `yaml:"window_days,omitempty" json:"window_days,omitempty"`
+}
+
+// Window is the look-back in days, 30 when unset.
+func (b ReviewBot) Window() int {
+	if b.WindowDays <= 0 {
+		return 30
+	}
+	return b.WindowDays
+}
+
+// MaxReviewWindow is the longest look-back, in days.
+const MaxReviewWindow = 365
+
+func (c Config) validateReviewBots() []error {
+	var errs []error
+	seen := map[string]bool{}
+	for i, b := range c.ReviewBots {
+		at := fmt.Sprintf("review_bots[%d]", i)
+		if strings.TrimSpace(b.Name) == "" || b.Name != strings.TrimSpace(b.Name) {
+			errs = append(errs, fmt.Errorf("%s.name: a name without blanks around it", at))
+		} else if seen[b.Name] {
+			errs = append(errs, fmt.Errorf("%s.name: %q is used twice", at, b.Name))
+		}
+		seen[b.Name] = true
+		if b.User == "" || strings.ContainsAny(b.User, " \t/@") {
+			errs = append(errs, fmt.Errorf("%s.user: %q is not a forge username", at, b.User))
+		}
+		if b.LabelPrefix == "" || b.LabelPrefix != strings.TrimSpace(b.LabelPrefix) {
+			errs = append(errs, fmt.Errorf("%s.label_prefix: a prefix such as \"bot::\", without blanks around it", at))
+		}
+		if len(b.Projects) == 0 {
+			errs = append(errs, fmt.Errorf("%s.projects: name at least one repo", at))
+		}
+		repos := map[string]bool{}
+		for _, p := range b.Projects {
+			switch {
+			case strings.TrimSpace(p) == "":
+				errs = append(errs, fmt.Errorf("%s.projects: a repo name is empty", at))
+			case p != strings.TrimSpace(p):
+				errs = append(errs, fmt.Errorf("%s.projects: %q has blanks around it", at, p))
+			case repos[p]:
+				errs = append(errs, fmt.Errorf("%s.projects: %q is listed twice", at, p))
+			}
+			repos[p] = true
+		}
+		if b.WindowDays < 0 || b.WindowDays > MaxReviewWindow {
+			errs = append(errs, fmt.Errorf("%s.window_days: %d; 1 to %d, or leave it out for 30", at, b.WindowDays, MaxReviewWindow))
+		}
+	}
+	return errs
 }
 
 // Daemon holds the daemon's own settings.
@@ -911,6 +981,7 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	c.Repos = file.Repos
 	c.Projects = file.Projects
 	c.Models = file.Models
+	c.ReviewBots = file.ReviewBots
 	if err := c.Validate(); err != nil {
 		return c, warns, err
 	}
@@ -1002,6 +1073,7 @@ func (c Config) Validate() error {
 	}
 	errs = append(errs, c.validateProjects()...)
 	errs = append(errs, c.validateModels()...)
+	errs = append(errs, c.validateReviewBots()...)
 	return errors.Join(errs...)
 }
 

@@ -183,3 +183,62 @@ func TestThreadLinks(t *testing.T) {
 		t.Error("MR, pipeline or job URL")
 	}
 }
+
+func TestGitLabMergeRequestsAndDiscussions(t *testing.T) {
+	var paths []string
+	g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+		path := args[len(args)-1]
+		paths = append(paths, path)
+		switch {
+		case strings.Contains(path, "/merge_requests?"):
+			return []byte(`[{"iid":7,"title":"T","state":"merged","web_url":"u","labels":["bot::pushed","x"],"updated_at":"2026-11-01T10:00:00Z"}]`), nil
+		case strings.Contains(path, "/merge_requests/7/discussions"):
+			return []byte(`[
+{"id":"a","notes":[{"id":1,"body":"finding","resolvable":true,"resolved":true,"resolved_by":{"username":"sam"},"author":{"id":9,"username":"bot"}}]},
+{"id":"b","notes":[{"id":2,"body":"moved","system":true,"author":{"username":"sam"}}]},
+{"id":"c","notes":[{"id":3,"body":"open","resolvable":true,"resolved":false,"author":{"username":"bot"}}]},
+{"id":"d","notes":[{"id":4,"body":"summary","author":{"username":"bot"}}]}]`), nil
+		}
+		return nil, fmt.Errorf("unexpected %s", path)
+	}}
+	since := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	mrs, more, err := g.MergeRequests(context.Background(), since, 5)
+	if err != nil || more || len(mrs) != 1 || mrs[0].IID != 7 || mrs[0].Labels[0] != "bot::pushed" || mrs[0].Updated.IsZero() {
+		t.Fatalf("mrs = %+v, more %v, %v", mrs, more, err)
+	}
+	if !strings.Contains(paths[0], "updated_after=2026-10-01T00%3A00%3A00Z") || !strings.Contains(paths[0], "state=all") {
+		t.Errorf("query = %s", paths[0])
+	}
+	if _, more, _ := g.MergeRequests(context.Background(), since, 0); !more {
+		t.Error("a limit of 0 with one request should say more")
+	}
+	ds, more, err := g.Discussions(context.Background(), 7)
+	if err != nil || more || len(ds) != 3 {
+		t.Fatalf("discussions = %+v, %v", ds, err)
+	}
+	if !ds[0].Resolved || ds[0].ResolvedBy != "sam" || ds[1].Resolved || !ds[1].Resolvable || ds[2].Resolvable {
+		t.Errorf("states = %+v", ds)
+	}
+}
+
+func TestGitLabDiscussionsSaysWhenCut(t *testing.T) {
+	full := `[` + strings.TrimSuffix(strings.Repeat(`{"id":"d","notes":[{"id":1,"body":"x","author":{"username":"u"}}]},`, 100), ",") + `]`
+	for name, tc := range map[string]struct {
+		eleventh string
+		more     bool
+	}{
+		"exactly a thousand": {`[]`, false},
+		"one more":           {`[{"id":"e","notes":[{"id":2,"body":"y","author":{"username":"u"}}]}]`, true},
+	} {
+		g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+			if strings.HasSuffix(args[len(args)-1], "page=11") {
+				return []byte(tc.eleventh), nil
+			}
+			return []byte(full), nil
+		}}
+		ds, more, err := g.Discussions(context.Background(), 7)
+		if err != nil || more != tc.more || len(ds) != 1000 {
+			t.Errorf("%s: %d discussions, more %v, %v", name, len(ds), more, err)
+		}
+	}
+}

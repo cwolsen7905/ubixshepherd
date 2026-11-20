@@ -19,6 +19,7 @@ import { RunsPage } from './pages/Runs'
 import { SettingsPage } from './pages/Settings'
 import { TimelinePage } from './pages/Timeline'
 import { UsagePage } from './pages/Usage'
+import { ReviewBotsPage } from './reviewbots'
 import { DaemonStatus } from './components/DaemonStatus'
 import { RailSpend } from './shell/RailSpend'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -148,7 +149,8 @@ export function App() {
         {route.page === 'unassigned' && <ProjectPage key="unassigned" name={null} />}
         {route.page === 'runs' && <RunsPage range={route.range} agent={route.agent} lane={route.lane} />}
         {route.page === 'timeline' && <TimelinePage range={route.range} agent={route.agent} />}
-        {route.page === 'usage' && <UsagePage range={route.range} from={route.from} to={route.to} />}
+        {route.page === 'usage' && route.view === 'review-bots' && <ReviewBotsPage />}
+        {route.page === 'usage' && route.view !== 'review-bots' && <UsagePage range={route.range} from={route.from} to={route.to} />}
         {route.page === 'inbox' && <InboxPage kind={route.kind} />}
         {route.page === 'history' && <HistoryPage kind={route.kind} project={route.project} q={route.q} />}
         {route.page === 'files' && <FilesPage repo={route.repo} lane={route.lane} gitRef={route.ref} />}

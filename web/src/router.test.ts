@@ -33,6 +33,7 @@ describe('router', () => {
     expect(parse(href.runs())).toEqual({ page: 'runs' })
     const f = { range: 'week', agent: 'claude', lane: 7 } as const
     expect(parse(href.runs(f))).toEqual({ page: 'runs', ...f })
+    expect(parse(href.reviewbots())).toEqual({ page: 'usage', view: 'review-bots' })
     expect(parse(href.usage())).toEqual({ page: 'usage' })
     expect(parse(href.usage({ range: 'month' }))).toEqual({ page: 'usage', range: 'month' })
     const u = { range: 'custom', from: '2026-10-01', to: '2026-10-07' } as const
@@ -109,7 +110,7 @@ describe('open=', () => {
 })
 
 describe('the view table', () => {
-  const VIEWS = ['Inbox', 'Conversation', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Usage', 'Settings', 'Status']
+  const VIEWS = ['Inbox', 'Conversation', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Review bots', 'Usage', 'Settings', 'Status']
 
   it('lists every view in the nav, in the design order, each reaching its own route', () => {
     const items = NAV.flatMap((g) => g.items)
