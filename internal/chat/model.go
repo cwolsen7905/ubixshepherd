@@ -366,7 +366,7 @@ func (m *Model) Init() tea.Cmd {
 	m.lastPanelPoll = now
 	m.lastSessionsPoll = now
 	m.loadingHistory = true
-	return tea.Batch(textarea.Blink, m.loadHistory(), m.openDecisions(), m.pollPanel(true), m.loadModel(false), m.loadDockPrefs(), m.scheduleTick(m.feedInterval(now)))
+	return tea.Batch(textarea.Blink, m.loadHistory(), m.openDecisions(), m.pollPanel(true), m.loadModel(false), m.loadDockPrefs(), m.loadKeepGoingSummary(), m.scheduleTick(m.feedInterval(now)))
 }
 
 func (m *Model) openDecisions() tea.Cmd {

@@ -23,3 +23,12 @@ func TestAttachSaysNothingWhenKeepGoingNeverRan(t *testing.T) {
 		t.Errorf("thread = %+v", m.Lines())
 	}
 }
+
+func TestInitShowsTheKeepGoingSummary(t *testing.T) {
+	m, _, a := newTestModel()
+	a.keep = api.KeepGoingStatus{Summary: "Since keep-going was turned on at Mon 09:00:\n  started: 1\n"}
+	drive(t, m, m.Init())
+	if !has(m.Lines(), KindInfo, "Since keep-going was turned on") {
+		t.Errorf("thread = %+v", m.Lines())
+	}
+}
