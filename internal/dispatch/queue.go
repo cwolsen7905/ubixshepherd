@@ -131,6 +131,28 @@ func modelAtLimit(cfg config.Config, model string, running []store.Run) (limit i
 	return limit, n >= limit
 }
 
+// modelWhyPrefix starts the Why of a start queued on model. It begins with
+// whyQueuedPrefix on purpose: such a start is a queued follow-up for isFollowUp, so it
+// blocks later starts in its lane (RunHeld's stuck), is dropped when its lane closes
+// (DropQueued) and counts in queuedIn.
+func modelWhyPrefix(model string) string {
+	return whyQueuedPrefix + "model " + model + " ("
+}
+
+// queuedOnModel says whether a start is already queued waiting for model's slot.
+func (r *Runner) queuedOnModel(ctx context.Context, model string) (bool, error) {
+	held, err := r.Store.HeldStarts(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, h := range held {
+		if strings.HasPrefix(h.Why, modelWhyPrefix(model)) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // queueForModel writes down a start the person asked for on a model that is at its cap.
 // Like a follow-up it lives in the held starts, so it survives a restart and RunHeld
 // starts it, oldest first, when a run ends. start holds the runner's lock here.
@@ -140,7 +162,7 @@ func (r *Runner) queueForModel(ctx context.Context, asked StartRequest, lane sto
 	if err != nil {
 		return err
 	}
-	why := fmt.Sprintf("queued behind model %s (at its limit of %d)", model, limit)
+	why := modelWhyPrefix(model) + fmt.Sprintf("at its limit of %d)", limit)
 	if _, err := r.Store.AddHeldStart(ctx, store.HeldStart{Request: string(b), Why: why}); err != nil {
 		return err
 	}
