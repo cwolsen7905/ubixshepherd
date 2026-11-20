@@ -626,6 +626,9 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		Session: session, Resume: resume, Worker: worker,
 		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge,
 		OpenCode: r.openCodeHost()}
+	if f, err := r.Store.LaneForge(ctx, lane.ID); err == nil && f.MRState != "merged" && f.MRState != "closed" {
+		opts.MR = f.MR
+	}
 	if ad.Name == "opencode" {
 		// The run's own brief counts only when a person started it: a run Shepherd starts
 		// on its own (a routed request, a fix) carries text another agent wrote.
