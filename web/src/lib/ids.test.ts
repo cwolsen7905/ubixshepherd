@@ -22,6 +22,12 @@ describe('prefixed ids', () => {
   })
 
   it('leaves ids glued to words or other numbers alone', () => {
-    for (const t of ['MQ-5', 'UTF-8', 'D-1-2', 'Q-5x', 'a_Q-5']) expect(splitPrefixedIds(t)).toEqual([t])
+    for (const t of ['MQ-5', 'UTF-8', 'D-1-2', 'Q-5x', 'a_Q-5', 'https://example.com/T-3', 'docs/L-5.md', 'key=Q-7', 'a/Q-5', 'Q-5/x', '#Q-5', 'me@Q-5']) expect(splitPrefixedIds(t)).toEqual([t])
+  })
+})
+
+describe('prefixed ids at the end of a sentence', () => {
+  it('still link before punctuation', () => {
+    expect(splitPrefixedIds('(see Q-1). Then D-2.')).toHaveLength(5)
   })
 })

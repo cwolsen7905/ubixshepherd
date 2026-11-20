@@ -22,7 +22,7 @@ export interface PrefixedId {
 
 // A prefix letter, a hyphen, digits; not glued to a word or number on either side, so
 // "MQ-5", "Q-5x", "D-1-2" and "UTF-8" stay text.
-const ID = /(?<![\w-])([QDNRLT])-(\d+)(?![\w-])/g
+const ID = /(?<![\w\-/.:=#@])([QDNRLT])-(\d+)(?![\w-]|\/|\.\w)/g
 
 /** Reads one ID from the whole of `text`, or null. */
 export function parsePrefixedId(text: string): PrefixedId | null {

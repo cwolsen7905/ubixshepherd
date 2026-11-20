@@ -23,6 +23,8 @@ export function IdLink({ to: r }: { to: PrefixedId }) {
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
     e.preventDefault()
+    // Inside a clickable row the click is the link's alone: the row must not select over it.
+    e.stopPropagation()
     go(target())
   }
   return (
