@@ -3,6 +3,7 @@ package watch
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -89,5 +90,39 @@ func TestForgeMergedRetryIgnoresARequestOlderThanTheLane(t *testing.T) {
 	f.w.Check(f.ctx)
 	if f.state(t) != store.LaneOpen {
 		t.Fatal("closed on a request older than the lane")
+	}
+}
+
+// A lane the poll left open because its request was already merged on first sight stays
+// open: the retry acts only on a merge seen happening.
+func TestForgeMergedRetryLeavesAFirstSightMergeAlone(t *testing.T) {
+	f := newFixture(t)
+	clock := time.Now()
+	f.w.Clock = func() time.Time { return clock }
+	head := f.head(t)
+	f.f.mr = &forge.MR{IID: 31, State: "merged", SHA: head, MergeSHA: "aaaa1111bbbb", Created: time.Now().Add(time.Minute)}
+	f.w.Check(f.ctx)
+	clock = clock.Add(AutoCloseSettle + time.Second)
+	f.w.Check(f.ctx)
+	clock = clock.Add(AutoCloseSettle + time.Second)
+	f.w.Check(f.ctx)
+	if f.state(t) != store.LaneOpen {
+		t.Fatalf("closed a lane left open on first sight; feed = %s", f.feed(t))
+	}
+}
+
+// A refusal that lasts posts nothing more than the merge poll's own message.
+func TestForgeMergedRetryDoesNotRepeatARefusal(t *testing.T) {
+	f := newFixture(t)
+	clock := time.Now()
+	f.w.Clock = func() time.Time { return clock }
+	f.mergedThenDirty(t, forge.MR{MergeSHA: "aaaa1111bbbb"})
+	before := strings.Count(f.feed(t), "cannot close")
+	for i := 0; i < 3; i++ {
+		clock = clock.Add(AutoCloseSettle + time.Second)
+		f.w.Check(f.ctx)
+	}
+	if after := strings.Count(f.feed(t), "cannot close"); after != before || before != 1 {
+		t.Errorf("refusal posted %d times, then %d; feed = %s", before, after, f.feed(t))
 	}
 }

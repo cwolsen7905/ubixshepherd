@@ -2,6 +2,8 @@ package watch
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -54,17 +56,51 @@ func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
 	if err != nil || mr == nil {
 		return false
 	}
+	if w.firstSightMerged(ctx, lane, mr.IID) {
+		return false
+	}
 	if mr.IID != lf.MR || mr.State != "merged" || mr.MergeSHA == "" || mr.Created.IsZero() || !mr.Created.After(lane.Created) {
 		return false
 	}
-	w.merged(ctx, lane, mr)
-	cur, err := w.Store.Lane(ctx, lane.ID)
-	if err != nil || cur.State != store.LaneClosed {
+	// Quiet until it works: a refusal that lasts (uncommitted work the person keeps, a
+	// run left going) must not post the same feed entry every interval. The merge poll
+	// has already said why it could not close.
+	res, err := w.Fold.CloseMerged(ctx, lane.ID, mr.MergeSHA, mr.SHA)
+	if err != nil {
+		w.Log.Debug("watch: merged lane not closed", "lane", lane.Name, "mr", mr.IID, "why", firstLine(err.Error()))
 		return false
 	}
+	w.Log.Info("watch: lane closed on merge, retried", "lane", lane.Name, "mr", mr.IID, "merge", mr.MergeSHA)
+	if err := w.Fold.WriteView(ctx, lane.RepoID); err != nil {
+		w.Log.Error("watch: coordination view", "err", err)
+	}
+	note := ""
+	if res.BranchDeleted {
+		note = ", local branch deleted"
+	}
+	w.feed(ctx, store.FeedLaneClosed, lane.ID, "!%d merged at %s; lane %s closed%s", mr.IID, short(mr.MergeSHA), lane.Name, note)
 	lf.MergeSHA = mr.MergeSHA
 	if err := w.Store.PutLaneForge(ctx, lf); err != nil {
 		w.Log.Error("watch: save", "lane", lane.Name, "err", err)
 	}
 	return true
+}
+
+// firstSightMerged reports whether the merge poll deliberately left this lane open
+// because the request was already merged when Shepherd first looked (checkLane reports
+// it and never acts: such a request proves nothing about the work in the lane now). That
+// rule stands for the retry too, so it acts only on a merge seen happening. The poll's
+// own feed entry is the record of it.
+func (w *Watcher) firstSightMerged(ctx context.Context, lane store.Lane, iid int) bool {
+	items, err := w.Store.Feed(ctx, 0, 5000)
+	if err != nil {
+		return true // cannot tell: leave the lane to the person
+	}
+	prefix := fmt.Sprintf("!%d for lane %s was already merged when Shepherd first looked", iid, lane.Name)
+	for _, it := range items {
+		if it.Ref == lane.ID && strings.HasPrefix(it.Text, prefix) {
+			return true
+		}
+	}
+	return false
 }
