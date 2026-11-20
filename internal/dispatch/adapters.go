@@ -181,6 +181,9 @@ type Opts struct {
 	// Push lets the agent push its lane's branch; Merge lets it arm merge when the
 	// pipeline succeeds on its lane's merge request (glab mr merge).
 	Push, Merge bool
+	// MR is the iid of the lane's own merge request, 0 when none is known; with Push it
+	// lets the agent reply on that request's threads (see perm.go).
+	MR int
 	// ReadPaths are absolute paths outside the worktree the run's briefs name; OpenCode
 	// may read them, never write them.
 	ReadPaths []string
@@ -280,10 +283,12 @@ var adapters = map[string]Adapter{
 			if o.Merge {
 				a = append(a, "Bash(glab mr view:*)", "Bash(glab mr merge:*)")
 			}
+			a = append(a, claudeForgeAllow(o)...)
 			a = append(a, "--disallowedTools")
 			if !o.Push {
 				a = append(a, "Bash(git push:*)")
 			}
+			a = append(a, claudeForgeDeny(o)...)
 			a = append(a, BypassDenied...)
 			a = append(a, KillDenied...)
 			if o.Model != "" {

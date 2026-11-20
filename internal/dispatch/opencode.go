@@ -433,6 +433,11 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 	for _, p := range openCodeGlabDeny {
 		bash = append(bash, kv{p, "deny"})
 	}
+	// Push-agent lanes may lint CI and reply on their own merge request's threads; these
+	// follow the denies above so they win, and carry their own denies (perm.go).
+	for _, r := range openCodeForgeAllow(o, openCodeWorktreeForms(o)) {
+		bash = append(bash, r)
+	}
 	// Explicitly deny interactive rebases to prevent hangs
 	bash = append(bash, kv{"git rebase -i*", "deny"})
 	bash = append(bash, kv{"git rebase --interactive*", "deny"})
@@ -719,4 +724,12 @@ func openCodeSession(line string) string {
 		return ""
 	}
 	return e.SessionID
+}
+
+// openCodeWorktreeForms are the forms of the run's worktree path, none when it has none.
+func openCodeWorktreeForms(o Opts) []string {
+	if o.Worktree == "" {
+		return nil
+	}
+	return openCodePathForms(o.Worktree)
 }
