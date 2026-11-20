@@ -26,38 +26,49 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 	if err != nil {
 		return "", err
 	}
+	lanes := map[int64]store.Lane{} // the workspace's lanes, read once
+	for _, rp := range repos {
+		ls, err := st.Lanes(ctx, rp.ID)
+		if err != nil {
+			return "", err
+		}
+		for _, l := range ls {
+			lanes[l.ID] = l
+		}
+	}
 	items, err := st.NextItems(ctx)
 	if err != nil {
 		return "", err
 	}
-	titleOf := map[int64]string{} // lane id to the item it works on
+	byLane := map[int64][]store.NextItem{} // the items that claimed each lane
 	for _, it := range items {
 		if it.LaneID != 0 {
-			titleOf[it.LaneID] = fmt.Sprintf("item %d %q", it.ID, it.Title)
+			byLane[it.LaneID] = append(byLane[it.LaneID], it)
 		}
 	}
-	runs, err := st.Runs(ctx, 0, "", 1000)
+	runs, err := st.Runs(ctx, 0, "", 1000) // newest first
 	if err != nil {
 		return "", err
 	}
+	forge := map[int64]*store.LaneForge{} // read once per lane, nil for none
 	var started, finished, failed, mrs []string
 	seenLane, seenMR := map[int64]bool{}, map[int64]bool{}
-	for i := len(runs) - 1; i >= 0; i-- { // oldest first
-		r := runs[i]
+	var mine []store.Run
+	for _, r := range runs {
 		if r.Started.Before(row.Since) {
-			continue
+			break // older runs are from before keep-going was turned on
 		}
-		lane, err := st.Lane(ctx, r.LaneID)
-		if err != nil || !inRepos(repos, lane.RepoID) {
-			continue
+		if _, ok := lanes[r.LaneID]; ok {
+			mine = append(mine, r)
 		}
-		what := titleOf[lane.ID]
-		if what == "" {
-			what = "lane " + lane.Name
-		}
+	}
+	for i := len(mine) - 1; i >= 0; i-- { // oldest first
+		r := mine[i]
+		lane := lanes[r.LaneID]
+		what := runWhat(lane, itemFor(byLane[lane.ID], r), r)
 		if !seenLane[lane.ID] {
 			seenLane[lane.ID] = true
-			started = append(started, what+" on lane "+lane.Name)
+			started = append(started, what)
 		}
 		switch r.State {
 		case store.RunSucceeded:
@@ -69,7 +80,15 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 			}
 			failed = append(failed, fmt.Sprintf("%s: run %d %s (%s)", what, r.ID, r.State, firstLine(why)))
 		}
-		if lf, err := st.LaneForge(ctx, lane.ID); err == nil && lf.MR != 0 && !seenMR[lane.ID] {
+		lf, ok := forge[lane.ID]
+		if !ok {
+			forge[lane.ID] = nil
+			if f, err := st.LaneForge(ctx, lane.ID); err == nil {
+				forge[lane.ID] = &f
+			}
+			lf = forge[lane.ID]
+		}
+		if lf != nil && lf.MR != 0 && !seenMR[lane.ID] {
 			seenMR[lane.ID] = true
 			mrs = append(mrs, fmt.Sprintf("!%d %s (%s)", lf.MR, what, lf.MRState))
 		}
@@ -99,11 +118,43 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 	return redact.String(b.String()), nil
 }
 
-func inRepos(repos []store.Repo, id int64) bool {
-	for _, r := range repos {
-		if r.ID == id {
-			return true
+// itemFor picks the Next-up item a run was for out of those that claimed its lane: one
+// whose life (created to done) holds the run's start, the latest created if several, else
+// the latest created that existed by then, else none.
+func itemFor(items []store.NextItem, r store.Run) *store.NextItem {
+	var live, early *store.NextItem
+	for i := range items {
+		it := &items[i]
+		if it.Created.After(r.Started) {
+			continue
+		}
+		if early == nil || it.Created.After(early.Created) {
+			early = it
+		}
+		if (it.DoneAt == nil || !it.DoneAt.Before(r.Started)) && (live == nil || it.Created.After(live.Created)) {
+			live = it
 		}
 	}
-	return false
+	if live != nil {
+		return live
+	}
+	if early != nil {
+		return early
+	}
+	if len(items) == 1 {
+		return &items[0]
+	}
+	return nil
+}
+
+// runWhat names a run by its item (if any), its lane and the agent that ran it.
+func runWhat(l store.Lane, it *store.NextItem, r store.Run) string {
+	s := "lane " + l.Name
+	if it != nil {
+		s = fmt.Sprintf("item %d %q on lane %s", it.ID, it.Title, l.Name)
+	}
+	if r.Agent != "" {
+		s += " by " + r.Agent
+	}
+	return s
 }
