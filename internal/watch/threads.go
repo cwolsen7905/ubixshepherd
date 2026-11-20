@@ -73,6 +73,13 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 		w.Log.Debug("watch: review threads", "lane", lane.Name, "err", err)
 		return
 	}
+	threads = slices.DeleteFunc(slices.Clone(threads), func(t forge.Thread) bool {
+		skip := machineThread(t, wc.FollowThrough)
+		if skip {
+			w.Log.Debug("watch: review thread is a bot's note, not handed back", "lane", lane.Name, "thread", t.ID)
+		}
+		return skip
+	})
 	if ft := wc.FollowThrough; ft.External() {
 		threads = w.ownerThreads(ctx, lane, mr, threads, ft)
 	}
@@ -191,6 +198,35 @@ func (w *Watcher) reviewThreads(ctx context.Context, f forge.Forge, lane store.L
 	next.FixTries = tries + 1
 	handed(false)
 	w.feed(ctx, store.FeedPipeline, lane.ID, "asked %s to address %d review thread(s) on !%d (run %d, try %d of %d)", last.Agent, len(all), mr.IID, run.ID, next.FixTries, limit)
+}
+
+// MachineMarkers begin a note a review bot writes for the record (a triage or summary),
+// not to ask for a change. The agent replies to threads as the person, so a thread that
+// opens with one is never handed back.
+var MachineMarkers = []string{"<!-- ai-review:summary", "<!-- ai-review:triage"}
+
+// machineThread says a thread is a review bot's own note and nothing else: the owner's
+// authors come from follow_through (set only with an external owner), the first note,
+// read from the entries because the body is cleaned and prefixed, opens with a machine
+// marker, and every note in the thread is by those authors. Anyone can type a marker, so
+// with no authors configured nothing is skipped, and a person's reply in the thread
+// brings it back to the agent.
+func machineThread(t forge.Thread, ft config.FollowThrough) bool {
+	if len(ft.Author) == 0 || len(t.Entries) == 0 {
+		return false
+	}
+	for _, n := range t.Entries {
+		if !ft.OwnsAuthor(n.Author) {
+			return false
+		}
+	}
+	text := strings.TrimSpace(t.Entries[0].Text)
+	for _, m := range MachineMarkers {
+		if strings.HasPrefix(text, m) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseSeenOne(e string) string {
