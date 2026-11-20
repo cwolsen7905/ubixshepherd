@@ -67,7 +67,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			repo = name
 		}
 		if repo != name {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("%s %d is in repo %q, not %q", what, id, name, req.Repo))
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%s %d is in repo %q, not %q", what, id, name, repo))
 			return false
 		}
 		return true
@@ -126,6 +126,23 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if !link("next-up item", it.ID, it.Repo) {
+			return
+		}
+	}
+	// Whatever repo the question ends up with, a standalone one included, is one of
+	// the desk's workspace.
+	if repo != "" {
+		repos, err := s.Store.Repos(ctx, d.Workspace().ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		found := false
+		for _, r := range repos {
+			found = found || r.Name == repo
+		}
+		if !found {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no repo %q in this workspace", repo))
 			return
 		}
 	}

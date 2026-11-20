@@ -235,12 +235,15 @@ func TestDeskQuestionLinksALaneAndAnItem(t *testing.T) {
 	s, ts := newServer(t)
 	ctx := context.Background()
 	root, _ := paths.Canonical(t.TempDir())
-	ws, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, []store.Repo{{Name: "app", Path: filepath.Join(root, "app"), Remote: "git@gl.example.com:g/app.git"}})
+	ws, err := s.Store.SaveWorkspace(ctx, store.Workspace{Name: "ws", Path: root}, []store.Repo{{Name: "app", Path: filepath.Join(root, "app"), Remote: "git@gl.example.com:g/app.git"}, {Name: "lib", Path: filepath.Join(root, "lib"), Remote: "git@gl.example.com:g/lib.git"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	repos, _ := s.Store.Repos(ctx, ws.ID)
 	repo := repos[0]
+	if repo.Name != "app" {
+		repo = repos[1]
+	}
 	l, err := s.Store.CreateLane(ctx, store.Lane{RepoID: repo.ID, Name: "feat", Branch: "feat/x", Base: "main", Worktree: root + "/feat", State: store.LaneOpen})
 	if err != nil {
 		t.Fatal(err)
@@ -286,6 +289,22 @@ func TestDeskQuestionLinksALaneAndAnItem(t *testing.T) {
 	foreign, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Foreign", Repo: "elsewhere", State: store.NextApproved, Source: store.NextByPerson})
 	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", NextID: foreign.ID}, nil); code != http.StatusBadRequest {
 		t.Errorf("item outside the workspace: %d", code)
+	}
+	// A standalone repo must be in the workspace; a lane and an item in different repos
+	// are refused, naming the repo the lane gave.
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", Repo: "nowhere"}, nil); code != http.StatusBadRequest {
+		t.Errorf("repo outside the workspace: %d", code)
+	}
+	var ok store.Question
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "Repo only?", Repo: "app"}, &ok); code != http.StatusCreated || ok.Repo != "app" {
+		t.Errorf("standalone repo: %d %+v", code, ok)
+	}
+	libItem, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Lib", Repo: "lib", State: store.NextApproved, Source: store.NextByPerson})
+	var e struct {
+		Error string `json:"error"`
+	}
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", LaneID: l.ID, NextID: libItem.ID}, &e); code != http.StatusBadRequest || !strings.Contains(e.Error, `"lib", not "app"`) {
+		t.Errorf("lane against item repo: %d %q", code, e.Error)
 	}
 	var plain store.Question
 	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "Plain?"}, &plain); code != http.StatusCreated || plain.LaneID != 0 || plain.NextID != 0 || plain.Repo != "" {
