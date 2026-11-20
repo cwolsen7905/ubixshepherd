@@ -81,11 +81,19 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		name := ""
-		if r, err := s.Store.Repo(ctx, l.RepoID); err == nil {
-			name = r.Name
+		r, err := s.Store.Repo(ctx, l.RepoID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("lane %d has no repo", l.ID))
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
-		if !link("lane", l.ID, name) {
+		if r.WorkspaceID != d.Workspace().ID {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d in this workspace", l.ID))
+			return
+		}
+		if !link("lane", l.ID, r.Name) {
 			return
 		}
 	}
@@ -97,6 +105,25 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 		} else if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
+		}
+		if it.LaneID != 0 && req.LaneID != 0 && it.LaneID != req.LaneID {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("next-up item %d is linked to lane %d, not lane %d", it.ID, it.LaneID, req.LaneID))
+			return
+		}
+		if it.Repo != "" {
+			repos, err := s.Store.Repos(ctx, d.Workspace().ID)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			found := false
+			for _, r := range repos {
+				found = found || r.Name == it.Repo
+			}
+			if !found {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("no next-up item %d in this workspace", it.ID))
+				return
+			}
 		}
 		if !link("next-up item", it.ID, it.Repo) {
 			return

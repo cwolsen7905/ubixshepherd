@@ -278,6 +278,15 @@ func TestDeskQuestionLinksALaneAndAnItem(t *testing.T) {
 	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", NextID: it.ID, Repo: "other"}, nil); code != http.StatusBadRequest {
 		t.Errorf("repo differs from the item's: %d", code)
 	}
+	// An item linked to another lane, or to a repo outside this workspace, is refused.
+	linked, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Linked", Repo: "app", LaneID: l.ID + 100, State: store.NextApproved, Source: store.NextByPerson})
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", LaneID: l.ID, NextID: linked.ID}, nil); code != http.StatusBadRequest {
+		t.Errorf("item of another lane: %d", code)
+	}
+	foreign, _ := s.Store.AddNextItem(ctx, store.NextItem{Title: "Foreign", Repo: "elsewhere", State: store.NextApproved, Source: store.NextByPerson})
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", NextID: foreign.ID}, nil); code != http.StatusBadRequest {
+		t.Errorf("item outside the workspace: %d", code)
+	}
 	var plain store.Question
 	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "Plain?"}, &plain); code != http.StatusCreated || plain.LaneID != 0 || plain.NextID != 0 || plain.Repo != "" {
 		t.Errorf("plain: %d %+v", code, plain)
