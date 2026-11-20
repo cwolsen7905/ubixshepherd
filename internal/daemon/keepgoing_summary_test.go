@@ -51,6 +51,10 @@ func TestItemForPicksTheItemThatOwnedTheRun(t *testing.T) {
 	if it := itemFor(nil, store.Run{Started: t0}); it != nil {
 		t.Errorf("no item: %+v", it)
 	}
+	// A lane used before its only item claimed it: the earlier run is not the item's.
+	if it := itemFor([]store.NextItem{second}, store.Run{Started: t0.Add(time.Hour)}); it != nil {
+		t.Errorf("a run from before the lane's only item: %+v", it)
+	}
 }
 
 func TestSinceYouLeftAttributesEachRunToItsLaneItemAndAgent(t *testing.T) {

@@ -139,7 +139,7 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 
 // itemFor picks the Next-up item a run was for out of those that claimed its lane: one
 // whose life (created to done) holds the run's start, the latest created if several, else
-// the latest created that existed by then, else none.
+// the latest created that existed by then, else none (a run from before every item).
 func itemFor(items []store.NextItem, r store.Run) *store.NextItem {
 	var live, early *store.NextItem
 	for i := range items {
@@ -160,9 +160,7 @@ func itemFor(items []store.NextItem, r store.Run) *store.NextItem {
 	if early != nil {
 		return early
 	}
-	if len(items) == 1 {
-		return &items[0]
-	}
+	// Every item came after the run: the run was not for any of them.
 	return nil
 }
 
