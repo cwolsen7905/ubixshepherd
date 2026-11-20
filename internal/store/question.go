@@ -29,7 +29,7 @@ type Question struct {
 	Turn    int64 `json:"turn"`
 	TopicID int64 `json:"topic_id,omitempty"`
 	// Repo, LaneID and NextID say what the question is about: a repo's name plus a lane
-	// or a next-up item. A new question has a repo and at least one of the other two.
+	// or a next-up item. All are optional: the desk may open a question that names none.
 	Repo   string `json:"repo,omitempty"`
 	LaneID int64  `json:"lane_id,omitempty"`
 	NextID int64  `json:"next_id,omitempty"`

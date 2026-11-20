@@ -56,27 +56,50 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			topic = l.TopicID
 		}
 	}
+	// The links must exist, and a repo given with them must be theirs: the repo is
+	// taken from the lane or the item when not given.
 	repo := req.Repo
-	if req.LaneID != 0 {
-		l, err := s.Store.Lane(ctx, req.LaneID)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d", req.LaneID))
-			return
+	link := func(what string, id int64, name string) bool {
+		if name == "" {
+			return true
 		}
 		if repo == "" {
-			if r, err := s.Store.Repo(ctx, l.RepoID); err == nil {
-				repo = r.Name
-			}
+			repo = name
+		}
+		if repo != name {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("%s %d is in repo %q, not %q", what, id, name, req.Repo))
+			return false
+		}
+		return true
+	}
+	if req.LaneID != 0 {
+		l, err := s.Store.Lane(ctx, req.LaneID)
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d", req.LaneID))
+			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		name := ""
+		if r, err := s.Store.Repo(ctx, l.RepoID); err == nil {
+			name = r.Name
+		}
+		if !link("lane", l.ID, name) {
+			return
 		}
 	}
 	if req.NextID != 0 {
 		it, err := s.Store.NextItem(ctx, req.NextID)
-		if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("no next-up item %d", req.NextID))
 			return
+		} else if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
-		if repo == "" {
-			repo = it.Repo
+		if !link("next-up item", it.ID, it.Repo) {
+			return
 		}
 	}
 	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text,

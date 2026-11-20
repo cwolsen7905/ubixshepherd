@@ -272,6 +272,12 @@ func TestDeskQuestionLinksALaneAndAnItem(t *testing.T) {
 	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", NextID: 999}, nil); code != http.StatusBadRequest {
 		t.Errorf("missing item: %d", code)
 	}
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", LaneID: l.ID, Repo: "other"}, nil); code != http.StatusBadRequest {
+		t.Errorf("repo differs from the lane's: %d", code)
+	}
+	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "x?", NextID: it.ID, Repo: "other"}, nil); code != http.StatusBadRequest {
+		t.Errorf("repo differs from the item's: %d", code)
+	}
 	var plain store.Question
 	if code := call(t, ts, system, "POST", api.PathQuestions, api.QuestionOpen{Text: "Plain?"}, &plain); code != http.StatusCreated || plain.LaneID != 0 || plain.NextID != 0 || plain.Repo != "" {
 		t.Errorf("plain: %d %+v", code, plain)
