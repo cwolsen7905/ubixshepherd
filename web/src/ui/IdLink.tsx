@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import { useState, type MouseEvent } from 'react'
 import type { PrefixedId } from '../lib/ids'
 import { go, withOpen } from '../router'
 import './ui.css'
@@ -15,9 +15,11 @@ const NAME: Record<PrefixedId['kind'], string> = {
 /**
  * A prefixed ID in prose ("D-370") as a link that opens the thing in the side column,
  * on whatever page the person is on. It is a real anchor, so a middle click or copy of
- * the address still works.
+ * the address still works. Inside another link (a row that is itself an anchor) it shows
+ * as a plain chip instead, since an anchor may not nest in an anchor.
  */
 export function IdLink({ to: r }: { to: PrefixedId }) {
+  const [nested, setNested] = useState(false)
   const target = () => withOpen(window.location.hash, { kind: r.kind, id: r.id })
   const label = `${NAME[r.kind]} ${r.id}`
   const onClick = (e: MouseEvent<HTMLAnchorElement>) => {
@@ -27,8 +29,19 @@ export function IdLink({ to: r }: { to: PrefixedId }) {
     e.stopPropagation()
     go(target())
   }
+  // The anchor is swapped for a span once it is known to sit inside another anchor, before paint.
+  const seen = (a: HTMLAnchorElement | null) => {
+    if (a?.parentElement?.closest('a')) setNested(true)
+  }
+  if (nested) {
+    return (
+      <span className="ui-idchip" data-component="IdLink" title={label}>
+        {r.text}
+      </span>
+    )
+  }
   return (
-    <a className="ui-idchip" data-component="IdLink" href={target()} title={`Open ${label}`} onClick={onClick}>
+    <a ref={seen} className="ui-idchip" data-component="IdLink" href={target()} title={`Open ${label}`} onClick={onClick}>
       {r.text}
     </a>
   )

@@ -14,3 +14,13 @@ it('opens its own thing without selecting the row it sits in', () => {
   expect(select).not.toHaveBeenCalled()
   expect(window.location.hash).toBe('#/inbox?open=question%3A196')
 })
+
+it('is not an anchor inside another anchor', () => {
+  const { container } = render(
+    <a href="#/project/x">
+      <IdLink to={{ kind: 'decision', id: 370, text: 'D-370' }} />
+    </a>,
+  )
+  expect(container.querySelectorAll('a a')).toHaveLength(0)
+  expect(screen.getByText('D-370').tagName).toBe('SPAN')
+})
