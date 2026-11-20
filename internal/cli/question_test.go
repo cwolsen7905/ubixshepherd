@@ -20,3 +20,26 @@ func TestWriteQuestionShowsWhatItIsAbout(t *testing.T) {
 		t.Errorf("plain: %q", got)
 	}
 }
+
+func TestQuestionOpenToolPassesTheLinks(t *testing.T) {
+	var open mcpTool
+	for _, tl := range mcpTools() {
+		if tl.Name == "question_open" {
+			open = tl
+		}
+	}
+	if open.Name == "" {
+		t.Fatal("no question_open tool")
+	}
+	args, err := open.args(map[string]any{"text": "Ship?", "lane": float64(4), "item": float64(9)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(args, " "); got != "question open Ship? --lane 4 --item 9" {
+		t.Errorf("linked: %q", got)
+	}
+	args, _ = open.args(map[string]any{"text": "Ship?"})
+	if got := strings.Join(args, " "); got != "question open Ship?" {
+		t.Errorf("plain: %q", got)
+	}
+}

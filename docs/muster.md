@@ -2,7 +2,7 @@
 
 Status: **partly built**. The pass, its checks, the log and undo are in the daemon's
 watcher. The routes, CLI and web screens that show and act on its findings are not built
-yet, and nor are the required links on new questions and items.
+yet, and nor is the required repo on new items.
 
 Lists that lie stop being used. Muster is a pass that runs on the watcher's tick and
 looks over artifacts, lanes, runs, next-up items, questions and decisions for what has
@@ -58,11 +58,11 @@ An unset value takes the default shown. Negative values are refused.
 
 ## Links
 
-A question carries the repo and the lane or next-up item it is about (`repo`, `lane_id`,
-`next_id`). A decision is about the lane of the run that asked it. A next-up item has a
+A question may carry the repo and the lane or next-up item it is about (`repo`, `lane_id`,
+`next_id`); the links are optional, and the desk can set them when it opens one. A decision is about the lane of the run that asked it. A next-up item has a
 repo. `muster.ValidateQuestion` and `muster.ValidateNext` are the rules, and
-`muster.AboutQuestion`, `AboutDecision` and `AboutNext` give the label. Questions made
-before the links existed are flagged rather than guessed at.
+`muster.AboutQuestion`, `AboutDecision` and `AboutNext` give the label. A question with no
+links, including one made before the links existed, is flagged rather than guessed at.
 
 ## Where it lives
 
