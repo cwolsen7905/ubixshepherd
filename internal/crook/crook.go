@@ -81,10 +81,11 @@ const (
 )
 
 // Consequential reports whether letting a in is an act with effects outside Shepherd: a
-// push, a ship, a tag push or a merge arm. A proceed on one is told to the feed.
+// push, a ship or a tag push. A proceed on one is told to the feed. A merge arm is not
+// listed: the agent arms it itself and Shepherd only probes, so no verdict is recorded.
 func Consequential(a Action) bool {
 	switch a {
-	case ActionPush, ActionShip, ActionTagPush, ActionMergeArm:
+	case ActionPush, ActionShip, ActionTagPush:
 		return true
 	}
 	return false

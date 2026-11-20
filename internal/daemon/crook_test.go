@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
@@ -160,5 +161,30 @@ func TestCrookFeedText(t *testing.T) {
 	}
 	if got := crookFeedText(crook.Entry{Action: crook.ActionShip, Rule: "r", Repo: "api"}); got != "crook let lane.ship proceed in api by r" {
 		t.Fatalf("repo only: %q", got)
+	}
+}
+
+// A proceed on a consequential action is told to the feed once its verdict is stored; a
+// proceed on a route, and a refusal, are not.
+func TestCrookFeedPostsConsequentialProceeds(t *testing.T) {
+	s, _ := newServer(t)
+	stop := s.startCrookLog(context.Background())
+	ctx := context.Background()
+	crook.Check(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyShepherd, Repo: "r", Lane: "feat-x"}})
+	crook.Check(ctx, crook.Request{Action: crook.ActionShip, Actor: crook.ActorDaemon, Facts: crook.Facts{Push: crook.AutonomyAgent, Repo: "r2"}})
+	crook.Check(ctx, crook.Request{Action: crook.RouteAction("GET /v1/x"), Actor: crook.ActorDesk})
+	stop()
+	items, err := s.Store.Feed(ctx, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, it := range items {
+		if it.Kind == FeedCrook {
+			got = append(got, it.Text)
+		}
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "lane.ship") || !strings.Contains(got[0], "feat-x") {
+		t.Fatalf("crook feed lines = %q", got)
 	}
 }

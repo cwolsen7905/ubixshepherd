@@ -167,12 +167,12 @@ func TestChecksActionsArePersonOnly(t *testing.T) {
 }
 
 func TestConsequential(t *testing.T) {
-	for _, a := range []Action{ActionPush, ActionShip, ActionTagPush, ActionMergeArm} {
+	for _, a := range []Action{ActionPush, ActionShip, ActionTagPush} {
 		if !Consequential(a) {
 			t.Errorf("%s should be consequential", a)
 		}
 	}
-	for _, a := range []Action{ActionRunStart, ActionPrePush, ActionDecisionAnswer, RouteAction("GET /v1/feed")} {
+	for _, a := range []Action{ActionMergeArm, ActionRunStart, ActionPrePush, ActionDecisionAnswer, RouteAction("GET /v1/feed")} {
 		if Consequential(a) {
 			t.Errorf("%s should not be consequential", a)
 		}

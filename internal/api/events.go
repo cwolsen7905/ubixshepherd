@@ -57,7 +57,7 @@ const (
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
 	EventKeepGoing        = "keep_going"   // keep-going mode on, off, or an autonomous action
-	EventCrook            = "crook"        // Crook let a consequential action proceed: a push, ship, tag push or merge arm
+	EventCrook            = "crook"        // Crook let a consequential action proceed: a push, ship or tag push
 	EventInfo             = "info"         // anything else, such as a session note
 )
 
