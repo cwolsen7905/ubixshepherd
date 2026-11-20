@@ -26,16 +26,6 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 	if err != nil {
 		return "", err
 	}
-	lanes := map[int64]store.Lane{} // the workspace's lanes, read once
-	for _, rp := range repos {
-		ls, err := st.Lanes(ctx, rp.ID)
-		if err != nil {
-			return "", err
-		}
-		for _, l := range ls {
-			lanes[l.ID] = l
-		}
-	}
 	items, err := st.NextItems(ctx)
 	if err != nil {
 		return "", err
@@ -53,14 +43,27 @@ func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) 
 	forge := map[int64]*store.LaneForge{} // read once per lane, nil for none
 	var started, finished, failed, mrs []string
 	seenLane, seenMR := map[int64]bool{}, map[int64]bool{}
+	// Lanes are read once per distinct lane in the window, by id: Lanes by repo leaves
+	// out closed lanes, and a lane closed by its merge still did the work.
+	lanes := map[int64]store.Lane{}
+	skip := map[int64]bool{}
 	var mine []store.Run
 	for _, r := range runs {
 		if r.Started.Before(row.Since) {
 			break // older runs are from before keep-going was turned on
 		}
-		if _, ok := lanes[r.LaneID]; ok {
-			mine = append(mine, r)
+		if skip[r.LaneID] {
+			continue
 		}
+		if _, ok := lanes[r.LaneID]; !ok {
+			l, err := st.Lane(ctx, r.LaneID)
+			if err != nil || !inRepos(repos, l.RepoID) {
+				skip[r.LaneID] = true
+				continue
+			}
+			lanes[r.LaneID] = l
+		}
+		mine = append(mine, r)
 	}
 	for i := len(mine) - 1; i >= 0; i-- { // oldest first
 		r := mine[i]
@@ -157,4 +160,13 @@ func runWhat(l store.Lane, it *store.NextItem, r store.Run) string {
 		s += " by " + r.Agent
 	}
 	return s
+}
+
+func inRepos(repos []store.Repo, id int64) bool {
+	for _, r := range repos {
+		if r.ID == id {
+			return true
+		}
+	}
+	return false
 }

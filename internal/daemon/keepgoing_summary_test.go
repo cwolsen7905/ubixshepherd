@@ -119,16 +119,43 @@ func TestSinceYouLeftReadsAreBoundedByLanesNotRuns(t *testing.T) {
 	if _, err := s.KeepGoing().SinceYouLeft(ctx, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	if n := cs.lane.Load(); n != 0 {
-		t.Errorf("Lane called %d times, want 0", n)
+	if n := cs.lane.Load(); n > int64(len(lanes)) {
+		t.Errorf("Lane called %d times for %d lanes over 200 runs", n, len(lanes))
 	}
 	if n := cs.laneForge.Load(); n > int64(len(lanes)) {
 		t.Errorf("LaneForge called %d times for %d lanes over 200 runs", n, len(lanes))
 	}
-	if n := cs.lanes.Load(); n != 3 {
-		t.Errorf("Lanes called %d times, want once per repo (3)", n)
-	}
 	if n := cs.runs.Load(); n != 1 {
 		t.Errorf("Runs called %d times, want 1", n)
+	}
+}
+
+func TestSinceYouLeftKeepsRunsOfClosedLanes(t *testing.T) {
+	s, _, _, _, _ := keepSetup(t)
+	ctx := context.Background()
+	ws, _ := driveRepos(t, s, 1)
+	rs, _ := s.Store.Repos(ctx, ws.ID)
+	keepOn(t, s, ws, api.KeepGoingSet{})
+	l, err := s.Store.CreateLane(ctx, store.Lane{RepoID: rs[0].ID, Name: "merged-one", Branch: "b", Base: "main", Worktree: filepath.Join(rs[0].Path, "m"), State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.CreateRun(ctx, store.Run{LaneID: l.ID, Agent: "claude", State: store.RunSucceeded, Started: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.PutLaneForge(ctx, store.LaneForge{LaneID: l.ID, MR: 7, MRState: "merged"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.SetLaneState(ctx, l.ID, store.LaneClosed); err != nil {
+		t.Fatal(err)
+	}
+	sum, err := s.KeepGoing().SinceYouLeft(ctx, ws.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"lane merged-one by claude", "!7"} {
+		if !strings.Contains(sum, want) {
+			t.Errorf("summary lacks %q:\n%s", want, sum)
+		}
 	}
 }
