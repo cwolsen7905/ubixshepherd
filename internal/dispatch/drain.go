@@ -248,6 +248,9 @@ func (r *Runner) RunHeld(ctx context.Context) {
 		r.Log.Error("load held starts", "err", err)
 		return
 	}
+	// stuck: lanes whose oldest queued follow-up is held. Every later start in that
+	// lane, queued or held for a restart, waits behind it.
+	stuck := map[int64]bool{}
 	for _, h := range held {
 		var req StartRequest
 		if err := json.Unmarshal([]byte(h.Request), &req); err != nil {
@@ -261,19 +264,34 @@ func (r *Runner) RunHeld(ctx context.Context) {
 			continue
 		}
 		req.Auto = h.Auto
+		lane := r.heldLaneOf(ctx, req)
+		if stuck[lane] {
+			continue
+		}
 		run, err := r.start(ctx, req, true)
 		switch {
 		case err == nil:
 			r.dropHeld(ctx, h.ID)
-			r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started after the restart (%s)", run.ID, h.Why)
+			if isFollowUp(h) {
+				r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started from the queue (%s)", run.ID, h.Why)
+			} else {
+				r.feed(ctx, store.FeedRunStarted, run.ID, "run %d: started after the restart (%s)", run.ID, h.Why)
+			}
 		case errors.Is(err, ErrHeld):
+			if isFollowUp(h) {
+				stuck[lane] = true
+			}
 			r.Log.Info("held start waits", "id", h.ID, "why", err)
 		case errors.Is(err, ErrRefused):
 			r.Store.DeleteHeldStart(ctx, h.ID)
 			if req.Continue != 0 {
 				r.Store.SetRunReason(ctx, req.Continue, store.ReasonRestartDropped)
 			}
-			r.feed(ctx, store.FeedRunInterrupted, req.Continue, "a start held for the restart was dropped: %s", firstLine(fmt.Sprint(err)))
+			if isFollowUp(h) {
+				r.feed(ctx, store.FeedRunInterrupted, 0, "a queued follow-up was dropped: %s", firstLine(fmt.Sprint(err)))
+			} else {
+				r.feed(ctx, store.FeedRunInterrupted, req.Continue, "a start held for the restart was dropped: %s", firstLine(fmt.Sprint(err)))
+			}
 		default:
 			r.Log.Error("start held run", "id", h.ID, "err", err)
 		}

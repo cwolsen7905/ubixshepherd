@@ -369,7 +369,18 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		}
 		switch {
 		case p.State == store.RunRunning:
-			return store.Run{}, refuse("run %d is still going; wait for it, or stop it first", p.ID)
+			if req.Auto || fromQueue {
+				return store.Run{}, refuse("run %d is still going; wait for it, or stop it first", p.ID)
+			}
+			// A follow-up to a run still going waits for it: ask for the lane's next
+			// start with the same agent, which continues its latest session when the
+			// run has ended (the running run is the lane's latest).
+			// An agent asked for stays; only an empty one takes the running run's.
+			req.Continue, req.LaneID = 0, p.LaneID
+			if req.Agent == "" {
+				req.Agent = p.Agent
+			}
+			asked = req
 		case p.Session == "":
 			return store.Run{}, refuse("run %d has no session to continue (it started before Shepherd kept sessions, or its agent never reported one)", p.ID)
 		case req.Agent != "" && req.Agent != p.Agent:
@@ -483,7 +494,22 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	}
 	for _, other := range running {
 		if other.LaneID == lane.ID {
-			return store.Run{}, held("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
+			if req.Auto || fromQueue {
+				return store.Run{}, held("run %d (%s) is already going in lane %s; one agent per lane", other.ID, other.Agent, lane.Name)
+			}
+			return store.Run{}, r.queueFollowUp(ctx, asked, lane, other.ID)
+		}
+	}
+	// A start asked for while follow-ups wait in this lane goes behind them, so the
+	// queue stays first in, first out.
+	if !fromQueue {
+		if n, err := r.queuedIn(ctx, lane.ID); err != nil {
+			return store.Run{}, err
+		} else if n > 0 {
+			if req.Auto {
+				return store.Run{}, held("follow-ups are queued in lane %s; they go first", lane.Name)
+			}
+			return store.Run{}, r.queueFollowUp(ctx, asked, lane, 0)
 		}
 	}
 	// The budget and the caps are Crook's limits. The budget is read only for a run
