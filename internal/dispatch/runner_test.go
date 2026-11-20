@@ -1252,3 +1252,38 @@ func TestAnswerDeliveryDoesNotRestartWhenRecordingFails(t *testing.T) {
 		t.Error("the answer run was not recorded on retry")
 	}
 }
+
+// The reply grant follows the lane's merge request as the forge last reported it.
+func TestRunnerGrantsReplyForTheLanesOpenMR(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		forge store.LaneForge
+		want  bool
+	}{
+		{"open", store.LaneForge{MR: 12, MRState: "opened"}, true},
+		{"no state yet", store.LaneForge{MR: 12}, true},
+		{"none known", store.LaneForge{}, false},
+		{"merged", store.LaneForge{MR: 12, MRState: "merged"}, false},
+		{"closed", store.LaneForge{MR: 12, MRState: "closed"}, false},
+	} {
+		f := newFixture(t, "ok")
+		p := f.runner.Config.Defaults
+		p.Autonomy.Push = config.Agent
+		f.runner.Config.Defaults = p
+		c.forge.LaneID = f.lane.ID
+		if err := f.runner.Store.PutLaneForge(context.Background(), c.forge); err != nil {
+			t.Fatal(err)
+		}
+		run, err := f.runner.Start(context.Background(), StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "do the work"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a := argsOf(t, f.wait(t, run.ID))
+		if got := strings.Contains(a, "merge_requests/12/discussions/*/notes"); got != c.want {
+			t.Errorf("%s: reply rule = %v: %s", c.name, got, a)
+		}
+		if !strings.Contains(a, "glab ci lint") {
+			t.Errorf("%s: no lint rule for a push-agent repo: %s", c.name, a)
+		}
+	}
+}

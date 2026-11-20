@@ -152,12 +152,12 @@ than failing with an authentication error, shows it is.
   command written in the repo's profile: `make check` allows `make check` and not
   `make check build`. `git push` is denied unless the repo sets `autonomy.push: agent`, and the runner's
   push block applies as for every agent. In a repo with `autonomy.push: agent`, `glab ci lint` is allowed too, and so is one reply form on the
-  lane's own merge request, once Shepherd knows its number and while it is open:
+  lane's own merge request, once Shepherd knows its number and it is not merged or closed when the run starts (the grant is fixed for that run):
   `glab api projects/:id/merge_requests/<iid>/discussions/<discussion>/notes -f body=<text>` (glab sends a POST when
-  a field is given). Rules after it deny any other method, `--input`, `--hostname`, headers, `..`, `%`, a resolve
+  a field is given). Rules after it deny any other method, `--input`, `--hostname`, headers, `..`, `%`, shell substitution, redirects and command separators (`$`, a backtick, `>`, `<`, `|`, `;`, `&`), a resolve
   path, `glab mr approve` and `glab mr note`, so the run cannot resolve a thread, approve or merge (merging is
   `autonomy.merge: agent` alone). Those denials also catch a reply body containing one of those strings (`...`, `%`,
-  `-h`), so the run rewords it. Claude Code lanes get the same two grants as allow rules with matching denies. Questions, web fetch and web search are denied,
+  `-h`, `$`, `&`), so the run rewords it. Claude Code lanes get the same two grants as allow rules with matching denies. Questions, web fetch and web search are denied,
   and so is access outside the worktree: `external_directory` is `deny` except for the
   lane's own worktree path, which is allowed by exact path (the path as given and its
   symlink-resolved form). OpenCode 1.18.35 refuses the files of a linked git worktree as

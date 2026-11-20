@@ -50,7 +50,9 @@ func claudeForgeDeny(o Opts) []string {
 
 // glabApiFlagDenies are fragments that turn a note POST into something else.
 var glabApiFlagDenies = []string{"-X", "--method", "--input", "-F", "--field", "--raw-field",
-	"-h", "--hostname", "-H", "--header", "..", "%"}
+	"-h", "--hostname", "-H", "--header", "..", "%",
+	// Shell substitution, redirects and command separators in the body.
+	"$", "`", ">", "<", "|", ";", "&"}
 
 // openCodeForgeAllow is the OpenCode bash rules to append after every deny already in the
 // list (last match wins), then followed by openCodeForgeReplyDeny.
