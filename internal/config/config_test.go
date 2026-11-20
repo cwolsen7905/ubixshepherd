@@ -612,3 +612,26 @@ func TestReviewBotsValidate(t *testing.T) {
 		}
 	}
 }
+
+func TestModelLimits(t *testing.T) {
+	c, err := Parse([]byte("daemon:\n  model_limits:\n    llamacpp/qwen: 1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Daemon.ModelLimits["llamacpp/qwen"]; got != 1 {
+		t.Errorf("limit = %d, want 1", got)
+	}
+	if len(Default().Daemon.ModelLimits) != 0 {
+		t.Error("unset must mean no limits")
+	}
+	for _, bad := range []string{
+		"daemon:\n  model_limits:\n    m: 0\n",
+		"daemon:\n  model_limits:\n    m: -2\n",
+		"daemon:\n  model_limits:\n    \" m\": 1\n",
+		"daemon:\n  model_limits:\n    \"\": 1\n",
+	} {
+		if _, err := Parse([]byte(bad)); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

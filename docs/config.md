@@ -111,6 +111,26 @@ start) is held, not queued: it is refused with a message naming the repo, and a 
 Shepherd starts on its own is tried again when a slot frees, exactly as for
 `daemon.max_runs`. A reload applies a change.
 
+## Per-model run limit
+
+`daemon.model_limits` maps a model id to how many runs may be going on that model at
+once, for a model that serves one request at a time, such as a local one. Each count is
+a whole number of at least 1, and each name is a model id with no surrounding spaces;
+anything else is an error. A model left out has no limit.
+
+```yaml
+daemon:
+  model_limits:
+    llamacpp/qwen: 1
+```
+
+The id is matched against the model a run resolves to (the one asked for, the repo's
+`agent.model`, or the agent's default from `models:`). A start past the limit is queued,
+not refused: it says "queued: model X is at its limit of N", is kept with the lane's
+other queued follow-ups so it survives a daemon restart, and starts when a run on that
+model ends, oldest first. A run Shepherd starts on its own is held and tried again when
+a slot frees. Other models are unaffected. A reload applies a change.
+
 ## Projects and the `repos:` section
 
 A project's `repos:` lists repo names; each name need not also appear under the top-level
