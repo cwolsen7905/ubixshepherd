@@ -2,8 +2,7 @@ package watch
 
 import (
 	"context"
-	"fmt"
-	"strings"
+	"sync"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -18,7 +17,9 @@ import (
 // refuses a dirty worktree and work beyond the request's head.
 //
 // It acts only for the request the lane was seen with (the recorded one), merged and
-// created after the lane, so a request merged before the lane existed proves nothing.
+// created after the lane, so a request merged before the lane existed proves nothing,
+// and only on a merge seen happening: checkLane reports a request already merged when
+// first seen and never acts on it, and so does this (sawOpen).
 // It is tried at most once per AutoCloseSettle per lane, and reports whether it closed
 // the lane.
 func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
@@ -48,23 +49,26 @@ func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
 	if err != nil {
 		return false
 	}
+	// The poll's backoff holds here too: a host that is down is not called again.
+	host := hostOf(repo)
+	if w.skipHost(host) {
+		return false
+	}
 	f, err := w.forgeFor(repo)
 	if err != nil {
 		return false
 	}
 	mr, err := f.MRForBranch(ctx, lane.Branch)
-	if err != nil || mr == nil {
+	if !w.result(host, err) || err != nil || mr == nil {
 		return false
 	}
-	if w.firstSightMerged(ctx, lane, mr.IID) {
-		return false
-	}
-	if mr.IID != lf.MR || mr.State != "merged" || mr.MergeSHA == "" || mr.Created.IsZero() || !mr.Created.After(lane.Created) {
+	if !w.sawOpen(lane.ID, lf.MR) || mr.IID != lf.MR || mr.State != "merged" || mr.MergeSHA == "" || mr.Created.IsZero() || !mr.Created.After(lane.Created) {
 		return false
 	}
 	// Quiet until it works: a refusal that lasts (uncommitted work the person keeps, a
 	// run left going) must not post the same feed entry every interval. The merge poll
 	// has already said why it could not close.
+	problems := w.Fold.VerifyTags(ctx, lane, mr.MergeSHA)
 	res, err := w.Fold.CloseMerged(ctx, lane.ID, mr.MergeSHA, mr.SHA)
 	if err != nil {
 		w.Log.Debug("watch: merged lane not closed", "lane", lane.Name, "mr", mr.IID, "why", firstLine(err.Error()))
@@ -78,6 +82,9 @@ func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
 	if res.BranchDeleted {
 		note = ", local branch deleted"
 	}
+	for _, p := range problems {
+		w.feed(ctx, store.FeedMR, lane.ID, "!%d merged, but %s", mr.IID, p)
+	}
 	w.feed(ctx, store.FeedLaneClosed, lane.ID, "!%d merged at %s; lane %s closed%s", mr.IID, short(mr.MergeSHA), lane.Name, note)
 	lf.MergeSHA = mr.MergeSHA
 	if err := w.Store.PutLaneForge(ctx, lf); err != nil {
@@ -86,21 +93,22 @@ func (w *Watcher) closeForgeMerged(ctx context.Context, lane store.Lane) bool {
 	return true
 }
 
-// firstSightMerged reports whether the merge poll deliberately left this lane open
-// because the request was already merged when Shepherd first looked (checkLane reports
-// it and never acts: such a request proves nothing about the work in the lane now). That
-// rule stands for the retry too, so it acts only on a merge seen happening. The poll's
-// own feed entry is the record of it.
-func (w *Watcher) firstSightMerged(ctx context.Context, lane store.Lane, iid int) bool {
-	items, err := w.Store.Feed(ctx, 0, 5000)
-	if err != nil {
-		return true // cannot tell: leave the lane to the person
-	}
-	prefix := fmt.Sprintf("!%d for lane %s was already merged when Shepherd first looked", iid, lane.Name)
-	for _, it := range items {
-		if it.Ref == lane.ID && strings.HasPrefix(it.Text, prefix) {
-			return true
-		}
-	}
-	return false
+// opened is, per watcher and lane, the request last seen open in it (noteOpen). It is
+// kept in memory: a merge that began before the daemon started is not retried, which
+// leaves the lane to the person, the safe side. A watcher's entries are few (one per
+// open lane).
+var opened sync.Map // key openKey, value int (request number)
+
+type openKey struct {
+	w    *Watcher
+	lane int64
+}
+
+// noteOpen records that the lane's request iid was seen open, called from the merge poll.
+func (w *Watcher) noteOpen(laneID int64, iid int) { opened.Store(openKey{w, laneID}, iid) }
+
+// sawOpen reports whether request iid was seen open in the lane by this watcher.
+func (w *Watcher) sawOpen(laneID int64, iid int) bool {
+	v, ok := opened.Load(openKey{w, laneID})
+	return ok && v.(int) == iid
 }

@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -124,5 +125,24 @@ func TestForgeMergedRetryDoesNotRepeatARefusal(t *testing.T) {
 	}
 	if after := strings.Count(f.feed(t), "cannot close"); after != before || before != 1 {
 		t.Errorf("refusal posted %d times, then %d; feed = %s", before, after, f.feed(t))
+	}
+}
+
+// The retry does not call a forge host that is in its backoff.
+func TestForgeMergedRetryHonoursHostBackoff(t *testing.T) {
+	f := newFixture(t)
+	clock := time.Now()
+	f.w.Clock = func() time.Time { return clock }
+	dirt := f.mergedThenDirty(t, forge.MR{MergeSHA: "aaaa1111bbbb"})
+	os.Remove(dirt)
+	clock = clock.Add(AutoCloseSettle + time.Second)
+	f.f.err = errors.New("glab api --hostname gl.example.com x: dial tcp: lookup gl.example.com: no such host")
+	f.f.calls = 0
+	f.w.Check(f.ctx) // the poll finds the host down; the retry must not call it again
+	if f.f.calls != 1 {
+		t.Errorf("forge calls = %d, want 1", f.f.calls)
+	}
+	if f.state(t) != store.LaneOpen {
+		t.Error("closed with the forge unreachable")
 	}
 }
