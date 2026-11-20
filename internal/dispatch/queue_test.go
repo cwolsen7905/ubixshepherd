@@ -2,6 +2,7 @@ package dispatch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -65,18 +66,67 @@ func TestQueuedFollowUpSurvivesARestart(t *testing.T) {
 	if _, err := f.runner.Start(ctx, StartRequest{Continue: first.ID, Prompt: "later"}); !errors.Is(err, ErrQueued) {
 		t.Fatal(err)
 	}
+	// The follow-up is a row in the store, not only in the runner's memory.
+	held, _ := f.st.HeldStarts(ctx)
+	if len(held) != 1 || !isFollowUp(held[0]) || heldLane(held[0]) != f.lane.ID {
+		t.Fatalf("held starts = %+v, want one follow-up in lane %d", held, f.lane.ID)
+	}
+	row := held[0]
+	// Let the first runner start and finish it, then go quiet, so the replay below is
+	// the restarted runner's alone.
 	f.runner.Stop(ctx, first.ID)
 	f.wait(t, first.ID)
-	// The row is in the store: a runner that did not see the start finds it.
-	next := f.restarted(t)
-	held, _ := f.st.HeldStarts(ctx)
-	if len(held) == 0 {
-		// The first runner already started it; the row's job is done.
-		waitRunWithPrompt(t, f, "later")
-		return
+	ran := waitRunWithPrompt(t, f, "later")
+	f.runner.Stop(ctx, ran.ID)
+	f.wait(t, ran.ID)
+	f.runner.Wait()
+	// A daemon that died before the run ended finds the same row at start.
+	if _, err := f.st.AddHeldStart(ctx, store.HeldStart{Request: row.Request, Why: row.Why}); err != nil {
+		t.Fatal(err)
 	}
+	next := f.restarted(t)
 	next.RunHeld(ctx)
-	waitRunWithPrompt(t, f, "later")
+	deadline := time.Now().Add(20 * time.Second)
+	for len(runsWithPrompt(t, f, "later")) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("the restarted runner did not start the queued follow-up")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if held, _ := f.st.HeldStarts(ctx); len(held) != 0 {
+		t.Errorf("held starts left: %+v", held)
+	}
+	for _, r := range runsWithPrompt(t, f, "later") {
+		next.Stop(ctx, r.ID)
+	}
+}
+
+func TestStuckFollowUpHoldsARestartStartInItsLane(t *testing.T) {
+	f := newFixture(t, "sleep")
+	ctx := context.Background()
+	first, _ := f.runner.Start(ctx, StartRequest{LaneID: f.lane.ID, Agent: "claude", Prompt: "first"})
+	f.runner.Stop(ctx, first.ID)
+	f.wait(t, first.ID)
+	f.runner.Wait()
+	// The oldest follow-up's agent is out of quota; a restart continue in the same
+	// lane, written after it, must wait behind it.
+	r := f.restarted(t)
+	r.outOf = map[string]outOfQuota{"copilot": {Limit: Limit{Until: time.Now().Add(time.Hour), Text: "limit"}}}
+	up, _ := json.Marshal(StartRequest{LaneID: f.lane.ID, Agent: "copilot", Prompt: "queued"})
+	if _, err := f.st.AddHeldStart(ctx, store.HeldStart{Request: string(up), Why: "queued behind run 1"}); err != nil {
+		t.Fatal(err)
+	}
+	re, _ := json.Marshal(StartRequest{Continue: first.ID, Prompt: "resume"})
+	if _, err := f.st.AddHeldStart(ctx, store.HeldStart{Request: string(re), Why: "continue after a restart", Auto: true}); err != nil {
+		t.Fatal(err)
+	}
+	r.RunHeld(ctx)
+	if got := runsWithPrompt(t, f, "resume"); got != nil {
+		t.Errorf("a restart start ran ahead of a stuck follow-up: %+v", got)
+	}
+	if held, _ := f.st.HeldStarts(ctx); len(held) != 2 {
+		t.Errorf("held starts = %+v, want both kept", held)
+	}
 }
 
 func TestQueuedFollowUpsDropWhenTheLaneCloses(t *testing.T) {

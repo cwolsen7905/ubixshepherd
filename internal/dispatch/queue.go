@@ -71,6 +71,19 @@ func heldLane(h store.HeldStart) int64 {
 	return req.LaneID
 }
 
+// heldLaneOf is the lane a held start would run in: its LaneID, or for a continue
+// (a start held for a restart) the lane of the run it continues. 0 when unknown.
+func (r *Runner) heldLaneOf(ctx context.Context, req StartRequest) int64 {
+	if req.LaneID != 0 || req.Continue == 0 {
+		return req.LaneID
+	}
+	run, err := r.Store.Run(ctx, req.Continue)
+	if err != nil {
+		return 0
+	}
+	return run.LaneID
+}
+
 // DropQueued removes the follow-ups waiting in a lane, for a lane that is closing, and
 // says so in the feed. It returns how many it dropped. RunHeld also drops a queued
 // follow-up whose lane is no longer open, so a lane closed without calling this loses

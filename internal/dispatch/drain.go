@@ -248,7 +248,8 @@ func (r *Runner) RunHeld(ctx context.Context) {
 		r.Log.Error("load held starts", "err", err)
 		return
 	}
-	// stuck: lanes whose oldest queued follow-up is held; later ones wait behind it.
+	// stuck: lanes whose oldest queued follow-up is held. Every later start in that
+	// lane, queued or held for a restart, waits behind it.
 	stuck := map[int64]bool{}
 	for _, h := range held {
 		var req StartRequest
@@ -263,7 +264,8 @@ func (r *Runner) RunHeld(ctx context.Context) {
 			continue
 		}
 		req.Auto = h.Auto
-		if isFollowUp(h) && stuck[req.LaneID] {
+		lane := r.heldLaneOf(ctx, req)
+		if stuck[lane] {
 			continue
 		}
 		run, err := r.start(ctx, req, true)
@@ -277,7 +279,7 @@ func (r *Runner) RunHeld(ctx context.Context) {
 			}
 		case errors.Is(err, ErrHeld):
 			if isFollowUp(h) {
-				stuck[req.LaneID] = true
+				stuck[lane] = true
 			}
 			r.Log.Info("held start waits", "id", h.ID, "why", err)
 		case errors.Is(err, ErrRefused):
