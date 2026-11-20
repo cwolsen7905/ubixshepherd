@@ -26,6 +26,7 @@ import "github.com/ubixsys/ubixshepherd/internal/store"
 //	checks_released    the person released approved check files, with the reason
 //	keep_going         keep-going mode went on or off (with its reason), or took an
 //	                   autonomous action, or handed a lane back
+//	crook              Crook allowed a consequential action: a push or tag push
 //	mr, budget, tag, release, config, desk_rotated
 //	info               anything else, and any kind a newer daemon adds
 const (
