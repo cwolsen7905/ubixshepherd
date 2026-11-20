@@ -28,6 +28,7 @@ export const EVENTS = [
   'plan',
   'config',
   'desk_rotated',
+  'crook',
   'info'
 ] as const
 
@@ -67,6 +68,7 @@ export const MARKS: Record<EventKind, Mark> = {
   plan: { glyph: '≡', tone: 'muted', label: 'next-up item' },
   config: { glyph: '~', tone: 'muted', label: 'config' },
   desk_rotated: { glyph: '↻', tone: 'muted', label: 'desk session rotated' },
+  crook: { glyph: '↪', tone: 'accent', label: 'crook let it proceed' },
   info: { glyph: '·', tone: 'muted', label: 'note' }
 }
 

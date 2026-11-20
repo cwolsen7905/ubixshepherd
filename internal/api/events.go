@@ -57,6 +57,7 @@ const (
 	EventConfig           = "config"
 	EventDeskRotated      = "desk_rotated" // the front desk started a new session, seeded with a summary
 	EventKeepGoing        = "keep_going"   // keep-going mode on, off, or an autonomous action
+	EventCrook            = "crook"        // Crook let a consequential action proceed: a push, ship, tag push or merge arm
 	EventInfo             = "info"         // anything else, such as a session note
 )
 
@@ -92,6 +93,7 @@ var eventKinds = map[string]string{
 	store.FeedChecksReleased: EventChecksReleased,
 	"config":                 EventConfig,      // the daemon's own kind (daemon.FeedConfig)
 	"keep_going":             EventKeepGoing,   // the daemon's own kind (daemon.FeedKeepGoing)
+	"crook":                  EventCrook,       // the daemon's own kind (daemon.FeedCrook)
 	"desk_rotated":           EventDeskRotated, // the daemon desk's own kind (desk.FeedRotated)
 }
 

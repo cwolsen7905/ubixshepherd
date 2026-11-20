@@ -11,6 +11,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- Crook posts a `crook` line to the feed when it lets a consequential action proceed: an
+  agent's push, a Shepherd ship, a tag push or a merge arm. It names the action, the lane,
+  the rule and the reason, and has its own glyph in the web timeline and the chat thread.
+  Other proceeds stay in the log only. The README now links
+  [docs/crook-why.md](docs/crook-why.md). The feed gains the event `crook`.
 - Projects: `brief_source` reads the approved brief from a file in a workspace repo
   (default `projects/{name}/brief.md`, at the default branch tip). The project's brief
   view shows it, falling back to the store's brief when the file is missing; agents are

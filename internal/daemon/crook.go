@@ -25,6 +25,29 @@ const crookKeepProceeds = 90 * 24 * time.Hour
 // verdict is dropped and counted.
 const crookQueue = 512
 
+// FeedCrook is the feed kind for Crook letting a consequential action proceed.
+const FeedCrook = "crook"
+
+// crookFeedText is the feed line for a proceed on a consequential action: what was let
+// through, where, and the rule that said so. The reason is already redacted.
+func crookFeedText(e crook.Entry) string {
+	var b strings.Builder
+	b.WriteString("crook let " + string(e.Action) + " proceed")
+	if e.Lane != "" {
+		b.WriteString(" on lane " + e.Lane)
+	} else if e.Repo != "" {
+		b.WriteString(" in " + e.Repo)
+	}
+	if e.Run > 0 {
+		b.WriteString(" (run " + strconv.FormatInt(e.Run, 10) + ")")
+	}
+	b.WriteString(" by " + e.Rule)
+	if e.Reason != "" {
+		b.WriteString(": " + e.Reason)
+	}
+	return b.String()
+}
+
 // crookRecorder queues Crook's verdicts and a goroutine writes them to the store.
 type crookRecorder struct {
 	st      store.Store
@@ -64,6 +87,10 @@ func (s *Server) startCrookLog(ctx context.Context) func() {
 		for e := range rec.q {
 			if err := rec.write(context.Background(), e); err != nil {
 				s.Log.Warn("write a crook verdict", "err", err)
+				continue
+			}
+			if e.Kind == crook.Proceed && crook.Consequential(e.Action) {
+				s.postFeed(context.Background(), FeedCrook, e.Run, crookFeedText(e))
 			}
 		}
 	}()

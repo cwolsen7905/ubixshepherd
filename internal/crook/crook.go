@@ -80,6 +80,16 @@ const (
 	ActionChecksRelease  Action = "checks.release"
 )
 
+// Consequential reports whether letting a in is an act with effects outside Shepherd: a
+// push, a ship, a tag push or a merge arm. A proceed on one is told to the feed.
+func Consequential(a Action) bool {
+	switch a {
+	case ActionPush, ActionShip, ActionTagPush, ActionMergeArm:
+		return true
+	}
+	return false
+}
+
 // RouteAction is the action for calling the route a mux pattern names.
 func RouteAction(pattern string) Action { return Action("route " + pattern) }
 

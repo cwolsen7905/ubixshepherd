@@ -151,3 +151,14 @@ func TestShadowRecorderWritesTheRowAtOnce(t *testing.T) {
 		t.Fatalf("rows = %+v, %v", vs, err)
 	}
 }
+
+func TestCrookFeedText(t *testing.T) {
+	e := crook.Entry{Action: crook.ActionPush, Kind: crook.Proceed, Rule: crook.RulePushAutonomy, Lane: "feat-x", Run: 7, Reason: "the repo lets agents push"}
+	want := "crook let push.agent proceed on lane feat-x (run 7) by builtin/push-autonomy: the repo lets agents push"
+	if got := crookFeedText(e); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if got := crookFeedText(crook.Entry{Action: crook.ActionShip, Rule: "r", Repo: "api"}); got != "crook let lane.ship proceed in api by r" {
+		t.Fatalf("repo only: %q", got)
+	}
+}
