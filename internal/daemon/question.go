@@ -56,7 +56,31 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			topic = l.TopicID
 		}
 	}
-	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text})
+	repo := req.Repo
+	if req.LaneID != 0 {
+		l, err := s.Store.Lane(ctx, req.LaneID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d", req.LaneID))
+			return
+		}
+		if repo == "" {
+			if r, err := s.Store.Repo(ctx, l.RepoID); err == nil {
+				repo = r.Name
+			}
+		}
+	}
+	if req.NextID != 0 {
+		it, err := s.Store.NextItem(ctx, req.NextID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("no next-up item %d", req.NextID))
+			return
+		}
+		if repo == "" {
+			repo = it.Repo
+		}
+	}
+	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text,
+		Repo: repo, LaneID: req.LaneID, NextID: req.NextID})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

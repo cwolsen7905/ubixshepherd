@@ -34,6 +34,11 @@ type QuestionOpen struct {
 	Text        string `json:"text"`
 	Turn        int64  `json:"turn,omitempty"`
 	TopicID     int64  `json:"topic_id,omitempty"`
+	// LaneID and NextID optionally link the question to a lane and a next-up item; both
+	// must exist. Repo is filled in from them when empty. All three may be left out.
+	LaneID int64  `json:"lane_id,omitempty"`
+	NextID int64  `json:"next_id,omitempty"`
+	Repo   string `json:"repo,omitempty"`
 }
 
 // QuestionAnswer is the body of POST /v1/questions/{id}/answer. AnsweredTurn is the
