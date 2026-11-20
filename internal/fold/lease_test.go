@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -299,5 +300,84 @@ func TestCheckPushFirstPushAfterRebaseAndFastForward(t *testing.T) {
 	r.LocalSHA = gitT(t, l.Worktree, "rev-parse", "HEAD")
 	if v, _ := f.fold.CheckPush(ctx, &l, &f.repo, l.Worktree, []PushRef{r}); v.OK || !strings.Contains(v.Problems[0], "docs/x.md") {
 		t.Errorf("fast-forward with a stray file: %+v", v)
+	}
+}
+
+// A widening applies every approved glob in one step, and the very next push check, which
+// reads the lane afresh as the daemon does, judges against the new scope. The push then
+// goes to the bare origin.
+func TestWidenReachesPushCheckAtOnce(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	l := f.open("work") // src/**
+	f.commit(l.Worktree, "src/ok.go")
+	f.commit(l.Worktree, "docs/guide.md")
+	f.commit(l.Worktree, "tools/run.sh")
+	check := func() Verdict {
+		t.Helper()
+		cur, err := f.fold.Store.Lane(ctx, l.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := f.fold.CheckPush(ctx, &cur, &f.repo, cur.Worktree, []PushRef{pushRef(t, cur.Worktree, "work")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if v := check(); v.OK || !strings.Contains(v.Problems[0], "docs/guide.md") || !strings.Contains(v.Problems[0], "tools/run.sh") {
+		t.Fatalf("before the widening: %+v", v)
+	}
+	got, err := f.fold.Rescope(ctx, l.ID, []string{"docs/**", "tools/**"}, nil)
+	if err != nil || strings.Join(got.Scope, " ") != "src/** docs/** tools/**" {
+		t.Fatalf("widen: %v %v", got.Scope, err)
+	}
+	if v := check(); !v.OK {
+		t.Fatalf("after the widening, every approved glob applies: %+v", v)
+	}
+	gitT(t, l.Worktree, "push", "origin", "work")
+	if gitT(t, f.repo.Path, "ls-remote", "origin", "refs/heads/work") == "" {
+		t.Error("the widened push did not reach origin")
+	}
+}
+
+// A widening with one glob another lane holds applies none of them.
+func TestWidenRefusedAppliesNone(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	a := f.open("a")
+	if _, err := f.fold.Open(ctx, OpenRequest{RepoID: f.repo.ID, Name: "b", Scope: []string{"docs/**"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.fold.Rescope(ctx, a.ID, []string{"tools/**", "docs/a.md"}, nil); !errors.Is(err, ErrRefused) {
+		t.Fatalf("overlap: %v", err)
+	}
+	cur, _ := f.fold.Store.Lane(ctx, a.ID)
+	if strings.Join(cur.Scope, " ") != "src/**" {
+		t.Errorf("scope after a refused widening: %v", cur.Scope)
+	}
+}
+
+// Widenings that arrive together each keep their globs: none is written over by another
+// that read the old scope.
+func TestConcurrentWidensKeepEveryGlob(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	l := f.open("work")
+	globs := []string{"docs/**", "tools/**", "bin/**", "ci/**", "web/**", "cmd/**"}
+	var wg sync.WaitGroup
+	for _, g := range globs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := f.fold.Rescope(ctx, l.ID, []string{g}, nil); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	cur, _ := f.fold.Store.Lane(ctx, l.ID)
+	if len(cur.Scope) != 1+len(globs) {
+		t.Errorf("scope after concurrent widens: %v", cur.Scope)
 	}
 }

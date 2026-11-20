@@ -391,6 +391,14 @@ func (f *Fold) RescopeExcluding(ctx context.Context, laneID int64, add, remove [
 	lock := f.repoLock(lane.RepoID)
 	lock.Lock()
 	defer lock.Unlock()
+	// The scope is read-modified-written, so read the lane again under the lock: a widening
+	// that finished while this one waited must not be written over with the old scope.
+	if lane, err = f.Store.Lane(ctx, laneID); err != nil {
+		return lane, nil, err
+	}
+	if lane.State != store.LaneOpen {
+		return lane, nil, refuse("lane %s is %s", lane.Name, lane.State)
+	}
 	repo, err := f.Store.Repo(ctx, lane.RepoID)
 	if err != nil {
 		return lane, nil, err
