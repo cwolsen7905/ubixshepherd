@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -632,6 +633,38 @@ func TestModelLimits(t *testing.T) {
 	} {
 		if _, err := Parse([]byte(bad)); err == nil {
 			t.Errorf("accepted %q", bad)
+		}
+	}
+}
+
+func TestAgentOpenCodeAllow(t *testing.T) {
+	c, err := Parse([]byte(`
+defaults:
+  agent:
+    opencode:
+      allow: ["make lint*", "go generate ./..."]
+repos:
+  app:
+    agent:
+      opencode:
+        allow: ["make lint*", "glab mr create*", "pnpm *"]
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The defaults' patterns and the repo's both apply, each once.
+	want := []string{"make lint*", "go generate ./...", "glab mr create*", "pnpm *"}
+	if got := c.Profile("app").Agent.OpenCode.Allow; !slices.Equal(got, want) {
+		t.Errorf("app allow = %q, want %q", got, want)
+	}
+	if got := c.Profile("other").Agent.OpenCode.Allow; !slices.Equal(got, want[:2]) {
+		t.Errorf("other allow = %q", got)
+	}
+	for _, bad := range []string{`""`, `" make"`, `"*"`, `"* lint"`, `"git push*"`, `"git p*"`, `"git *"`,
+		`"glab mr merge*"`, `"glab mr *"`, `"glab mr a*"`, `"glab mr note 3*"`, `"glab*"`, `"gl*"`, `"g*"`, `"git*"`, `"git -C x push*"`, `"git -c k=v push*"`, `"git -C . p*"`, `"git log push*"`, `"glab -R x mr approve*"`, `"sh *"`, `"env *"`, `"xargs *"`, `"glab *"`, `"glab"`, `"make\nrm"`} {
+		_, err := Parse([]byte("repos:\n  x:\n    agent:\n      opencode:\n        allow: [" + bad + "]\n"))
+		if err == nil || !strings.Contains(err.Error(), "repos.x.agent.opencode.allow[0]") {
+			t.Errorf("allow %s: error %v", bad, err)
 		}
 	}
 }

@@ -644,7 +644,7 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	opts := Opts{Model: req.Model, Effort: effort, Gate: gate, Worktree: lane.Worktree,
 		Session: session, Resume: resume, Worker: worker,
 		Mode: prof.Agent.PermissionMode, Push: agentPushes, Merge: may.Merge,
-		OpenCode: r.openCodeHost()}
+		OpenCode: r.openCodeHost(), OpenCodeAllow: prof.Agent.OpenCode.Allow}
 	if f, err := r.Store.LaneForge(ctx, lane.ID); err == nil && f.MRState != "merged" && f.MRState != "closed" {
 		opts.MR = f.MR
 	}

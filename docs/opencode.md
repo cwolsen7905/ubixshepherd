@@ -151,7 +151,7 @@ than failing with an authentication error, shows it is.
   repo's web tests and build run) and the repo's gate. The gate is matched exactly, as the
   command written in the repo's profile: `make check` allows `make check` and not
   `make check build`. `git push` is denied unless the repo sets `autonomy.push: agent`, and the runner's
-  push block applies as for every agent. In a repo with `autonomy.push: agent`, two glab grants are added. `glab ci lint` is allowed with no flags and a path
+  push block applies as for every agent. In a repo with `autonomy.push: agent`, three glab grants are added. `glab mr create` is allowed, so the run can open its lane's merge request (only that verb: `glab mr approve`, `note` and `merge` are not part of it, and merging is `autonomy.merge: agent` alone). The next two are narrower. `glab ci lint` is allowed with no flags and a path
   only inside the worktree: none, a relative one, or (OpenCode) an absolute one under the worktree; `..`, `~`, a
   second absolute path and shell syntax are refused. The other grant is one reply form on the
   lane's own merge request, once Shepherd knows its number and it is not merged or closed when the run starts (the
@@ -178,6 +178,10 @@ than failing with an authentication error, shows it is.
   started by a person, since Shepherd cannot tell the desk's own words from text it relayed. Any other path outside the worktree stays denied. The run also gets
   `--dir <worktree>`, and the process starts there. A chained command such as `ls && touch x` is judged
   per command, so `touch` is refused.
+- **Extra commands** for a repo go in `agent.opencode.allow`, a list of bash command patterns added to
+  the allow rules of its OpenCode runs (see [config.md](config.md)). They follow the built-in allows and
+  precede the built-in denies, so the `glab api` write denies and the `git push` rule still win, and a
+  pattern allowing `git push` or a `glab mr` approve, merge, note or resolve, one with a wildcard in its first word, or one starting a shell or launcher (`sh`, `env`, `xargs`) is refused when the config loads. As a second guard, `glab mr approve`, `note`, `resolve` and `merge` are denied after the repo's patterns whatever they say (merge is allowed again only under `autonomy.merge: agent`).
 - **Sessions**: every JSON event carries the session id, which Shepherd records; the next
   run of the lane resumes it with `-s`.
 - **Cost**: tokens are logged. Cost is recorded as 0 for a local model, which OpenCode

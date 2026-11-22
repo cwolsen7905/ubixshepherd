@@ -210,6 +210,12 @@
 #     ## workspace catalogue and the project left; it cannot allow a model back.
 #     models:
 #       deny: {claude: ["opus*"]}
+#     opencode:
+#       ## Extra bash command patterns an OpenCode run may use in this repo, added to its
+#       ## built-in allows (a deny, git push included, still wins). `*` matches any text;
+#       ## a pattern must start with a command word and may not allow git push or a
+#       ## glab mr approve, merge, note or resolve.
+#       allow: ["make lint*", "go generate ./..."]
 #   ## What agents may do unasked: human or agent.
 #   autonomy:
 #     ## agent: an agent may arm merge-when-pipeline-succeeds on its own lane's merge

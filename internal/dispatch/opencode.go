@@ -418,11 +418,19 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 	if g := strings.TrimSpace(o.Gate); g != "" {
 		allow = append(allow, g)
 	}
-	if o.Merge {
-		allow = append(allow, "glab mr view*", "glab mr merge*")
-	}
+	// The repo's own additions (agent.opencode.allow) sit with the built-in allows, before
+	// the glab denies below, so a deny still wins over them.
+	allow = append(allow, o.OpenCodeAllow...)
 	for _, p := range allow {
 		bash = append(bash, kv{p, "allow"})
+	}
+	// Whatever a repo's list allows, a run never approves, notes on or resolves, and merges
+	// only where Opts.Merge says. The wildcard before mr covers `glab -R x mr approve`.
+	for _, v := range []string{"approve", "merge", "note", "resolve"} {
+		bash = append(bash, kv{"glab*mr " + v + "*", "deny"})
+	}
+	if o.Merge {
+		bash = append(bash, kv{"glab mr view*", "allow"}, kv{"glab mr merge*", "allow"})
 	}
 	// Read-only glab access to pipelines and jobs, so a run can see why a pipeline failed.
 	// Rules are last match wins, so these denies follow every glab allow above: a glab api
@@ -437,6 +445,11 @@ func openCodeConfig(o Opts, s config.OpenCode) string {
 	// follow the denies above so they win, and carry their own denies (perm.go).
 	for _, r := range openCodeForgeAllow(o, openCodeWorktreeForms(o)) {
 		bash = append(bash, r)
+	}
+	// A push-agent lane may open its merge request. Only `glab mr create`: merge is
+	// Opts.Merge's, and approve and note stay denied by the default.
+	if o.Push {
+		bash = append(bash, kv{"glab mr create*", "allow"})
 	}
 	// Explicitly deny interactive rebases to prevent hangs
 	bash = append(bash, kv{"git rebase -i*", "deny"})

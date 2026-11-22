@@ -857,6 +857,67 @@ type AgentOpts struct {
 	// Models narrows the models the repo's agents may run (see ModelRules). The
 	// defaults' rules and the repo's both apply.
 	Models ModelRules `yaml:"models,omitempty" json:"models,omitempty"`
+	// OpenCode is what the repo adds to the OpenCode permission set (docs/opencode.md).
+	OpenCode AgentOpenCode `yaml:"opencode,omitempty" json:"opencode,omitempty"`
+}
+
+// AgentOpenCode is the repo's own additions to OpenCode's permissions.
+type AgentOpenCode struct {
+	// Allow are bash command patterns added to the allow rules of an OpenCode run in the
+	// repo, in OpenCode's wildcard form ("make lint*", "go generate ./..."). They are added
+	// after the built-in allows and before the built-in denies, so a deny still wins; the
+	// defaults' patterns and the repo's both apply.
+	Allow []string `yaml:"allow,omitempty" json:"allow,omitempty"`
+}
+
+// badOpenCodeAllow says why a bash pattern cannot be added to OpenCode's allow rules,
+// or "" when it can. The first word must be a literal command, so a pattern cannot allow
+// everything, and pushing and the forge's approval verbs stay with their own settings.
+func badOpenCodeAllow(p string) string {
+	if p == "" || p != strings.TrimSpace(p) {
+		return "is blank or has blanks around it"
+	}
+	if strings.ContainsAny(p, "\n\r\x00") {
+		return "has a line break in it"
+	}
+	if strings.HasPrefix(p, "*") || strings.HasPrefix(p, "?") {
+		return "must begin with a command, not a wildcard"
+	}
+	t := strings.Fields(p)
+	if strings.ContainsAny(t[0], "*?") {
+		return "must begin with a literal command word, with no wildcard in it"
+	}
+	if slices.Contains([]string{"sh", "bash", "zsh", "dash", "env", "xargs", "sudo", "eval", "exec", "nohup", "time", "command", "busybox"}, t[0]) {
+		return "begins with a command that runs other commands"
+	}
+	if t[0] == "git" && len(t) >= 2 {
+		// A global option (git -C x push) moves the subcommand, so none is allowed; then
+		// no later word may be, or may begin, "push".
+		if strings.HasPrefix(t[1], "-") {
+			return "gives git a global option, which can hide a push, which autonomy.push decides"
+		}
+		for i, w := range t[1:] {
+			w = strings.TrimRight(w, "*?")
+			if (w != "" || i == 0) && strings.HasPrefix("push", w) {
+				return "allows git push, which autonomy.push decides"
+			}
+		}
+	}
+	if mr := slices.Index(t, "mr"); t[0] == "glab" && mr > 0 {
+		verb := ""
+		if len(t) > mr+1 {
+			verb = strings.TrimRight(t[mr+1], "*")
+		}
+		for _, v := range []string{"approve", "merge", "note", "resolve"} {
+			if strings.HasPrefix(v, verb) {
+				return "could allow glab mr " + v + ", which autonomy and the lane's own rules decide"
+			}
+		}
+	}
+	if t[0] == "glab" && (len(t) < 2 || strings.Contains(t[1], "*")) {
+		return "must name the glab command it allows"
+	}
+	return ""
 }
 
 // badModel says a model name is not one: blank around it, or with spaces inside.
@@ -1187,6 +1248,11 @@ func (p Profile) validate(at string) []error {
 	if !slices.Contains(PermissionModes, p.Agent.PermissionMode) {
 		errs = append(errs, fmt.Errorf("%s.agent.permission_mode: %q is not %s", at, p.Agent.PermissionMode, strings.Join(PermissionModes, ", ")))
 	}
+	for i, a := range p.Agent.OpenCode.Allow {
+		if why := badOpenCodeAllow(a); why != "" {
+			errs = append(errs, fmt.Errorf("%s.agent.opencode.allow[%d]: %q %s", at, i, a, why))
+		}
+	}
 	if p.Widen != "" && p.Widen != WidenAuto && p.Widen != Human {
 		errs = append(errs, fmt.Errorf("%s.widen: %q is not %s or %s", at, p.Widen, WidenAuto, Human))
 	}
@@ -1420,6 +1486,14 @@ func merge(base, over Profile) Profile {
 		out.Agent.Effort = m
 	}
 	out.Agent.Models = mergeRules(base.Agent.Models, over.Agent.Models)
+	if len(over.Agent.OpenCode.Allow) > 0 {
+		out.Agent.OpenCode.Allow = slices.Clone(base.Agent.OpenCode.Allow)
+		for _, a := range over.Agent.OpenCode.Allow {
+			if !slices.Contains(out.Agent.OpenCode.Allow, a) {
+				out.Agent.OpenCode.Allow = append(out.Agent.OpenCode.Allow, a)
+			}
+		}
+	}
 	if over.Follows != nil {
 		out.Follows = over.Follows
 	}

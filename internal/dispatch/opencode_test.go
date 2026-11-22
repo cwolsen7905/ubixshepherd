@@ -1012,3 +1012,59 @@ func TestOpenCodeReadGrantFollowsWhoStartedTheRun(t *testing.T) {
 		}
 	}
 }
+
+// A repo whose agents push lets an OpenCode run open its merge request, and only that:
+// the other glab mr verbs keep their default of denied.
+func TestOpenCodeGlabMrCreateNeedsPush(t *testing.T) {
+	for _, c := range []struct {
+		push bool
+		cmd  string
+		want string
+	}{
+		{true, `glab mr create --fill --target-branch dev`, "allow"},
+		{true, `glab mr create`, "allow"},
+		{true, `glab mr approve 3`, "deny"},
+		{true, `glab mr note 3 -m hi`, "deny"},
+		{true, `glab mr merge 3`, "deny"},
+		{true, `glab mr view 3`, "deny"},
+		{true, `glab mr close 3`, "deny"},
+		{false, `glab mr create --fill`, "deny"},
+	} {
+		rules := bashRules(t, openCodeConfig(Opts{Push: c.push}, config.OpenCode{}))
+		if got := openCodeMatch(rules, c.cmd); got != c.want {
+			t.Errorf("push %v, %q: %q, want %q", c.push, c.cmd, got, c.want)
+		}
+	}
+}
+
+func TestOpenCodeRepoAllowList(t *testing.T) {
+	rules := bashRules(t, openCodeConfig(Opts{OpenCodeAllow: []string{"make lint*", "glab api*", "glab*", "gl*"}}, config.OpenCode{}))
+	for _, c := range []struct{ cmd, want string }{
+		// Even a broad repo pattern cannot allow the forge verbs a run never uses.
+		{"glab mr approve 3", "deny"},
+		{"glab mr merge 3", "deny"},
+		{"glab mr note 3 -m x", "deny"},
+		{"glab mr resolve 3", "deny"},
+		{"glab -R x mr approve 3", "deny"},
+		{"glab issue list", "allow"},
+		{"make lint ./...", "allow"},
+		{"make other", "deny"},
+		// A built-in deny still wins over a repo's allow.
+		{"glab api projects/7/pipelines -X POST", "deny"},
+		{"git push origin x", "deny"},
+	} {
+		if got := openCodeMatch(rules, c.cmd); got != c.want {
+			t.Errorf("%q: %q, want %q", c.cmd, got, c.want)
+		}
+	}
+}
+
+func TestOpenCodeMergeAllowedOnlyWithMerge(t *testing.T) {
+	rules := bashRules(t, openCodeConfig(Opts{Merge: true, OpenCodeAllow: []string{"glab*"}}, config.OpenCode{}))
+	if got := openCodeMatch(rules, "glab mr merge 3 --when-pipeline-succeeds"); got != "allow" {
+		t.Errorf("merge with autonomy.merge agent: %q", got)
+	}
+	if got := openCodeMatch(rules, "glab mr approve 3"); got != "deny" {
+		t.Errorf("approve: %q", got)
+	}
+}
