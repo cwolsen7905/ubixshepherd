@@ -5,6 +5,11 @@ a backlog beside it: the work that waits on the person or has gone quiet. It rea
 what the board already polls (lanes, runs, decisions, requests, spend, the feed), so it
 needs no daemon change. The terminal chat has its own dock and is not touched.
 
+The head of the thread is a topic switcher: **All** and the open topics, each with what
+waits on the person. Choosing one shows only that topic's messages and files the next
+message under it; the choice is remembered and the chips are reachable from the keyboard.
+See [topics.md](topics.md#following-one-topic-in-the-web-chat).
+
 ## What is listed
 
 The rules come from the board (`web/src/model/board.ts`), so the two never disagree

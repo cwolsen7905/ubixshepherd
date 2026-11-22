@@ -42,3 +42,8 @@
 .sh-event a { color: var(--sh-lichen); }
 
 .sh-msg a { color: var(--sh-lichen); }
+
+/* A row's clock time, and the date line where the day changes: a rule either side, faint. */
+.sh-clock { color: var(--sh-faint); font-variant-numeric: tabular-nums; }
+.sh-dayline { display: flex; align-items: center; gap: 10px; font-size: var(--sh-t-meta); font-weight: 600; color: var(--sh-muted); }
+.sh-dayline::before, .sh-dayline::after { content: ""; flex: 1; height: 1px; background: var(--sh-rule); }
