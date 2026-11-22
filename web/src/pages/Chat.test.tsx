@@ -11,8 +11,11 @@ import { DeskThread } from '../state/desk'
 import { decision, deskEvent, FakeSource, fakeDeskApi, feedItem, request, spend, status } from '../test/fixtures'
 import type { DeskApi } from '../api/desk'
 import { OfflineContext } from '../ui'
-import { ChatPage, Markdown } from './Chat'
+import { ChatPage, Markdown, TOPIC_KEY } from './Chat'
 import { publishChat, useChatLink, type ChatLink } from '../shell/chatLink'
+
+// The chat remembers the topic it was last filtered to; each test starts with none kept.
+beforeEach(() => localStorage.removeItem(TOPIC_KEY))
 
 const still: Clock = { now: () => Date.parse('2026-10-08T10:05:00Z'), hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
 
@@ -682,5 +685,87 @@ describe('the thread parts (VIEW-001)', () => {
     const pop = screen.getByRole('group', { name: 'More topics' })
     await user.click(within(pop).getAllByRole('button', { name: /cache|docs/ })[0] as HTMLElement)
     expect(window.location.hash).toMatch(/topic=[23]/)
+  })
+})
+
+describe('following one topic', () => {
+  const topic = (id: number, title: string, turns: number[] = [], waits = 0) => ({
+    id, title, status: 'open' as const, source: 'desk', created: '', updated: '', activity: new Date().toISOString(),
+    waits, links: turns.map((t) => ({ kind: 'turn' as const, ref: String(t), by: 'desk' as const, time: '' })),
+  })
+  const events = [
+    deskEvent({ seq: 1, kind: 'user', text: 'release question', turn: 1 }),
+    deskEvent({ seq: 2, kind: 'assistant', text: 'release answer', turn: 1 }),
+    deskEvent({ seq: 3, kind: 'user', text: 'docs question', turn: 2 }),
+    deskEvent({ seq: 4, kind: 'assistant', text: 'docs answer', turn: 2 }),
+  ]
+  beforeEach(() => {
+    window.location.hash = '#/chat'
+    vi.spyOn(client.topics, 'list').mockResolvedValue({ topics: [topic(1, 'release', [1], 1), topic(2, 'docs', [2])] })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+    window.location.hash = ''
+  })
+
+  it('remembers the topic chosen, opens on it again, and forgets it when All is chosen', async () => {
+    const user = userEvent.setup()
+    const api = fakeDeskApi({ history: async () => ({ events, more: false }) })
+    await show(api)
+    const bar = await screen.findByRole('group', { name: 'Filter the thread by topic' })
+    await user.click(await within(bar).findByRole('button', { name: /docs/ }))
+    expect(localStorage.getItem(TOPIC_KEY)).toBe('2')
+    cleanup()
+
+    window.location.hash = '#/chat'
+    await show(api)
+    expect(window.location.hash).toBe('#/chat?topic=2')
+    await screen.findByText('docs answer')
+    await waitFor(() => expect(screen.queryByText('release answer')).not.toBeInTheDocument())
+    const again = screen.getByRole('group', { name: 'Filter the thread by topic' })
+    expect(await within(again).findByRole('button', { name: /docs/ })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(within(again).getByRole('button', { name: 'All' }))
+    expect(localStorage.getItem(TOPIC_KEY)).toBeNull()
+    expect(await screen.findByText('release answer')).toBeInTheDocument()
+  })
+
+  it('opens on the topic a link names rather than the one remembered', async () => {
+    localStorage.setItem(TOPIC_KEY, '2')
+    window.location.hash = '#/chat?topic=1'
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }) }))
+    await screen.findByText('release answer')
+    await waitFor(() => expect(screen.queryByText('docs answer')).not.toBeInTheDocument())
+    expect(localStorage.getItem(TOPIC_KEY)).toBe('1')
+  })
+
+  it('keeps the choice when the person leaves the chat for another page', async () => {
+    localStorage.setItem(TOPIC_KEY, '2')
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }) }))
+    act(() => {
+      window.location.hash = '#/board'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    expect(localStorage.getItem(TOPIC_KEY)).toBe('2')
+  })
+
+  it('files a new message under the remembered topic', async () => {
+    localStorage.setItem(TOPIC_KEY, '2')
+    const user = userEvent.setup()
+    const turn = vi.fn(async () => ({ workspace_id: 1, turn: 9, ahead: 1 }))
+    await show(fakeDeskApi({ turn }))
+    await user.type(screen.getByLabelText('Message to the front desk'), 'more on docs{Enter}')
+    await waitFor(() => expect(turn).toHaveBeenCalledWith(0, 'more on docs', 2))
+  })
+
+  it('switches topic from the keyboard', async () => {
+    const user = userEvent.setup()
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }) }))
+    const bar = await screen.findByRole('group', { name: 'Filter the thread by topic' })
+    await within(bar).findByRole('button', { name: /release/ })
+    within(bar).getByRole('button', { name: 'All' }).focus()
+    await user.keyboard('jj{Enter}')
+    expect(window.location.hash).toBe('#/chat?topic=2')
+    await waitFor(() => expect(screen.queryByText('release answer')).not.toBeInTheDocument())
   })
 })

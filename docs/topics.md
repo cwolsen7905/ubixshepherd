@@ -288,3 +288,21 @@ the filter. The web reads it from the topic list and the event's `turn`, so the 
 needs no new field. A topic's colour is one of eight hues chosen by its id, so the pill,
 the bar chip and the rail row always match; text stays in the ink colour, so the hue is
 not what makes it readable.
+
+## Following one topic in the web chat
+
+The head of the web chat's thread is a topic switcher: **All**, then a chip for each open
+topic. The order is the daemon's: topics with something waiting on the person first, then
+the most recently active. Each chip shows the lantern count of what waits on the person in
+that topic. Topics that do not fit on the line, and the idle ones, wait behind "+n more".
+
+| Does | How |
+|---|---|
+| Show one topic | Choosing a chip filters the thread to that topic's rows; **All** shows everything again. The note above the thread says what is shown |
+| Remember the choice | The topic chosen is kept in the browser (`shepherd.chat.topic`), so opening the chat again opens on it. An address that names a topic (`#/chat?topic=7`) wins over the kept one, and choosing **All** forgets it. Leaving the chat for another page keeps it |
+| Keyboard | The chips are a list: Tab reaches it, `j` or the right and down arrows move to the next chip, `k` or the left and up arrows to the previous one, Home and End to the ends, and Enter or Space chooses. While "+n more" is open its topics are reached the same way |
+| File new messages | While a topic is chosen, a message sent from the composer goes to the daemon with that topic's id, so the turn is filed under it unless what the message names belongs to another topic (section 2) |
+
+A message whose turn is tied to a topic carries the topic pill (above). Event lines and
+turns not yet filed carry none.
+
