@@ -116,6 +116,15 @@ func (f *Fold) Reach(ctx context.Context, lane store.Lane) (*Reach, error) {
 	return r, nil
 }
 
+// readReach is Reach for a read-only view: when the other lanes cannot be listed it
+// judges by the lane's own scope alone, as the diff did before siblings, instead of failing.
+func (f *Fold) readReach(ctx context.Context, lane store.Lane) *Reach {
+	if r, err := f.Reach(ctx, lane); err == nil {
+		return r
+	}
+	return &Reach{lane: lane, docs: map[string]bool{}}
+}
+
 // Status is where a path stands for the lane.
 type Status struct {
 	// In: the lane may change the path, by its scope or as a sibling.

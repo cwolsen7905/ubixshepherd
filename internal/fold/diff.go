@@ -228,10 +228,7 @@ func (f *Fold) Diff(ctx context.Context, laneID int64, req DiffRequest) (res Lan
 			total-len(commits), DiffMaxCommits, from, to))
 	}
 
-	reach, err := f.Reach(ctx, lane)
-	if err != nil {
-		return d, err
-	}
+	reach := f.readReach(ctx, lane)
 	budget := DiffMaxFiles
 	var hunkBytes int
 	addGroup := func(group *[]DiffFileInfo, stats []git.FileStat, hunks map[string][]string) {
@@ -323,10 +320,7 @@ func (f *Fold) diffFile(ctx context.Context, lane store.Lane, d *LaneDiff, req D
 		return refuse("%q is not a path inside the lane's worktree", req.File)
 	}
 	d.File = clean(rel)
-	reach, err := f.Reach(ctx, lane)
-	if err != nil {
-		return err
-	}
+	reach := f.readReach(ctx, lane)
 	inScope := reach.In(rel)
 	if !inScope {
 		d.OutOfScope = 1
