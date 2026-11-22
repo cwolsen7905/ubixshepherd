@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { DeskQuestion, WaitingItem } from '../api/types'
 import type { FeedEntry } from '../model/feed'
 import { ErrorBoundary } from '../components/ErrorBoundary'
-import { since } from '../format'
 import { EventGlyph } from '../components/Glyph'
 import { inTopic, memberKeys, readTopicFilter, topicByTurn, withTopicFilter, type TopicView } from '../model/topic'
 import { deskQuestions, topics as topicsApi } from '../api/client'
@@ -13,7 +12,7 @@ import { useNow } from '../hooks'
 import { useFollowBottom, useThread, STREAM_LINE } from './md'
 import { Button } from '../ui'
 import { cx } from '../ui/cx'
-import { Thread, ThreadRow, WorkFold, type ThreadEntry } from '../ui/Thread'
+import { Clock, Thread, ThreadRow, WorkFold, type ThreadEntry } from '../ui/Thread'
 import { Composer } from './composer'
 import { groupThread, rowFeedIds } from './group'
 import { closedQuestions, questionsByMessage, replyJumpNote, replyRef } from './reply'
@@ -52,12 +51,14 @@ function UpdatesFold({
           ))}
         </span>
         <span>{feed.length} updates</span>
-        <span className="sh-event-time">{since(feed[feed.length - 1]?.created ?? '', now)}</span>
+        <span className="sh-event-time">
+          <Clock at={feed[feed.length - 1]?.created} now={now} />
+        </span>
       </button>
       {shown && (
         <div className="sh-updates-body">
           {feed.map((f) => (
-            <ThreadRow key={f.id} it={feedEntry({ f, now, flash: flash === `f${f.id}` })} />
+            <ThreadRow key={f.id} it={{ ...feedEntry({ f, now, flash: flash === `f${f.id}` }), at: f.created }} now={now} />
           ))}
         </div>
       )}
@@ -294,12 +295,13 @@ function ChatThread({
   )
   const openDecision = parse(hash).open?.kind === 'decision' ? parse(hash).open?.id : undefined
 
-  // The rows, as the shared thread draws them. A row's time is kept to place "n new".
+  // The rows, as the shared thread draws them. A row's time shows as its clock time, places
+  // the date lines and places "n new".
   const entries: ThreadEntry[] = []
   const times: number[] = []
   const add = (e: ThreadEntry | null, created: string | undefined) => {
     if (!e) return
-    entries.push(e)
+    entries.push(created ? { ...e, at: created } : e)
     times.push(created ? Date.parse(created) : 0)
   }
   for (const r of rows) {
@@ -452,6 +454,7 @@ function ChatThread({
         <div className="sh-conv-body">
           <Thread
             items={entries}
+            now={now}
             scrollRef={setScroller}
             layout={side ? 'side' : 'main'}
             busy={!d.loaded}
