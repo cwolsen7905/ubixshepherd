@@ -14,7 +14,6 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/paths"
-	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -155,18 +154,21 @@ func (f *Fold) CheckPushTo(ctx context.Context, lane *store.Lane, repo *store.Re
 			return v, err
 		}
 		mark := CheckPaths(protected)
+		reach, err := f.Reach(ctx, *lane)
+		if err != nil {
+			return v, err
+		}
 		var outside, changed []string
 		for _, file := range splitNUL(out) {
 			switch {
 			case contains(mark, file):
 				changed = append(changed, file)
-			case !scope.Any(lane.Scope, file):
+			case !reach.In(file):
 				outside = append(outside, file)
 			}
 		}
 		if len(outside) > 0 {
-			v.Problems = append(v.Problems, fmt.Sprintf("changes outside lane %s's scope (%s):\n    %s",
-				lane.Name, strings.Join(lane.Scope, ", "), strings.Join(firstLinesN(outside, 20), "\n    ")))
+			v.Problems = append(v.Problems, outsideMessage(*lane, reach, outside))
 		}
 		if len(changed) > 0 {
 			v.Problems = append(v.Problems, ChecksProblem(changed))

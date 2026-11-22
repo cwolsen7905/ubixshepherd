@@ -100,6 +100,9 @@ type OpenRequest struct {
 	// ForItem is the next-up item the lane is opened for, so the warning about approved
 	// items a scope would block leaves it out. Clients set it when they open with an item.
 	ForItem int64 `json:"for_item,omitempty"`
+	// Docs are the docs pages the lane's brief names: exact repo-relative files the lane
+	// may change beside its scope while no other open lane's scope covers them.
+	Docs []string `json:"docs,omitempty"`
 }
 
 // A lane name is a branch-like slug with at most one slash: fix-login, feat/m2-leases.
@@ -124,6 +127,10 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 		req.Branch = req.Name
 	}
 	if err := checkScope(req.Scope); err != nil {
+		return Opened{}, err
+	}
+	docs, err := checkDocs(req.Docs)
+	if err != nil {
 		return Opened{}, err
 	}
 	repo, err := f.Store.Repo(ctx, req.RepoID)
@@ -255,10 +262,19 @@ func (f *Fold) Open(ctx context.Context, req OpenRequest) (Opened, error) {
 		}
 		out.Notes = append(out.Notes, fmt.Sprintf("adopted %s from origin: closing this lane keeps the branch", req.Branch))
 	}
+	if err := saveDocs(ctx, repo.Path, req.Branch, docs); err != nil {
+		if req.Adopt {
+			git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
+		}
+		git.Run(ctx, repo.Path, "worktree", "remove", "--force", wt)
+		f.Store.DeleteLane(ctx, lane.ID)
+		return Opened{}, err
+	}
 	if err := f.Store.SetLaneState(ctx, lane.ID, store.LaneOpen); err != nil {
 		if req.Adopt {
 			git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(req.Branch))
 		}
+		clearDocs(ctx, repo.Path, req.Branch)
 		return Opened{}, err
 	}
 	if note := f.setup(ctx, repo, prof.Setup, wt); note != "" {
@@ -588,6 +604,7 @@ func (f *Fold) Close(ctx context.Context, laneID int64, force bool) (CloseResult
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
 
+	clearDocs(ctx, repo.Path, lane.Branch)
 	if adopted(ctx, repo.Path, lane.Branch) {
 		res.Notes = append(res.Notes, fmt.Sprintf("kept branch %s: this lane adopted it", lane.Branch))
 		git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(lane.Branch))
@@ -694,6 +711,7 @@ func (f *Fold) CloseMerged(ctx context.Context, laneID int64, proof, head string
 		}
 		git.Run(ctx, repo.Path, "worktree", "prune")
 	}
+	clearDocs(ctx, repo.Path, lane.Branch)
 	if adopted(ctx, repo.Path, lane.Branch) {
 		res.Notes = append(res.Notes, fmt.Sprintf("kept branch %s: this lane adopted it", lane.Branch))
 		git.Run(ctx, repo.Path, "config", "--unset", adoptedKey(lane.Branch))
