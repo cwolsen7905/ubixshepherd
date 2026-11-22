@@ -1,0 +1,62 @@
+# One Shepherd daemon behind a Caddy reverse proxy that holds the TLS certificate.
+#   cp -r deploy/compose shepherd-deploy && cd shepherd-deploy
+#   edit .env (below) and Caddyfile; put the credential files under ./secrets (see README in docs/hosted.md)
+#   docker compose up -d
+#   docker compose exec shepherd shepherd account set     # once: owner password and TOTP
+# Replace the image tag with the release you installed; never run :latest unreviewed.
+name: shepherd
+
+services:
+  shepherd:
+    image: ghcr.io/ubixsys/ubixshepherd:${SHEPHERD_VERSION:?set SHEPHERD_VERSION, e.g. v0.1.0}
+    restart: unless-stopped
+    environment:
+      # Read only when the home is empty, to seed config.yaml. Not credentials.
+      SHEPHERD_PUBLIC_URL: https://${SHEPHERD_HOST:?set SHEPHERD_HOST, e.g. shepherd.example.com}
+      SHEPHERD_TRUSTED_PROXIES: 172.28.0.0/24
+    volumes:
+      - home:/data/home
+      - workspace:/data/workspace
+      # Credentials are files, mounted read-only, never environment variables. Each file
+      # is owned by uid 10001 on the host, mode 0600 (directories 0700).
+      - ./secrets/totp-key:/run/secrets/shepherd/totp-key:ro
+      - ./secrets/ssh:/run/secrets/shepherd/ssh:ro
+      - ./secrets/glab:/run/secrets/shepherd/glab:ro
+      - ./secrets/gh:/run/secrets/shepherd/gh:ro
+      - ./secrets/claude:/run/secrets/shepherd/claude:ro
+    # tini is already PID 1 in the image. The daemon needs about 20 seconds to end its
+    # agents on SIGTERM; wait longer before SIGKILL.
+    stop_grace_period: 2m
+    networks:
+      shepherd:
+        ipv4_address: 172.28.0.10
+    # Only the proxy is published.
+    expose: ["8443"]
+
+  proxy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      shepherd:
+        condition: service_healthy
+    ports:
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    environment:
+      SHEPHERD_HOST: ${SHEPHERD_HOST}
+    networks:
+      shepherd:
+        ipv4_address: 172.28.0.2
+
+volumes:
+  home:
+  workspace:
+  caddy-data:
+
+networks:
+  shepherd:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24

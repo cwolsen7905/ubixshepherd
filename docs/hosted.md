@@ -170,3 +170,79 @@ public handler, and read every route a signed-in person can, the feed and the da
 none of the daemon's tokens, the password, recovery codes, TOTP secret and key, their
 hashes or the agent's secret appears. They also cover logout and sign-out-everywhere across a
 restart, the 404 for the operator token, and a TLS listener started from a certificate.
+
+## Deployment examples
+
+`deploy/` holds three ways to run the same binary with the same three settings. You apply
+them; Shepherd does not. Each keeps one home (`config.yaml`, the store, `runs/`, artifacts)
+and one workspace (repo clones and every lane's worktree) on persistent storage. Unpushed lane
+work lives only there.
+
+| Example | Where | Shape |
+|---|---|---|
+| A single host | `deploy/systemd/shepherd.service`, `deploy/systemd/README-launchd.md` | The release binary as a system service under its own user, a stop timeout of two minutes. On a Mac, `shepherd daemon install` writes the launchd agent |
+| Docker Compose | `deploy/compose/` | One container, a home volume and a workspace volume, a Caddy container in front holding the certificate, credentials bind-mounted read-only as files, `stop_grace_period: 2m` |
+| Kubernetes | `deploy/kubernetes/` | One namespace, `shepherd`. A StatefulSet of one replica with a ReadWriteOnce claim, a headless Service, an Ingress with TLS, a NetworkPolicy, ExternalSecret templates with no values, and `terminationGracePeriodSeconds: 120`. Apply with `kubectl apply -k deploy/kubernetes` after editing the host name, image tag, ingress class and storage class |
+
+### The image
+
+The `Dockerfile` builds the web UI and a static binary (no cgo), then a Debian 13 runtime
+with git 2.47, `glab`, `gh`, `ssh`, `sqlite3` and tini. It runs as user 10001, with tini
+as PID 1, so a stop reaches the daemon as SIGTERM and its drain runs. Releases publish it to
+`ghcr.io/ubixsys/ubixshepherd` for `linux/amd64` and `linux/arm64`, signed keyless with
+cosign: `cosign verify ghcr.io/ubixsys/ubixshepherd:<tag> --certificate-identity-regexp
+'https://github.com/ubixsys/ubixshepherd/.github/workflows/release.yml@.*'
+--certificate-oidc-issuer https://token.actions.githubusercontent.com`.
+A repository variable, `IMAGE_MIRROR_REPOSITORY`, adds a second registry.
+
+| Volume or path | Holds |
+|---|---|
+| `/data/home` | `SHEPHERD_HOME`: config, store, logs, artifacts |
+| `/data/workspace` | The workspace: repo clones and worktrees |
+| `/run/secrets/shepherd/` | Credentials as files: `totp-key`, `ssh/id`, `ssh/known_hosts`, `glab/`, `gh/`, `claude/` |
+
+On an empty home the entrypoint writes a `config.yaml` with `daemon.public` set from
+`SHEPHERD_PUBLIC_URL` and `SHEPHERD_TRUSTED_PROXIES` (the reverse proxy's addresses); after
+that the file is yours. The public listener opens once you run `shepherd account set` inside the
+container (`docker compose exec shepherd shepherd account set`, or `kubectl -n shepherd exec -it
+shepherd-0 -- shepherd account set`). An agent CLI that logs in interactively is logged in
+once the same way, and its state kept under its config directory.
+
+The image's health check is `shepherd status`, which asks the daemon over loopback with the
+operator token in the home. The public listener is not what it waits for, since that opens
+only once an account exists.
+
+### Concerns common to all three
+
+| Concern | How the examples meet it |
+|---|---|
+| Credentials | Files of mode 0600 owned by the daemon's user, never environment variables, which agents would inherit. In Kubernetes the Secret is mounted into an init step that copies each key to an in-memory volume at 0600, because `fsGroup` would make the files group-readable and the daemon refuses a group-readable TOTP key |
+| One process | One replica, one home; the home lock refuses a second daemon |
+| Shutdown | The daemon ends its agents on SIGTERM in about 20 seconds; the examples wait two minutes before SIGKILL |
+| TLS | Compose: Caddy. Kubernetes: the Ingress, with the controller's pod addresses as `trusted_proxies`. Single host: the daemon's own certificate, or a local proxy |
+| Egress (Kubernetes) | DNS, then ports 443 and 22 to addresses outside private ranges. A NetworkPolicy matches addresses, not names: pin it to your providers' ranges, or use a CNI that filters by name |
+| Deploys | A person bumps the image tag. Nothing here updates itself |
+
+### Backup and restore
+
+Backups are crash-consistent. The order matters: first a SQLite online backup of the store
+into the home (never a file copy of a live database), then a snapshot of the volume holding
+the home and workspace, so the snapshot holds a clean store copy. `deploy/kubernetes/backup.yaml`
+is a CronJob that does both: an init container runs `sqlite3 .backup`, checks the copy and
+keeps the newest seven under `backups/` in the home, and only then a VolumeSnapshot is
+created. On other hosts, run the same `sqlite3 "$SHEPHERD_HOME/shepherd.db" ".backup <file>"`
+before your volume or filesystem snapshot.
+
+A worktree caught mid-write by the snapshot may be torn. After a restore, with the daemon
+stopped, put the backup in place and check every worktree before starting it:
+
+```sh
+rm -f shepherd.db shepherd.db-wal shepherd.db-shm
+cp backups/shepherd-<time>.db shepherd.db
+for d in /data/workspace/*-worktrees/*/; do
+  git -C "$d" fsck --no-progress >/dev/null 2>&1 || echo "FAILED: $d"
+done
+```
+
+A lane listed as failed needs its work recovered from the repository's objects or lost;
+repo clones can simply be cloned again. Unpushed lanes and the store cannot.

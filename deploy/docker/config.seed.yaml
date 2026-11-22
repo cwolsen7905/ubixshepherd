@@ -1,0 +1,9 @@
+# Written once into an empty home by the image's entrypoint. After that the home's
+# config.yaml is yours: edit it in Settings or by hand, and `shepherd daemon reload`.
+daemon:
+  listen: 127.0.0.1:8420
+  public:
+    listen: 0.0.0.0:8443
+    url: @PUBLIC_URL@
+    trusted_proxies: [@TRUSTED_PROXIES@]
+    totp_key_file: /run/secrets/shepherd/totp-key

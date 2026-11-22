@@ -1,0 +1,129 @@
+# One replica: the home lock refuses a second daemon, and the volume is ReadWriteOnce.
+# Replace the image tag with the release you installed.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shepherd
+  namespace: shepherd
+spec:
+  serviceName: shepherd
+  replicas: 1
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels: {app.kubernetes.io/name: shepherd}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: shepherd}
+    spec:
+      # The daemon ends its agents and records their runs on SIGTERM (about 20 seconds);
+      # this is well past that, so a restart is never a SIGKILL of work in progress.
+      terminationGracePeriodSeconds: 120
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        # No fsGroup on purpose: it would make the credential files group-readable, and the
+        # daemon refuses a group-readable TOTP key. The init step below copies them instead.
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        # The volume is root-owned when new. Chown it once (only this step runs as root,
+        # with one capability).
+        - name: own-the-volume
+          image: ghcr.io/ubixsys/ubixshepherd:v0.1.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              mkdir -p /data/home /data/workspace
+              [ "$(stat -c %u /data)" = 10001 ] && [ "$(stat -c %u /data/home)" = 10001 ] && [ "$(stat -c %u /data/workspace)" = 10001 ] && exit 0
+              chown -R 10001:10001 /data
+              chmod 0700 /data/home
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL], add: [CHOWN, DAC_OVERRIDE, FOWNER]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+        # Copy each credential to a private in-memory volume at mode 0600, owned by the
+        # daemon's user. The Secret mount itself is not given to the daemon.
+        - name: place-credentials
+          image: ghcr.io/ubixsys/ubixshepherd:v0.1.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              s=/secret-source; d=/run/secrets/shepherd
+              umask 077
+              mkdir -p $d/ssh $d/glab $d/gh $d/claude
+              put() { [ -f "$s/$1" ] && install -m 0600 "$s/$1" "$d/$2"; return 0; }
+              put totp-key totp-key
+              put ssh-id ssh/id
+              put ssh-known-hosts ssh/known_hosts
+              put glab-config glab/config.yml
+              put gh-hosts gh/hosts.yml
+              put claude-credentials claude/.credentials.json
+              [ -f $d/totp-key ] || { echo "no totp-key in the shepherd-credentials Secret" >&2; exit 1; }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: credentials-source, mountPath: /secret-source, readOnly: true}
+            - {name: credentials, mountPath: /run/secrets/shepherd}
+      containers:
+        - name: shepherd
+          image: ghcr.io/ubixsys/ubixshepherd:v0.1.0
+          env:
+            # Read only when the home is empty, to seed config.yaml. Not credentials.
+            - {name: SHEPHERD_PUBLIC_URL, value: "https://shepherd.example.com"}
+            # The ingress controller's pod addresses. Narrow this to its CIDR.
+            - {name: SHEPHERD_TRUSTED_PROXIES, value: "10.0.0.0/8"}
+          ports:
+            - {name: https, containerPort: 8443}
+          # `shepherd status` asks the daemon over loopback; it is the image's health check.
+          startupProbe:
+            exec: {command: ["shepherd", "status"]}
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            exec: {command: ["shepherd", "status"]}
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec: {command: ["shepherd", "status"]}
+            periodSeconds: 15
+            timeoutSeconds: 10
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 4Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data/home, subPath: home}
+            - {name: data, mountPath: /data/workspace, subPath: workspace}
+            - {name: credentials, mountPath: /run/secrets/shepherd, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: credentials-source
+          secret:
+            secretName: shepherd-credentials
+            defaultMode: 0400
+        - name: credentials
+          emptyDir: {medium: Memory}
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        # storageClassName: your CSI class, one that supports VolumeSnapshots
+        resources:
+          requests: {storage: 50Gi}

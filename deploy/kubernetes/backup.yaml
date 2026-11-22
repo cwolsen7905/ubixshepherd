@@ -1,0 +1,109 @@
+# Backup, in this order: a SQLite online backup of the store into the home, then a
+# VolumeSnapshot of the volume that holds the home and workspace, so the snapshot contains
+# a clean copy of the store. The snapshot is crash-consistent: a lane's worktree caught
+# mid-write may be torn, so a restore runs `git fsck` on every worktree (docs/hosted.md).
+# Needs a CSI driver with snapshots and a VolumeSnapshotClass (set below).
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: shepherd-backup, namespace: shepherd}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: shepherd-backup, namespace: shepherd}
+rules:
+  - apiGroups: [snapshot.storage.k8s.io]
+    resources: [volumesnapshots]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: shepherd-backup, namespace: shepherd}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: shepherd-backup}
+subjects:
+  - {kind: ServiceAccount, name: shepherd-backup, namespace: shepherd}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: shepherd-snapshot, namespace: shepherd}
+data:
+  snapshot.yaml: |
+    apiVersion: snapshot.storage.k8s.io/v1
+    kind: VolumeSnapshot
+    metadata:
+      generateName: shepherd-data-
+      namespace: shepherd
+    spec:
+      # volumeSnapshotClassName: your class
+      source:
+        persistentVolumeClaimName: data-shepherd-0
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: shepherd-backup, namespace: shepherd}
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          serviceAccountName: shepherd-backup
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: {type: RuntimeDefault}
+          # The volume is ReadWriteOnce: run on the node the daemon's pod is on.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels: {app.kubernetes.io/name: shepherd}
+          initContainers:
+            # Step 1: the online backup. `.backup` copies a live database consistently;
+            # never copy shepherd.db with cp.
+            - name: sqlite-backup
+              image: ghcr.io/ubixsys/ubixshepherd:v0.1.0
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  mkdir -p /data/home/backups
+                  f=/data/home/backups/shepherd-$(date -u +%Y%m%dT%H%M%SZ).db
+                  sqlite3 /data/home/shepherd.db ".backup '$f.part'"
+                  [ "$(sqlite3 "$f.part" 'PRAGMA integrity_check;')" = ok ]
+                  mv "$f.part" "$f"
+                  # keep the newest seven
+                  ls -1t /data/home/backups/shepherd-*.db | tail -n +8 | xargs -r rm -f
+                  echo "backed up to $f"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: data, mountPath: /data/home, subPath: home}
+                - {name: tmp, mountPath: /tmp}
+          containers:
+            # Step 2: the snapshot, only if step 1 succeeded.
+            - name: snapshot
+              image: registry.k8s.io/kubectl:v1.31.0
+              args: ["create", "-f", "/manifest/snapshot.yaml"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: manifest, mountPath: /manifest, readOnly: true}
+          volumes:
+            - name: data
+              persistentVolumeClaim: {claimName: data-shepherd-0}
+            - name: manifest
+              configMap: {name: shepherd-snapshot}
+            - name: tmp
+              emptyDir: {}
