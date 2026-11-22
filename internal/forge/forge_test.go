@@ -242,3 +242,22 @@ func TestGitLabDiscussionsSaysWhenCut(t *testing.T) {
 		}
 	}
 }
+
+func TestGitLabMRReadsAnArmedMerge(t *testing.T) {
+	for field, want := range map[string]bool{
+		`"merge_when_pipeline_succeeds":true`: true,
+		`"auto_merge_enabled":true`:           true,
+		`"auto_merge_enabled":false`:          false,
+	} {
+		g := &GitLab{Host: "gl.example.com", Project: "group/app", Run: func(_ context.Context, args ...string) ([]byte, error) {
+			if strings.Contains(args[len(args)-1], "source_branch=") {
+				return []byte(`[{"iid":7}]`), nil
+			}
+			return []byte(`{"iid":7,"state":"opened",` + field + `}`), nil
+		}}
+		mr, err := g.MRForBranch(context.Background(), "b")
+		if err != nil || mr.MergeArmed != want {
+			t.Errorf("%s: armed = %v, %v; want %v", field, mr, err, want)
+		}
+	}
+}

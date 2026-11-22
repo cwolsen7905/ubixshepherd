@@ -32,7 +32,8 @@ hold on the request's current head:
 - No review thread is open.
 
 In an `agent` repo the same conditions apply, and the watcher also waits while any run of
-the lane is going, so it never races an agent arming its own merge. This covers a request
+the lane is going or a start for it is held, and when the forge already shows a merge armed
+for the request, so it never races an agent's own merge. This covers a request
 the agent could not merge because its pipeline ran before the approval and failed only on
 `require-approval`: Shepherd retries that job (see [merge-rules.md](merge-rules.md)) and
 merges on the poll after the pipeline turns green. Approval by a person is always

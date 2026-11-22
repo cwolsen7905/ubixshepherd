@@ -3,6 +3,7 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -160,6 +161,13 @@ func TestAgentRepoWaitsForEveryCondition(t *testing.T) {
 		"forge blocks":               func(_ *fixture, _ *mergingForge, mr *forge.MR) { mr.MergeStatus = "need_rebase" },
 		"open thread": func(f *fixture, _ *mergingForge, _ *forge.MR) {
 			f.f.threads = []forge.Thread{{ID: "d1", Body: "x"}}
+		},
+		"a merge is armed": func(_ *fixture, _ *mergingForge, mr *forge.MR) { mr.MergeArmed = true },
+		"a start is held for the lane": func(f *fixture, _ *mergingForge, _ *forge.MR) {
+			req := fmt.Sprintf(`{"lane_id":%d,"prompt":"p"}`, f.lane.ID)
+			if _, err := f.st.AddHeldStart(f.ctx, store.HeldStart{Request: req, Why: "quota"}); err != nil {
+				t.Fatal(err)
+			}
 		},
 		"an agent run is going": func(f *fixture, _ *mergingForge, _ *forge.MR) {
 			if _, err := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "p", State: store.RunRunning, Started: time.Now()}); err != nil {
