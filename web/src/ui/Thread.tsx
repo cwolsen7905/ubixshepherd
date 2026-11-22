@@ -87,7 +87,7 @@ export interface ThreadProps {
   empty?: ReactNode
   /** The thread's name for a screen reader. */
   label?: string
-  /** The time the relative ages and "Today" are counted from; a clock of the thread's own when left out. */
+  /** The time the relative ages and "Today" are counted from: the caller's ticking clock. Left out, the thread keeps one of its own. */
   now?: number
   className?: string
 }
@@ -292,8 +292,16 @@ function withDayLines(rows: readonly ThreadEntry[], now: number): ReactNode[] {
  * Conversation, the column beside a decision or any other main-body page (filtered to its
  * topic) and a lane's Conversation tab: the caller builds the rows, this lays them out.
  */
-export function Thread({ items, topic = null, empty, label = 'Conversation with the front desk', className, scrollRef, before, layout = 'main', busy, now }: ThreadProps) {
-  const tick = useNow()
+export function Thread(props: ThreadProps) {
+  return props.now === undefined ? <ClockedThread {...props} /> : <ThreadBody {...props} now={props.now} />
+}
+
+/** A thread for a caller with no clock: it ticks one of its own, so "Today" and the ages stay true. */
+function ClockedThread(props: ThreadProps) {
+  return <ThreadBody {...props} now={useNow()} />
+}
+
+function ThreadBody({ items, topic = null, empty, label = 'Conversation with the front desk', className, scrollRef, before, layout = 'main', busy, now }: ThreadProps & { now: number }) {
   const shown = useMemo(
     () => (topic === null ? items : items.filter((it) => it.kind !== 'new' && (it.topics?.includes(topic) ?? false))),
     [items, topic],
@@ -314,7 +322,7 @@ export function Thread({ items, topic = null, empty, label = 'Conversation with 
     >
       {before}
       {shown.length === 0 && empty}
-      {withDayLines(shown, now ?? tick)}
+      {withDayLines(shown, now)}
     </div>
   )
 }

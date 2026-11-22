@@ -2,6 +2,8 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Thread, type ThreadEntry } from './Thread'
 
+const NOW = Date.parse('2026-11-22T12:00:00Z')
+
 const items: ThreadEntry[] = [
   { kind: 'you', key: 'a', age: '3m', topics: [1], children: 'Stream it.' },
   {
@@ -16,7 +18,7 @@ const items: ThreadEntry[] = [
 
 describe('Thread', () => {
   it('draws your messages, the desk, event lines and the "n new" divider', () => {
-    render(<Thread items={items} />)
+    render(<Thread items={items} now={NOW} />)
     const log = screen.getByRole('log', { name: 'Conversation with the front desk' })
     expect(log).toHaveAttribute('data-component', 'Thread')
     expect(within(log).getByText('Stream it.').closest('.sh-msg--you')).not.toBeNull()
@@ -26,7 +28,7 @@ describe('Thread', () => {
   })
 
   it('opens a desk message with "Needs you:" over its list, or "Nothing needs you."', () => {
-    render(<Thread items={items} />)
+    render(<Thread items={items} now={NOW} />)
     expect(screen.getByText('Needs you:')).toHaveClass('sh-desk-needs')
     expect(screen.getByText(/Answer decision 5/).closest('ol')).not.toBeNull()
     expect(screen.getByRole('link', { name: 'Answer' })).toHaveAttribute('href', '#/?open=decision%3A5')
@@ -35,7 +37,7 @@ describe('Thread', () => {
   })
 
   it('keeps "Show work" closed until opened', async () => {
-    render(<Thread items={items} />)
+    render(<Thread items={items} now={NOW} />)
     const fold = screen.getByText('Show work (1 tool call)').closest('details') as HTMLDetailsElement
     expect(fold.open).toBe(false)
     await userEvent.click(screen.getByText('Show work (1 tool call)'))
@@ -44,7 +46,7 @@ describe('Thread', () => {
   })
 
   it('shows only the rows of a topic when filtered, and none of the divider', () => {
-    render(<Thread items={items} topic={2} />)
+    render(<Thread items={items} topic={2} now={NOW} />)
     expect(screen.queryByText('Stream it.')).toBeNull()
     expect(screen.queryByRole('separator')).toBeNull()
     expect(screen.getByText('run 16 passed')).toBeInTheDocument()
@@ -52,7 +54,7 @@ describe('Thread', () => {
   })
 
   it('shows the empty note when a filter leaves nothing', () => {
-    render(<Thread items={items} topic={9} empty={<p>Nothing here.</p>} />)
+    render(<Thread items={items} topic={9} now={NOW} empty={<p>Nothing here.</p>} />)
     expect(screen.getByText('Nothing here.')).toBeInTheDocument()
   })
 })
@@ -114,5 +116,14 @@ describe('Thread times', () => {
   it('counts days within a topic filter', () => {
     render(<Thread items={dated.map((it) => (it.key === 'd' ? { ...it, topics: [4] } : it))} topic={4} now={now} />)
     expect(screen.getAllByRole('separator').map((l) => l.textContent)).toEqual(['Today'])
+  })
+})
+
+describe('Thread clock', () => {
+  it('ticks no clock of its own when the caller passes one', () => {
+    const tick = vi.spyOn(window, 'setInterval')
+    render(<Thread items={items} now={NOW} />)
+    expect(tick).not.toHaveBeenCalled()
+    tick.mockRestore()
   })
 })
