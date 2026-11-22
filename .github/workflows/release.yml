@@ -161,42 +161,6 @@ jobs:
           username: ${{ secrets.IMAGE_MIRROR_USERNAME }}
           password: ${{ secrets.IMAGE_MIRROR_PASSWORD }}
 
-      # Build for the runner first and check it before anything is pushed: non-root, tini as
-      # PID 1, the tools the design names, and the binary reports the tag.
-      - name: Build for checking
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          load: true
-          tags: shepherd-check:local
-          build-args: VERSION=${{ github.ref_name }}
-
-      - name: Check the image
-        run: |
-          set -eu
-          [ "$(docker run --rm --entrypoint id shepherd-check:local -u)" = 10001 ]
-          [ "$(docker image inspect -f '{{.Config.User}}' shepherd-check:local)" = 10001:10001 ]
-          docker image inspect -f '{{json .Config.Entrypoint}}' shepherd-check:local | grep -q '/usr/bin/tini'
-          docker run --rm --entrypoint sh shepherd-check:local -c 'git --version && glab --version && gh --version && ssh -V && sqlite3 --version'
-          got="$(docker run --rm --entrypoint shepherd shepherd-check:local version)"
-          [ "$got" = "shepherd $TAG" ] || { echo "tag $TAG, but the image reports: $got"; exit 1; }
-          # An empty volume starts and answers the health check. The key file is the one
-          # credential the daemon needs to start with a hosted config.
-          k="$(mktemp -d)"
-          head -c 32 /dev/urandom > "$k/totp-key"
-          chmod 0600 "$k/totp-key"
-          sudo chown 10001:10001 "$k/totp-key"
-          docker run -d --name shepherd-check \
-            -e SHEPHERD_PUBLIC_URL=https://shepherd.example.com -e SHEPHERD_TRUSTED_PROXIES=172.17.0.0/16 \
-            -v "$(docker volume create)":/data/home -v "$(docker volume create)":/data/workspace \
-            -v "$k/totp-key":/run/secrets/shepherd/totp-key:ro shepherd-check:local
-          for i in $(seq 1 30); do
-            docker exec shepherd-check shepherd status >/dev/null 2>&1 && { echo "health check answers"; exit 0; }
-            sleep 2
-          done
-          docker logs shepherd-check
-          exit 1
-
       - name: Push the multi-architecture image
         id: push
         uses: docker/build-push-action@v6
@@ -207,6 +171,14 @@ jobs:
           tags: ${{ steps.names.outputs.tags }}
           build-args: VERSION=${{ github.ref_name }}
           provenance: mode=max
+
+      # The checks run against the pushed digest itself, on both architectures, and the
+      # signature below goes on only if they pass: an image that fails is left unsigned.
+      - name: Check the pushed image
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          GHCR: ${{ steps.names.outputs.ghcr }}
+        run: sh deploy/docker/check-image.sh "$GHCR@$DIGEST" "$TAG"
 
       - uses: sigstore/cosign-installer@v3
 

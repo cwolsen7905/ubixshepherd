@@ -3,7 +3,6 @@ kind: Kustomization
 namespace: shepherd
 resources:
   - namespace.yaml
-  - externalsecret.yaml
   - statefulset.yaml
   - service.yaml
   - ingress.yaml
