@@ -42,6 +42,15 @@ The hook is a guard, not a boundary: the forge's rules are the enforcement. The 
 block, the deny rules for `--no-verify` and the other checks on an agent's push still
 apply.
 
+## Scope on push
+
+The pre-push hook also refuses a push that changes files outside the lane's scope. The
+scope includes the lane's siblings: the test file of a Go source file in scope, the root
+`CHANGELOG.md`, and the docs pages the lane was opened with, each while no other open lane
+holds it. A sibling another lane holds is refused and the lane is named, as in
+`CHANGELOG.md (held by lane feat/other)`. See [lanes](lanes.md#siblings-of-the-scope).
+Approved check files are judged first and refused for every lane.
+
 ## Command
 
 ```

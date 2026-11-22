@@ -12,7 +12,6 @@ import (
 
 	"github.com/ubixsys/ubixshepherd/internal/git"
 	"github.com/ubixsys/ubixshepherd/internal/redact"
-	"github.com/ubixsys/ubixshepherd/internal/scope"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
@@ -229,6 +228,7 @@ func (f *Fold) Diff(ctx context.Context, laneID int64, req DiffRequest) (res Lan
 			total-len(commits), DiffMaxCommits, from, to))
 	}
 
+	reach := f.readReach(ctx, lane)
 	budget := DiffMaxFiles
 	var hunkBytes int
 	addGroup := func(group *[]DiffFileInfo, stats []git.FileStat, hunks map[string][]string) {
@@ -238,7 +238,7 @@ func (f *Fold) Diff(ctx context.Context, laneID int64, req DiffRequest) (res Lan
 				continue
 			}
 			budget--
-			fi := fileInfo(lane, s)
+			fi := fileInfo(reach, s)
 			if hunks != nil {
 				for _, h := range hunks[s.Path] {
 					if hunkBytes+len(h) > DiffMaxTotal {
@@ -290,7 +290,7 @@ func (f *Fold) Diff(ctx context.Context, laneID int64, req DiffRequest) (res Lan
 				continue
 			}
 			budget--
-			fi := DiffFileInfo{Path: clean(p), Status: "untracked", InScope: scope.Any(lane.Scope, p)}
+			fi := DiffFileInfo{Path: clean(p), Status: "untracked", InScope: reach.In(p)}
 			if st, err := os.Lstat(filepath.Join(wt, p)); err == nil {
 				fi.Size = st.Size()
 			}
@@ -320,7 +320,8 @@ func (f *Fold) diffFile(ctx context.Context, lane store.Lane, d *LaneDiff, req D
 		return refuse("%q is not a path inside the lane's worktree", req.File)
 	}
 	d.File = clean(rel)
-	inScope := scope.Any(lane.Scope, rel)
+	reach := f.readReach(ctx, lane)
+	inScope := reach.In(rel)
 	if !inScope {
 		d.OutOfScope = 1
 		d.Notes = append(d.Notes, rel+" is outside the lane's scope")
@@ -418,13 +419,13 @@ func cutPatch(p string, max int) string {
 
 var diffStatus = map[string]string{"A": "added", "M": "modified", "D": "deleted", "R": "renamed", "C": "copied", "T": "typechange"}
 
-func fileInfo(lane store.Lane, s git.FileStat) DiffFileInfo {
+func fileInfo(reach *Reach, s git.FileStat) DiffFileInfo {
 	st := diffStatus[s.Status]
 	if st == "" {
 		st = "modified"
 	}
 	return DiffFileInfo{Path: s.Path, OldPath: s.OldPath, Status: st, Added: s.Added, Removed: s.Removed,
-		Binary: s.Binary, InScope: scope.Any(lane.Scope, s.Path)}
+		Binary: s.Binary, InScope: reach.In(s.Path)}
 }
 
 // fileSize is a binary file's bytes: the worktree's copy, else its size at rev.
