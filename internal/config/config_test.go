@@ -661,7 +661,7 @@ repos:
 		t.Errorf("other allow = %q", got)
 	}
 	for _, bad := range []string{`""`, `" make"`, `"*"`, `"* lint"`, `"git push*"`, `"git p*"`, `"git *"`,
-		`"glab mr merge*"`, `"glab mr *"`, `"glab mr a*"`, `"glab mr note 3*"`, `"glab *"`, `"glab"`, `"make\nrm"`} {
+		`"glab mr merge*"`, `"glab mr *"`, `"glab mr a*"`, `"glab mr note 3*"`, `"glab*"`, `"gl*"`, `"g*"`, `"git*"`, `"glab -R x mr approve*"`, `"sh *"`, `"env *"`, `"xargs *"`, `"glab *"`, `"glab"`, `"make\nrm"`} {
 		_, err := Parse([]byte("repos:\n  x:\n    agent:\n      opencode:\n        allow: [" + bad + "]\n"))
 		if err == nil || !strings.Contains(err.Error(), "repos.x.agent.opencode.allow[0]") {
 			t.Errorf("allow %s: error %v", bad, err)

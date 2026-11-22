@@ -1038,8 +1038,15 @@ func TestOpenCodeGlabMrCreateNeedsPush(t *testing.T) {
 }
 
 func TestOpenCodeRepoAllowList(t *testing.T) {
-	rules := bashRules(t, openCodeConfig(Opts{OpenCodeAllow: []string{"make lint*", "glab api*"}}, config.OpenCode{}))
+	rules := bashRules(t, openCodeConfig(Opts{OpenCodeAllow: []string{"make lint*", "glab api*", "glab*", "gl*"}}, config.OpenCode{}))
 	for _, c := range []struct{ cmd, want string }{
+		// Even a broad repo pattern cannot allow the forge verbs a run never uses.
+		{"glab mr approve 3", "deny"},
+		{"glab mr merge 3", "deny"},
+		{"glab mr note 3 -m x", "deny"},
+		{"glab mr resolve 3", "deny"},
+		{"glab -R x mr approve 3", "deny"},
+		{"glab issue list", "allow"},
 		{"make lint ./...", "allow"},
 		{"make other", "deny"},
 		// A built-in deny still wins over a repo's allow.
@@ -1049,5 +1056,15 @@ func TestOpenCodeRepoAllowList(t *testing.T) {
 		if got := openCodeMatch(rules, c.cmd); got != c.want {
 			t.Errorf("%q: %q, want %q", c.cmd, got, c.want)
 		}
+	}
+}
+
+func TestOpenCodeMergeAllowedOnlyWithMerge(t *testing.T) {
+	rules := bashRules(t, openCodeConfig(Opts{Merge: true, OpenCodeAllow: []string{"glab*"}}, config.OpenCode{}))
+	if got := openCodeMatch(rules, "glab mr merge 3 --when-pipeline-succeeds"); got != "allow" {
+		t.Errorf("merge with autonomy.merge agent: %q", got)
+	}
+	if got := openCodeMatch(rules, "glab mr approve 3"); got != "deny" {
+		t.Errorf("approve: %q", got)
 	}
 }

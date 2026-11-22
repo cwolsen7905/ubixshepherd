@@ -181,7 +181,7 @@ than failing with an authentication error, shows it is.
 - **Extra commands** for a repo go in `agent.opencode.allow`, a list of bash command patterns added to
   the allow rules of its OpenCode runs (see [config.md](config.md)). They follow the built-in allows and
   precede the built-in denies, so the `glab api` write denies and the `git push` rule still win, and a
-  pattern allowing `git push` or a `glab mr` approve, merge, note or resolve is refused when the config loads.
+  pattern allowing `git push` or a `glab mr` approve, merge, note or resolve, one with a wildcard in its first word, or one starting a shell or launcher (`sh`, `env`, `xargs`) is refused when the config loads. As a second guard, `glab mr approve`, `note`, `resolve` and `merge` are denied after the repo's patterns whatever they say (merge is allowed again only under `autonomy.merge: agent`).
 - **Sessions**: every JSON event carries the session id, which Shepherd records; the next
   run of the lane resumes it with `-s`.
 - **Cost**: tokens are logged. Cost is recorded as 0 for a local model, which OpenCode

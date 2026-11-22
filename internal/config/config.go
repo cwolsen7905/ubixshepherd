@@ -884,13 +884,19 @@ func badOpenCodeAllow(p string) string {
 		return "must begin with a command, not a wildcard"
 	}
 	t := strings.Fields(p)
+	if strings.ContainsAny(t[0], "*?") {
+		return "must begin with a literal command word, with no wildcard in it"
+	}
+	if slices.Contains([]string{"sh", "bash", "zsh", "dash", "env", "xargs", "sudo", "eval", "exec", "nohup", "time", "command", "busybox"}, t[0]) {
+		return "begins with a command that runs other commands"
+	}
 	if t[0] == "git" && len(t) >= 2 && strings.HasPrefix("push", strings.TrimRight(t[1], "*")) {
 		return "allows git push, which autonomy.push decides"
 	}
-	if t[0] == "glab" && len(t) >= 2 && t[1] == "mr" {
+	if mr := slices.Index(t, "mr"); t[0] == "glab" && mr > 0 {
 		verb := ""
-		if len(t) >= 3 {
-			verb = strings.TrimRight(t[2], "*")
+		if len(t) > mr+1 {
+			verb = strings.TrimRight(t[mr+1], "*")
 		}
 		for _, v := range []string{"approve", "merge", "note", "resolve"} {
 			if strings.HasPrefix(v, verb) {
