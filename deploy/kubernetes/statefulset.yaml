@@ -81,8 +81,11 @@ spec:
           env:
             # Read only when the home is empty, to seed config.yaml. Not credentials.
             - {name: SHEPHERD_PUBLIC_URL, value: "https://shepherd.example.com"}
-            # The ingress controller's pod addresses. Narrow this to its CIDR.
-            - {name: SHEPHERD_TRUSTED_PROXIES, value: "10.0.0.0/8"}
+            # REQUIRED EDIT: the ingress controller's pod addresses (a CIDR or list). Every
+            # address here may claim a request came over TLS and name its client, so use
+            # the controller's own range, never the whole pod network. The placeholder is
+            # refused by the image's entrypoint, so the pod does not start unedited.
+            - {name: SHEPHERD_TRUSTED_PROXIES, value: "REPLACE-WITH-INGRESS-CONTROLLER-POD-CIDR"}
           ports:
             - {name: https, containerPort: 8443}
           # `shepherd status` asks the daemon over loopback; it is the image's health check.

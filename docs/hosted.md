@@ -182,7 +182,7 @@ work lives only there.
 |---|---|---|
 | A single host | `deploy/systemd/shepherd.service`, `deploy/systemd/README-launchd.md` | The release binary as a system service under its own user, a stop timeout of two minutes. On a Mac, `shepherd daemon install` writes the launchd agent |
 | Docker Compose | `deploy/compose/` | One container, a home volume and a workspace volume, a Caddy container in front holding the certificate, credentials bind-mounted read-only as files, `stop_grace_period: 2m` |
-| Kubernetes | `deploy/kubernetes/` | One namespace, `shepherd`. A StatefulSet of one replica with a ReadWriteOnce claim, a headless Service, an Ingress with TLS, a NetworkPolicy, ExternalSecret templates with no values, and `terminationGracePeriodSeconds: 120`. Apply with `kubectl apply -k deploy/kubernetes` after editing the host name, image tag, ingress class and storage class |
+| Kubernetes | `deploy/kubernetes/` | One namespace, `shepherd`. A StatefulSet of one replica with a ReadWriteOnce claim, a headless Service, an Ingress with TLS, a NetworkPolicy, ExternalSecret templates with no values, and `terminationGracePeriodSeconds: 120`. Apply with `kubectl apply -k deploy/kubernetes` after editing the host name, image tag, ingress class, storage class and `SHEPHERD_TRUSTED_PROXIES` (the ingress controller's pod CIDR; the manifest ships a placeholder the image refuses, because every address listed may claim a request came over TLS) |
 
 ### The image
 
@@ -200,7 +200,7 @@ A repository variable, `IMAGE_MIRROR_REPOSITORY`, adds a second registry.
 | `/data/home` | `SHEPHERD_HOME`: config, store, logs, artifacts |
 | `/data/workspace` | The workspace: repo clones and worktrees |
 | `/run/secrets/shepherd/` | Credentials as read-only files: `totp-key`, `ssh/id`, `ssh/known_hosts`, and seeds for `glab/`, `gh/` and `claude/` |
-| `/data/home/cli/` | The `glab`, `gh` and agent CLI config directories. Seeded once from the seeds above, never overwritten, so a refreshed token or a login done with `exec` survives a restart; delete a file to take the seed again |
+| `/data/home/cli/` | The `glab`, `gh` and agent CLI config directories. Seeded once from the seeds above, never overwritten, so a refreshed token or a login done with `exec` survives a restart; delete a file, and restart, to take a rotated seed |
 
 On an empty home the entrypoint writes a `config.yaml` with `daemon.public` set from
 `SHEPHERD_PUBLIC_URL` and `SHEPHERD_TRUSTED_PROXIES` (the reverse proxy's addresses); after
