@@ -25,32 +25,32 @@ spec:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
-        # No fsGroup on purpose: it would make the credential files group-readable, and the
-        # daemon refuses a group-readable TOTP key. The init step below copies them instead.
+        # fsGroup makes the volume writable by the daemon and the Secret's files readable by
+        # its group (mode 0440). That would trip the daemon's refusal of a group-readable
+        # TOTP key, so the daemon never sees the Secret mount: the place-credentials step
+        # below copies each file to a private volume at 0600.
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile: {type: RuntimeDefault}
       initContainers:
-        # The volume is root-owned when new. Chown it once (only this step runs as root,
-        # with one capability).
-        - name: own-the-volume
+        # Make the two directories on a new volume. fsGroup (above) makes the volume
+        # writable by the daemon's group, so nothing here runs as root and the pod meets
+        # the namespace's restricted Pod Security level.
+        - name: make-directories
           image: ghcr.io/ubixsys/ubixshepherd:v0.1.0
           command: ["/bin/sh", "-c"]
           args:
-            - |
-              set -eu
-              mkdir -p /data/home /data/workspace
-              [ "$(stat -c %u /data)" = 10001 ] && [ "$(stat -c %u /data/home)" = 10001 ] && [ "$(stat -c %u /data/workspace)" = 10001 ] && exit 0
-              chown -R 10001:10001 /data
-              chmod 0700 /data/home
+            - mkdir -p /data/home /data/workspace && chmod 0700 /data/home
           securityContext:
-            runAsUser: 0
-            runAsNonRoot: false
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL], add: [CHOWN, DAC_OVERRIDE, FOWNER]}
+            capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: data, mountPath: /data}
         # Copy each credential to a private in-memory volume at mode 0600, owned by the
-        # daemon's user. The Secret mount itself is not given to the daemon.
+        # daemon's user. The Secret mount itself is not given to the daemon. The agent and
+        # forge CLIs' directories (glab, gh, claude) are only seeds: the entrypoint copies
+        # them once into the home, where the tools can write.
         - name: place-credentials
           image: ghcr.io/ubixsys/ubixshepherd:v0.1.0
           command: ["/bin/sh", "-c"]
@@ -114,7 +114,7 @@ spec:
         - name: credentials-source
           secret:
             secretName: shepherd-credentials
-            defaultMode: 0400
+            defaultMode: 0400   # with fsGroup, files read as 0440 for the group
         - name: credentials
           emptyDir: {medium: Memory}
         - name: tmp

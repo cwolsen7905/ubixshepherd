@@ -199,14 +199,15 @@ A repository variable, `IMAGE_MIRROR_REPOSITORY`, adds a second registry.
 |---|---|
 | `/data/home` | `SHEPHERD_HOME`: config, store, logs, artifacts |
 | `/data/workspace` | The workspace: repo clones and worktrees |
-| `/run/secrets/shepherd/` | Credentials as files: `totp-key`, `ssh/id`, `ssh/known_hosts`, `glab/`, `gh/`, `claude/` |
+| `/run/secrets/shepherd/` | Credentials as read-only files: `totp-key`, `ssh/id`, `ssh/known_hosts`, and seeds for `glab/`, `gh/` and `claude/` |
+| `/data/home/cli/` | The `glab`, `gh` and agent CLI config directories. Seeded once from the seeds above, never overwritten, so a refreshed token or a login done with `exec` survives a restart; delete a file to take the seed again |
 
 On an empty home the entrypoint writes a `config.yaml` with `daemon.public` set from
 `SHEPHERD_PUBLIC_URL` and `SHEPHERD_TRUSTED_PROXIES` (the reverse proxy's addresses); after
 that the file is yours. The public listener opens once you run `shepherd account set` inside the
 container (`docker compose exec shepherd shepherd account set`, or `kubectl -n shepherd exec -it
 shepherd-0 -- shepherd account set`). An agent CLI that logs in interactively is logged in
-once the same way, and its state kept under its config directory.
+once the same way, and its state kept in `/data/home/cli`.
 
 The image's health check is `shepherd status`, which asks the daemon over loopback with the
 operator token in the home. The public listener is not what it waits for, since that opens
@@ -216,7 +217,7 @@ only once an account exists.
 
 | Concern | How the examples meet it |
 |---|---|
-| Credentials | Files of mode 0600 owned by the daemon's user, never environment variables, which agents would inherit. In Kubernetes the Secret is mounted into an init step that copies each key to an in-memory volume at 0600, because `fsGroup` would make the files group-readable and the daemon refuses a group-readable TOTP key |
+| Credentials | Files of mode 0600 owned by the daemon's user, never environment variables, which agents would inherit. In Kubernetes the Secret is mounted into an init step, running as the daemon's user, that copies each key to an in-memory volume at 0600, because `fsGroup` (needed to write the volume without a root step) makes Secret files group-readable and the daemon refuses a group-readable TOTP key |
 | One process | One replica, one home; the home lock refuses a second daemon |
 | Shutdown | The daemon ends its agents on SIGTERM in about 20 seconds; the examples wait two minutes before SIGKILL |
 | TLS | Compose: Caddy. Kubernetes: the Ingress, with the controller's pod addresses as `trusted_proxies`. Single host: the daemon's own certificate, or a local proxy |

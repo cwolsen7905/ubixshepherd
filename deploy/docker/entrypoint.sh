@@ -14,4 +14,13 @@ if [ ! -e "$home/config.yaml" ]; then
   mv "$home/config.yaml.tmp" "$home/config.yaml"
   echo "shepherd: seeded $home/config.yaml"
 fi
+# Seed the CLIs' config directories from the read-only credential mount, once. A file that
+# is already there is kept: the tool may have refreshed it. To replace one, delete it.
+umask 077
+for t in glab gh claude; do
+  mkdir -p "$home/cli/$t"
+  if [ -d "/run/secrets/shepherd/$t" ]; then
+    cp -Rn "/run/secrets/shepherd/$t/." "$home/cli/$t/" 2>/dev/null || true
+  fi
+done
 exec "$@"

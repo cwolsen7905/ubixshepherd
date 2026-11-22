@@ -40,8 +40,9 @@ RUN useradd --uid 10001 --user-group --create-home --home-dir /home/shepherd --s
  && install -d -o shepherd -g shepherd -m 0755 /data/workspace
 
 # Credentials are files under /run/secrets/shepherd, never environment variables, which
-# agents would inherit. ssh reads the push key and known hosts from there; the other
-# tools are pointed at their config directories by path (a path is not a secret).
+# agents would inherit. ssh reads the push key and known hosts from there. The glab, gh
+# and agent CLI directories there are seeds only: the entrypoint copies them once into
+# the home (/data/home/cli), where the tools can write their sessions and refreshed tokens.
 RUN printf 'Host *\n  IdentityFile /run/secrets/shepherd/ssh/id\n  UserKnownHostsFile /run/secrets/shepherd/ssh/known_hosts\n  IdentitiesOnly yes\n  StrictHostKeyChecking yes\n' \
       > /etc/ssh/ssh_config.d/shepherd.conf
 
@@ -52,9 +53,9 @@ COPY deploy/docker/config.seed.yaml /usr/share/shepherd/config.seed.yaml
 ENV SHEPHERD_HOME=/data/home \
     SHEPHERD_NO_AUTOSTART=1 \
     SHEPHERD_NO_UPDATE_CHECK=1 \
-    GLAB_CONFIG_DIR=/run/secrets/shepherd/glab \
-    GH_CONFIG_DIR=/run/secrets/shepherd/gh \
-    CLAUDE_CONFIG_DIR=/run/secrets/shepherd/claude
+    GLAB_CONFIG_DIR=/data/home/cli/glab \
+    GH_CONFIG_DIR=/data/home/cli/gh \
+    CLAUDE_CONFIG_DIR=/data/home/cli/claude
 
 USER 10001:10001
 WORKDIR /data/workspace

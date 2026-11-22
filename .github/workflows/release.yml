@@ -146,6 +146,7 @@ jobs:
           tags="$repo:$TAG"
           if [ -n "$MIRROR" ]; then tags="$tags,$MIRROR:$TAG"; fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "mirror_host=${MIRROR%%/*}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -156,7 +157,7 @@ jobs:
       - uses: docker/login-action@v3
         if: ${{ vars.IMAGE_MIRROR_REPOSITORY != '' }}
         with:
-          registry: ${{ split(vars.IMAGE_MIRROR_REPOSITORY, '/')[0] }}
+          registry: ${{ steps.names.outputs.mirror_host }}
           username: ${{ secrets.IMAGE_MIRROR_USERNAME }}
           password: ${{ secrets.IMAGE_MIRROR_PASSWORD }}
 
