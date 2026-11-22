@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { topics as topicsApi } from '../api/client'
 import { chipLabel, fitCount, type LoadTopicBar } from '../components/TopicBar'
 import { Topics } from '../components/Topics'
@@ -15,12 +15,34 @@ const MORE_W = 96
 
 const defaultLoad: LoadTopicBar = (all) => topicsApi.list(all)
 
+const NEXT = new Set(['j', 'ArrowRight', 'ArrowDown'])
+const PREV = new Set(['k', 'ArrowLeft', 'ArrowUp'])
+
+/**
+ * Moves focus along the switcher's buttons from the keyboard: j or an arrow to the next, k or
+ * the opposite arrow to the previous, Home and End to the ends; Enter or Space then picks, as
+ * a click does. The chips folded out of sight are skipped; the "+n more" popover's items are
+ * reached the same way while it is open.
+ */
+export function stepFocus(e: KeyboardEvent<HTMLElement>): void {
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const dir = NEXT.has(e.key) ? 1 : PREV.has(e.key) ? -1 : e.key === 'Home' ? -Infinity : e.key === 'End' ? Infinity : 0
+  if (dir === 0) return
+  const all = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button')).filter((b) => !b.closest('.is-over'))
+  if (all.length === 0) return
+  const at = all.indexOf(document.activeElement as HTMLButtonElement)
+  const to = dir === -Infinity ? 0 : dir === Infinity ? all.length - 1 : at < 0 ? 0 : Math.min(all.length - 1, Math.max(0, at + dir))
+  e.preventDefault()
+  all[to]?.focus()
+}
+
 /**
  * The topic chips of the Conversation's head: "All" and a chip per active topic, each with the
  * lantern count of what waits on the person and a lichen dot while something in it is unseen.
  * The ones that do not fit, and the idle ones, wait behind "+n more", a popover. A click filters
  * the thread through `onFilter`, the same filter the hash carries. With `manage` the full list
- * (rename, clear, reopen, merge, add) opens under the chips.
+ * (rename, clear, reopen, merge, add) opens under the chips. The chips are a keyboard list
+ * too (`stepFocus`).
  */
 export function TopicChips({
   active, onFilter, manage = false, unseen, load = defaultLoad,
@@ -121,7 +143,7 @@ export function TopicChips({
 
   return (
     <div className="sh-topics" role="group" aria-label="Filter the thread by topic" data-component="TopicChips">
-      <div className={cx('sh-topics-row', scroll && 'sh-chiprow--scroll')} ref={row}>
+      <div className={cx('sh-topics-row', scroll && 'sh-chiprow--scroll')} ref={row} onKeyDown={stepFocus}>
         <span data-all>
           <Chip kind="filter" selected={active === null} onClick={() => onFilter(null)}>
             All
