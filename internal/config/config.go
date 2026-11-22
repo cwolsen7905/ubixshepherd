@@ -890,8 +890,18 @@ func badOpenCodeAllow(p string) string {
 	if slices.Contains([]string{"sh", "bash", "zsh", "dash", "env", "xargs", "sudo", "eval", "exec", "nohup", "time", "command", "busybox"}, t[0]) {
 		return "begins with a command that runs other commands"
 	}
-	if t[0] == "git" && len(t) >= 2 && strings.HasPrefix("push", strings.TrimRight(t[1], "*")) {
-		return "allows git push, which autonomy.push decides"
+	if t[0] == "git" && len(t) >= 2 {
+		// A global option (git -C x push) moves the subcommand, so none is allowed; then
+		// no later word may be, or may begin, "push".
+		if strings.HasPrefix(t[1], "-") {
+			return "gives git a global option, which can hide a push, which autonomy.push decides"
+		}
+		for i, w := range t[1:] {
+			w = strings.TrimRight(w, "*?")
+			if (w != "" || i == 0) && strings.HasPrefix("push", w) {
+				return "allows git push, which autonomy.push decides"
+			}
+		}
 	}
 	if mr := slices.Index(t, "mr"); t[0] == "glab" && mr > 0 {
 		verb := ""
