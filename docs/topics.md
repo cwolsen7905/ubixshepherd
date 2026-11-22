@@ -299,7 +299,7 @@ that topic. Topics that do not fit on the line, and the idle ones, wait behind "
 | Does | How |
 |---|---|
 | Show one topic | Choosing a chip filters the thread to that topic's rows; **All** shows everything again. The note above the thread says what is shown |
-| Remember the choice | The topic chosen is kept in the browser (`shepherd.chat.topic`), so opening the chat again opens on it. An address that names a topic (`#/chat?topic=7`) wins over the kept one, and choosing **All** forgets it. Leaving the chat for another page keeps it |
+| Remember the choice | The topic chosen is kept in the browser (`shepherd.chat.topic`), so opening the chat again opens on it. An address that names a topic (`#/chat?topic=7`) wins over the kept one, and choosing **All** forgets it. A kept topic that no longer exists (merged away, or of another workspace) is dropped once the topic list loads, and the chat opens on All. Leaving the chat for another page keeps it |
 | Keyboard | The chips are a list: Tab reaches it, `j` or the right and down arrows move to the next chip, `k` or the left and up arrows to the previous one, Home and End to the ends, and Enter or Space chooses. While "+n more" is open its topics are reached the same way |
 | File new messages | While a topic is chosen, a message sent from the composer goes to the daemon with that topic's id, so the turn is filed under it unless what the message names belongs to another topic (section 2) |
 

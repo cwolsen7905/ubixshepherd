@@ -730,6 +730,28 @@ describe('following one topic', () => {
     expect(await screen.findByText('release answer')).toBeInTheDocument()
   })
 
+  it('forgets a remembered topic that no longer exists and opens on All', async () => {
+    localStorage.setItem(TOPIC_KEY, '99')
+    const turn = vi.fn(async () => ({ workspace_id: 1, turn: 9, ahead: 1 }))
+    const user = userEvent.setup()
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }), turn }))
+    await waitFor(() => expect(window.location.hash).toBe('#/chat'))
+    expect(localStorage.getItem(TOPIC_KEY)).toBeNull()
+    expect(await screen.findByText('release answer')).toBeInTheDocument()
+    expect(screen.getByText('docs answer')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Message to the front desk'), 'hello{Enter}')
+    await waitFor(() => expect(turn).toHaveBeenCalledWith(0, 'hello'))
+  })
+
+  it('keeps a remembered topic while the topic list cannot be read', async () => {
+    vi.spyOn(client.topics, 'list').mockRejectedValue(new Error('down'))
+    localStorage.setItem(TOPIC_KEY, '2')
+    await show(fakeDeskApi({ history: async () => ({ events, more: false }) }))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(localStorage.getItem(TOPIC_KEY)).toBe('2')
+    expect(window.location.hash).toBe('#/chat?topic=2')
+  })
+
   it('opens on the topic a link names rather than the one remembered', async () => {
     localStorage.setItem(TOPIC_KEY, '2')
     window.location.hash = '#/chat?topic=1'

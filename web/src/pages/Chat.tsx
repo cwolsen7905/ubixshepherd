@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { topics as topicsApi } from '../api/client'
 import { useSnapshot } from '../state/context'
 import { readTopicFilter, withTopicFilter } from '../model/topic'
 import { parse } from '../router'
@@ -50,12 +51,39 @@ export function writeChosenTopic(id: number | null): void {
  * opens on the topic the person last followed. An address that names a topic wins, so a
  * link to one still works. Replaced, not pushed, so Back does not step through it.
  */
-export function restoreChosenTopic(): void {
+export function restoreChosenTopic(): number | null {
   const hash = window.location.hash
-  if (readTopicFilter(hash) !== null) return
+  if (readTopicFilter(hash) !== null) return null
   const id = readChosenTopic()
-  if (id === null) return
+  if (id === null) return null
   window.history.replaceState(null, '', withTopicFilter(hash || '#/', id))
+  return id
+}
+
+/**
+ * Drops a remembered topic that no longer exists (merged away, or of another workspace): once the
+ * topic list has loaded without it, the address and the kept choice go back to All, so the thread
+ * never shows every row under a dead topic and the composer files nothing under it. Only a topic
+ * that was put back from storage is checked; one a link names is the link's to keep. A failed
+ * read changes nothing.
+ */
+function useDropStaleTopic(restored: number | null) {
+  useEffect(() => {
+    if (restored === null) return
+    let live = true
+    topicsApi.list(true).then(
+      (l) => {
+        if (!live || l.topics.some((t) => t.id === restored)) return
+        if (readTopicFilter(window.location.hash) !== restored) return
+        writeChosenTopic(null)
+        window.location.replace(withTopicFilter(window.location.hash, null))
+      },
+      () => {},
+    )
+    return () => {
+      live = false
+    }
+  }, [restored])
 }
 
 /**
@@ -77,7 +105,8 @@ function useRememberTopic() {
 /** The chat page. `make` builds the thread for a workspace; tests give it fakes. */
 export function ChatPage({ make = (id: number) => new DeskThread(id) }: { make?: (workspaceId: number) => DeskThread }) {
   // Before the thread first reads the address, so it opens on the remembered topic.
-  useState(restoreChosenTopic)
+  const [restored] = useState(restoreChosenTopic)
+  useDropStaleTopic(restored)
   useRememberTopic()
   const snap = useSnapshot()
   const { workspaces, workspaceId, pick } = useWorkspace()
