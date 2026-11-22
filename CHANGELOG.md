@@ -11,6 +11,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- OpenCode runs in a repo with `autonomy.push: agent` may run `glab mr create`, so the
+  agent can open its lane's merge request; approve, note and merge stay denied. A new
+  per-repo `agent.opencode.allow` list adds bash command patterns to an OpenCode run's
+  allow rules, checked when the config loads: a pattern may not allow `git push` or a
+  `glab mr` approve, merge, note or resolve, and the built-in denies still win. Interface
+  changes: config `agent.opencode.allow`. See [docs/opencode.md](docs/opencode.md) and
+  [docs/config.md](docs/config.md).
 - A Review bots page in the web UI: per repo, what a review bot did (jobs, proposals,
   dismissals, what needs you, fixes pushed, spend), read from the forge's labels, threads and
   notes with nothing stored. Bots are named under the new `review_bots:` config section.

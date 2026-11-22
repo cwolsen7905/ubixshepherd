@@ -131,6 +131,30 @@ other queued follow-ups so it survives a daemon restart, and starts when a run o
 model ends, oldest first. A run Shepherd starts on its own is held and tried again when
 a slot frees. Other models are unaffected. A reload applies a change.
 
+## Extra OpenCode commands (`agent.opencode.allow`)
+
+`agent.opencode.allow` is a list of bash command patterns added to the allow rules of an
+OpenCode run in the repo, for a tool the built-in set leaves out (a linter, a code
+generator, another package manager). Set it in `defaults:` or under a repo; a repo's list
+adds to the defaults' and a pattern listed twice counts once. Patterns use OpenCode's
+wildcards, and `*` matches any text.
+
+```yaml
+repos:
+  app:
+    agent:
+      opencode:
+        allow: ["make lint*", "go generate ./..."]
+```
+
+A pattern must begin with a literal command word, so `*` and `* lint` are errors, and it
+may not hold a line break. A pattern that allows `git push` (or a prefix of it, such as
+`git *`) or a `glab mr` approve, merge, note or resolve is an error too: pushing is
+`autonomy.push`, merging is `autonomy.merge`, and a run never approves or resolves. The
+patterns go after the built-in allows and before the built-in denies, so a deny, the
+`glab api` write denies and the push rule included, still wins. Other agents ignore the
+list. See [opencode.md](opencode.md).
+
 ## Projects and the `repos:` section
 
 A project's `repos:` lists repo names; each name need not also appear under the top-level

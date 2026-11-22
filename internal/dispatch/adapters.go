@@ -184,6 +184,9 @@ type Opts struct {
 	// MR is the iid of the lane's own merge request, 0 when none is known; with Push it
 	// lets the agent reply on that request's threads (see perm.go).
 	MR int
+	// OpenCodeAllow are the repo's agent.opencode.allow patterns, added to an OpenCode
+	// run's bash allow rules.
+	OpenCodeAllow []string
 	// ReadPaths are absolute paths outside the worktree the run's briefs name; OpenCode
 	// may read them, never write them.
 	ReadPaths []string
