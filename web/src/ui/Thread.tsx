@@ -1,6 +1,8 @@
 import { useMemo, type ReactNode } from 'react'
 import { Markdown } from '../chat/md'
 import { threadId } from '../model/backlog'
+import { since } from '../format'
+import { useNow } from '../hooks'
 import { cx } from './cx'
 import { StatusGlyph, type GlyphTone } from './StatusGlyph'
 import './Thread.css'
@@ -14,6 +16,11 @@ interface Base {
   flash?: boolean
   /** The topics the row belongs to. Under a topic filter a row with none is left out. */
   topics?: readonly number[]
+  /**
+   * When the row happened (RFC 3339). A message or event line with one shows its local
+   * 24-hour clock time in place of `age`, and a date line goes in wherever the day changes.
+   */
+  at?: string
 }
 
 /** One step behind a desk message: a tool call, or a note that Shepherd woke the desk. */
@@ -80,7 +87,66 @@ export interface ThreadProps {
   empty?: ReactNode
   /** The thread's name for a screen reader. */
   label?: string
+  /** The time the relative ages and "Today" are counted from; a clock of the thread's own when left out. */
+  now?: number
   className?: string
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const parse = (iso: string | undefined) => {
+  if (!iso) return null
+  const t = new Date(iso)
+  return isNaN(t.getTime()) ? null : t
+}
+const sameDay = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+/** A local day as a key: "2026-11-22". */
+const dayKey = (t: Date) => `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`
+
+/** A local time of day, 24-hour: "14:05", "00:30". Built by hand, as Intl writes midnight "24:00" in some engines. */
+export function clockOf(t: Date): string {
+  return `${pad(t.getHours())}:${pad(t.getMinutes())}`
+}
+
+/** The date line's words: "Today", "Yesterday", "Friday, Nov 20", or with its year when not this year's. */
+export function dayLabel(t: Date, now: number): string {
+  const n = new Date(now)
+  if (sameDay(t, n)) return 'Today'
+  const y = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1)
+  if (sameDay(t, y)) return 'Yesterday'
+  return t.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', ...(t.getFullYear() === n.getFullYear() ? {} : { year: 'numeric' }) })
+}
+
+/** The whole date and time, for a title: "Sun, Nov 22, 2026 14:05". */
+function fullTime(t: Date): string {
+  return `${t.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} ${clockOf(t)}`
+}
+
+/**
+ * A row's clock time (`.sh-clock`): "14:05" in local 24-hour time, the full date and how long
+ * ago in its title. `fallback` (a relative age) shows when the time is missing or unparsable.
+ */
+export function Clock({ at, now, fallback = null }: { at?: string; now: number; fallback?: ReactNode }) {
+  const t = parse(at)
+  if (!t) return <>{fallback}</>
+  const ago = since(at, now)
+  return (
+    <time className="sh-clock" dateTime={at} title={ago ? `${fullTime(t)}, ${ago} ago` : fullTime(t)}>
+      {clockOf(t)}
+    </time>
+  )
+}
+
+/** The date line (`.sh-dayline`) where the thread's day changes. */
+function DayLine({ t, now }: { t: Date; now: number }) {
+  const words = dayLabel(t, now)
+  const full = t.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  return (
+    <div className="sh-dayline" role="separator" aria-label={words === 'Today' || words === 'Yesterday' ? `${words}, ${full}` : full} data-component="DayLine">
+      <time dateTime={dayKey(t)} title={full}>
+        {words}
+      </time>
+    </div>
+  )
 }
 
 const NEEDS = /^\s*Needs you:[ \t]*(?:\n|$)/
@@ -134,7 +200,7 @@ export function WorkFold({ steps }: { steps: readonly WorkStep[] }) {
 }
 
 /** One row of a thread, for a caller that draws rows of its own (a fold of events). */
-export function ThreadRow({ it }: { it: ThreadEntry }) {
+export function ThreadRow({ it, now }: { it: ThreadEntry; now: number }) {
   const id = it.anchor ? threadId(it.anchor) : undefined
   switch (it.kind) {
     case 'new':
@@ -147,7 +213,7 @@ export function ThreadRow({ it }: { it: ThreadEntry }) {
       return (
         <div id={id} className={cx('sh-msg', 'sh-msg--you', it.flash && 'is-flash')} data-kind="you">
           <div className="sh-who">
-            <b>You</b> {it.age}
+            <b>You</b> <Clock at={it.at} now={now} fallback={it.age} />
             {it.pill}
           </div>
           {it.reply}
@@ -159,7 +225,7 @@ export function ThreadRow({ it }: { it: ThreadEntry }) {
       return (
         <div id={id} className={cx('sh-msg', 'sh-msg--desk', it.asked && 'is-asked', it.flash && 'is-flash', it.partial && 'is-partial')} data-kind="desk">
           <div className="sh-who">
-            <b>Front desk</b> {it.age}
+            <b>Front desk</b> <Clock at={it.at} now={now} fallback={it.age} />
             {it.unseen && <span className="sh-unseen" role="img" aria-label="unseen" />}
             {it.pill}
           </div>
@@ -173,7 +239,11 @@ export function ThreadRow({ it }: { it: ThreadEntry }) {
         <div id={id} className={cx('sh-event', it.flash && 'is-flash')} data-kind="event">
           <StatusGlyph glyph={it.glyph} tone={it.tone ?? 'idle'} label={it.label} />
           <span>{it.children}</span>
-          {it.age && <span className="sh-event-time">{it.age}</span>}
+          {(parse(it.at) || it.age) && (
+            <span className="sh-event-time">
+              <Clock at={it.at} now={now} fallback={it.age} />
+            </span>
+          )}
         </div>
       )
     case 'decision':
@@ -192,12 +262,38 @@ export function ThreadRow({ it }: { it: ThreadEntry }) {
 }
 
 /**
+ * The rows with a date line before each that starts a new local day, the first included. A
+ * row with no time leaves the day as it was; a date line that falls just after the "n new"
+ * divider goes before it, so the divider sits next to the row it names.
+ */
+function withDayLines(rows: readonly ThreadEntry[], now: number): ReactNode[] {
+  const out: ReactNode[] = []
+  let last = ''
+  const lineFor = (it: ThreadEntry | undefined) => {
+    const t = parse(it?.at)
+    if (!t || dayKey(t) === last) return null
+    last = dayKey(t)
+    return <DayLine key={`day-${it?.key}`} t={t} now={now} />
+  }
+  rows.forEach((it, i) => {
+    if (it.kind === 'new') {
+      out.push(lineFor(rows.slice(i + 1).find((r) => parse(r.at))))
+    } else {
+      out.push(lineFor(it))
+    }
+    out.push(<ThreadRow key={it.key} it={it} now={now} />)
+  })
+  return out
+}
+
+/**
  * The thread (`.sh-thread`): your messages on the right over a sunk ground, the front desk's
  * on the left, event lines between them and decision cards inline. One list serves the
  * Conversation, the column beside a decision or any other main-body page (filtered to its
  * topic) and a lane's Conversation tab: the caller builds the rows, this lays them out.
  */
-export function Thread({ items, topic = null, empty, label = 'Conversation with the front desk', className, scrollRef, before, layout = 'main', busy }: ThreadProps) {
+export function Thread({ items, topic = null, empty, label = 'Conversation with the front desk', className, scrollRef, before, layout = 'main', busy, now }: ThreadProps) {
+  const tick = useNow()
   const shown = useMemo(
     () => (topic === null ? items : items.filter((it) => it.kind !== 'new' && (it.topics?.includes(topic) ?? false))),
     [items, topic],
@@ -218,9 +314,7 @@ export function Thread({ items, topic = null, empty, label = 'Conversation with 
     >
       {before}
       {shown.length === 0 && empty}
-      {shown.map((it) => (
-        <ThreadRow key={it.key} it={it} />
-      ))}
+      {withDayLines(shown, now ?? tick)}
     </div>
   )
 }
