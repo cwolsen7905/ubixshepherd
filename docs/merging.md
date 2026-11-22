@@ -1,7 +1,8 @@
 # Merging after a person approves
 
-A repo can let Shepherd merge a lane's merge request once a person has approved it. Set it
-per repo, or under `defaults:`:
+A repo can let Shepherd merge a lane's merge request once a person has approved it, and
+Shepherd does the same in a repo where agents merge when the agent's own merge did not
+happen. Set it per repo, or under `defaults:`:
 
 ```yaml
 repos:
@@ -15,7 +16,7 @@ repos:
 |---|---|
 | `human` (default) | The person, on the forge. |
 | `after_approval` | Shepherd's watcher, once the conditions below hold. Agents never arm a merge. |
-| `agent` | An agent may arm merge-when-pipeline-succeeds at any time; the forge's rules still gate it. |
+| `agent` | An agent may arm merge-when-pipeline-succeeds at any time; the forge's rules still gate it. If the request is still open once the lane has no run going, Shepherd's watcher merges it when the conditions below hold. |
 
 ## What has to be true
 
@@ -29,6 +30,14 @@ hold on the request's current head:
   branch wait).
 - The head pipeline passed, and it ran on the head.
 - No review thread is open.
+
+In an `agent` repo the same conditions apply, and the watcher also waits while any run of
+the lane is going or a start for it is held, and when the forge already shows a merge armed
+for the request, so it never races an agent's own merge. This covers a request
+the agent could not merge because its pipeline ran before the approval and failed only on
+`require-approval`: Shepherd retries that job (see [merge-rules.md](merge-rules.md)) and
+merges on the poll after the pipeline turns green. Approval by a person is always
+required, so an approved request is mergeable and an unapproved one never is.
 
 Anything unmet is waited on, with the reason in the daemon's debug log. Shepherd never
 overrides the forge: its required approvals, protected branch and pipeline rules apply as
@@ -46,7 +55,8 @@ keeps no approval state of its own.
 
 ## What you see
 
-The feed says when a request was merged this way and by whom it was approved. If the forge
+The feed says "Merged by rule autonomy.merge: <setting>", with the request, who approved it
+and the head, when a request was merged this way. If the forge
 refuses the merge, the feed says why and Shepherd does not retry that head: push a new
 commit or merge it by hand. The next poll sees the merge and closes the lane as for any
 merge.

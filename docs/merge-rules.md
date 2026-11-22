@@ -106,7 +106,9 @@ show them like any row, marked by the stage.
 A repo set to `autonomy.merge: after_approval` (see [merging.md](merging.md)) is the opt-in
 for Shepherd merging a request once the person has approved it. This is Shepherd's own
 act on the person's approval, in the watcher: no agent arms a merge, so it stays within
-the rule that agents do not merge. It does not wait on shadow mode: a repo that wants to
+the rule that agents do not approve their own work. A repo set to `autonomy.merge: agent`
+gets the same pass as a fallback, when no run of the lane is going and the agent's own
+merge did not happen; a repo set to `human` never gets it. It does not wait on shadow mode: a repo that wants to
 watch first leaves `autonomy.merge` at `human` and uses a shadow merge rule.
 
 A CI job that fails when the pipeline runs before the approval is not re-run by the forge
@@ -119,7 +121,7 @@ forge refuses if the head moved.
 
 Shepherd never retries or merges when any of these holds: no approval by a person, an
 approval older than the head, an open thread, a draft, a pipeline for another head, any
-other failed job, a merge status other than mergeable (a red pipeline alone is not one), or a repo not set to `after_approval`. The merge lands as the project is
+other failed job, a merge status other than mergeable (a red pipeline alone is not one), or a repo set to `human`. The merge lands as the project is
 set to land merges: Shepherd has no squash option of its own yet.
 
 When the only thing holding an approved request is open review threads that the external

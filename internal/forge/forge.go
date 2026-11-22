@@ -35,6 +35,9 @@ type MR struct {
 	AuthorBot   bool   `json:"author_bot,omitempty"`
 	Draft       bool   `json:"draft,omitempty"`
 	MergeStatus string `json:"merge_status,omitempty"`
+	// MergeArmed says a merge is already set to land when the pipeline succeeds, so the
+	// forge will merge the request itself.
+	MergeArmed bool `json:"merge_armed,omitempty"`
 	// Created and Updated are when the forge made the request and last changed it
 	// (comments and pushes count); zero when the forge did not say.
 	Created, Updated time.Time
@@ -329,7 +332,10 @@ type glMR struct {
 	HeadPipeline *glPipeline `json:"head_pipeline"`
 	Draft        bool        `json:"draft"`
 	MergeStatus  string      `json:"detailed_merge_status"`
-	Author       struct {
+	// Older GitLab names the armed merge merge_when_pipeline_succeeds, newer auto_merge_enabled.
+	MergeWhenPipelineSucceeds bool `json:"merge_when_pipeline_succeeds"`
+	AutoMergeEnabled          bool `json:"auto_merge_enabled"`
+	Author                    struct {
 		Username string `json:"username"`
 		Bot      bool   `json:"bot"`
 	} `json:"author"`
@@ -374,7 +380,8 @@ func (g *GitLab) MRForBranch(ctx context.Context, branch string) (*MR, error) {
 	}
 	mr := &MR{IID: one.IID, State: one.State, SHA: one.SHA, URL: one.WebURL, MergeSHA: one.SquashCommit,
 		Created: glTime(one.CreatedAt), Updated: glTime(one.UpdatedAt),
-		Author: one.Author.Username, AuthorBot: one.Author.Bot, Draft: one.Draft, MergeStatus: one.MergeStatus}
+		Author: one.Author.Username, AuthorBot: one.Author.Bot, Draft: one.Draft, MergeStatus: one.MergeStatus,
+		MergeArmed: one.MergeWhenPipelineSucceeds || one.AutoMergeEnabled}
 	if one.MergeCommit != "" {
 		mr.MergeSHA = one.MergeCommit
 	}

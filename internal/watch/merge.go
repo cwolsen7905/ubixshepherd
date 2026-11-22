@@ -2,6 +2,7 @@ package watch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -21,7 +22,8 @@ type mergeTry struct {
 }
 
 // mergeAfterApproval merges the lane's open request for a repo set to
-// autonomy.merge: after_approval, once every condition holds on the request's current
+// autonomy.merge: after_approval, or to agent when the agent's own merge did not happen
+// (no run of the lane is going), once every condition holds on the request's current
 // head: a person other than the author (and not a bot) approved after the head was
 // pushed, the head pipeline passed on that head, no review thread is open, the request is
 // not a draft and the forge calls it mergeable. Anything unmet is waited on and logged at
@@ -36,9 +38,28 @@ func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo st
 		w.noteOpen(lane.ID, mr.IID)
 	}
 	prof := w.conf().Profile(repo)
-	if prof.Autonomy.Merge != config.AfterApproval || mr.State != "opened" {
+	mode := prof.Autonomy.Merge
+	if (mode != config.AfterApproval && mode != config.Agent) || mr.State != "opened" {
 		next.OwnerBlocking = ""
 		return
+	}
+	// In a repo where agents merge, the agent gets the first go: Shepherd steps in only
+	// once no run of the lane is going, so it never races an agent arming its own merge.
+	if mode == config.Agent {
+		// A merge the agent armed lands by itself when the pipeline succeeds, possibly after
+		// the request still reads open for a poll; sending a second one would only be refused.
+		if mr.MergeArmed {
+			w.Log.Debug("watch: merge waits", "lane", lane.Name, "mr", mr.IID, "why", "the forge has a merge armed")
+			return
+		}
+		busy, err := w.agentRunning(ctx, lane)
+		if err != nil {
+			w.Log.Debug("watch: merge waits", "lane", lane.Name, "mr", mr.IID, "why", fmt.Sprintf("runs unreadable: %v", err))
+			return
+		}
+		if busy {
+			return
+		}
 	}
 	if w.mergeTried[lane.ID] == (mergeTry{iid: mr.IID, sha: mr.SHA}) {
 		return
@@ -66,12 +87,12 @@ func (w *Watcher) mergeAfterApproval(ctx context.Context, f forge.Forge, repo st
 			delete(w.mergeTried, lane.ID)
 			return
 		}
-		w.feed(ctx, store.FeedMR, lane.ID, "!%d is approved by %s but the forge refused the merge at %s: %s; lane %s waits for the person",
-			mr.IID, strings.Join(who, ", "), short(mr.SHA), firstLine(err.Error()), lane.Name)
+		w.feed(ctx, store.FeedMR, lane.ID, "!%d is approved by %s but the forge refused the merge by rule autonomy.merge: %s at %s: %s; lane %s waits for the person",
+			mr.IID, strings.Join(who, ", "), mode, short(mr.SHA), firstLine(err.Error()), lane.Name)
 		return
 	}
-	w.feed(ctx, store.FeedMR, lane.ID, "!%d merged by autonomy.merge: after_approval, approved by %s at %s (lane %s)",
-		mr.IID, strings.Join(who, ", "), short(mr.SHA), lane.Name)
+	w.feed(ctx, store.FeedMR, lane.ID, "Merged by rule autonomy.merge: %s: !%d, approved by %s at %s (lane %s)",
+		mode, mr.IID, strings.Join(who, ", "), short(mr.SHA), lane.Name)
 }
 
 // mergeWait says why the request cannot be merged yet, or "" when it can, with the
@@ -192,6 +213,39 @@ func (w *Watcher) retryRequireApproval(ctx context.Context, f forge.Forge, lane 
 	}
 	w.feed(ctx, store.FeedMR, lane.ID, "!%d is approved by %s: retried %s; Shepherd merges once the pipeline is green (lane %s)",
 		mr.IID, strings.Join(who, ", "), forge.RequireApprovalJob, lane.Name)
+}
+
+// agentRunning says whether a run of the lane is going or a start for it is held (a
+// restart, a quota hold or a model limit), which may push a fix or arm a merge.
+func (w *Watcher) agentRunning(ctx context.Context, lane store.Lane) (bool, error) {
+	runs, err := w.Store.Runs(ctx, lane.ID, "", runsRead)
+	if err != nil {
+		return false, err
+	}
+	mine := map[int64]bool{}
+	for _, r := range runs {
+		if r.State == store.RunRunning {
+			return true, nil
+		}
+		mine[r.ID] = true
+	}
+	held, err := w.Store.HeldStarts(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, h := range held {
+		var req struct {
+			LaneID   int64 `json:"lane_id"`
+			Continue int64 `json:"continue"`
+		}
+		if json.Unmarshal([]byte(h.Request), &req) != nil {
+			continue
+		}
+		if req.LaneID == lane.ID || (req.Continue != 0 && mine[req.Continue]) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // SquashMerger is a forge that can squash-merge a request, so commits the person dropped

@@ -3,11 +3,14 @@ package watch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/forge"
+	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
 // mergingForge is an approvingForge that records merges.
@@ -128,13 +131,87 @@ func TestMergeAfterApprovalHonoursMergeBots(t *testing.T) {
 	}
 }
 
-func TestOtherMergeSettingsNeverMerge(t *testing.T) {
-	for _, mode := range []string{config.Human, config.Agent} {
-		f, mf, _ := mergeFixture(t, mode)
-		f.w.Check(f.ctx)
-		if len(mf.merges) != 0 {
-			t.Fatalf("autonomy.merge %s merged: %v", mode, mf.merges)
-		}
+func TestHumanMergeSettingNeverMerges(t *testing.T) {
+	f, mf, _ := mergeFixture(t, config.Human)
+	f.w.Check(f.ctx)
+	if len(mf.merges) != 0 || len(mf.retries) != 0 {
+		t.Fatalf("autonomy.merge human acted: merges %v retries %v", mf.merges, mf.retries)
+	}
+}
+
+func TestAgentRepoMergesAnApprovedGreenRequestItself(t *testing.T) {
+	f, mf, head := mergeFixture(t, config.Agent)
+	f.w.Check(f.ctx)
+	if len(mf.merges) != 1 || mf.merges[0] != head {
+		t.Fatalf("merges = %v, want one at %s", mf.merges, head)
+	}
+	got := f.feed(t)
+	if !strings.Contains(got, "Merged by rule autonomy.merge: agent") || !strings.Contains(got, "approved by pat") {
+		t.Errorf("feed = %s", got)
+	}
+}
+
+func TestAgentRepoWaitsForEveryCondition(t *testing.T) {
+	cases := map[string]func(f *fixture, mf *mergingForge, mr *forge.MR){
+		"author approved only":       func(_ *fixture, mf *mergingForge, _ *forge.MR) { mf.approvers = []forge.ApprovedBy{{Username: "dev"}} },
+		"not approved":               func(_ *fixture, mf *mergingForge, _ *forge.MR) { mf.approvers = nil },
+		"approval predates the head": func(_ *fixture, mf *mergingForge, _ *forge.MR) { mf.stale = map[string]bool{"pat": true} },
+		"pipeline red":               func(_ *fixture, _ *mergingForge, mr *forge.MR) { mr.Pipeline.Status = "failed" },
+		"draft":                      func(_ *fixture, _ *mergingForge, mr *forge.MR) { mr.Draft = true },
+		"forge blocks":               func(_ *fixture, _ *mergingForge, mr *forge.MR) { mr.MergeStatus = "need_rebase" },
+		"open thread": func(f *fixture, _ *mergingForge, _ *forge.MR) {
+			f.f.threads = []forge.Thread{{ID: "d1", Body: "x"}}
+		},
+		"a merge is armed": func(_ *fixture, _ *mergingForge, mr *forge.MR) { mr.MergeArmed = true },
+		"a start is held for the lane": func(f *fixture, _ *mergingForge, _ *forge.MR) {
+			req := fmt.Sprintf(`{"lane_id":%d,"prompt":"p"}`, f.lane.ID)
+			if _, err := f.st.AddHeldStart(f.ctx, store.HeldStart{Request: req, Why: "quota"}); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"an agent run is going": func(f *fixture, _ *mergingForge, _ *forge.MR) {
+			if _, err := f.st.CreateRun(f.ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "p", State: store.RunRunning, Started: time.Now()}); err != nil {
+				t.Fatal(err)
+			}
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			f, mf, _ := mergeFixture(t, config.Agent)
+			mutate(f, mf, f.f.mr)
+			f.w.Check(f.ctx)
+			if len(mf.merges) != 0 {
+				t.Fatalf("merged: %v", mf.merges)
+			}
+		})
+	}
+}
+
+func TestAgentRepoRetriesRequireApprovalThenMerges(t *testing.T) {
+	f, mf := redFixture(t)
+	cfg := config.Default()
+	cfg.Defaults.Autonomy.Merge = config.Agent
+	f.run.SetConfig(cfg)
+	f.w.Check(f.ctx)
+	if len(mf.retries) != 1 || len(mf.merges) != 0 {
+		t.Fatalf("retries %v merges %v", mf.retries, mf.merges)
+	}
+	f.f.mr.Pipeline.Status, f.f.mr.MergeStatus = "success", "mergeable"
+	f.w.Check(f.ctx)
+	if len(mf.merges) != 1 {
+		t.Fatalf("merges = %v after green", mf.merges)
+	}
+}
+
+func TestAgentRepoDoesNotRetryAnotherFailedJob(t *testing.T) {
+	f, mf := redFixture(t)
+	cfg := config.Default()
+	cfg.Defaults.Autonomy.Merge = config.Agent
+	f.run.SetConfig(cfg)
+	f.f.jobs = []forge.Job{{ID: 5, Name: forge.RequireApprovalJob}, {ID: 6, Name: "go-check"}}
+	f.w.Check(f.ctx)
+	if len(mf.retries) != 0 || len(mf.merges) != 0 {
+		t.Fatalf("retries %v merges %v", mf.retries, mf.merges)
 	}
 }
 
