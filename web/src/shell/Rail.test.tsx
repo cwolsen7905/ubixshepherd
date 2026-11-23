@@ -236,6 +236,18 @@ describe('the collapsed footer', () => {
     expect(screen.queryByRole('dialog', { name: 'Footer' })).toBeNull()
   })
 
+  it('reads Keep going once on mount with its defaults, then waits for the interval', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(keepOff), { status: 200 })))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<KeepGoingIcon />)
+    await screen.findByRole('switch', { name: 'Keep going' })
+    // Let any further renders and effects settle: a restarting effect would read again each time.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps Keep going as a small switch, lit while on', async () => {
     const set = vi.fn(() => Promise.resolve({ ...keepOff, on: true }))
     render(<KeepGoingIcon load={() => Promise.resolve(keepOff)} set={set} />)

@@ -6,6 +6,10 @@ import { Flyout } from './Flyout'
 
 const KEEP_PATH = '/v1/keep-going'
 
+// Module-level, so the defaults keep one identity across renders and the poll effect runs once.
+const loadKeep = () => get<KeepGoingStatus>(KEEP_PATH)
+const setKeep = (on: boolean) => post<KeepGoingStatus>(KEEP_PATH, { on })
+
 /** The one status the collapsed footer shows: a glyph, its tone, and the words it stands for. */
 export interface RailStatus {
   glyph: string
@@ -27,8 +31,8 @@ export function railStatus({ offline, running, broken }: { offline: boolean; run
  * read shows nothing, as the full switch does.
  */
 export function KeepGoingIcon({
-  load = () => get<KeepGoingStatus>(KEEP_PATH),
-  set = (on) => post<KeepGoingStatus>(KEEP_PATH, { on }),
+  load = loadKeep,
+  set = setKeep,
 }: {
   load?: () => Promise<KeepGoingStatus>
   set?: (on: boolean) => Promise<KeepGoingStatus>
