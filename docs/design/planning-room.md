@@ -428,6 +428,14 @@ Three Next-up items are proposed (revise the phased plan, a home-away test plan,
 what a home sends on return), none approved. The main thread gets one line:
 "Room closed: Cluster topology. 3 decided, 2 rejected, 2 open. 3 items proposed."
 
+## Answerable questions
+
+A room asks one question at a time, and a question is only useful if the person can answer it
+where it is asked. [chat-replies.md](chat-replies.md) describes asks as typed cards with
+options, an "Other..." answer and one live card per ask. A room uses them unchanged: its
+current question is one live card, and the plan panel's open list links to the cards. Rooms
+add no answer path of their own.
+
 ## Phased plan
 
 Each phase is one merge request, green alone, and each updates the user docs for what it
