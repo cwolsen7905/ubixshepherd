@@ -601,6 +601,26 @@ var migrations = []string{
 		created      TEXT NOT NULL
 	);
 	CREATE INDEX desk_attachments_turn ON desk_attachments (workspace_id, turn);`,
+	// Cluster members on a hub and their link credentials (docs/cluster.md). A credential
+	// is kept as a hash. A member's enrolment code is a hash too, with its end time.
+	`CREATE TABLE cluster_members (
+		name         TEXT PRIMARY KEY,
+		daemon_id    TEXT NOT NULL DEFAULT '',
+		pending_id   TEXT NOT NULL DEFAULT '',
+		code_hash    TEXT NOT NULL DEFAULT '',
+		code_until   TEXT NOT NULL DEFAULT '',
+		version      TEXT NOT NULL DEFAULT '',
+		api_level    INTEGER NOT NULL DEFAULT 0,
+		capabilities TEXT NOT NULL DEFAULT '[]',
+		created      TEXT NOT NULL,
+		last_seen    TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE member_credentials (
+		id      TEXT PRIMARY KEY,
+		member  TEXT NOT NULL REFERENCES cluster_members(name) ON DELETE CASCADE,
+		hash    TEXT NOT NULL UNIQUE,
+		created TEXT NOT NULL
+	);`,
 }
 
 // DB is a SQLite-backed store.Store.

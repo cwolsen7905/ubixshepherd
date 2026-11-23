@@ -69,7 +69,7 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 	}
 	// Step the schema back over the forge-times migration, which is the twentieth to last
 	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated, the approval columns, desk_questions, the chat relabel, threads_seen, the artifact tables, the next-up guard columns and the restart reason and held starts the crook verdict log, the check files, the hosted account tables, the desk turn log and the owner-blocked threads column), as a daemon one release old left it.
-	last := len(migrations) - 21
+	last := len(migrations) - 22
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_turn_log`); err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +111,11 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 	}
 	for _, tbl := range []string{"runs", "usage"} {
 		if _, err := db.db.ExecContext(ctx, `ALTER TABLE `+tbl+` DROP COLUMN cost_estimated`); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tbl := range []string{"member_credentials", "cluster_members"} {
+		if _, err := db.db.ExecContext(ctx, `DROP TABLE `+tbl); err != nil {
 			t.Fatal(err)
 		}
 	}
