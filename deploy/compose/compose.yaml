@@ -32,6 +32,15 @@ services:
         ipv4_address: 172.28.0.10
     # Only the proxy is published.
     expose: ["8443"]
+    # Container-local: the image ships no HTTP client, so this asks the daemon over
+    # loopback with the operator token, like the image's own HEALTHCHECK. Kubernetes
+    # probes the unauthenticated GET /v1/health over HTTP instead.
+    healthcheck:
+      test: ["CMD", "shepherd", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   proxy:
     image: caddy:2

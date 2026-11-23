@@ -88,18 +88,23 @@ spec:
             - {name: SHEPHERD_TRUSTED_PROXIES, value: "REPLACE-WITH-INGRESS-CONTROLLER-POD-CIDR"}
           ports:
             - {name: https, containerPort: 8443}
-          # `shepherd status` asks the daemon over loopback; it is the image's health check.
+          # Probes hit the unauthenticated GET /v1/health on the public listener, over
+          # plain HTTP: TLS ends at the Ingress, and the daemon only takes proxied
+          # plain HTTP (trusted_proxies) there. The Host is the pod's IP, which the
+          # health path answers; every other route still needs the public host and a
+          # login. `shepherd status` stays the startup probe and the image's
+          # health check: it asks over loopback with the operator token.
           startupProbe:
             exec: {command: ["shepherd", "status"]}
             periodSeconds: 5
             failureThreshold: 24
           livenessProbe:
-            exec: {command: ["shepherd", "status"]}
+            httpGet: {path: /v1/health, port: 8443, scheme: HTTP}
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
           readinessProbe:
-            exec: {command: ["shepherd", "status"]}
+            httpGet: {path: /v1/health, port: 8443, scheme: HTTP}
             periodSeconds: 15
             timeoutSeconds: 10
           resources:
