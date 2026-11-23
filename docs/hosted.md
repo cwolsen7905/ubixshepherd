@@ -177,9 +177,9 @@ host and its login exactly as before.
 
 | Probe | What it uses |
 |---|---|
-| Kubernetes liveness and readiness | `httpGet` on `/v1/health`, plain HTTP on port 8443: TLS ends at the Ingress, and the daemon takes plain HTTP from the proxy there. The startup probe stays `shepherd status` |
+| Kubernetes readiness | `httpGet` on `/v1/health`, plain HTTP on port 8443: TLS ends at the Ingress, and the daemon takes plain HTTP from the proxy there. Liveness and startup stay `shepherd status`: the public listener opens only once an owner account exists, so readiness failing before then keeps the pod out of endpoints until there is a login to serve |
 | Docker Compose | The shepherd service's `healthcheck` runs `shepherd status` in the container: the image ships no HTTP client, so a container-local check over loopback with the operator token is what it gets |
-| `deploy/docker/check-image.sh` | Publishes the loopback listener on 127.0.0.1 and curls `/v1/health` from the host |
+| `deploy/docker/check-image.sh` | Runs `shepherd status` inside the container: the daemon binds loopback only, which a published port cannot reach, and the image ships no HTTP client |
 
 The image's own `HEALTHCHECK` stays `shepherd status`: it runs before any account
 exists, and the public listener opens only once one does. If your cluster's

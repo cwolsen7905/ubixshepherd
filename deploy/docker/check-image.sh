@@ -17,10 +17,10 @@ docker pull -q "$img" >/dev/null
 [ "$(docker image inspect -f '{{.Config.User}}' "$img")" = 10001:10001 ]
 docker image inspect -f '{{json .Config.Entrypoint}}' "$img" | grep -q '/usr/bin/tini'
 
-# An empty volume starts and answers the health endpoint (amd64). The key file is the
-# one credential the daemon needs to start with a hosted config. The loopback
-# listener's port is published on 127.0.0.1 only, and the probe is the
-# unauthenticated GET /v1/health, which answers only "up".
+# An empty volume starts and answers the health check (amd64). The key file is the one
+# credential the daemon needs to start with a hosted config. The probe stays
+# `shepherd status` over loopback with the operator token: the daemon binds loopback
+# only, which a published port cannot reach, and the container ships no HTTP client.
 k="$(mktemp -d)"
 head -c 32 /dev/urandom > "$k/totp-key"
 chmod 0600 "$k/totp-key"
@@ -29,12 +29,10 @@ cleanup() { docker rm -f shepherd-check >/dev/null 2>&1; }
 trap cleanup EXIT
 docker run -d --name shepherd-check \
   -e SHEPHERD_PUBLIC_URL=https://shepherd.example.com -e SHEPHERD_TRUSTED_PROXIES=172.17.0.0/16 \
-  -p 127.0.0.1::8420 \
   -v "$(docker volume create)":/data/home -v "$(docker volume create)":/data/workspace \
   -v "$k/totp-key":/run/secrets/shepherd/totp-key:ro "$img"
-port="$(docker port shepherd-check 8420 | cut -d: -f2)"
 for i in $(seq 1 30); do
-  [ "$(curl -fsS "http://127.0.0.1:$port/v1/health")" = "up" ] && { echo "health check answers"; exit 0; }
+  docker exec shepherd-check shepherd status >/dev/null 2>&1 && { echo "health check answers"; exit 0; }
   sleep 2
 done
 docker logs shepherd-check

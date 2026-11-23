@@ -88,18 +88,21 @@ spec:
             - {name: SHEPHERD_TRUSTED_PROXIES, value: "REPLACE-WITH-INGRESS-CONTROLLER-POD-CIDR"}
           ports:
             - {name: https, containerPort: 8443}
-          # Probes hit the unauthenticated GET /v1/health on the public listener, over
-          # plain HTTP: TLS ends at the Ingress, and the daemon only takes proxied
-          # plain HTTP (trusted_proxies) there. The Host is the pod's IP, which the
-          # health path answers; every other route still needs the public host and a
-          # login. `shepherd status` stays the startup probe and the image's
-          # health check: it asks over loopback with the operator token.
+          # Readiness hits the unauthenticated GET /v1/health on the public listener,
+          # over plain HTTP: TLS ends at the Ingress, and the daemon only takes
+          # proxied plain HTTP (trusted_proxies) there. The Host is the pod's IP,
+          # which the health path answers; every other route still needs the public
+          # host and a login. The public listener opens only once an owner account
+          # exists, so liveness and startup stay `shepherd status`: it asks over
+          # loopback with the operator token, which answers from the first boot, and
+          # it is the image's health check too. Readiness failing before then keeps
+          # the pod out of endpoints until there is a login to serve.
           startupProbe:
             exec: {command: ["shepherd", "status"]}
             periodSeconds: 5
             failureThreshold: 24
           livenessProbe:
-            httpGet: {path: /v1/health, port: 8443, scheme: HTTP}
+            exec: {command: ["shepherd", "status"]}
             periodSeconds: 30
             timeoutSeconds: 10
             failureThreshold: 3
