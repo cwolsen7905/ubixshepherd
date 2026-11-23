@@ -21,3 +21,4 @@ export { OfflineContext, useOffline, retryIn, offlineWords, ONLINE, type Offline
 export { cx } from './cx'
 export { ErrorState } from './ErrorState'
 export { LoadingRows, LOADING_DELAY_MS } from './LoadingRows'
+export { Icon, ICON_NAMES, type IconName } from './icons'

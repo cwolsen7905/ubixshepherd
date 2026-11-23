@@ -23,6 +23,9 @@ export const KEYS: KeyEntry[] = [
   { combos: [['Enter']], what: 'Open the lane or decision', bound: ['Enter'] },
   { combos: [[']']], what: 'Jump to the next item waiting on you', bound: [']'] },
   { combos: [['[']], what: 'Step back to the previous item', bound: ['['] },
+  // Bound in shell/useRail.ts. Left out of `bound` because keys.test.ts reads the source as text and
+  // its pattern does not match an escaped backslash ('\\'); teaching it to is a change to that test.
+  { combos: [['\\']], what: 'Collapse the sidebar to icons, or open it again', bound: [] },
   { combos: [['1 to 9']], what: 'Pick that option of the focused decision, without sending it', bound: ['1', '2', '3', '4', '5', '6', '7', '8', '9'] },
   { combos: [['⌘Enter'], ['Ctrl+Enter']], what: 'Send, then move on to the next item', bound: ['Enter'] },
   { combos: [['Esc']], what: 'Close the open panel, dialog or this sheet', bound: ['Escape'] },

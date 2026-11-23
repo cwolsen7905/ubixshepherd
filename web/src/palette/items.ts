@@ -1,4 +1,6 @@
 import { href } from '../router'
+import { NAV, type NavKey } from '../shell/nav'
+import type { IconName } from '../ui/icons'
 import type { Snapshot } from '../state/live'
 import type { TopicView } from '../model/topic'
 
@@ -17,21 +19,24 @@ export interface Item {
   num?: number
   /** Words that match but are not shown. */
   keywords?: string
+  /** The view's icon, for a page. */
+  icon?: IconName
   target: Target
 }
 
-const PAGES: [string, string, string][] = [
-  ['Decisions', href.decisions(), 'inbox waiting'],
-  ['Chat', href.chat(), 'conversation desk'],
-  ['Board', href.board(), 'lanes'],
-  ['Next up', href.next(), 'plan'],
-  ['Artifacts', href.artifacts(), 'files plans reports'],
-  ['Runs', href.runs(), 'agents'],
-  ['Timeline', href.timeline(), 'history'],
-  ['Projects', href.projects(), 'repos'],
-  ['Usage', href.usage(), 'spend cost'],
-  ['Settings', href.settings(), 'config'],
-]
+/** Extra words each view answers to, beyond its label. */
+const PAGE_WORDS: Partial<Record<NavKey, string>> = {
+  inbox: 'decisions waiting',
+  chat: 'chat desk',
+  board: 'lanes',
+  next: 'plan',
+  artifacts: 'files plans reports',
+  runs: 'agents',
+  timeline: 'history',
+  projects: 'repos',
+  usage: 'spend cost',
+  settings: 'config',
+}
 
 /** Where "answer next" goes: the oldest waiting decision, else the decisions page. */
 export function answerNextTarget(snap: Pick<Snapshot, 'waiting' | 'decisions'>): string {
@@ -64,13 +69,14 @@ export function buildItems(
       target: { act: 'new-conversation' },
     },
   ]
-  for (const [label, to, keywords] of PAGES) {
+  for (const v of NAV.flatMap((g) => g.items)) {
     items.push({
-      id: `page:${label}`,
+      id: `page:${v.key}`,
       group: 'Pages',
-      label: `Go to ${label.toLowerCase()}`,
-      keywords: `${label} ${keywords}`,
-      target: { to },
+      label: `Go to ${v.label.toLowerCase()}`,
+      keywords: `${v.label} ${PAGE_WORDS[v.key] ?? ''}`.trim(),
+      icon: v.icon,
+      target: { to: v.to() },
     })
   }
   for (const l of snap.lanes) {

@@ -30,7 +30,7 @@ type Page =
   | { page: 'artifacts'; repo?: number; lane?: number; run?: number; topic?: number }
   | { page: 'history'; kind?: string; project?: string; q?: string }
   | { page: 'files'; repo?: number; lane?: number; ref?: string }
-  | { page: 'rules' }
+  | { page: 'rules'; view?: 'classifiers' | 'guardrails' }
   | { page: 'projects' }
   | { page: 'project'; name: string }
   | { page: 'unassigned' }
@@ -179,6 +179,9 @@ function parsePage(hash: string): Page {
     }
   }
   if (path === '/rules') return { page: 'rules' }
+  // Classifiers and Guardrails are placeholders, views of Rules for the same reason as review bots.
+  if (path === '/classifiers') return { page: 'rules', view: 'classifiers' }
+  if (path === '/guardrails') return { page: 'rules', view: 'guardrails' }
   if (path === '/chat') return { page: 'chat' }
   if (path === '/status') return { page: 'status' }
   if (path === '/settings') return q.get('scope') ? { page: 'settings', scope: q.get('scope') as string } : { page: 'settings' }
@@ -237,6 +240,8 @@ export const href = {
     return q.size ? `#/files?${q}` : '#/files'
   },
   rules: () => '#/rules',
+  classifiers: () => '#/classifiers',
+  guardrails: () => '#/guardrails',
   projects: () => '#/projects',
   project: (name: string) => `#/projects/${encodeURIComponent(name)}`,
   unassigned: () => '#/unassigned',

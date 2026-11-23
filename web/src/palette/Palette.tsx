@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Dialog, Kbd, cx } from '../ui'
+import { Dialog, Icon, Kbd, cx } from '../ui'
 import { match, type Item } from './items'
 
 /**
@@ -122,7 +122,10 @@ function PaletteBody({ items, onChoose, confirm, onConfirm, onCancelConfirm, pro
                 onClick={() => onChoose(it)}
               >
                 <span className="sh-palette-kind">{it.group}</span>
-                <span>{it.label}</span>
+                <span className="sh-palette-label">
+                  {it.icon && <Icon name={it.icon} />}
+                  {it.label}
+                </span>
                 {it.hint && <span className="sh-palette-hint">{it.hint}</span>}
               </li>
             ))}
