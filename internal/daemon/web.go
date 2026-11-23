@@ -600,6 +600,12 @@ func (s *Server) browserGate(apiHandler http.Handler) http.Handler {
 			s.slideWebSession(w, r)
 		}
 		switch {
+		case r.URL.Path == healthPath:
+			// Liveness only: no token, session or CSRF, on either listener. The
+			// loopback Host check above still ran; the public listener's guard ran
+			// before this handler.
+			h.Set("Cache-Control", "no-store")
+			s.health(w, r)
 		case s.accountRoute(w, r):
 		case r.URL.Path == api.PathWebSignin && r.Method == http.MethodGet && isPublic(r):
 			// Sessions on the public listener come from the login, never from a link.
