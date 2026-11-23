@@ -82,8 +82,10 @@ func AddFooter(description string, w Who) string {
 }
 
 // Apply adds w's trailers to the commit message in file with git interpret-trailers, so
-// a trailer already there is not added again: Shepherd-* keys are left alone if present,
-// Co-Authored-By is added unless that exact line exists.
+// a trailer already there is not added again. Every key is added unless that exact line
+// exists: a commit a later run amends keeps the first run's Shepherd-Run and
+// Shepherd-Model and gains the later run's, next to both agents' Co-Authored-By, so
+// every run that touched it is on record.
 func Apply(ctx context.Context, file string, w Who) error {
 	ts := w.Trailers()
 	if len(ts) == 0 {
@@ -95,16 +97,12 @@ func Apply(ctx context.Context, file string, w Who) error {
 	}
 	args := []string{"interpret-trailers", "--in-place"}
 	for _, t := range ts {
-		mode := "doNothing"
-		if strings.HasPrefix(t, "Co-Authored-By:") {
-			// The agent's own CLI may already have credited itself under another name:
-			// one co-author line per address.
-			if hasCoauthorEmail(string(msg), emailOf(t)) {
-				continue
-			}
-			mode = "addIfDifferent"
+		// The agent's own CLI may already have credited itself under another name:
+		// one co-author line per address.
+		if strings.HasPrefix(t, "Co-Authored-By:") && hasCoauthorEmail(string(msg), emailOf(t)) {
+			continue
 		}
-		args = append(args, "--if-exists", mode, "--if-missing", "add", "--trailer", t)
+		args = append(args, "--if-exists", "addIfDifferent", "--if-missing", "add", "--trailer", t)
 	}
 	if len(args) == 2 {
 		return nil

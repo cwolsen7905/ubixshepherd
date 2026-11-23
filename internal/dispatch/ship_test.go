@@ -437,6 +437,18 @@ func TestShipLaneCreditsTheTrailerRun(t *testing.T) {
 			t.Errorf("created = %q, want %q", sf.created, want)
 		}
 	})
+	t.Run("amended by a later run", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		first, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Model: "opus", Prompt: "x", State: store.RunFailed, Log: "l"})
+		later, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "codex", Model: "gpt-5.5", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+		commitInLane(t, f, "src/a.txt", fmt.Sprintf("feat: a\n\nShepherd-Run: %d\nShepherd-Run: %d", first.ID, later.ID))
+		if _, err := f.runner.Ship(ctx, f.lane.ID); err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf("Made by codex (gpt-5.5) in Shepherd run %d.", later.ID); len(sf.created) != 1 || !strings.Contains(sf.created[0], want) {
+			t.Errorf("created = %q, want %q", sf.created, want)
+		}
+	})
 	t.Run("no trailer", func(t *testing.T) {
 		f, sf := shipFixture(t, "ok", pushes)
 		f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Log: "l"})

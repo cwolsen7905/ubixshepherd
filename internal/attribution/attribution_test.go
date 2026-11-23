@@ -69,6 +69,31 @@ func TestApplySkipsAnAgentsOwnCoauthor(t *testing.T) {
 	}
 }
 
+// A later run that amends the commit adds its own run and model next to the first run's,
+// and running the hook again for the same run adds nothing.
+func TestApplyKeepsEveryRun(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "MSG")
+	os.WriteFile(f, []byte("feat: x\n"), 0o644)
+	ctx := context.Background()
+	first := Who{Run: 7, Agent: "claude", Model: "opus"}
+	later := Who{Run: 9, Agent: "codex", Model: "gpt-5.5"}
+	for _, w := range []Who{first, later, later, first} {
+		if err := Apply(ctx, f, w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, _ := os.ReadFile(f)
+	got := string(b)
+	for _, want := range []string{"Shepherd-Run: 7", "Shepherd-Run: 9", "Shepherd-Model: opus", "Shepherd-Model: gpt-5.5"} {
+		if n := strings.Count(got, want); n != 1 {
+			t.Errorf("%q appears %d times in %q", want, n, got)
+		}
+	}
+	if n := strings.Count(got, "Co-Authored-By:"); n != 2 {
+		t.Errorf("co-authors = %d in %q", n, got)
+	}
+}
+
 func TestOwn(t *testing.T) {
 	for line, want := range map[string]bool{
 		"Shepherd-Run: 4": true,

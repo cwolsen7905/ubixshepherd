@@ -16,6 +16,8 @@ run, the hook adds:
 | `Shepherd-Model` | the model, when known |
 
 It uses `git interpret-trailers`, so amending or re-running never adds a trailer twice. A commit
+a later run amends keeps the first run's `Shepherd-Run` and `Shepherd-Model` and gains the later
+run's, next to both agents' `Co-Authored-By`: every run that touched it is on record. A commit
 made by hand, with no run, gets none. If the daemon cannot be reached, or the run's agent is not known, only `Shepherd-Run` is
 added (no made-up co-author); the commit never fails because of it. A co-author line with the
 same address is never added twice.

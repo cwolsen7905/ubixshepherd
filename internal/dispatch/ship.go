@@ -513,20 +513,24 @@ func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string)
 }
 
 // trailerRun is the run named by the newest Shepherd-Run trailer among the lane's
-// commits beyond its base, or nil.
+// commits beyond its base, or nil. Commits are read newest first, and within a commit a
+// later run's trailer (added after the first run's when it amended the commit) wins.
 func (r *Runner) trailerRun(ctx context.Context, lane store.Lane) *store.Run {
 	base := lane.Base
 	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+base) {
 		base = "origin/" + base
 	}
-	out, err := git.Run(ctx, lane.Worktree, "log", "--format=%(trailers:key=Shepherd-Run,valueonly)", base+"..HEAD")
+	out, err := git.Run(ctx, lane.Worktree, "log", "--format=%x00%(trailers:key=Shepherd-Run,valueonly)", base+"..HEAD")
 	if err != nil {
 		return nil
 	}
-	for _, l := range strings.Split(out, "\n") {
-		if id := attribution.ParseRun(l); id > 0 {
-			if run, err := r.Store.Run(ctx, id); err == nil && run.LaneID == lane.ID {
-				return &run
+	for _, commit := range strings.Split(out, "\x00") {
+		lines := strings.Split(commit, "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			if id := attribution.ParseRun(lines[i]); id > 0 {
+				if run, err := r.Store.Run(ctx, id); err == nil && run.LaneID == lane.ID {
+					return &run
+				}
 			}
 		}
 	}
