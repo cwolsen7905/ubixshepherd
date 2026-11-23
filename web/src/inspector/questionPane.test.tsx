@@ -18,6 +18,10 @@ vi.mock('../api/client', async (orig) => ({
 }))
 
 const still: Clock = { now: () => 0, hidden: () => false, setTimeout: () => 0, clearTimeout: () => {} }
+/** The lit question's full text above the rows. */
+const full = () => document.querySelector('[data-component="QuestionFull"]') as HTMLElement
+/** The rows, without that full text. */
+const list = () => document.querySelector('[data-component="QuestionList"]') as HTMLElement
 function shown(make?: (w: number) => DeskThread, two = false) {
   const api = {
     status: async () => (two ? status({ workspaces: [...status().workspaces, { ...status().workspaces[0], id: 2, name: 'workspace-2' } as WorkspaceSummary] }) : status()), lanes: async () => [], runs: async () => [], decisions: async () => [], requests: async () => [], spend: async () => spend(),
@@ -37,7 +41,8 @@ describe('QuestionPane', () => {
   it('shows what the desk asked, with Reply and Skip', async () => {
     vi.mocked(deskQuestions.list).mockResolvedValue([q])
     shown()
-    expect(await screen.findByText('Which branch should I cut from?')).toBeInTheDocument()
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionFull"]')).not.toBeNull())
+    expect(within(full()).getByText('Which branch should I cut from?')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument()
     // The reply row's action carries the question's typed-ID chip.
     expect(screen.getByText('question 4')).toHaveAttribute('data-component', 'IdChip')
@@ -45,10 +50,20 @@ describe('QuestionPane', () => {
   it('lists the open questions and lights the one asked for', async () => {
     vi.mocked(deskQuestions.list).mockResolvedValue([other, q])
     shown()
-    await screen.findByText('Which branch should I cut from?')
-    expect(screen.getByText('Should I tag the release?')).toBeInTheDocument()
-    expect(screen.getByText('Which branch should I cut from?').closest('.sh-row')).toHaveClass('is-selected')
-    expect(screen.getByText('Should I tag the release?').closest('.sh-row')).not.toHaveClass('is-selected')
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionList"]')).not.toBeNull())
+    expect(within(list()).getByText('Which branch should I cut from?')).toBeInTheDocument()
+    expect(within(list()).getByText('Should I tag the release?')).toBeInTheDocument()
+    expect(within(list()).getByText('Which branch should I cut from?').closest('.sh-row')).toHaveClass('is-selected')
+    expect(within(list()).getByText('Should I tag the release?').closest('.sh-row')).not.toHaveClass('is-selected')
+  })
+  it('shows the lit question in full above the rows, keeping its line breaks', async () => {
+    const long = 'Can I rebuild the image?\n\nIt needs the second line too.\n\n```sh\nrun-a-very-long-command --with --many --flags --so --it --must --wrap --or --scroll --instead --of --being --cut\n```'
+    vi.mocked(deskQuestions.list).mockResolvedValue([{ ...q, text: long }])
+    shown()
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionFull"]')).not.toBeNull())
+    expect(within(full()).getByText('Can I rebuild the image?')).toBeInTheDocument()
+    expect(within(full()).getByText('It needs the second line too.')).toBeInTheDocument()
+    expect(full().textContent).toContain('run-a-very-long-command --with --many --flags')
   })
   it('shows the empty state when no question is open', async () => {
     vi.mocked(deskQuestions.list).mockResolvedValue([])
@@ -61,7 +76,8 @@ describe('QuestionPane', () => {
     shown()
     expect(await screen.findByText(/Could not read the questions/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Try again' }))
-    expect(await screen.findByText('Which branch should I cut from?')).toBeInTheDocument()
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionList"]')).not.toBeNull())
+    expect(within(list()).getByText('Which branch should I cut from?')).toBeInTheDocument()
   })
   it('replies to a question on the thread of its own workspace', async () => {
     const user = userEvent.setup()
@@ -69,9 +85,10 @@ describe('QuestionPane', () => {
     const make = vi.fn((w: number) => ({ send: sends[w] }) as unknown as DeskThread)
     vi.mocked(deskQuestions.list).mockResolvedValue([q, { ...other, workspace_id: 2 }])
     shown(make, true)
-    await screen.findByText('Should I tag the release?')
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionList"]')).not.toBeNull())
+    expect(within(list()).getByText('Should I tag the release?')).toBeInTheDocument()
     await vi.waitFor(() => expect(make).toHaveBeenCalledWith(2))
-    const row = screen.getByText('Should I tag the release?').closest('li') as HTMLElement
+    const row = within(list()).getByText('Should I tag the release?').closest('li') as HTMLElement
     await user.click(within(row).getByRole('button', { name: 'Reply here' }))
     await user.type(within(row).getByRole('textbox'), 'yes')
     await user.click(within(row).getByRole('button', { name: 'Send reply' }))
@@ -84,8 +101,8 @@ describe('QuestionPane', () => {
     vi.mocked(deskQuestions.skip).mockResolvedValue(undefined as never)
     vi.mocked(deskQuestions.list).mockResolvedValueOnce([q, other]).mockResolvedValueOnce([other]).mockResolvedValue([])
     shown()
-    await screen.findByText('Should I tag the release?')
-    const rowOf = (t: string) => screen.getByText(t).closest('li') as HTMLElement
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionList"]')).not.toBeNull())
+    const rowOf = (t: string) => within(list()).getByText(t).closest('li') as HTMLElement
     await user.click(within(rowOf('Which branch should I cut from?')).getByRole('button', { name: 'Skip' }))
     expect(advanceFrom).not.toHaveBeenCalled()
     await user.click(within(rowOf('Should I tag the release?')).getByRole('button', { name: 'Skip' }))

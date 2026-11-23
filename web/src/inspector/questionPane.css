@@ -1,0 +1,5 @@
+/* The lit question's full text above its rows: wrapped, never cut. Line breaks come from
+   the markdown's own styles; long words wrap here so the pane keeps its width, and wide
+   blocks scroll inside it instead of widening it. */
+.question-full { min-width: 0; overflow-wrap: anywhere; }
+.question-full pre, .question-full table { max-width: 100%; overflow-x: auto; }
