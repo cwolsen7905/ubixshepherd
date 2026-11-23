@@ -86,8 +86,11 @@ func TestShipPushesAndOpensTheMR(t *testing.T) {
 	if !originHas(t, f, "work") {
 		t.Error("the lane was not pushed")
 	}
-	if len(sf.created) != 1 || !strings.HasPrefix(sf.created[0], "work -> main: agent work") || !strings.Contains(sf.created[0], "The gate, `true`, passed") || strings.Contains(sf.created[0], "claude") {
+	if len(sf.created) != 1 || !strings.HasPrefix(sf.created[0], "work -> main: agent work") || !strings.Contains(sf.created[0], "The gate, `true`, passed") {
 		t.Errorf("created = %q", sf.created)
+	}
+	if want := "Made by claude"; !strings.Contains(sf.created[0], want) || !strings.Contains(sf.created[0], fmt.Sprintf("in Shepherd run %d.\n", run.ID)) {
+		t.Errorf("no attribution footer: %q", sf.created[0])
 	}
 }
 

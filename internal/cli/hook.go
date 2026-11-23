@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/attribution"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
@@ -20,6 +21,9 @@ func runHook(ctx context.Context, env Env, args []string) error {
 	}
 	if args[0] == "pre-push" {
 		return hookPrePush(ctx, env, args[1:])
+	}
+	if args[0] == "prepare-commit-msg" {
+		return hookPrepareCommitMsg(ctx, env, args[1:])
 	}
 	fs := flags("hook "+args[0], env)
 	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
@@ -105,6 +109,31 @@ func hookPrePush(ctx context.Context, env Env, args []string) error {
 		fmt.Fprintln(env.Stderr, "Widen the scope with a new lane, move the change to the lane that owns it, or skip once: git push --no-verify")
 	}
 	return errSilent
+}
+
+// hookPrepareCommitMsg is what the installed prepare-commit-msg hook runs: git gives it
+// the message file. In an agent's run (SHEPHERD_RUN set) it adds the attribution
+// trailers; a commit the person makes by hand is left alone. It never fails a commit: if
+// the daemon cannot say which agent and model, only Shepherd-Run is added.
+func hookPrepareCommitMsg(ctx context.Context, env Env, args []string) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	run := attribution.ParseRun(os.Getenv(dispatch.EnvRun))
+	if run == 0 {
+		return nil
+	}
+	who := attribution.Who{Run: run}
+	env.Client = "hook"
+	if c, err := hookClient(ctx, env); err == nil {
+		if v, err := c.Run(ctx, run); err == nil {
+			who.Agent, who.Model = v.Agent, v.Model
+		}
+	}
+	if err := attribution.Apply(ctx, args[0], who); err != nil {
+		fmt.Fprintf(env.Stderr, "shepherd: could not add attribution trailers: %v\n", err)
+	}
+	return nil
 }
 
 // hookClient is the daemon client the pre-push hook calls with. A push by an agent

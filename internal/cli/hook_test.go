@@ -185,3 +185,24 @@ func TestCheckErrWithholdsTheBypassFromAgents(t *testing.T) {
 		t.Errorf("an agent is offered the bypass: %s", got)
 	}
 }
+
+// A commit in an agent's run gets the attribution trailers once; one made by hand gets none.
+func TestHookPrepareCommitMsg(t *testing.T) {
+	clearRunEnv(t)
+	h := newHarness(t, "", false)
+	msg := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+	read := func() string { b, _ := os.ReadFile(msg); return string(b) }
+	os.WriteFile(msg, []byte("feat: a\n"), 0o644)
+	if code := h.run("hook", "prepare-commit-msg", msg); code != 0 || read() != "feat: a\n" {
+		t.Errorf("by hand: %d %q", code, read())
+	}
+	t.Setenv(dispatch.EnvRun, "42")
+	for i := 0; i < 2; i++ {
+		if code := h.run("hook", "prepare-commit-msg", msg); code != 0 {
+			t.Fatalf("in a run: %d %s", code, h.err)
+		}
+	}
+	if got := read(); strings.Count(got, "Shepherd-Run: 42") != 1 || !strings.Contains(got, "Co-Authored-By:") {
+		t.Errorf("message = %q", got)
+	}
+}

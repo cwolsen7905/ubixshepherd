@@ -296,6 +296,41 @@ exec "$SHEPHERD" hook pre-push "$@"
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
+// commitHookName is the hook that adds an agent run's attribution trailers.
+const commitHookName = "prepare-commit-msg"
+
+// CommitHookScript is the prepare-commit-msg hook.
+func CommitHookScript(exe string) []byte {
+	return []byte(`#!/bin/sh
+# ` + hookMarker + `. Adds attribution trailers to commits made in an agent's run;
+# commits made by hand are left alone.
+SHEPHERD=` + shQuote(exe) + `
+[ -x "$SHEPHERD" ] || SHEPHERD=shepherd
+exec "$SHEPHERD" hook prepare-commit-msg "$@"
+`)
+}
+
+// installCommitHook writes the prepare-commit-msg hook next to the pre-push one, unless
+// another hook of that name is there. It reports whether Shepherd's hook is in place.
+func installCommitHook(ctx context.Context, worktree, exe string) (bool, error) {
+	st, err := Hook(ctx, worktree)
+	if err != nil {
+		return false, err
+	}
+	p := filepath.Join(filepath.Dir(st.Path), commitHookName)
+	b, err := os.ReadFile(p)
+	switch {
+	case err == nil && !bytes.Contains(b, []byte(hookMarker)):
+		return false, nil
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(p, CommitHookScript(exe), 0o755)
+}
+
 // HookLine is what to add to an existing pre-push hook to chain Shepherd's check.
 const HookLine = `shepherd hook pre-push "$@" || exit 1`
 
@@ -385,6 +420,12 @@ func (f *Fold) ensureHook(ctx context.Context, repo, worktree string) string {
 		return ""
 	}
 	st, err := Hook(ctx, worktree)
+	if err == nil && !st.Tracked {
+		// Attribution needs no scope decision: install it where the hooks are private.
+		if _, cerr := installCommitHook(ctx, worktree, f.Exe); cerr != nil {
+			return "could not install the attribution hook: " + cerr.Error()
+		}
+	}
 	switch {
 	case err != nil:
 		return "could not check the pre-push hook: " + err.Error()
