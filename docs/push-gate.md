@@ -8,9 +8,10 @@ has passed on. The repo's gate is the `gate` command in its profile, for example
 ## How it works
 
 1. The agent commits its work, so the worktree is clean.
-2. It runs `shepherd lane gate` in the lane's worktree. The daemon runs the repo's
+2. It calls the `gate` worker tool, or runs `shepherd lane gate` in the lane's worktree. The daemon runs the repo's
    configured gate there, against the lane's head commit, and records the result for that
-   exact commit. The agent never supplies the command or the result.
+   exact commit. The tool takes no arguments and acts only on the run's own lane, so it works
+   for an agent whose shell may not run `shepherd`. The agent never supplies the command or the result.
 3. It pushes. The pre-push hook looks for a passing record for each pushed tip. With one,
    the push goes ahead. Without one, the hook refuses and says to run
    `shepherd lane gate`.

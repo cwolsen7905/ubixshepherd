@@ -125,7 +125,11 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 1 {
+	want := 1
+	if args[0] == "gate" {
+		want = 0 // the lane is the run's own: nothing picks another
+	}
+	if len(pos) != want {
 		return errUsage
 	}
 	c, runID, err := workerClient(ctx, env)
@@ -151,6 +155,24 @@ func runWorker(ctx context.Context, env Env, args []string) error {
 		}
 		a := got.Artifact
 		fmt.Fprintf(env.Stdout, "Recorded %s as an artifact (%s, %s). The person can read it in Shepherd; declare it again after you change it.\n", a.Path, a.Kind, a.Intent)
+	case "gate":
+		run, err := c.Run(ctx, runID)
+		if err != nil {
+			return err
+		}
+		res, err := c.GateLane(ctx, run.LaneID)
+		if err != nil {
+			return err
+		}
+		sha := res.SHA
+		if len(sha) > 12 {
+			sha = sha[:12]
+		}
+		if !res.Passed {
+			fmt.Fprintf(env.Stdout, "The gate, `%s`, failed on %s; not recorded as a pass, so a push is refused. It ended:\n%s\n(whole output: %s)\nFix it, commit, and call gate again.\n", res.Command, sha, res.Tail, res.Log)
+			return errSilent
+		}
+		fmt.Fprintf(env.Stdout, "The gate, `%s`, passed on %s; you may push this commit.\n", res.Command, sha)
 	case "tag-reserve":
 		run, err := c.Run(ctx, runID)
 		if err != nil {

@@ -1104,7 +1104,7 @@ func strs(a map[string]any, k string) ([]string, error) {
 	return out, nil
 }
 
-const workerInstructions = `You are an agent Shepherd started in a lane. These tools are how you reach Shepherd and the person. ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, production, a scope or design change with no clear default); give options and your recommendation, then end your turn, and you will be continued with the answer. ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review); then end your turn, and you will be continued with the reply. report: progress, done (what you did and how you checked it) or blocked (why). artifact: a plan, design note or report the person should read; write it in your worktree and declare it with intent commit, keep or scratch. Everything else, keep working without asking.`
+const workerInstructions = `You are an agent Shepherd started in a lane. These tools are how you reach Shepherd and the person. ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, production, a scope or design change with no clear default); give options and your recommendation, then end your turn, and you will be continued with the answer. ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review); then end your turn, and you will be continued with the reply. gate: after you commit and before you push, run your lane's gate on your head commit; a push is refused without a pass for it. report: progress, done (what you did and how you checked it) or blocked (why). artifact: a plan, design note or report the person should read; write it in your worktree and declare it with intent commit, keep or scratch. Everything else, keep working without asking.`
 
 func workerTools() []mcpTool {
 	return []mcpTool{
@@ -1172,6 +1172,15 @@ func workerTools() []mcpTool {
 					out = append(out, "--intent", i)
 				}
 				return out, nil
+			},
+		},
+		{
+			Name: "gate",
+			Description: "Run your lane's repo gate on your head commit and record the result, so a push of that commit is allowed. Call it after you commit and before you push, and again after any new commit. " +
+				"It takes no arguments: it acts only on your own lane. It can take minutes. It refuses if the worktree has uncommitted changes. On a failure it returns the end of the output and where the whole output is.",
+			InputSchema: obj(map[string]any{}),
+			args: func(a map[string]any) ([]string, error) {
+				return []string{"worker", "gate"}, nil
 			},
 		},
 		{

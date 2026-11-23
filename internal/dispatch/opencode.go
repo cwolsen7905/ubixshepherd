@@ -583,8 +583,9 @@ func openCodeHosted(model string) bool {
 // hosted one: how to call Shepherd's tools and how to commit, including committing
 // as it goes, because a run that runs out of context loses uncommitted work.
 const openCodeToolsNote = "Make one tool call at a time through the tool interface, never write a tool call out as text. " +
-	"Shepherd's tools are named shepherd_ask_human, shepherd_ask_shepherd and shepherd_report. " +
-	"Commit with `git add` then `git commit`. On a large task, commit as you go in small commits: a run that runs out of context loses uncommitted work."
+	"Shepherd's tools are named shepherd_ask_human, shepherd_ask_shepherd, shepherd_report and shepherd_gate. " +
+	"Commit with `git add` then `git commit`. On a large task, commit as you go in small commits: a run that runs out of context loses uncommitted work. " +
+	"Before you push, call shepherd_gate after your last commit: your shell may not run `shepherd`, and a push is refused without a passing gate for that commit."
 
 // openCodeLocalNote is the small-model limits: a local model keeps to small
 // mechanical edits and does not write tests.
