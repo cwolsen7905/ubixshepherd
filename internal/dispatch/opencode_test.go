@@ -547,7 +547,7 @@ func TestOpenCodeHostedCostIsLabelledAnEstimate(t *testing.T) {
 // small-model limits, a hosted one gets the standard rules, and every run gets
 // the tool-calling guidance and the commit-as-you-go rule.
 func TestOpenCodeNoteIsByModel(t *testing.T) {
-	tools := []string{"one tool call at a time", "shepherd_ask_human", "shepherd_ask_shepherd", "shepherd_report", "git add", "commit as you go"}
+	tools := []string{"one tool call at a time", "shepherd_ask_human", "shepherd_ask_shepherd", "shepherd_report", "shepherd_gate", "git add", "commit as you go"}
 	for _, model := range []string{"qwen3-coder:30b", "local/qwen3-coder:30b", ""} {
 		note := openCodeNote(model)
 		if !strings.Contains(note, "small local model") || !strings.Contains(note, "Do not write tests") {

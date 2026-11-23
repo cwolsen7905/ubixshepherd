@@ -227,7 +227,8 @@ These come from the model and from OpenCode, and Shepherd does not hide them:
   off: OpenCode only accepts a positive number, and a missing or false value in its
   own config becomes a 5 minute default, so Shepherd always writes a number.
 - **Tool names.** Shepherd's worker tools reach the model as `shepherd_ask_human`,
-  `shepherd_ask_shepherd` and `shepherd_report`; a small model sometimes calls them by
+  `shepherd_ask_shepherd`, `shepherd_report` and `shepherd_gate` (which records a gate pass
+  for the lane's head commit, so the push hook accepts a push); a small model sometimes calls them by
   the short names in the brief and is told the tool is unavailable.
 - **Your own and the repo's OpenCode config load under Shepherd's.** A rule there that
   Shepherd's permission block does not override still applies. Keep the global config to
