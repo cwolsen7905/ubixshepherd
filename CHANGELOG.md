@@ -72,6 +72,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
   is left in place and named in the close's result, while the branch and the lane close
   as usual.
 
+## [0.0.0-test.1] - 2026-11-22
+
+Dry run of the release pipeline; not a release.
+
 ## [0.6.0-beta.1] - 2026-10-23
 
 Keep-going mode now starts approved work itself, Crook keeps a log of every verdict that
