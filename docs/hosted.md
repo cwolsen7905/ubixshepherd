@@ -163,6 +163,30 @@ only from the login. Worker and desk tokens are refused there too. A device toke
 role, so it reads and answers like a session, but cannot save settings and never reaches the
 operator's setup routes or sign-in minting.
 
+## Health endpoint
+
+`GET /v1/health` answers `200` with the two characters `up` (`text/plain`), on the
+loopback listener and on the public listener. It needs no token, session or CSRF, and
+it says nothing else: no version, no counts, no ids. Anything but GET or HEAD is
+`405`. Like the login routes it sends `Cache-Control: no-store` (and `nosniff`, like
+every response).
+
+On the public listener it answers for the public URL's host and for a bare pod or IP
+address, because Kubernetes probes hit the pod IP. Every other route still needs its
+host and its login exactly as before.
+
+| Probe | What it uses |
+|---|---|
+| Kubernetes readiness | `httpGet` on `/v1/health`, plain HTTP on port 8443: TLS ends at the Ingress, and the daemon takes plain HTTP from the proxy there. Liveness and startup stay `shepherd status`: the public listener opens only once an owner account exists, so readiness failing before then keeps the pod out of endpoints until there is a login to serve |
+| Docker Compose | The shepherd service's `healthcheck` runs `shepherd status` in the container: the image ships no HTTP client, so a container-local check over loopback with the operator token is what it gets |
+| `deploy/docker/check-image.sh` | Runs `shepherd status` inside the container: the daemon binds loopback only, which a published port cannot reach, and the image ships no HTTP client |
+
+The image's own `HEALTHCHECK` stays `shepherd status`: it runs before any account
+exists, and the public listener opens only once one does. If your cluster's
+NetworkPolicy denies ingress by default, allow the kubelet to reach TCP 8443, or the
+`httpGet` probes never arrive: the shipped policy opens that port to the ingress
+controller only.
+
 ## What the tests check
 
 Hosted mode's tests run a daemon with a fake agent that prints secrets, sign in over the
