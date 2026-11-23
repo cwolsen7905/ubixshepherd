@@ -287,4 +287,18 @@ func TestWorkerGateRecordsPassForOwnLane(t *testing.T) {
 	if code := h.run("hook", "pre-push", "origin", git("remote", "get-url", "origin")); code != 0 {
 		t.Fatalf("push after worker gate refused: %s", h.err)
 	}
+
+	// A failing gate: non-zero exit, says it failed, and the head has no pass.
+	failing := config.Profile{Gate: "false"}
+	failing.Autonomy.Push = config.Agent
+	cfg.Repos = map[string]config.Profile{"app": failing}
+	h.srv.Fold.SetConfig(cfg)
+	h.env.Cwd = wt
+	h.out.Reset()
+	if code := h.run("worker", "gate"); code == 0 || !strings.Contains(h.out.String(), "failed") {
+		t.Fatalf("worker gate with a failing gate: %d %s %s", code, h.out, h.err)
+	}
+	if g, err := h.srv.Store.LastGateResult(ctx, lane.ID); err != nil || g == nil || g.Passed {
+		t.Fatalf("a failing gate left a pass for the head: %+v %v", g, err)
+	}
 }
