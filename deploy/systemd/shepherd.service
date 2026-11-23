@@ -1,0 +1,43 @@
+# A system service for a hosted daemon on one Linux host. Copy to
+# /etc/systemd/system/shepherd.service, create the user and directories below, then:
+#   systemctl daemon-reload && systemctl enable --now shepherd
+# (A per-user service for your own machine is `shepherd daemon install`.)
+#
+#   useradd --system --create-home --home-dir /var/lib/shepherd --shell /usr/sbin/nologin shepherd
+#   install -d -o shepherd -g shepherd -m 0700 /var/lib/shepherd/home
+#   install -d -o shepherd -g shepherd -m 0755 /var/lib/shepherd/workspace
+#   install -d -o root -g shepherd -m 0750 /etc/shepherd
+#
+# Credentials are files, never Environment= lines: the TOTP key, the git push key and
+# known hosts, and the glab, gh and agent CLI config directories, each owned by the
+# shepherd user with mode 0600 (directories 0700). Put the TLS certificate and key in
+# /etc/shepherd as well, or run Caddy or nginx on this host and set
+# daemon.public.trusted_proxies to its address (see docs/hosted.md).
+[Unit]
+Description=uBixShepherd daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=shepherd
+Group=shepherd
+Environment=SHEPHERD_HOME=/var/lib/shepherd/home
+Environment=SHEPHERD_NO_UPDATE_CHECK=1
+WorkingDirectory=/var/lib/shepherd/workspace
+ExecStart=/usr/local/bin/shepherd daemon
+Restart=on-failure
+RestartSec=5
+# The daemon ends the agents it started and records their runs when it gets SIGTERM
+# (up to about 20 seconds). Give it more than that, then SIGKILL the rest of the cgroup.
+TimeoutStopSec=120
+KillMode=control-group
+
+# Hardening that costs nothing: the daemon and its agents write only to the home and workspace.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/shepherd
+
+[Install]
+WantedBy=multi-user.target

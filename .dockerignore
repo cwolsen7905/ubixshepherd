@@ -1,0 +1,10 @@
+.git
+.github
+bin/
+dist/
+web/node_modules
+web/dist
+internal/webui/app/*
+!internal/webui/app/.gitignore
+.shepherd
+**/*.test

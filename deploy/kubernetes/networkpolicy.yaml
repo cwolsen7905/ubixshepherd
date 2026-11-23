@@ -1,0 +1,35 @@
+# Default deny, then only what the daemon needs. A NetworkPolicy matches addresses, not
+# names, so "forges and model providers" is HTTPS (443) and SSH (22) to the public
+# internet and nothing inside the cluster or on private ranges. To pin it to named
+# providers, replace the ipBlock with their address ranges or use your CNI's FQDN policy.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: shepherd
+  namespace: shepherd
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: shepherd}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: ingress-nginx}   # your ingress controller
+      ports:
+        - {protocol: TCP, port: 8443}
+  egress:
+    - to:                                   # DNS
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:                                   # forges and model providers
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 22}         # git over ssh

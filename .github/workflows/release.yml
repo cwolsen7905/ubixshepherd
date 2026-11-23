@@ -116,6 +116,81 @@ jobs:
             dist/SHA256SUMS.sigstore.json
           if-no-files-found: error
 
+  # The container image, built from the same tag and signed keyless. The build job has
+  # already refused a tag that is not on main. Registries: GHCR always; a second one
+  # (for example Docker Hub) when the repository variable IMAGE_MIRROR_REPOSITORY is set
+  # to its path (docker.io/example/shepherd) with secrets IMAGE_MIRROR_USERNAME and
+  # IMAGE_MIRROR_PASSWORD.
+  image:
+    name: Build, check & sign the image
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+      id-token: write # keyless cosign signing via GitHub OIDC
+    env:
+      TAG: ${{ github.ref_name }}
+      MIRROR: ${{ vars.IMAGE_MIRROR_REPOSITORY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image names
+        id: names
+        run: |
+          repo="$(echo "ghcr.io/$GITHUB_REPOSITORY" | tr 'A-Z' 'a-z')"
+          echo "ghcr=$repo" >> "$GITHUB_OUTPUT"
+          tags="$repo:$TAG"
+          if [ -n "$MIRROR" ]; then tags="$tags,$MIRROR:$TAG"; fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "mirror_host=${MIRROR%%/*}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/login-action@v3
+        if: ${{ vars.IMAGE_MIRROR_REPOSITORY != '' }}
+        with:
+          registry: ${{ steps.names.outputs.mirror_host }}
+          username: ${{ secrets.IMAGE_MIRROR_USERNAME }}
+          password: ${{ secrets.IMAGE_MIRROR_PASSWORD }}
+
+      - name: Push the multi-architecture image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.names.outputs.tags }}
+          build-args: VERSION=${{ github.ref_name }}
+          provenance: mode=max
+
+      # The checks run against the pushed digest itself, on both architectures, and the
+      # signature below goes on only if they pass: an image that fails is left unsigned.
+      - name: Check the pushed image
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          GHCR: ${{ steps.names.outputs.ghcr }}
+        run: sh deploy/docker/check-image.sh "$GHCR@$DIGEST" "$TAG"
+
+      - uses: sigstore/cosign-installer@v3
+
+      # Signed by digest, for each registry the image went to.
+      - name: Sign the image (keyless)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          GHCR: ${{ steps.names.outputs.ghcr }}
+        run: |
+          cosign sign --yes "$GHCR@$DIGEST"
+          if [ -n "$MIRROR" ]; then cosign sign --yes "$MIRROR@$DIGEST"; fi
+
   publish:
     name: Publish the GitHub Release
     needs: build

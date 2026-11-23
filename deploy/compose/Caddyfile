@@ -1,0 +1,5 @@
+# Caddy gets and renews the certificate, and sets X-Forwarded-For and
+# X-Forwarded-Proto: https, which the daemon requires from a trusted proxy.
+{$SHEPHERD_HOST} {
+	reverse_proxy shepherd:8443
+}
