@@ -200,3 +200,12 @@ func TestKillDeniedMatchesCommands(t *testing.T) {
 		}
 	}
 }
+
+// The brief's tool list names the gate tool, so an agent whose CLI shows no MCP
+// instructions still learns to run its lane's gate before pushing.
+func TestBriefNamesTheGateTool(t *testing.T) {
+	b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, "", "")
+	if !strings.Contains(b, "- gate:") {
+		t.Fatalf("the brief's tool list omits gate:\n%s", b)
+	}
+}

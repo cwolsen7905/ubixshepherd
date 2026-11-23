@@ -640,7 +640,7 @@ func TestWorkerToolsInjected(t *testing.T) {
 	if j := strings.Join(c.Args(Opts{Worker: "/bin/shepherd"}), " "); !strings.Contains(j, "--additional-mcp-config") || !strings.Contains(j, `"tools":["*"]`) || !strings.Contains(j, "--allow-tool shepherd") {
 		t.Errorf("copilot worker args: %s", j)
 	}
-	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, "", ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") || !strings.Contains(b, "- gate:") {
+	if b := Brief("t", "l", "r", "l", "main", "/w", []string{"x"}, "", Powers{}, true, "", ""); !strings.Contains(b, "ask_human") || !strings.Contains(b, "ask_shepherd") {
 		t.Errorf("brief with tools:\n%s", b)
 	}
 }
