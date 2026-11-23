@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { decision, lane, run } from '../test/fixtures'
 import { answerNextTarget, buildItems, match } from './items'
+import { href } from '../router'
+import { NAV } from '../shell/nav'
 
 const snap = {
   lanes: [
@@ -20,6 +22,18 @@ const snap = {
   waiting: null,
 }
 const items = buildItems(snap, [{ id: 4, title: 'Billing rework', status: 'open' }])
+
+describe('palette pages', () => {
+  it('offers every nav view as a page, with its icon, including the two placeholders', () => {
+    const pages = items.filter((i) => i.group === 'Pages')
+    expect(pages).toHaveLength(NAV.flatMap((g) => g.items).length)
+    const classifiers = pages.find((i) => i.label === 'Go to classifiers')
+    const guardrails = pages.find((i) => i.label === 'Go to guardrails')
+    expect(classifiers).toMatchObject({ icon: 'classifiers', target: { to: href.classifiers() } })
+    expect(guardrails).toMatchObject({ icon: 'guardrails', target: { to: href.guardrails() } })
+    expect(match(items, 'guardr')[0]?.label).toBe('Go to guardrails')
+  })
+})
 
 describe('palette matcher', () => {
   it('lists actions and pages first with an empty query', () => {
