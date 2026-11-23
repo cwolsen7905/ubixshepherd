@@ -401,6 +401,41 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-keep-bar:not(.is-on) > b { display: none; }
 .sh-meter.is-over > b { background: var(--sh-broken); }
 .sh-nav-group { display: flex; flex-direction: column; gap: 2px; }
+/* Icon (.sh-icon): a view's 16px line drawing in currentColor. Views only; statuses keep their glyphs. */
+.sh-icon { flex: none; display: block; width: 16px; height: 16px; }
+.sh-nav-label .sh-icon { color: var(--sh-muted); }
+.sh-nav-item.is-here .sh-icon, .sh-nav-item:hover .sh-icon { color: var(--sh-ink); }
+.sh-palette-label .sh-icon { display: inline-block; vertical-align: -0.2em; margin-right: 8px; color: var(--sh-muted); }
+/* RailToggle (.sh-rail-toggle): the chevron beside the workspace mark; `[` does the same. */
+.sh-side-head { display: flex; align-items: flex-start; gap: 4px; }
+.sh-side-head .sh-ws { flex: 1 1 auto; }
+.sh-rail-toggle { flex: none; width: 24px; height: 24px; margin-top: 2px; display: grid; place-items: center; border: 0; border-radius: var(--sh-r); background: none; color: var(--sh-faint); cursor: pointer; padding: 0; }
+.sh-rail-toggle:hover { background: var(--sh-sunk); color: var(--sh-ink); }
+/* The icon rail: .sh-shell--rail narrows the sidebar column, .sh-side.is-rail draws it. */
+.sh-shell--rail { --sh-sidebar: 3.25rem; }
+.sh-side.is-rail { padding: 12px 6px; align-items: center; }
+.sh-side.is-rail .sh-side-head { flex-direction: column; align-items: center; gap: 6px; padding-bottom: 8px; }
+.sh-side.is-rail .sh-ws { padding: 4px; flex: none; }
+.sh-side.is-rail .sh-side-nav { align-self: stretch; align-items: center; }
+.sh-side.is-rail .sh-nav-group { align-items: center; align-self: stretch; }
+.sh-side.is-rail .sh-nav-sep { align-self: stretch; }
+.sh-nav-item.is-rail { position: relative; justify-content: center; width: 32px; height: 32px; padding: 0; color: var(--sh-muted); }
+.sh-nav-item.is-rail.is-here, .sh-nav-item.is-rail:hover { color: var(--sh-ink); }
+.sh-rail-dot { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; }
+.sh-rail-dot.is-waiting { background: var(--sh-lantern); }
+.sh-rail-dot.is-unseen { top: auto; bottom: 4px; background: var(--sh-lichen); }
+.sh-rail-broken { position: absolute; top: 1px; right: 2px; font-style: normal; font-size: var(--sh-t-micro); line-height: 1; color: var(--sh-broken); }
+.sh-rail-btn { flex: none; width: 32px; height: 32px; display: grid; place-items: center; border: 0; border-radius: var(--sh-r); background: none; color: var(--sh-muted); cursor: pointer; padding: 0; font: inherit; }
+.sh-rail-btn:hover, .sh-rail-btn[aria-expanded="true"] { background: var(--sh-sunk); color: var(--sh-ink); }
+.sh-rail-btn:disabled { cursor: default; opacity: .6; }
+.sh-rail-btn.is-on { color: var(--sh-lichen); }
+.sh-rail-find { margin-bottom: 10px; }
+/* RailFoot (.sh-rail-foot): Keep going, then one status glyph that opens the full footer (.sh-rail-pop). */
+.sh-rail-foot { flex: none; margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 4px; padding-top: 8px; }
+.sh-rail-status .sh-glyph { width: auto; }
+.sh-rail-pop:focus { outline: none; }
+.sh-rail-pop:focus-visible .sh-rail-pop-card { outline: 2px solid var(--sh-lichen); }
+.sh-rail-pop-card { width: 15rem; max-width: 90vw; margin: 0; background: var(--sh-surface); border: 1px solid var(--sh-rule); border-radius: var(--sh-r-lg); box-shadow: var(--sh-shadow-pop); padding: 12px; }
 .sh-modal--sheet { width: 100%; max-width: none; margin: auto 0 0; border-radius: 14px 14px 0 0; border-width: 1px 0 0; padding: 8px 6px 18px; }
 .sh-modal--sheet::before { content: ""; display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--sh-control); margin: 0 auto 8px; }
 .sh-modal--sheet .sh-modal-foot { padding: 8px 10px 0; margin-top: 0; }

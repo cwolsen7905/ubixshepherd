@@ -8,6 +8,8 @@ import { ChatPage } from './pages/Chat'
 import { FilesPage } from './pages/Files'
 import { HistoryPage } from './pages/History'
 import { RulesPage } from './pages/Rules'
+import { ClassifiersPage } from './pages/Classifiers'
+import { GuardrailsPage } from './pages/Guardrails'
 import { InboxPage } from './pages/Inbox'
 import { NextPage } from './pages/Next'
 import { LanePage } from './pages/Lane'
@@ -154,7 +156,9 @@ export function App() {
         {route.page === 'inbox' && <InboxPage kind={route.kind} />}
         {route.page === 'history' && <HistoryPage kind={route.kind} project={route.project} q={route.q} />}
         {route.page === 'files' && <FilesPage repo={route.repo} lane={route.lane} gitRef={route.ref} />}
-        {route.page === 'rules' && <RulesPage />}
+        {route.page === 'rules' && !route.view && <RulesPage />}
+        {route.page === 'rules' && route.view === 'classifiers' && <ClassifiersPage />}
+        {route.page === 'rules' && route.view === 'guardrails' && <GuardrailsPage />}
         {route.page === 'next' && <NextPage />}
         {route.page === 'artifacts' && <ArtifactsPage repo={route.repo} lane={route.lane} run={route.run} topic={route.topic} />}
         {route.page === 'chat' && <ChatPage />}

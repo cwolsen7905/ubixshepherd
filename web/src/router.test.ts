@@ -110,7 +110,7 @@ describe('open=', () => {
 })
 
 describe('the view table', () => {
-  const VIEWS = ['Inbox', 'Conversation', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Review bots', 'Usage', 'Settings', 'Status']
+  const VIEWS = ['Inbox', 'Conversation', 'Board', 'Next up', 'Artifacts', 'Files', 'Runs', 'Timeline', 'History', 'Projects', 'Rules', 'Classifiers', 'Guardrails', 'Review bots', 'Usage', 'Settings', 'Status']
 
   it('lists every view in the nav, in the design order, each reaching its own route', () => {
     const items = NAV.flatMap((g) => g.items)
@@ -129,5 +129,12 @@ describe('the view table', () => {
     expect(parse(href.files({ repo: 2, lane: 5, ref: 'dev' }))).toEqual({ page: 'files', repo: 2, lane: 5, ref: 'dev' })
     expect(parse('#/files?lane=x')).toEqual({ page: 'files' })
     expect(parse(href.rules())).toEqual({ page: 'rules' })
+  })
+
+  it('routes the two placeholder pages', () => {
+    expect(href.classifiers()).toBe('#/classifiers')
+    expect(href.guardrails()).toBe('#/guardrails')
+    expect(parse(href.classifiers())).toEqual({ page: 'rules', view: 'classifiers' })
+    expect(parse(href.guardrails())).toEqual({ page: 'rules', view: 'guardrails' })
   })
 })

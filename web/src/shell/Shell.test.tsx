@@ -139,7 +139,8 @@ describe('Shell', () => {
     const labels = NAV.flatMap((g) => g.items.map((i) => i.label))
     const stops = labels.length
     const seen: string[] = []
-    for (let i = 0; i < stops + 4; i++) {
+    // The skip link, the workspace mark, the rail chevron and search come before the views.
+    for (let i = 0; i < stops + 5; i++) {
       await userEvent.tab()
       seen.push(document.activeElement?.textContent?.trim() ?? '')
     }

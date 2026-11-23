@@ -9,6 +9,7 @@ import { Sidebar } from './Sidebar'
 import { StatusCounts, CountList } from './StatusCounts'
 import { type CountKind, type PopItem } from './statusItems'
 import { useSideWidth } from './useSideWidth'
+import { useRail } from './useRail'
 import { Button, Dialog, Divider, cx } from '../ui'
 import { inboxCount, type StatusCounts as Counts } from '../state/attention'
 import { pageTitle } from './title'
@@ -27,7 +28,8 @@ export const DIVIDER_MIN = 768
  * for the main column, double-click resets, the width is remembered per view, and a drag past
  * 60% of the window calls `onSwap`. Below 768px there is none. Below 760px a mobile bar carries
  * the menu, the route's title, the status counts and the waiting count, and the sidebar is a
- * sheet. The sidebar and the page each sit in their own error boundary, so one failing leaves the other.
+ * sheet. From 760px up the sidebar collapses to an icon rail by its chevron or `[`, remembered
+ * in localStorage. The sidebar and the page each sit in their own error boundary, so one failing leaves the other.
  */
 export function Shell({
   route,
@@ -84,6 +86,9 @@ export function Shell({
   const sidebar = useRef<HTMLElement>(null)
   const sideId = useId()
   const compact = mode === 'sheet'
+  const [railPref, toggleRail] = useRail()
+  // The sheet below 760px is always the full sidebar; the rail is for the columns layout.
+  const rail = railPref && !compact
   const open = compact && openFor === here
   const setOpen = (on: boolean) => setOpenFor(on ? here : null)
   const shown = !compact || open
@@ -115,16 +120,27 @@ export function Shell({
 
   return (
     <PageMenuProvider>
-    <div className={cx('sh-shell', !side && 'sh-shell--wide')} data-component="AppShell" data-mode={mode} style={panel ? style : undefined}>
+    <div className={cx('sh-shell', !side && 'sh-shell--wide', rail && 'sh-shell--rail')} data-component="AppShell" data-mode={mode} style={panel ? style : undefined}>
       <a className="skip-link" href="#main" onClick={(e) => {
         e.preventDefault()
         document.getElementById('main')?.focus()
       }}>
         Skip to the page
       </a>
-      <aside ref={sidebar} id={sideId} className={cx('sh-side', compact && 'is-sheet', open && 'is-open')} data-component="Sidebar" hidden={!shown}>
+      <aside ref={sidebar} id={sideId} className={cx('sh-side', compact && 'is-sheet', open && 'is-open', rail && 'is-rail')} data-component="Sidebar" hidden={!shown}>
         <ErrorBoundary region="The sidebar">
-          <Sidebar route={route} waiting={waiting} workspaces={workspaces} footer={footer} boardBroken={boardBroken} paletteOpen={paletteOpen} unseen={unseenAll} />
+          <Sidebar
+            route={route}
+            waiting={waiting}
+            workspaces={workspaces}
+            footer={footer}
+            boardBroken={boardBroken}
+            paletteOpen={paletteOpen}
+            unseen={unseenAll}
+            rail={rail}
+            onToggleRail={compact ? undefined : toggleRail}
+            status={status ? { running: status.counts.running, broken: status.counts.broken } : undefined}
+          />
         </ErrorBoundary>
       </aside>
       {compact && open && <div className="sh-sheet-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
