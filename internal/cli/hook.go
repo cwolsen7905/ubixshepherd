@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/attribution"
@@ -111,6 +112,10 @@ func hookPrePush(ctx context.Context, env Env, args []string) error {
 	return errSilent
 }
 
+// hookLookupTimeout bounds the hook's question to the daemon about the run: a wedged or
+// unreachable daemon must not hold up a commit for the client's own 5-minute timeout.
+var hookLookupTimeout = 3 * time.Second
+
 // hookPrepareCommitMsg is what the installed prepare-commit-msg hook runs: git gives it
 // the message file. In an agent's run (SHEPHERD_RUN set) it adds the attribution
 // trailers; a commit the person makes by hand is left alone. It never fails a commit: if
@@ -130,9 +135,11 @@ func hookPrepareCommitMsg(ctx context.Context, env Env, args []string) error {
 		return applyTrailers(ctx, env, args[0], who)
 	}
 	if c, err := hookClient(ctx, env); err == nil {
-		if v, err := c.Run(ctx, run); err == nil {
+		lookup, cancel := context.WithTimeout(ctx, hookLookupTimeout)
+		if v, err := c.Run(lookup, run); err == nil {
 			who.Agent, who.Model = v.Agent, v.Model
 		}
+		cancel()
 	}
 	return applyTrailers(ctx, env, args[0], who)
 }

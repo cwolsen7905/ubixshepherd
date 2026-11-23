@@ -28,6 +28,16 @@ A merge request Shepherd opens ends with one line: `Made by <agent> (<model>) in
 After a run ships its own lane that is the run. For `shepherd lane ship` it is the run named by
 the newest `Shepherd-Run` trailer among the shipped commits; with none, there is no footer.
 
+## Forbid patterns
+
+A repo's `forbid` patterns (its profile's rules for commit messages) are matched with Shepherd's
+own attribution lines taken out: `Shepherd-*` trailers, and `Co-Authored-By` lines carrying a
+known agent's address (Claude, Copilot, Cursor, OpenCode). Without that, a pattern written to
+keep AI credit out would refuse every push from an agent's run, since those commits must carry
+the trailers. The exemption covers those lines only, in every commit, whoever wrote them; the
+rest of the message is still matched. A repo that must keep AI credit out entirely should not
+run agents through Shepherd.
+
 ## House standard
 
 The `no-ai-attribution` house standard no longer forbids these trailers. It now requires that a

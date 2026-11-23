@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -204,5 +207,55 @@ func TestHookPrepareCommitMsg(t *testing.T) {
 	}
 	if got := read(); strings.Count(got, "Shepherd-Run: 42") != 1 || strings.Contains(got, "Co-Authored-By:") {
 		t.Errorf("message = %q", got)
+	}
+}
+
+// With the run's daemon URL and token, the hook asks the daemon which agent and model the
+// run is, and adds Co-Authored-By and Shepherd-Model once; a daemon that does not answer in
+// time leaves only Shepherd-Run, and the commit goes ahead.
+func TestHookPrepareCommitMsgAsksTheDaemon(t *testing.T) {
+	clearRunEnv(t)
+	h := newHarness(t, "", false)
+	msg := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+	read := func() string { b, _ := os.ReadFile(msg); return string(b) }
+	release := make(chan struct{})
+	slow := false
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if slow {
+			<-release
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"id": 42, "agent": "claude", "model": "opus"})
+	}))
+	defer daemon.Close()
+	defer close(release)
+	t.Setenv(dispatch.EnvRun, "42")
+	t.Setenv(dispatch.EnvURL, daemon.URL)
+	t.Setenv(dispatch.EnvToken, "tok")
+
+	os.WriteFile(msg, []byte("feat: a\n"), 0o644)
+	for i := 0; i < 2; i++ {
+		if code := h.run("hook", "prepare-commit-msg", msg); code != 0 {
+			t.Fatalf("with the daemon: %d %s", code, h.err)
+		}
+	}
+	got := read()
+	if strings.Count(got, "Shepherd-Run: 42") != 1 || strings.Count(got, "Shepherd-Model: opus") != 1 || strings.Count(got, "Co-Authored-By:") != 1 {
+		t.Errorf("with the daemon: %q", got)
+	}
+
+	slow = true
+	defer func(old time.Duration) { hookLookupTimeout = old }(hookLookupTimeout)
+	hookLookupTimeout = 100 * time.Millisecond
+	os.WriteFile(msg, []byte("feat: b\n"), 0o644)
+	start := time.Now()
+	if code := h.run("hook", "prepare-commit-msg", msg); code != 0 {
+		t.Fatalf("slow daemon: %d %s", code, h.err)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("a slow daemon held the commit for %s", took)
+	}
+	if got := read(); strings.Count(got, "Shepherd-Run: 42") != 1 || strings.Contains(got, "Co-Authored-By:") || strings.Contains(got, "Shepherd-Model:") {
+		t.Errorf("slow daemon: %q", got)
 	}
 }
