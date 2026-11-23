@@ -409,6 +409,29 @@ const THREAD_EVENTS = new Set<EventKind>([
   'lane_opened', 'lane_closed', 'plan',
 ])
 
+/**
+ * Feed rows with each feed id once, and each decision asked once. The same item reaches
+ * the list more than once when two polls read from one cursor (a wake while a poll or the
+ * first load is in flight), or a reload overlaps the stream; the first copy wins.
+ */
+export function once(feed: FeedEntry[]): FeedEntry[] {
+  const ids = new Set<number>()
+  const asked = new Set<number>()
+  const out: FeedEntry[] = []
+  for (const f of feed) {
+    if (f.id) {
+      if (ids.has(f.id)) continue
+      ids.add(f.id)
+    }
+    if (f.event === 'decision_asked' && f.ref) {
+      if (asked.has(f.ref)) continue
+      asked.add(f.ref)
+    }
+    out.push(f)
+  }
+  return out
+}
+
 export type ThreadItem =
   | { type: 'desk'; key: string; e: DeskEvent }
   | { type: 'feed'; key: string; f: FeedEntry }
@@ -422,7 +445,7 @@ export function timeline(events: DeskEvent[], feed: FeedEntry[]): ThreadItem[] {
   const from = events.length ? Date.parse(events[0]?.created ?? '') : NaN
   const rows = Number.isNaN(from)
     ? []
-    : feed.filter((f) => THREAD_EVENTS.has(f.event) && Date.parse(f.created) >= from)
+    : once(feed.filter((f) => THREAD_EVENTS.has(f.event) && Date.parse(f.created) >= from))
   let i = 0
   for (const e of events) {
     const t = Date.parse(e.created)
