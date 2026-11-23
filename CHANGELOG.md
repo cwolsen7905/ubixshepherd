@@ -51,6 +51,8 @@ protocol) is listed under **Interface changes** in the release that makes it.
 - A repo can set `agents: [claude]` to limit which agent CLIs may start runs in it. The
   daemon refuses any other agent, including on a continued run, with an error naming the
   repo and its allowed agents. Unset allows all; unknown names are rejected at load.
+- `shepherd login` and `shepherd logout` are registered commands, shown in
+  `shepherd help` and dispatched to the hosted login and logout.
 
 ### Fixed
 
