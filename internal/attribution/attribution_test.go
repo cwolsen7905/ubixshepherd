@@ -56,3 +56,28 @@ func TestFooter(t *testing.T) {
 		t.Error("footer without a run")
 	}
 }
+
+func TestApplySkipsAnAgentsOwnCoauthor(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "MSG")
+	os.WriteFile(f, []byte("feat: x\n\nCo-Authored-By: Claude Opus 4 <noreply@anthropic.com>\n"), 0o644)
+	if err := Apply(context.Background(), f, Who{Run: 3, Agent: "claude"}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(f)
+	if n := strings.Count(string(b), "Co-Authored-By"); n != 1 || !strings.Contains(string(b), "Shepherd-Run: 3") {
+		t.Errorf("message = %q", b)
+	}
+}
+
+func TestOwn(t *testing.T) {
+	for line, want := range map[string]bool{
+		"Shepherd-Run: 4": true,
+		"Co-Authored-By: Claude <noreply@anthropic.com>": true,
+		"Co-Authored-By: Ann <ann@example.com>":          false,
+		"fix: co-authored-by in a subject":               false,
+	} {
+		if got := Own(line); got != want {
+			t.Errorf("Own(%q) = %v", line, got)
+		}
+	}
+}

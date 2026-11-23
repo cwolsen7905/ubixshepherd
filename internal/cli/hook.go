@@ -125,12 +125,20 @@ func hookPrepareCommitMsg(ctx context.Context, env Env, args []string) error {
 	}
 	who := attribution.Who{Run: run}
 	env.Client = "hook"
+	// Only the run's own URL and token: a commit never starts or looks for a daemon.
+	if os.Getenv(dispatch.EnvToken) == "" || os.Getenv(dispatch.EnvURL) == "" {
+		return applyTrailers(ctx, env, args[0], who)
+	}
 	if c, err := hookClient(ctx, env); err == nil {
 		if v, err := c.Run(ctx, run); err == nil {
 			who.Agent, who.Model = v.Agent, v.Model
 		}
 	}
-	if err := attribution.Apply(ctx, args[0], who); err != nil {
+	return applyTrailers(ctx, env, args[0], who)
+}
+
+func applyTrailers(ctx context.Context, env Env, file string, who attribution.Who) error {
+	if err := attribution.Apply(ctx, file, who); err != nil {
 		fmt.Fprintf(env.Stderr, "shepherd: could not add attribution trailers: %v\n", err)
 	}
 	return nil

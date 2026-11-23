@@ -83,13 +83,25 @@ func Apply(ctx context.Context, file string, w Who) error {
 	if len(ts) == 0 {
 		return nil
 	}
+	msg, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
 	args := []string{"interpret-trailers", "--in-place"}
 	for _, t := range ts {
 		mode := "doNothing"
 		if strings.HasPrefix(t, "Co-Authored-By:") {
+			// The agent's own CLI may already have credited itself under another name:
+			// one co-author line per address.
+			if hasCoauthorEmail(string(msg), emailOf(t)) {
+				continue
+			}
 			mode = "addIfDifferent"
 		}
 		args = append(args, "--if-exists", mode, "--if-missing", "add", "--trailer", t)
+	}
+	if len(args) == 2 {
+		return nil
 	}
 	args = append(args, file)
 	if out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput(); err != nil {
@@ -109,3 +121,46 @@ func ParseRun(s string) int64 {
 
 // EnvRun is read here so the hook and its tests agree on what "no run" means.
 func RunFromEnv() int64 { return ParseRun(os.Getenv("SHEPHERD_RUN")) }
+
+func emailOf(line string) string {
+	i, j := strings.LastIndex(line, "<"), strings.LastIndex(line, ">")
+	if i < 0 || j < i {
+		return ""
+	}
+	return strings.ToLower(line[i+1 : j])
+}
+
+func hasCoauthorEmail(msg, email string) bool {
+	if email == "" {
+		return false
+	}
+	for _, l := range strings.Split(msg, "\n") {
+		if k, _, ok := strings.Cut(l, ":"); ok && strings.EqualFold(strings.TrimSpace(k), "co-authored-by") && emailOf(l) == email {
+			return true
+		}
+	}
+	return false
+}
+
+// Own reports whether a commit message line is one of Shepherd's attribution trailers,
+// or a co-author line for an agent's own noreply address, so a repo's forbid patterns
+// can leave them alone.
+func Own(line string) bool {
+	k, _, ok := strings.Cut(strings.TrimSpace(line), ":")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(k)) {
+	case "shepherd-run", "shepherd-model":
+		return true
+	case "co-authored-by":
+		e := emailOf(line)
+		for _, a := range known {
+			if e == a.email {
+				return true
+			}
+		}
+		return e == "noreply@invalid"
+	}
+	return false
+}

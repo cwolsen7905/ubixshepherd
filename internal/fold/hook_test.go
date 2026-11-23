@@ -25,3 +25,11 @@ func TestInstallCommitHook(t *testing.T) {
 		t.Errorf("replaced a foreign hook: %v %v", ok, err)
 	}
 }
+
+func TestForbidLeavesShepherdsTrailersAlone(t *testing.T) {
+	msg := "feat: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nShepherd-Run: 5\nCo-Authored-By: Ann <ann@example.com>"
+	got := withoutOwnTrailers(msg)
+	if strings.Contains(got, "anthropic") || strings.Contains(got, "Shepherd-Run") || !strings.Contains(got, "Ann") {
+		t.Errorf("got %q", got)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/attribution"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/git"
@@ -223,12 +224,25 @@ func forbiddenMessage(ctx context.Context, dir, from, to string, patterns []stri
 		}
 		for _, c := range strings.Split(out, "\x01") {
 			sha, msg, _ := strings.Cut(strings.TrimSpace(c), "\x00")
+			msg = withoutOwnTrailers(msg)
 			if m := re.FindString(msg); m != "" {
 				return fmt.Sprintf("commit %s's message contains %q, which this repo does not allow (pattern %s)", sha, m, p), nil
 			}
 		}
 	}
 	return "", nil
+}
+
+// withoutOwnTrailers drops the attribution lines Shepherd's commit hook adds, so a
+// repo's forbid pattern for co-author credit does not refuse every agent push.
+func withoutOwnTrailers(msg string) string {
+	var keep []string
+	for _, l := range strings.Split(msg, "\n") {
+		if !attribution.Own(l) {
+			keep = append(keep, l)
+		}
+	}
+	return strings.Join(keep, "\n")
 }
 
 // newCommitsFrom is where the commits this push adds start, for judging messages: the
