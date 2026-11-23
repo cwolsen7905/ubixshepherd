@@ -16,6 +16,10 @@ export interface KeepGoingStatus {
 
 const PATH = '/v1/keep-going'
 
+// Module-level, so the defaults keep one identity across renders and the poll effect runs once.
+const loadKeepGoing = () => get<KeepGoingStatus>(PATH)
+const setKeepGoing = (on: boolean) => post<KeepGoingStatus>(PATH, { on })
+
 /** How often the switch re-reads, since the daemon can turn the mode off itself at a limit. */
 export const REFRESH_MS = 30 * 1000
 /** A stop is worth a line for this long. */
@@ -61,8 +65,8 @@ export function detail(st: KeepGoingStatus, now: number): { text: string; warn: 
  * failed change says why and leaves the switch where the daemon last said it was.
  */
 export function KeepGoing({
-  load = () => get<KeepGoingStatus>(PATH),
-  set = (on) => post<KeepGoingStatus>(PATH, { on }),
+  load = loadKeepGoing,
+  set = setKeepGoing,
   now = Date.now,
 }: Props) {
   const [st, setSt] = useState<KeepGoingStatus | null>(null)

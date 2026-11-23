@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ApiError } from '../api/client'
 import { KeepGoing, detail, type KeepGoingStatus } from './KeepGoing'
@@ -6,6 +6,8 @@ import { KeepGoing, detail, type KeepGoingStatus } from './KeepGoing'
 const st = (o: Partial<KeepGoingStatus> = {}): KeepGoingStatus => ({
   on: false, spent_usd: 0, cap_usd: 5, runs_now: 0, max_runs: 3, ...o,
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('KeepGoing', () => {
   it('shows an off switch and posts nothing until clicked', async () => {
@@ -77,6 +79,18 @@ describe('KeepGoing', () => {
     await user.click(await screen.findByRole('switch'))
     expect(await screen.findByRole('alert')).toHaveTextContent('only the person turns it on')
     expect(screen.getByRole('switch')).toHaveAttribute('aria-checked', 'false')
+  })
+
+  it('reads once on mount with its defaults, then waits for the interval', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify(st()), { status: 200 })))
+    vi.stubGlobal('fetch', fetchMock)
+    render(<KeepGoing />)
+    await screen.findByRole('switch', { name: 'Keep going' })
+    // Let any further renders and effects settle: a restarting effect would read again each time.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50))
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('shows nothing when the status cannot be read', async () => {
