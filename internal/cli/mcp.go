@@ -916,6 +916,12 @@ func mcpTools() []mcpTool {
 			},
 		},
 		{
+			Name:        "cluster_status",
+			Description: "What this daemon is in a cluster. On a hub: each member machine (a work or home laptop) with whether it is connected and since when, its version, daemon id, and how many runs are going and items waiting there. On a member: whether its link to the hub is up. Use it to answer \"is my work laptop connected\". Read only.",
+			InputSchema: obj(map[string]any{}),
+			args:        func(map[string]any) ([]string, error) { return []string{"cluster", "status", "--json"}, nil },
+		},
+		{
 			Name:        "crook_shadow",
 			Description: "What merge rules in shadow mode would have done: per rule, how many merge requests it would have merged, asked about or held, which conditions were short, and what the person did. Nothing was acted on. Read only.",
 			InputSchema: obj(map[string]any{

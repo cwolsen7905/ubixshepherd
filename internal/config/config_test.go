@@ -668,3 +668,24 @@ repos:
 		}
 	}
 }
+
+func TestClusterConfig(t *testing.T) {
+	c, err := Parse([]byte("cluster:\n  hub: https://Shepherd.Example.com/\n"))
+	if err != nil || c.Cluster.Hub != "https://shepherd.example.com" {
+		t.Fatalf("member config: %+v, %v", c.Cluster, err)
+	}
+	for name, doc := range map[string]string{
+		"role":        "cluster:\n  role: queen\n",
+		"http hub":    "cluster:\n  hub: http://shepherd.example.com\n",
+		"hub, no pub": "cluster:\n  role: hub\n",
+		"hub and hub": "daemon:\n  public:\n    listen: 0.0.0.0:8443\n    url: https://a.example.com\n    trusted_proxies: [10.0.0.0/8]\ncluster:\n  role: hub\n  hub: https://b.example.com\n",
+	} {
+		if _, err := Parse([]byte(doc)); err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+	ok := "daemon:\n  public:\n    listen: 0.0.0.0:8443\n    url: https://a.example.com\n    trusted_proxies: [10.0.0.0/8]\ncluster:\n  role: hub\n"
+	if c, err := Parse([]byte(ok)); err != nil || !c.Cluster.IsHub() {
+		t.Fatalf("hub config: %+v, %v", c.Cluster, err)
+	}
+}

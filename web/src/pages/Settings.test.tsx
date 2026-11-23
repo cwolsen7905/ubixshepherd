@@ -374,3 +374,22 @@ describe('SettingsPage devices', () => {
     expect(seen.some((s) => s.path === '/v1/devices')).toBe(false)
   })
 })
+
+describe('SettingsPage members', () => {
+  it('lists members on a hub and shows none on a daemon on its own', async () => {
+    daemon(doc({ effective: { daemon: { max_runs: 4, budget: 20, poll: '60s' }, cluster: { role: 'hub' }, keep_going: { cap: 5 }, desk: {}, chat: {}, opencode: {} } }), (m, p) =>
+      m === 'GET' && p === '/v1/cluster'
+        ? json({ role: 'hub', daemon_id: 'hub-1', members: [{ name: 'work', enrolled: true, online: true, runs_going: 0, waiting: 0 }] })
+        : undefined,
+    )
+    const { unmount } = render(<SettingsPage />)
+    expect(await screen.findByText('Members')).toBeTruthy()
+    expect(await screen.findByText('work')).toBeTruthy()
+    unmount()
+    const seen = daemon(doc())
+    render(<SettingsPage />)
+    await screen.findByText('Settings')
+    expect(screen.queryByText('Members')).toBeNull()
+    expect(seen.some((s) => s.path === '/v1/cluster')).toBe(false)
+  })
+})

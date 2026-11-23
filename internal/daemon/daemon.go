@@ -3,6 +3,7 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -85,6 +87,14 @@ type Server struct {
 	desks                    *desk.Manager
 	hub                      *feedHub
 	deskStreams, feedStreams streamSlots
+	// Home is the Shepherd home: the daemon id and a member's link credential are kept
+	// there. Run sets it from the runtime file's directory when it is empty.
+	Home string
+	// cluster is the hub's links and the member's link (cluster.go, clusterlink.go).
+	cluster clusterState
+	// ClusterClient is the HTTP client a member reaches its hub with; nil is the default
+	// one, which trusts the system's roots. Tests set one that trusts a test certificate.
+	ClusterClient *http.Client
 	// tokens are the scoped tokens minted since start; addr is where the API listens.
 	tokens tokens
 	addr   atomic.Pointer[string]
@@ -171,6 +181,17 @@ func (s *Server) Handler() http.Handler {
 	handle := func(pattern string, a access, h http.HandlerFunc) { mux.HandleFunc(pattern, guard(pattern, a, h)) }
 	const desk, worker, own, web = forDesk, forWorker, ownRun, forWeb
 	handle("GET "+api.PathStatus, desk|worker, s.status)
+	// The cluster (cluster.go). Reading it is the desk's and the browser's; adding,
+	// revoking and joining are the person's. The enrolment takes no token (auth.go) and
+	// the link takes a link credential only, so neither goes through guard.
+	handle("GET "+api.PathCluster, desk, s.clusterGet)
+	handle("POST "+api.PathClusterMembers, web, s.memberAdd)
+	handle("POST "+api.PathClusterMembers+"/{name}/revoke", web, s.memberAct("revoke"))
+	handle("POST "+api.PathClusterMembers+"/{name}/remove", web, s.memberAct("remove"))
+	handle("POST "+api.PathClusterMembers+"/{name}/confirm", web, s.memberAct("confirm"))
+	handle("POST "+api.PathClusterJoin, operatorOnly, s.clusterJoin)
+	mux.HandleFunc("POST "+api.PathClusterEnrol, s.clusterEnrol)
+	mux.HandleFunc("GET "+api.PathClusterLink, s.clusterLink)
 	// The release check's cached answer, and dismissing its notice: the person's, so not
 	// the desk's and not a worker's (update.go).
 	handle("GET "+api.PathUpdate, web, s.getUpdate)
@@ -363,6 +384,11 @@ func (w *statusWriter) Flush() {
 	}
 }
 
+// Hijack lets the link's WebSocket take the connection over.
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
+
 // Unwrap gives http.ResponseController the writer underneath.
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
@@ -415,7 +441,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := api.Status{
-		Version: version.Version, PID: os.Getpid(), Started: s.started,
+		Version: version.Version, DaemonID: s.DaemonID(), PID: os.Getpid(), Started: s.started,
 		Store: s.Store.Driver(), Config: s.ConfigPath, Workspaces: []api.WorkspaceSummary{},
 	}
 	for _, ws := range wss {
@@ -2014,6 +2040,9 @@ func writeError(w http.ResponseWriter, code int, err error) {
 // crashed or was killed could not, so the next one stops any it left running
 // (ReapOrphans) before marking their runs interrupted (Runner.Recover).
 func (s *Server) Run(ctx context.Context, runtimePath string) error {
+	if s.Home == "" {
+		s.Home = filepath.Dir(runtimePath)
+	}
 	lock, err := acquireLock(filepath.Join(filepath.Dir(runtimePath), "daemon.lock"))
 	if err != nil {
 		if rt, rerr := ReadRuntime(runtimePath); rerr == nil {
@@ -2075,6 +2104,7 @@ func (s *Server) Run(ctx context.Context, runtimePath string) error {
 	}
 	updateCtx, stopUpdates := context.WithCancel(ctx)
 	defer stopUpdates()
+	defer s.StartCluster(ctx)()
 	s.startUpdateCheck(updateCtx)
 	s.startUpgradeVerify(updateCtx)
 	go s.checkLaneStallsEvery(updateCtx, laneStallEvery)

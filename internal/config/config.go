@@ -38,6 +38,8 @@ type Config struct {
 	KeepGoing KeepGoing `yaml:"keep_going,omitempty" json:"keep_going"`
 	// Next holds the next-up list's settings.
 	Next Next `yaml:"next,omitempty" json:"next"`
+	// Cluster joins this daemon to a hub, or makes it one (docs/cluster.md).
+	Cluster Cluster `yaml:"cluster,omitempty" json:"cluster,omitempty"`
 	// Muster sets the upkeep pass that tidies lists that have gone stale.
 	Muster Muster `yaml:"muster,omitempty" json:"muster"`
 	// Web holds the browser UI's settings; the page reads them from GET /v1/config.
@@ -1042,6 +1044,8 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	c.KeepGoing = file.KeepGoing
 	c.Next = file.Next
 	c.Muster = file.Muster
+	c.Cluster = file.Cluster
+	c.Cluster.normalize()
 	if file.Web.EditorURL != nil {
 		c.Web = file.Web
 	}
@@ -1068,6 +1072,7 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Errorf("daemon.listen: %q is not a loopback address", c.Daemon.Listen))
 	}
 	errs = append(errs, c.Daemon.Public.validate(c.Daemon.Listen)...)
+	errs = append(errs, c.Cluster.validate(c.Daemon.Public)...)
 	if c.Daemon.Poll != "off" {
 		if d, err := time.ParseDuration(c.Daemon.Poll); err != nil || d < 10*time.Second {
 			errs = append(errs, fmt.Errorf("daemon.poll: %q; a duration of at least 10s, or off", c.Daemon.Poll))
