@@ -104,16 +104,19 @@ describe('the icon rail', () => {
     expect(window.localStorage.getItem(RAIL_KEY)).toBeNull()
   })
 
-  it('toggles on [, but not while typing', async () => {
+  it('toggles on \\, but not while typing, and leaves [ to the stepping keys', async () => {
     const user = userEvent.setup()
     view()
     await user.keyboard('[[')
+    expect(sidebar()).not.toHaveClass('is-rail')
+    expect(window.localStorage.getItem(RAIL_KEY)).toBeNull()
+    await user.keyboard('\\')
     expect(sidebar()).toHaveClass('is-rail')
     await user.click(screen.getByRole('textbox', { name: 'Draft' }))
-    await user.keyboard('[[')
+    await user.keyboard('\\')
     expect(sidebar()).toHaveClass('is-rail')
     ;(document.activeElement as HTMLElement).blur()
-    await user.keyboard('[[')
+    await user.keyboard('\\')
     expect(sidebar()).not.toHaveClass('is-rail')
   })
 

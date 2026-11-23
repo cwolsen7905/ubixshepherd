@@ -23,7 +23,7 @@ export function writeRail(store: Storage | null, on: boolean) {
 }
 
 /**
- * The sidebar's rail: collapsed to icons or open, remembered in localStorage. `[` toggles it,
+ * The sidebar's rail: collapsed to icons or open, remembered in localStorage. `\` toggles it,
  * except while the person is typing or holds a modifier.
  */
 export function useRail(): [boolean, () => void] {
@@ -34,6 +34,7 @@ export function useRail(): [boolean, () => void] {
       return !on
     })
   }, [])
-  useKeys({ '[': toggle }, [toggle])
+  // Backslash, not `[`: the pending bar and the swap bar step back with `[`.
+  useKeys({ '\\': toggle }, [toggle])
   return [rail, toggle]
 }

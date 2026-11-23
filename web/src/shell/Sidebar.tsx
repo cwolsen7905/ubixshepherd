@@ -102,7 +102,7 @@ export function Sidebar({
             data-component="RailToggle"
             aria-expanded={!rail}
             aria-label={rail ? 'Expand the sidebar' : 'Collapse the sidebar to icons'}
-            title={rail ? 'Expand the sidebar ([)' : 'Collapse the sidebar ([)'}
+            title={rail ? 'Expand the sidebar (\\)' : 'Collapse the sidebar (\\)'}
             onClick={onToggleRail}
           >
             <Icon name={rail ? 'chevron-right' : 'chevron-left'} />

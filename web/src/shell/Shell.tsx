@@ -28,7 +28,7 @@ export const DIVIDER_MIN = 768
  * for the main column, double-click resets, the width is remembered per view, and a drag past
  * 60% of the window calls `onSwap`. Below 768px there is none. Below 760px a mobile bar carries
  * the menu, the route's title, the status counts and the waiting count, and the sidebar is a
- * sheet. From 760px up the sidebar collapses to an icon rail by its chevron or `[`, remembered
+ * sheet. From 760px up the sidebar collapses to an icon rail by its chevron or `\`, remembered
  * in localStorage. The sidebar and the page each sit in their own error boundary, so one failing leaves the other.
  */
 export function Shell({
