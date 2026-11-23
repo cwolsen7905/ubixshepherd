@@ -49,6 +49,8 @@ type principal struct {
 	web *webSession
 	// device is the id of the device token a RoleWeb request came with (hosted mode).
 	device string
+	// member is the cluster member a RoleLink credential belongs to.
+	member string
 }
 
 // actor is who Crook sees acting for the principal: the front desk is the person's only
@@ -158,9 +160,26 @@ func (s *Server) URL() string {
 func (s *Server) auth(next http.Handler) http.Handler {
 	want := []byte("Bearer " + s.Token)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == api.PathClusterEnrol {
+			// An enrolment has no token yet: the code in its body is the proof.
+			next.ServeHTTP(w, r)
+			return
+		}
 		got := r.Header.Get("Authorization")
 		var p principal
-		if got == "" {
+		if tok, ok := strings.CutPrefix(got, "Bearer "); ok && strings.HasPrefix(tok, linkTokenPrefix) {
+			// A link credential is its own kind: it is never a device token, and it opens
+			// the link and nothing else.
+			var ok bool
+			if p, ok = s.linkPrincipal(r, tok); !ok {
+				writeError(w, http.StatusUnauthorized, errors.New("missing, wrong or revoked link credential"))
+				return
+			}
+			if r.URL.Path != api.PathClusterLink {
+				writeError(w, http.StatusForbidden, errors.New("a link credential opens the link and nothing else"))
+				return
+			}
+		} else if got == "" {
 			var err error
 			if p, err = s.webPrincipal(r); err != nil {
 				writeError(w, http.StatusForbidden, err)

@@ -313,7 +313,9 @@ type Runtime struct {
 
 // Status answers GET /v1/status.
 type Status struct {
-	Version    string             `json:"version"`
+	Version string `json:"version"`
+	// DaemonID is this daemon's id, written to its Shepherd home on first start.
+	DaemonID   string             `json:"daemon_id,omitempty"`
 	PID        int                `json:"pid"`
 	Started    time.Time          `json:"started"`
 	Store      string             `json:"store"`
