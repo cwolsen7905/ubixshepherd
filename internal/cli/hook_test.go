@@ -202,7 +202,7 @@ func TestHookPrepareCommitMsg(t *testing.T) {
 			t.Fatalf("in a run: %d %s", code, h.err)
 		}
 	}
-	if got := read(); strings.Count(got, "Shepherd-Run: 42") != 1 || !strings.Contains(got, "Co-Authored-By:") {
+	if got := read(); strings.Count(got, "Shepherd-Run: 42") != 1 || strings.Contains(got, "Co-Authored-By:") {
 		t.Errorf("message = %q", got)
 	}
 }

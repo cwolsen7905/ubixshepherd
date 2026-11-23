@@ -418,3 +418,34 @@ func TestChangedFilesErrFailsClosed(t *testing.T) {
 		t.Error("outsideScopeErr = nil error for a worktree git cannot read")
 	}
 }
+
+// lane ship credits the run named by the shipped commits' Shepherd-Run trailers, and
+// leaves the footer off when no commit names one.
+func TestShipLaneCreditsTheTrailerRun(t *testing.T) {
+	ctx := context.Background()
+	t.Run("trailered", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		run, err := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Model: "opus", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		commitInLane(t, f, "src/a.txt", fmt.Sprintf("feat: a\n\nShepherd-Run: %d", run.ID))
+		if _, err := f.runner.Ship(ctx, f.lane.ID); err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf("Made by claude (opus) in Shepherd run %d.", run.ID); len(sf.created) != 1 || !strings.Contains(sf.created[0], want) {
+			t.Errorf("created = %q, want %q", sf.created, want)
+		}
+	})
+	t.Run("no trailer", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+		commitInLane(t, f, "src/a.txt", "feat: by hand")
+		if _, err := f.runner.Ship(ctx, f.lane.ID); err != nil {
+			t.Fatal(err)
+		}
+		if len(sf.created) != 1 || strings.Contains(sf.created[0], "Made by") {
+			t.Errorf("created = %q", sf.created)
+		}
+	})
+}

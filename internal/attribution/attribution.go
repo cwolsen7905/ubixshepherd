@@ -37,12 +37,18 @@ func Coauthor(agent string) string {
 	return name + " <noreply@invalid>"
 }
 
-// Trailers are the "Key: value" lines for a commit made in the run. A run of 0 has none.
+// Trailers are the "Key: value" lines for a commit made in the run. A run of 0 has none,
+// and with no agent named there is no Co-Authored-By.
 func (w Who) Trailers() []string {
 	if w.Run <= 0 {
 		return nil
 	}
-	t := []string{"Co-Authored-By: " + Coauthor(w.Agent), "Shepherd-Run: " + strconv.FormatInt(w.Run, 10)}
+	t := []string{"Shepherd-Run: " + strconv.FormatInt(w.Run, 10)}
+	if w.Agent != "" {
+		// With no agent named there is nobody to credit: a made-up co-author would stay in
+		// history, and the agent's own CLI may add the real one.
+		t = append([]string{"Co-Authored-By: " + Coauthor(w.Agent)}, t...)
+	}
 	if w.Model != "" {
 		t = append(t, "Shepherd-Model: "+w.Model)
 	}
@@ -160,7 +166,7 @@ func Own(line string) bool {
 				return true
 			}
 		}
-		return e == "noreply@invalid"
+		return false
 	}
 	return false
 }

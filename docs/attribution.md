@@ -16,15 +16,17 @@ run, the hook adds:
 | `Shepherd-Model` | the model, when known |
 
 It uses `git interpret-trailers`, so amending or re-running never adds a trailer twice. A commit
-made by hand, with no run, gets none. If the daemon cannot be reached, only `Shepherd-Run` is
-added; the commit never fails because of it.
+made by hand, with no run, gets none. If the daemon cannot be reached, or the run's agent is not known, only `Shepherd-Run` is
+added (no made-up co-author); the commit never fails because of it. A co-author line with the
+same address is never added twice.
 
 ## Merge request footer
 
 A merge request Shepherd opens ends with one line: `Made by <agent> (<model>) in Shepherd run <id>.`
-After a run ships its own lane that is the run; for `shepherd lane ship` it is the lane's newest run.
+After a run ships its own lane that is the run. For `shepherd lane ship` it is the run named by
+the newest `Shepherd-Run` trailer among the shipped commits; with none, there is no footer.
 
 ## House standard
 
 The `no-ai-attribution` house standard no longer forbids these trailers. It now requires that a
-commit carrying `Shepherd-Run` also carries `Co-Authored-By`.
+commit carrying `Shepherd-Model` also carries `Co-Authored-By`.
