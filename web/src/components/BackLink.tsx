@@ -1,5 +1,6 @@
 import { cameFrom, go, href, parse, withOpen, type Open, type Route } from '../router'
 import type { PageChrome } from '../ui/PageHeader'
+import { currentItem } from '../shell/nav'
 
 /** What a route is called in a "back to" link. */
 export function routeName(r: Route): string {
@@ -13,7 +14,7 @@ export function routeName(r: Route): string {
     case 'artifacts': return 'Artifacts'
     case 'history': return 'History'
     case 'files': return 'Files'
-    case 'rules': return 'Rules'
+    case 'rules': return r.view ? (currentItem(r)?.label ?? 'Rules') : 'Rules'
     case 'projects': return 'Projects'
     case 'project': return r.name
     case 'unassigned': return 'Unassigned'

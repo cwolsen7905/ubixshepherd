@@ -406,7 +406,7 @@ a.sh-ws { color: var(--sh-ink); text-decoration: none; min-width: 0; }
 .sh-nav-label .sh-icon { color: var(--sh-muted); }
 .sh-nav-item.is-here .sh-icon, .sh-nav-item:hover .sh-icon { color: var(--sh-ink); }
 .sh-palette-label .sh-icon { display: inline-block; vertical-align: -0.2em; margin-right: 8px; color: var(--sh-muted); }
-/* RailToggle (.sh-rail-toggle): the chevron beside the workspace mark; `[` does the same. */
+/* RailToggle (.sh-rail-toggle): the chevron beside the workspace mark; `\` does the same. */
 .sh-side-head { display: flex; align-items: flex-start; gap: 4px; }
 .sh-side-head .sh-ws { flex: 1 1 auto; }
 .sh-rail-toggle { flex: none; width: 24px; height: 24px; margin-top: 2px; display: grid; place-items: center; border: 0; border-radius: var(--sh-r); background: none; color: var(--sh-faint); cursor: pointer; padding: 0; }

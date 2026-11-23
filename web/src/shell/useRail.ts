@@ -24,16 +24,19 @@ export function writeRail(store: Storage | null, on: boolean) {
 
 /**
  * The sidebar's rail: collapsed to icons or open, remembered in localStorage. `\` toggles it,
- * except while the person is typing or holds a modifier.
+ * except while the person is typing or holds a modifier, and not while `disabled` (the narrow
+ * layout, where the sidebar is a sheet and the saved choice has no effect: toggling there would
+ * only change what a wide window shows next time).
  */
-export function useRail(): [boolean, () => void] {
+export function useRail(disabled = false): [boolean, () => void] {
   const [rail, setRail] = useState(() => readRail(window.localStorage))
   const toggle = useCallback(() => {
+    if (disabled) return
     setRail((on) => {
       writeRail(window.localStorage, !on)
       return !on
     })
-  }, [])
+  }, [disabled])
   // Backslash, not `[`: the pending bar and the swap bar step back with `[`.
   useKeys({ '\\': toggle }, [toggle])
   return [rail, toggle]

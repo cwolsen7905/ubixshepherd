@@ -1,4 +1,5 @@
 import { NAV } from './shell/nav'
+import { routeName } from './components/BackLink'
 import { canonical, formatOpen, href, parse, parseOpen, withOpen } from './router'
 
 describe('router', () => {
@@ -136,5 +137,11 @@ describe('the view table', () => {
     expect(href.guardrails()).toBe('#/guardrails')
     expect(parse(href.classifiers())).toEqual({ page: 'rules', view: 'classifiers' })
     expect(parse(href.guardrails())).toEqual({ page: 'rules', view: 'guardrails' })
+  })
+
+  it('names the placeholder pages by their own label in a back link, not Rules', () => {
+    expect(routeName(parse(href.classifiers()))).toBe('Classifiers')
+    expect(routeName(parse(href.guardrails()))).toBe('Guardrails')
+    expect(routeName(parse(href.rules()))).toBe('Rules')
   })
 })

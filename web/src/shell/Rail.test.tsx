@@ -104,6 +104,14 @@ describe('the icon rail', () => {
     expect(window.localStorage.getItem(RAIL_KEY)).toBeNull()
   })
 
+  it('leaves the saved choice alone on \\ in the narrow layout, where the rail does not show', async () => {
+    const user = userEvent.setup()
+    setWidth(600)
+    view()
+    await user.keyboard('\\')
+    expect(window.localStorage.getItem(RAIL_KEY)).toBeNull()
+  })
+
   it('toggles on \\, but not while typing, and leaves [ to the stepping keys', async () => {
     const user = userEvent.setup()
     view()

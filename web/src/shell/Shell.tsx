@@ -86,7 +86,7 @@ export function Shell({
   const sidebar = useRef<HTMLElement>(null)
   const sideId = useId()
   const compact = mode === 'sheet'
-  const [railPref, toggleRail] = useRail()
+  const [railPref, toggleRail] = useRail(compact)
   // The sheet below 760px is always the full sidebar; the rail is for the columns layout.
   const rail = railPref && !compact
   const open = compact && openFor === here
