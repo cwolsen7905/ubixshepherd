@@ -682,8 +682,18 @@ func TestWebSessionSlideAndExtendOverHTTP(t *testing.T) {
 	if want := clock().Add(webSessionTTL); !slid.Expires.Equal(want) {
 		t.Errorf("expires = %v, want %v", slid.Expires, want)
 	}
-	// A write the person made does too.
+	// A refused write to the health path is not activity: it answers 405 and the
+	// session does not move.
 	advance(time.Hour)
+	if resp, _ := b.do("POST", healthPath, nil); resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("POST health: %d", resp.StatusCode)
+	} else if len(resp.Cookies()) != 0 {
+		t.Errorf("POST health re-issued the session cookie")
+	}
+	if got := info(); !got.Expires.Equal(slid.Expires) {
+		t.Errorf("a refused health write slid the session: %v -> %v", slid.Expires, got.Expires)
+	}
+	// A write the person made does too.
 	b.do("POST", api.PathLanes+"/1/scope", map[string]any{})
 	if want := clock().Add(webSessionTTL); !info().Expires.Equal(want) {
 		t.Errorf("a write did not slide the session")

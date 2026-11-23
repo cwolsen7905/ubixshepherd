@@ -500,10 +500,12 @@ func (s *Server) webPrincipal(r *http.Request) (principal, error) {
 // slideWebSession keeps a session alive for person activity: a write that passes the
 // browser checks pushes the expiry out, and the cookie's lifetime with it (a session's
 // value never changes). Reads never do: a page polls them on timers, so a path cannot say
-// whether a person is there. The page reports real input to webActive instead.
+// whether a person is there. The page reports real input to webActive instead. The health
+// path never slides: it takes no session, and a refused write to it is not activity.
 func (s *Server) slideWebSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions ||
-		r.URL.Path == api.PathWebSessionExtend || r.URL.Path == api.PathWebSessionActive {
+		r.URL.Path == api.PathWebSessionExtend || r.URL.Path == api.PathWebSessionActive ||
+		r.URL.Path == healthPath {
 		return
 	}
 	c, err := r.Cookie(s.cookieName(r))
