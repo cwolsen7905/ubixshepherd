@@ -103,14 +103,58 @@ func TestHealthLoopbackHostCheck(t *testing.T) {
 
 // On the public listener the endpoint answers for the public URL and for a bare pod
 // or IP address (what a kubelet sends), still with no credential; every other route
-// keeps its auth exactly as before. The request goes straight at the daemon's handler
-// marked public, past the guard: the guard's own bypass for this path is a hunk on
-// another lane (internal/login/guard.go), covered by its tests.
+// keeps its auth exactly as before. The first half goes through the real public
+// handler including the login guard, with a pod IP as RemoteAddr and no proxy
+// headers, the way a kubelet's probe arrives.
 func TestHealthPublicListener(t *testing.T) {
 	r := newHRig(t)
 	h := r.s.hostedNow()
 	if h == nil {
 		t.Fatal("hosted mode not prepared")
+	}
+	// Through the real public listener stack: kubelet-style, no proxy headers.
+	pubProbe := func(t *testing.T, method, path, host string) (int, string, http.Header) {
+		t.Helper()
+		req, _ := http.NewRequest(method, "http://"+host+path, nil)
+		req.RemoteAddr = "10.244.1.1:41230" // the kubelet, not a trusted proxy
+		rec := httptest.NewRecorder()
+		r.s.PublicHandler().ServeHTTP(rec, req)
+		return rec.Code, rec.Body.String(), rec.Header()
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		code, body, hdr := pubProbe(t, method, healthPath, "10.244.1.23:8443")
+		if code != http.StatusOK {
+			t.Fatalf("kubelet-style %s: status %d", method, code)
+		}
+		if method == http.MethodGet && body != "up\n" {
+			t.Errorf("kubelet-style GET: body %q", body)
+		}
+		if cc := hdr.Get("Cache-Control"); cc != "no-store" {
+			t.Errorf("kubelet-style %s: Cache-Control %q", method, cc)
+		}
+		if no := hdr.Get("X-Content-Type-Options"); no != "nosniff" {
+			t.Errorf("kubelet-style %s: X-Content-Type-Options %q", method, no)
+		}
+	}
+	if code, _, _ := pubProbe(t, http.MethodPost, healthPath, "10.244.1.23:8443"); code != http.StatusForbidden {
+		t.Errorf("kubelet-style POST: status %d (the guard refuses it before the handler)", code)
+	}
+	// A proxied request naming the public host reaches the handler, which refuses
+	// the method itself.
+	proxied := func(t *testing.T, method string) int {
+		t.Helper()
+		req, _ := http.NewRequest(method, "http://shepherd.example.com"+healthPath, nil)
+		req.RemoteAddr = "127.0.0.1:41230"
+		req.Header.Set("X-Forwarded-Proto", "https")
+		rec := httptest.NewRecorder()
+		r.s.PublicHandler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := proxied(t, http.MethodPost); code != http.StatusMethodNotAllowed {
+		t.Errorf("proxied public POST: status %d", code)
+	}
+	if code := proxied(t, http.MethodGet); code != http.StatusOK {
+		t.Errorf("proxied public GET: status %d", code)
 	}
 	serve := func(t *testing.T, method, host, path string, hdr map[string]string) (int, string, http.Header) {
 		t.Helper()
