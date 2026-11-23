@@ -161,6 +161,32 @@ func TestUsageAndErrors(t *testing.T) {
 	}
 }
 
+func TestLoginLogoutRegisteredAndDispatch(t *testing.T) {
+	seen := map[string]bool{}
+	for _, c := range commands() {
+		if c.name != "login" && c.name != "logout" {
+			continue
+		}
+		seen[c.name] = true
+		if c.summary == "" || c.usage == "" || c.run == nil {
+			t.Errorf("%s is registered without a summary, usage or runner", c.name)
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("login and logout are not both registered: %v", seen)
+	}
+	h := newHarness(t, "", false)
+	if code := h.run("help"); code != 0 || !strings.Contains(h.out.String(), "login") || !strings.Contains(h.out.String(), "logout") {
+		t.Errorf("help lists neither login nor logout: %d\n%s", code, h.out)
+	}
+	if code := h.run("login"); code != 2 || !strings.Contains(h.err.String(), "shepherd login") {
+		t.Errorf("login did not dispatch to its runner: %d %s", code, h.err)
+	}
+	if code := h.run("logout"); code != 2 || !strings.Contains(h.err.String(), "shepherd logout") {
+		t.Errorf("logout did not dispatch to its runner: %d %s", code, h.err)
+	}
+}
+
 func TestNoDaemon(t *testing.T) {
 	env := Env{Stdout: io.Discard, Stderr: &bytes.Buffer{}, Layout: paths.Layout{Home: t.TempDir()}, Cwd: t.TempDir()}
 	if code := Run(context.Background(), env, []string{"status"}); code != 1 ||

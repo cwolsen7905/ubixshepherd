@@ -125,6 +125,10 @@ func commands() []command {
 		{"where", "Show the workspace, repo and lane for a directory", "shepherd where [dir] [--json]", runWhere},
 		{"host", "List the machines this one can reach, and check that one answers",
 			"shepherd host list | check [NAME]", runHost},
+		{"login", "Log in to a hosted daemon, keeping this machine's device token in its home",
+			"shepherd login [URL] [--name NAME] [--password-stdin]", runLogin},
+		{"logout", "Log out of a hosted daemon, revoking this machine's token and forgetting it here",
+			"shepherd logout [URL]", runLogout},
 		{"version", "Print the version", "shepherd version", runVersion},
 	}
 }
