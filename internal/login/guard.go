@@ -39,6 +39,13 @@ func Guard(p *config.Public, isOperator func(*http.Request) bool, next http.Hand
 		h := w.Header()
 		h.Set("Strict-Transport-Security", "max-age=31536000")
 		h.Set("X-Content-Type-Options", "nosniff")
+		// Orchestrator probes reach the pod address directly, with no proxy
+		// headers and a Host that is not the public one. The health handler is
+		// unauthenticated and reveals nothing, so it passes before those checks.
+		if r.URL.Path == "/v1/health" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		conn, _, _ := strings.Cut(r.RemoteAddr, "%")
 		var ip netip.Addr
 		if ap, err := netip.ParseAddrPort(conn); err == nil {
