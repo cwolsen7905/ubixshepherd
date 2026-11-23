@@ -343,9 +343,9 @@ describe('timeline', () => {
     const run = feedItem({ id: 8, kind: 'run_passed', created: '2026-10-08T10:02:00Z' })
     // load, then a stream or reconnect page that repeats it
     const once3 = entries({ items: [d, d, run, d], last: 8 })
-    expect(timeline(events, once3).map((i) => i.key)).toEqual(['f7', 'f8'])
+    expect(timeline(events, once3).map((i) => i.key)).toEqual(['d1', 'f7', 'f8'])
     const again = [...entries({ items: [d, run], last: 8 }), ...entries({ items: [d], last: 8 })]
-    expect(timeline(events, again).map((i) => i.key)).toEqual(['f7', 'f8'])
+    expect(timeline(events, again).map((i) => i.key)).toEqual(['d1', 'f7', 'f8'])
   })
 
   it('shows a decision once even if it was written under two feed ids', () => {
@@ -358,6 +358,6 @@ describe('timeline', () => {
       ],
       last: 10,
     })
-    expect(timeline(events, feed).map((i) => i.key)).toEqual(['f7', 'f10'])
+    expect(timeline(events, feed).map((i) => i.key)).toEqual(['d1', 'f7', 'f10'])
   })
 })
