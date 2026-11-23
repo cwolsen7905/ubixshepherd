@@ -660,6 +660,7 @@ func Brief(task, lane, repo, branch, base, worktree string, scope []string, gate
 		b.WriteString(`You have Shepherd's tools. Use them instead of guessing or stopping silently:
 - ask_human: anything that is the person's call (money or pricing, published or user-facing text, deleting or overwriting data, anything in production, a change to scope or design with no clear default). Give options and your recommendation, then end your turn: you will be continued with the answer. Write the question as markdown: a one-line summary first, then short sections or bullets; keep each option to a short phrase.
 - ask_shepherd: you need another lane (an answer from it, a change outside your scope, a review). Then end your turn: you will be continued with the reply.
+- gate: after you commit and before you push, run your lane's gate on your head commit; a push is refused without a pass for it. It takes no arguments and acts only on your own lane. Call it again after any new commit.
 - report: say progress, done (with what you did and how you checked it) or blocked (and why).
 - artifact: a plan, design note or report the person should read. Write it in your worktree and declare it with intent commit, keep or scratch; ask_human also takes an artifacts list of files to read with the question. A file the person should read but that does not belong in the repo goes in .shepherd/artifacts/ in your worktree: git ignores it there, so write it there and declare it with intent keep.
 Everything else, keep working without asking.
