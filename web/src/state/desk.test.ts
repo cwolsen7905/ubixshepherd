@@ -336,4 +336,28 @@ describe('timeline', () => {
     })
     expect(timeline(events, feed).map((i) => i.key)).toEqual(['d1', 'f1', 'f2'])
   })
+
+  it('shows one row per feed id, however the same page arrived twice', () => {
+    const events = [deskEvent({ seq: 1, created: '2026-10-08T10:00:00Z' })]
+    const d = feedItem({ id: 7, kind: 'decision', ref: 538, created: '2026-10-08T10:01:00Z' })
+    const run = feedItem({ id: 8, kind: 'run_passed', created: '2026-10-08T10:02:00Z' })
+    // load, then a stream or reconnect page that repeats it
+    const once3 = entries({ items: [d, d, run, d], last: 8 })
+    expect(timeline(events, once3).map((i) => i.key)).toEqual(['d1', 'f7', 'f8'])
+    const again = [...entries({ items: [d, run], last: 8 }), ...entries({ items: [d], last: 8 })]
+    expect(timeline(events, again).map((i) => i.key)).toEqual(['d1', 'f7', 'f8'])
+  })
+
+  it('shows a decision once even if it was written under two feed ids', () => {
+    const events = [deskEvent({ seq: 1, created: '2026-10-08T10:00:00Z' })]
+    const feed = entries({
+      items: [
+        feedItem({ id: 7, kind: 'decision', ref: 538, created: '2026-10-08T10:01:00Z' }),
+        feedItem({ id: 9, kind: 'decision', ref: 538, created: '2026-10-08T10:01:00Z' }),
+        feedItem({ id: 10, kind: 'decision', ref: 539, created: '2026-10-08T10:01:00Z' }),
+      ],
+      last: 10,
+    })
+    expect(timeline(events, feed).map((i) => i.key)).toEqual(['d1', 'f7', 'f10'])
+  })
 })

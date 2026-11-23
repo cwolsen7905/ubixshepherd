@@ -151,7 +151,9 @@ function ChatThread({
   const rows = useMemo(() => groupThread(items), [items])
   const open = useMemo(() => new Map(live.decisions.map((x) => [x.id, x])), [live.decisions])
   // Open decisions whose "asked" row is not in the loaded thread still wait on the person.
-  const shown = new Set(items.flatMap((it) => (it.type === 'feed' && it.f.event === 'decision_asked' ? [it.f.ref ?? 0] : [])))
+  // Counted over the whole thread, not the topic view: a decision whose row the filter hides
+  // is hidden, not unplaced, so it never shows as a second card.
+  const shown = new Set(all.flatMap((it) => (it.type === 'feed' && it.f.event === 'decision_asked' ? [it.f.ref ?? 0] : [])))
   const unplaced = live.decisions.filter((x) => !shown.has(x.id))
 
   // The questions the desk asked that are still open: each shows Reply here and Skip under
