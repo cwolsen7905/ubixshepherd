@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ubixsys/ubixshepherd/internal/attribution"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
@@ -97,7 +98,7 @@ func (r *Runner) ship(ctx context.Context, run store.Run, lane store.Lane) {
 	}
 	lf.GateTries = 0
 	r.Store.PutLaneForge(ctx, lf)
-	r.publish(ctx, lane, repo, prof.Gate, fmt.Sprintf("run %d", run.ID))
+	r.publish(ctx, lane, repo, prof.Gate, fmt.Sprintf("run %d", run.ID), &run)
 }
 
 // Shipped is what an explicit ship did.
@@ -182,7 +183,11 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		r.diagnoseLane(ctx, lane, diagnoseStandards(tail))
 		return out, refuse("not shipping lane %s: %s", lane.Name, tail)
 	}
-	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship")
+	// The commits being shipped name the run that made them in their Shepherd-Run
+	// trailers; the newest of those is credited. With none, the footer is left off
+	// rather than naming a run that may not have made the work.
+	last := r.trailerRun(ctx, lane)
+	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship", last)
 	res.Lane, res.Commits = out.Lane, out.Commits
 	return res, nil
 }
@@ -277,8 +282,9 @@ func changedFilesErr(ctx context.Context, lane store.Lane) ([]string, error) {
 
 // publish pushes a lane whose gate has passed and opens its merge request, or says the
 // open one is updated, telling the feed either way. from says what shipped it, for the
-// request's description ("run 12", "shepherd lane ship").
-func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, gate, from string) Shipped {
+// request's description ("run 12", "shepherd lane ship"). run is the agent run that
+// made the work, when there is one: the description then ends with its attribution line.
+func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, gate, from string, run *store.Run) Shipped {
 	out := Shipped{Lane: lane.Name}
 	say := func(kind, format string, a ...any) Shipped {
 		out.Message = fmt.Sprintf(format, a...)
@@ -304,6 +310,9 @@ func (r *Runner) publish(ctx context.Context, lane store.Lane, repo store.Repo, 
 		return say(store.FeedMR, "pushed lane %s (gate `%s` passed); !%d updated: %s", lane.Name, gate, mr.IID, mr.URL)
 	}
 	title, body := r.mrText(ctx, lane, gate, from)
+	if run != nil {
+		body = attribution.AddFooter(body, attribution.Who{Run: run.ID, Agent: run.Agent, Model: run.Model})
+	}
 	mr, err = f.CreateMR(ctx, lane.Branch, lane.Base, title, body)
 	if err != nil {
 		r.diagnoseLane(ctx, lane, store.Diagnosis{Kind: store.DiagMergeRefused, Evidence: err.Error(),
@@ -501,6 +510,31 @@ func (r *Runner) mrText(ctx context.Context, lane store.Lane, gate, from string)
 	b.WriteString(r.autoWidenMR(ctx, lane))
 	fmt.Fprintf(&b, "\nScope: `%s`. Shepherd does not merge; that is yours.\n", strings.Join(lane.Scope, "`, `"))
 	return title, b.String()
+}
+
+// trailerRun is the run named by the newest Shepherd-Run trailer among the lane's
+// commits beyond its base, or nil. Commits are read newest first, and within a commit a
+// later run's trailer (added after the first run's when it amended the commit) wins.
+func (r *Runner) trailerRun(ctx context.Context, lane store.Lane) *store.Run {
+	base := lane.Base
+	if git.RefExists(ctx, lane.Worktree, "refs/remotes/origin/"+base) {
+		base = "origin/" + base
+	}
+	out, err := git.Run(ctx, lane.Worktree, "log", "--format=%x00%(trailers:key=Shepherd-Run,valueonly)", base+"..HEAD")
+	if err != nil {
+		return nil
+	}
+	for _, commit := range strings.Split(out, "\x00") {
+		lines := strings.Split(commit, "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			if id := attribution.ParseRun(lines[i]); id > 0 {
+				if run, err := r.Store.Run(ctx, id); err == nil && run.LaneID == lane.ID {
+					return &run
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // outsideDiagnosis is the diagnosis of commits that change files outside the lane's scope.

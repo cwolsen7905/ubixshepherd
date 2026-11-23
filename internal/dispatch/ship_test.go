@@ -86,8 +86,11 @@ func TestShipPushesAndOpensTheMR(t *testing.T) {
 	if !originHas(t, f, "work") {
 		t.Error("the lane was not pushed")
 	}
-	if len(sf.created) != 1 || !strings.HasPrefix(sf.created[0], "work -> main: agent work") || !strings.Contains(sf.created[0], "The gate, `true`, passed") || strings.Contains(sf.created[0], "claude") {
+	if len(sf.created) != 1 || !strings.HasPrefix(sf.created[0], "work -> main: agent work") || !strings.Contains(sf.created[0], "The gate, `true`, passed") {
 		t.Errorf("created = %q", sf.created)
+	}
+	if want := "Made by claude"; !strings.Contains(sf.created[0], want) || !strings.Contains(sf.created[0], fmt.Sprintf("in Shepherd run %d.\n", run.ID)) {
+		t.Errorf("no attribution footer: %q", sf.created[0])
 	}
 }
 
@@ -414,4 +417,47 @@ func TestChangedFilesErrFailsClosed(t *testing.T) {
 	if _, err := f.runner.outsideScopeErr(ctx, bad); err == nil {
 		t.Error("outsideScopeErr = nil error for a worktree git cannot read")
 	}
+}
+
+// lane ship credits the run named by the shipped commits' Shepherd-Run trailers, and
+// leaves the footer off when no commit names one.
+func TestShipLaneCreditsTheTrailerRun(t *testing.T) {
+	ctx := context.Background()
+	t.Run("trailered", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		run, err := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Model: "opus", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		commitInLane(t, f, "src/a.txt", fmt.Sprintf("feat: a\n\nShepherd-Run: %d", run.ID))
+		if _, err := f.runner.Ship(ctx, f.lane.ID); err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf("Made by claude (opus) in Shepherd run %d.", run.ID); len(sf.created) != 1 || !strings.Contains(sf.created[0], want) {
+			t.Errorf("created = %q, want %q", sf.created, want)
+		}
+	})
+	t.Run("amended by a later run", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		first, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Model: "opus", Prompt: "x", State: store.RunFailed, Log: "l"})
+		later, _ := f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "codex", Model: "gpt-5.5", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+		commitInLane(t, f, "src/a.txt", fmt.Sprintf("feat: a\n\nShepherd-Run: %d\nShepherd-Run: %d", first.ID, later.ID))
+		if _, err := f.runner.Ship(ctx, f.lane.ID); err != nil {
+			t.Fatal(err)
+		}
+		if want := fmt.Sprintf("Made by codex (gpt-5.5) in Shepherd run %d.", later.ID); len(sf.created) != 1 || !strings.Contains(sf.created[0], want) {
+			t.Errorf("created = %q, want %q", sf.created, want)
+		}
+	})
+	t.Run("no trailer", func(t *testing.T) {
+		f, sf := shipFixture(t, "ok", pushes)
+		f.st.CreateRun(ctx, store.Run{LaneID: f.lane.ID, Agent: "claude", Prompt: "x", State: store.RunSucceeded, Log: "l"})
+		commitInLane(t, f, "src/a.txt", "feat: by hand")
+		if _, err := f.runner.Ship(ctx, f.lane.ID); err != nil {
+			t.Fatal(err)
+		}
+		if len(sf.created) != 1 || strings.Contains(sf.created[0], "Made by") {
+			t.Errorf("created = %q", sf.created)
+		}
+	})
 }

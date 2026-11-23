@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/ubixsys/ubixshepherd/internal/attribution"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/git"
@@ -223,12 +224,25 @@ func forbiddenMessage(ctx context.Context, dir, from, to string, patterns []stri
 		}
 		for _, c := range strings.Split(out, "\x01") {
 			sha, msg, _ := strings.Cut(strings.TrimSpace(c), "\x00")
+			msg = withoutOwnTrailers(msg)
 			if m := re.FindString(msg); m != "" {
 				return fmt.Sprintf("commit %s's message contains %q, which this repo does not allow (pattern %s)", sha, m, p), nil
 			}
 		}
 	}
 	return "", nil
+}
+
+// withoutOwnTrailers drops the attribution lines Shepherd's commit hook adds, so a
+// repo's forbid pattern for co-author credit does not refuse every agent push.
+func withoutOwnTrailers(msg string) string {
+	var keep []string
+	for _, l := range strings.Split(msg, "\n") {
+		if !attribution.Own(l) {
+			keep = append(keep, l)
+		}
+	}
+	return strings.Join(keep, "\n")
 }
 
 // newCommitsFrom is where the commits this push adds start, for judging messages: the
@@ -295,6 +309,41 @@ exec "$SHEPHERD" hook pre-push "$@"
 }
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// commitHookName is the hook that adds an agent run's attribution trailers.
+const commitHookName = "prepare-commit-msg"
+
+// CommitHookScript is the prepare-commit-msg hook.
+func CommitHookScript(exe string) []byte {
+	return []byte(`#!/bin/sh
+# ` + hookMarker + `. Adds attribution trailers to commits made in an agent's run;
+# commits made by hand are left alone.
+SHEPHERD=` + shQuote(exe) + `
+[ -x "$SHEPHERD" ] || SHEPHERD=shepherd
+exec "$SHEPHERD" hook prepare-commit-msg "$@"
+`)
+}
+
+// installCommitHook writes the prepare-commit-msg hook next to the pre-push one, unless
+// another hook of that name is there. It reports whether Shepherd's hook is in place.
+func installCommitHook(ctx context.Context, worktree, exe string) (bool, error) {
+	st, err := Hook(ctx, worktree)
+	if err != nil {
+		return false, err
+	}
+	p := filepath.Join(filepath.Dir(st.Path), commitHookName)
+	b, err := os.ReadFile(p)
+	switch {
+	case err == nil && !bytes.Contains(b, []byte(hookMarker)):
+		return false, nil
+	case err != nil && !errors.Is(err, os.ErrNotExist):
+		return false, err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return false, err
+	}
+	return true, os.WriteFile(p, CommitHookScript(exe), 0o755)
+}
 
 // HookLine is what to add to an existing pre-push hook to chain Shepherd's check.
 const HookLine = `shepherd hook pre-push "$@" || exit 1`
@@ -384,6 +433,22 @@ func (f *Fold) ensureHook(ctx context.Context, repo, worktree string) string {
 	if f.Exe == "" {
 		return ""
 	}
+	note := f.ensurePrePush(ctx, worktree)
+	// Attribution needs no scope decision: install it where the hooks are private. Its
+	// failure is added to the pre-push note, never allowed to hide it.
+	if st, err := Hook(ctx, worktree); err == nil && !st.Tracked {
+		if _, cerr := installCommitHook(ctx, worktree, f.Exe); cerr != nil {
+			if note != "" {
+				note += "; "
+			}
+			note += "could not install the attribution hook: " + cerr.Error()
+		}
+	}
+	return note
+}
+
+// ensurePrePush is the pre-push half of ensureHook.
+func (f *Fold) ensurePrePush(ctx context.Context, worktree string) string {
 	st, err := Hook(ctx, worktree)
 	switch {
 	case err != nil:

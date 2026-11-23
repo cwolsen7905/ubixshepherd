@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/attribution"
 	"github.com/ubixsys/ubixshepherd/internal/client"
 	"github.com/ubixsys/ubixshepherd/internal/dispatch"
 	"github.com/ubixsys/ubixshepherd/internal/fold"
@@ -20,6 +22,9 @@ func runHook(ctx context.Context, env Env, args []string) error {
 	}
 	if args[0] == "pre-push" {
 		return hookPrePush(ctx, env, args[1:])
+	}
+	if args[0] == "prepare-commit-msg" {
+		return hookPrepareCommitMsg(ctx, env, args[1:])
 	}
 	fs := flags("hook "+args[0], env)
 	repo := fs.String("repo", "", "repo, by its name in the workspace (default: the one you are in)")
@@ -105,6 +110,45 @@ func hookPrePush(ctx context.Context, env Env, args []string) error {
 		fmt.Fprintln(env.Stderr, "Widen the scope with a new lane, move the change to the lane that owns it, or skip once: git push --no-verify")
 	}
 	return errSilent
+}
+
+// hookLookupTimeout bounds the hook's question to the daemon about the run: a wedged or
+// unreachable daemon must not hold up a commit for the client's own 5-minute timeout.
+var hookLookupTimeout = 3 * time.Second
+
+// hookPrepareCommitMsg is what the installed prepare-commit-msg hook runs: git gives it
+// the message file. In an agent's run (SHEPHERD_RUN set) it adds the attribution
+// trailers; a commit the person makes by hand is left alone. It never fails a commit: if
+// the daemon cannot say which agent and model, only Shepherd-Run is added.
+func hookPrepareCommitMsg(ctx context.Context, env Env, args []string) error {
+	if len(args) == 0 {
+		return errUsage
+	}
+	run := attribution.ParseRun(os.Getenv(dispatch.EnvRun))
+	if run == 0 {
+		return nil
+	}
+	who := attribution.Who{Run: run}
+	env.Client = "hook"
+	// Only the run's own URL and token: a commit never starts or looks for a daemon.
+	if os.Getenv(dispatch.EnvToken) == "" || os.Getenv(dispatch.EnvURL) == "" {
+		return applyTrailers(ctx, env, args[0], who)
+	}
+	if c, err := hookClient(ctx, env); err == nil {
+		lookup, cancel := context.WithTimeout(ctx, hookLookupTimeout)
+		if v, err := c.Run(lookup, run); err == nil {
+			who.Agent, who.Model = v.Agent, v.Model
+		}
+		cancel()
+	}
+	return applyTrailers(ctx, env, args[0], who)
+}
+
+func applyTrailers(ctx context.Context, env Env, file string, who attribution.Who) error {
+	if err := attribution.Apply(ctx, file, who); err != nil {
+		fmt.Fprintf(env.Stderr, "shepherd: could not add attribution trailers: %v\n", err)
+	}
+	return nil
 }
 
 // hookClient is the daemon client the pre-push hook calls with. A push by an agent

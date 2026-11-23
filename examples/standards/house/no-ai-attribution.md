@@ -1,10 +1,10 @@
 ---
 level: must
 when: [commit]
-check: '! git log "$SHEPHERD_BASE_REF"..HEAD --format=%B | grep -iE "co-authored-by:.*(claude|anthropic|copilot|openai|gpt|gemini|cursor)|generated (with|by) .*(claude|ai|copilot|gpt)"'
+check: 'bad=0; for c in $(git rev-list "$SHEPHERD_BASE_REF"..HEAD); do m=$(git log -1 --format=%B "$c"); if printf "%s\n" "$m" | grep -iqE "^shepherd-model:" && ! printf "%s\n" "$m" | grep -iqE "^co-authored-by:"; then bad=1; fi; done; [ "$bad" = 0 ]'
 ---
-Never credit an AI tool in commits, merge requests or code: no Co-Authored-By trailers for it, no "generated with" lines.
+Commits an agent made in a Shepherd run keep their attribution: the Co-Authored-By, Shepherd-Run and Shepherd-Model trailers Shepherd adds. Do not strip them.
 
 ## Why
 
-The person who merges the work owns it; attribution lines add noise and are not wanted in the history.
+The person decided that knowing which agent and model did the work is useful, so the old rule against crediting an AI tool is reversed. Shepherd adds the trailers itself; see docs/attribution.md.
