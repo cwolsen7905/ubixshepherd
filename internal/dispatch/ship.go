@@ -183,7 +183,12 @@ func (r *Runner) Ship(ctx context.Context, laneID int64) (Shipped, error) {
 		r.diagnoseLane(ctx, lane, diagnoseStandards(tail))
 		return out, refuse("not shipping lane %s: %s", lane.Name, tail)
 	}
-	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship", nil)
+	// The lane's newest run made the commits being shipped, so it is the one credited.
+	var last *store.Run
+	if runs, err := r.Store.Runs(ctx, lane.ID, "", 1); err == nil && len(runs) > 0 {
+		last = &runs[0]
+	}
+	res := r.publish(ctx, lane, repo, prof.Gate, "shepherd lane ship", last)
 	res.Lane, res.Commits = out.Lane, out.Commits
 	return res, nil
 }

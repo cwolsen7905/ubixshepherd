@@ -22,6 +22,7 @@ added; the commit never fails because of it.
 ## Merge request footer
 
 A merge request Shepherd opens ends with one line: `Made by <agent> (<model>) in Shepherd run <id>.`
+After a run ships its own lane that is the run; for `shepherd lane ship` it is the lane's newest run.
 
 ## House standard
 

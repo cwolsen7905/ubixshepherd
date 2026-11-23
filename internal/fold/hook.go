@@ -419,13 +419,23 @@ func (f *Fold) ensureHook(ctx context.Context, repo, worktree string) string {
 	if f.Exe == "" {
 		return ""
 	}
-	st, err := Hook(ctx, worktree)
-	if err == nil && !st.Tracked {
-		// Attribution needs no scope decision: install it where the hooks are private.
+	note := f.ensurePrePush(ctx, worktree)
+	// Attribution needs no scope decision: install it where the hooks are private. Its
+	// failure is added to the pre-push note, never allowed to hide it.
+	if st, err := Hook(ctx, worktree); err == nil && !st.Tracked {
 		if _, cerr := installCommitHook(ctx, worktree, f.Exe); cerr != nil {
-			return "could not install the attribution hook: " + cerr.Error()
+			if note != "" {
+				note += "; "
+			}
+			note += "could not install the attribution hook: " + cerr.Error()
 		}
 	}
+	return note
+}
+
+// ensurePrePush is the pre-push half of ensureHook.
+func (f *Fold) ensurePrePush(ctx context.Context, worktree string) string {
+	st, err := Hook(ctx, worktree)
 	switch {
 	case err != nil:
 		return "could not check the pre-push hook: " + err.Error()
