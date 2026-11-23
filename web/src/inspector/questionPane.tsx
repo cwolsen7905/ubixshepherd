@@ -31,9 +31,18 @@ export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (w
     return () => window.clearTimeout(first)
   }, [read])
   const workspaces = snap.status?.workspaces ?? []
+  // The questions cleared here, so the last one can hand the inspector on to the next waiting item.
+  const cleared = useRef<Set<number>>(new Set())
+  // A cleared row leaves the list at once, before the daemon's re-read answers. The light
+  // follows it through onSelected, but the just-cleared question is still in the read, so
+  // mirror the cleared ids in state (refs cannot be read during render) and keep the full
+  // text off a question the rows have already dropped.
+  const [hidden, setHidden] = useState<ReadonlySet<number>>(() => new Set())
   // The lit question's own full text, above the rows: the rows stay one line, so a long
   // question would otherwise read only as its truncated title. A click on another row lights
   // it there and moves the full text with it; a new id from outside takes the light back.
+  // The list reports every move of the light (including the row it lights after a clear),
+  // so this follows it and never resets it on a clear.
   const [picked, setPicked] = useState<number | null>(null)
   const [prevId, setPrevId] = useState(id)
   if (id !== prevId) {
@@ -41,7 +50,8 @@ export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (w
     setPicked(null)
   }
   const open = got?.filter((x) => x.state === 'open') ?? []
-  const lit = open.find((x) => x.id === (picked ?? id)) ?? open[0]
+  const shown = open.filter((x) => !hidden.has(x.id))
+  const lit = shown.find((x) => x.id === (picked ?? id)) ?? shown[0]
   // A reply posts to the thread of its own question's workspace, one thread per workspace.
   const threads = useRef(new Map<number, DeskThread>())
   const threadFor = useCallback(
@@ -55,11 +65,9 @@ export function QuestionPane({ id, make = defaultMake }: { id: number; make?: (w
     },
     [make, workspaces.length],
   )
-  // The questions cleared here, so the last one can hand the inspector on to the next waiting item.
-  const cleared = useRef<Set<number>>(new Set())
   const onCleared = (clearedId: number) => {
     cleared.current.add(clearedId)
-    if (picked === clearedId) setPicked(null)
+    setHidden((h) => (h.has(clearedId) ? h : new Set(h).add(clearedId)))
     read()
     if (open.every((x) => cleared.current.has(x.id))) {
       const key = waitingKey({ kind: 'question', action: 'reply', question_id: clearedId, title: '' })

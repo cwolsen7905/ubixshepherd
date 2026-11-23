@@ -65,6 +65,19 @@ describe('QuestionPane', () => {
     expect(within(full()).getByText('It needs the second line too.')).toBeInTheDocument()
     expect(full().textContent).toContain('run-a-very-long-command --with --many --flags')
   })
+  it('moves the full text with the light when the lit row is cleared', async () => {
+    const user = userEvent.setup()
+    vi.mocked(deskQuestions.skip).mockResolvedValue(undefined as never)
+    vi.mocked(deskQuestions.list).mockResolvedValue([q, other])
+    shown()
+    await vi.waitFor(() => expect(document.querySelector('[data-component="QuestionList"]')).not.toBeNull())
+    await user.click(within(list()).getByText('Should I tag the release?'))
+    await vi.waitFor(() => expect(full().textContent).toContain('Should I tag the release?'))
+    const row = within(list()).getByText('Should I tag the release?').closest('li') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Skip' }))
+    await vi.waitFor(() => expect(full().textContent).toContain('Which branch should I cut from?'))
+    expect(full().textContent).not.toContain('Should I tag the release?')
+  })
   it('shows the empty state when no question is open', async () => {
     vi.mocked(deskQuestions.list).mockResolvedValue([])
     shown()
