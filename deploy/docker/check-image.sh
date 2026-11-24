@@ -9,7 +9,7 @@ for platform in linux/amd64 linux/arm64; do
   run() { docker run --rm --platform "$platform" "$@"; }
   echo "== $platform"
   [ "$(run --entrypoint id "$img" -u)" = 10001 ]
-  run --entrypoint sh "$img" -c 'git --version && glab --version && gh --version && ssh -V && sqlite3 --version'
+  run --entrypoint sh "$img" -c 'git --version && glab --version && gh --version && ssh -V && sqlite3 --version && claude --version && opencode --version'
   got="$(run --entrypoint shepherd "$img" version)"
   [ "$got" = "shepherd $tag" ] || { echo "tag $tag, but the image reports: $got"; exit 1; }
 done

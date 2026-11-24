@@ -11,6 +11,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- The container image carries the Claude Code and OpenCode CLIs, pinned and checksum-verified
+  for amd64 and arm64, so a worker pod can run agents. `check-image.sh` checks both. The
+  `shepherd-credentials` Secret keys, including the ssh key and known hosts, are documented
+  in [docs/kubernetes.md](docs/kubernetes.md).
 - OpenCode runs in a repo with `autonomy.push: agent` may run `glab mr create`, so the
   agent can open its lane's merge request; approve, note and merge stay denied. A new
   per-repo `agent.opencode.allow` list adds bash command patterns to an OpenCode run's
