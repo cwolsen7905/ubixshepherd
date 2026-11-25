@@ -101,9 +101,8 @@ token. Both are rows in the store, so they hold across a restart.
 
 ## Using the CLI against a hosted daemon
 
-The login and logout code is built and tested, but the two commands are not registered in the
-command table yet, so `shepherd login` is unknown until a follow-up lands. `--host https://...`
-works once a token exists.
+`shepherd login` gets a device token for the address; `--host https://...` works once a
+token exists.
 
 ```
 shepherd login https://shepherd.example.com        # or: shepherd --host https://shepherd.example.com login
@@ -206,7 +205,7 @@ work lives only there.
 |---|---|---|
 | A single host | `deploy/systemd/shepherd.service`, `deploy/systemd/README-launchd.md` | The release binary as a system service under its own user, a stop timeout of two minutes. On a Mac, `shepherd daemon install` writes the launchd agent |
 | Docker Compose | `deploy/compose/` | One container, a home volume and a workspace volume, a Caddy container in front holding the certificate, credentials bind-mounted read-only as files, `stop_grace_period: 2m` |
-| Kubernetes | `deploy/kubernetes/` | One namespace, `shepherd`. A StatefulSet of one replica with a ReadWriteOnce claim, a headless Service, an Ingress with TLS, a NetworkPolicy, a Secret `shepherd-credentials` you create from files (or the optional `deploy/kubernetes/external-secrets` template, with no values, for the External Secrets Operator), and `terminationGracePeriodSeconds: 120`. Apply `deploy/kubernetes/namespace.yaml` and create the Secret first, then apply with `kubectl apply -k deploy/kubernetes` after editing the host name, image tag, ingress class, storage class and `SHEPHERD_TRUSTED_PROXIES` (the ingress controller's pod CIDR; the manifest ships a placeholder the image refuses, because every address listed may claim a request came over TLS) |
+| Kubernetes | `deploy/charts/shepherd/` | A Helm chart: a StatefulSet of one replica with a ReadWriteOnce claim, a headless Service, an Ingress with TLS, a NetworkPolicy, a backup CronJob, and the Secret `shepherd-credentials` you create from files (or, with `credentials.externalSecret.enabled`, an ExternalSecret for the External Secrets Operator). Install and values: [kubernetes.md](kubernetes.md) |
 
 ### The image
 
@@ -217,7 +216,9 @@ as PID 1, so a stop reaches the daemon as SIGTERM and its drain runs. Releases p
 cosign: `cosign verify ghcr.io/ubixsys/ubixshepherd:<tag> --certificate-identity-regexp
 'https://github.com/ubixsys/ubixshepherd/.github/workflows/release.yml@.*'
 --certificate-oidc-issuer https://token.actions.githubusercontent.com`.
-A repository variable, `IMAGE_MIRROR_REPOSITORY`, adds a second registry.
+A repository variable, `IMAGE_MIRROR_REPOSITORY`, adds a second registry. Between releases,
+the internal forge's CI builds an unsigned development image from each green `dev` push into
+its own registry, tagged `dev` and with the commit's short sha; pin a deployment to the sha.
 
 | Volume or path | Holds |
 |---|---|
@@ -252,10 +253,10 @@ only once an account exists.
 
 Backups are crash-consistent. The order matters: first a SQLite online backup of the store
 into the home (never a file copy of a live database), then a snapshot of the volume holding
-the home and workspace, so the snapshot holds a clean store copy. `deploy/kubernetes/backup.yaml`
-is a CronJob that does both: an init container runs `sqlite3 .backup`, checks the copy and
-keeps the newest seven under `backups/` in the home, and only then a VolumeSnapshot is
-created. On other hosts, run the same `sqlite3 "$SHEPHERD_HOME/shepherd.db" ".backup <file>"`
+the home and workspace, so the snapshot holds a clean store copy. The chart's backup CronJob
+runs `sqlite3 .backup`, checks the copy and keeps the newest seven under `backups/` in the
+home; with `backup.snapshot.enabled` it then creates a VolumeSnapshot, only if the backup
+passed. Without snapshots, copy `backups/` off the volume with whatever you already use. On other hosts, run the same `sqlite3 "$SHEPHERD_HOME/shepherd.db" ".backup <file>"`
 before your volume or filesystem snapshot.
 
 A worktree caught mid-write by the snapshot may be torn. After a restore, with the daemon

@@ -1,7 +1,0 @@
-# Optional: needs the External Secrets Operator and a store. Edit the store name and the
-# remote keys in externalsecret.yaml first, then `kubectl apply -k deploy/kubernetes/external-secrets`.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: shepherd
-resources:
-  - externalsecret.yaml

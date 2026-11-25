@@ -11,6 +11,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- A Helm chart for Kubernetes in `deploy/charts/shepherd/`: the StatefulSet, Service,
+  Ingress, NetworkPolicy and backup CronJob, with the host name, issuer, storage class,
+  pull secret and private egress as values, an optional ExternalSecret for the credentials,
+  and an optional VolumeSnapshot after the store backup. See
+  [docs/kubernetes.md](docs/kubernetes.md).
 - The container image carries the Claude Code and OpenCode CLIs, pinned and checksum-verified
   for amd64 and arm64, so a worker pod can run agents. `check-image.sh` checks both. The
   `shepherd-credentials` Secret keys, including the ssh key and known hosts, are documented
@@ -57,6 +62,12 @@ protocol) is listed under **Interface changes** in the release that makes it.
   repo and its allowed agents. Unset allows all; unknown names are rejected at load.
 - `shepherd login` and `shepherd logout` are registered commands, shown in
   `shepherd help` and dispatched to the hosted login and logout.
+
+### Changed
+
+- The Kubernetes manifests in `deploy/kubernetes/` are replaced by the Helm chart. The
+  pod, its probes and its credential handling are unchanged; the labels now carry the
+  release name (`app.kubernetes.io/instance`).
 
 ### Fixed
 

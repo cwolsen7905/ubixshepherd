@@ -1,0 +1,12 @@
+Shepherd is starting as {{ include "shepherd.fullname" . }}-0 in {{ .Release.Namespace }}.
+
+The public listener stays closed until an owner account exists. Set one once:
+
+  kubectl -n {{ .Release.Namespace }} exec -it {{ include "shepherd.fullname" . }}-0 -- shepherd account set
+
+It prints the TOTP enrolment and ten recovery codes once; keep the codes somewhere safe.
+Then sign in at {{ .Values.seed.publicUrl }}, or from a laptop:
+
+  shepherd login {{ .Values.seed.publicUrl }}
+
+The credentials come from the Secret {{ .Values.credentials.secretName }}; see docs/kubernetes.md.

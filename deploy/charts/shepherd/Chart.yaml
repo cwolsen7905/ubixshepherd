@@ -1,0 +1,19 @@
+apiVersion: v2
+name: shepherd
+description: |
+  uBixShepherd as a hosted daemon: one replica with its home and workspace on a
+  ReadWriteOnce volume, behind an Ingress that ends TLS. See docs/kubernetes.md.
+type: application
+# The chart's own version: bump it on any chart change, independent of the app.
+version: 0.1.0
+# The Shepherd release this chart was last checked against. The image tag is not taken
+# from it: set image.tag (a release tag, or a development image's sha tag) explicitly.
+appVersion: "0.6.0-beta.1"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/ubixsys/ubixshepherd
+sources:
+  - https://github.com/ubixsys/ubixshepherd
+keywords:
+  - agents
+  - git
+  - coordination
