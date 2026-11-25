@@ -1,0 +1,119 @@
+# uBixShepherd chart values. Every value here is a placeholder or a safe default; keep the
+# values for your cluster (host name, issuer, storage class, pull secret) in your own
+# repository, never in this one.
+
+image:
+  repository: ghcr.io/ubixsys/ubixshepherd
+  # Required. A release tag (v0.7.0) or a development image's short-sha tag. Never a
+  # moving tag such as :dev, so a restart never changes the version under the pod.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Secrets of type kubernetes.io/dockerconfigjson for a private registry, by name.
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Seeds the home's config.yaml on first start only (an empty volume). After that the
+# home's config.yaml is the source: change it in Settings or by hand, then
+# `shepherd daemon reload`. Changing these values later has no effect on a seeded home.
+seed:
+  # Required. The public address, https:// with no path: what people and workers use.
+  publicUrl: ""
+  # Required. The ingress controller's pod addresses (comma list of addresses or CIDRs).
+  # Every address listed may claim a request came over TLS and name its client, so use
+  # the controller's own range, never the whole pod network unless the NetworkPolicy
+  # below admits only the ingress controller.
+  trustedProxies: ""
+
+credentials:
+  # The Secret holding the credential files (keys in docs/kubernetes.md). It is not made
+  # by this chart unless externalSecret.enabled: create it with
+  # `kubectl create secret generic <name> --from-file=...` from files that never touch a
+  # repository.
+  secretName: shepherd-credentials
+  # Optional: make the Secret with the External Secrets Operator from a store you run
+  # (a Vault-compatible store, for example). Needs the operator installed.
+  externalSecret:
+    enabled: false
+    refreshInterval: 1h
+    storeRef:
+      kind: ClusterSecretStore
+      name: vault
+    # Each key is read from <remoteKeyPrefix><key>.
+    remoteKeyPrefix: shepherd/
+    # Which keys to map; totp-key is required, the rest as you use them.
+    keys:
+      - totp-key
+      - ssh-id
+      - ssh-known-hosts
+      - glab-config
+      - gh-hosts
+      - claude-credentials
+
+# The daemon ends its agents and records their runs on SIGTERM (about 20 seconds); this
+# is well past that, so a restart is never a SIGKILL of work in progress.
+terminationGracePeriodSeconds: 120
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {memory: 4Gi}
+
+persistence:
+  # The home (the SQLite store, config, run logs, artifacts) and the workspace (clones and
+  # lane worktrees) share one ReadWriteOnce volume. Use block or local storage: SQLite
+  # needs working file locks, which network file systems such as NFS do not reliably give.
+  storageClass: ""
+  size: 50Gi
+
+service:
+  port: 8443
+
+ingress:
+  enabled: true
+  className: nginx
+  # Required when enabled: the host name of seed.publicUrl.
+  host: ""
+  tls:
+    # A Secret with the certificate for host: issued by cert-manager (set clusterIssuer)
+    # or made beforehand (a wildcard certificate, say).
+    secretName: shepherd-tls
+  # When set, cert-manager issues the certificate into tls.secretName.
+  clusterIssuer: ""
+  # Defaults for ingress-nginx: the feed, the desk stream and worker links are long-lived.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+  extraAnnotations: {}
+
+networkPolicy:
+  enabled: true
+  # The namespace of the ingress controller, the only source allowed in.
+  ingressControllerNamespace: ingress-nginx
+  # Egress to the public internet on these ports (forges, model providers). Private
+  # ranges are excluded; add what you need inside them below.
+  publicEgressPorts: [443, 22]
+  # Extra egress rules, as NetworkPolicy egress entries: a forge, a model server or a
+  # secrets store on a private network, for example
+  #   - to: [{ipBlock: {cidr: 10.0.0.5/32}}]
+  #     ports: [{protocol: TCP, port: 443}]
+  extraEgress: []
+
+backup:
+  # A nightly SQLite online backup of the store into the home (never a file copy of a live
+  # database), keeping the newest `keep`.
+  enabled: true
+  schedule: "17 3 * * *"
+  keep: 7
+  # Then a VolumeSnapshot of the data volume, so the snapshot holds a clean store copy.
+  # Needs a CSI driver with snapshots and a VolumeSnapshotClass.
+  snapshot:
+    enabled: false
+    className: ""
+    kubectlImage: registry.k8s.io/kubectl:v1.31.0
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

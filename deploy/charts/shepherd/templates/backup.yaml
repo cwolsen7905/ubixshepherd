@@ -1,0 +1,135 @@
+{{- if .Values.backup.enabled }}
+{{- $snap := .Values.backup.snapshot.enabled }}
+{{- $full := include "shepherd.fullname" . }}
+# Backup, in this order: a SQLite online backup of the store into the home, then (with
+# backup.snapshot.enabled) a VolumeSnapshot of the volume that holds the home and
+# workspace, so the snapshot contains a clean copy of the store. The snapshot is
+# crash-consistent: a lane's worktree caught mid-write may be torn, so a restore runs
+# `git fsck` on every worktree (docs/hosted.md).
+{{- if $snap }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $full }}-backup
+  labels: {{- include "shepherd.labels" . | nindent 4 }}
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $full }}-backup
+  labels: {{- include "shepherd.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [snapshot.storage.k8s.io]
+    resources: [volumesnapshots]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $full }}-backup
+  labels: {{- include "shepherd.labels" . | nindent 4 }}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: {{ $full }}-backup}
+subjects:
+  - {kind: ServiceAccount, name: {{ $full }}-backup, namespace: {{ .Release.Namespace }}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $full }}-snapshot
+  labels: {{- include "shepherd.labels" . | nindent 4 }}
+data:
+  snapshot.yaml: |
+    apiVersion: snapshot.storage.k8s.io/v1
+    kind: VolumeSnapshot
+    metadata:
+      generateName: {{ $full }}-data-
+      namespace: {{ .Release.Namespace }}
+    spec:
+      {{- with .Values.backup.snapshot.className }}
+      volumeSnapshotClassName: {{ . }}
+      {{- end }}
+      source:
+        persistentVolumeClaimName: {{ include "shepherd.dataClaim" . }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $full }}-backup
+  labels: {{- include "shepherd.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          {{- if $snap }}
+          serviceAccountName: {{ $full }}-backup
+          {{- else }}
+          automountServiceAccountToken: false
+          {{- end }}
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- range . }}
+            - name: {{ . }}
+            {{- end }}
+          {{- end }}
+          securityContext: {{- include "shepherd.podSecurity" . | nindent 12 }}
+          # The volume is ReadWriteOnce: run on the node the daemon's pod is on.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels: {{- include "shepherd.selectorLabels" . | nindent 22 }}
+          {{- if $snap }}
+          initContainers:
+          {{- else }}
+          containers:
+          {{- end }}
+            # The online backup. `.backup` copies a live database consistently; never
+            # copy shepherd.db with cp.
+            - name: sqlite-backup
+              image: {{ include "shepherd.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  mkdir -p /data/home/backups
+                  f=/data/home/backups/shepherd-$(date -u +%Y%m%dT%H%M%SZ).db
+                  sqlite3 /data/home/shepherd.db ".backup '$f.part'"
+                  [ "$(sqlite3 "$f.part" 'PRAGMA integrity_check;')" = ok ]
+                  mv "$f.part" "$f"
+                  ls -1t /data/home/backups/shepherd-*.db | tail -n +{{ add .Values.backup.keep 1 }} | xargs -r rm -f
+                  echo "backed up to $f"
+              securityContext: {{- include "shepherd.containerSecurity" . | nindent 16 }}
+              volumeMounts:
+                - {name: data, mountPath: /data/home, subPath: home}
+                - {name: tmp, mountPath: /tmp}
+          {{- if $snap }}
+          containers:
+            # The snapshot, only if the backup succeeded.
+            - name: snapshot
+              image: {{ .Values.backup.snapshot.kubectlImage }}
+              args: ["create", "-f", "/manifest/snapshot.yaml"]
+              securityContext: {{- include "shepherd.containerSecurity" . | nindent 16 }}
+              volumeMounts:
+                - {name: manifest, mountPath: /manifest, readOnly: true}
+          {{- end }}
+          volumes:
+            - name: data
+              persistentVolumeClaim: {claimName: {{ include "shepherd.dataClaim" . }}}
+            - name: tmp
+              emptyDir: {}
+            {{- if $snap }}
+            - name: manifest
+              configMap: {name: {{ $full }}-snapshot}
+            {{- end }}
+{{- end }}
