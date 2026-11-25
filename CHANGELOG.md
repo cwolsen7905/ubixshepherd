@@ -67,7 +67,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 - The Kubernetes manifests in `deploy/kubernetes/` are replaced by the Helm chart. The
   pod, its probes and its credential handling are unchanged; the labels now carry the
-  release name (`app.kubernetes.io/instance`).
+  release name (`app.kubernetes.io/instance`), so an existing install is replaced rather
+  than upgraded in place, keeping its data claim: see
+  [Moving from the old manifests](docs/kubernetes.md#moving-from-the-old-manifests).
 
 ### Fixed
 

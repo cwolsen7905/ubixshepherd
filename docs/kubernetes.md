@@ -39,6 +39,24 @@ The pod starts on loopback only; the public listener, and so readiness, comes up
 The `seed` values are read only when the home has no `config.yaml`. After the first start,
 change `daemon.public` in Settings or in the home's `config.yaml`.
 
+### Moving from the old manifests
+
+Releases before the chart shipped kustomize manifests in `deploy/kubernetes/`. Helm cannot
+take those objects over, and the StatefulSet's selector (which cannot change) now also
+carries the release name. Keep the data, replace the rest:
+
+```sh
+kubectl -n shepherd delete statefulset shepherd --cascade=orphan   # the pod and the claim stay
+kubectl -n shepherd delete service,ingress,networkpolicy shepherd
+kubectl -n shepherd delete cronjob shepherd-backup --ignore-not-found
+kubectl -n shepherd delete pod shepherd-0
+helm upgrade --install shepherd deploy/charts/shepherd -n shepherd -f my-values.yaml
+```
+
+Name the release `shepherd`, as above, so the StatefulSet is `shepherd` again and the
+claim `data-shepherd-0` is reused with the home and workspace on it. The seeded
+`config.yaml` on the volume is kept, so the `seed` values do not change it.
+
 ## Agent CLIs in the image
 
 The image is built for amd64 and arm64 and carries `git`, `glab`, `gh`, `ssh`, `sqlite3`
