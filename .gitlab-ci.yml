@@ -120,6 +120,30 @@ web-typecheck:
   script:
     - web_run 'cd web && npm ci && npm run typecheck'
 
+# A development image for a hosted daemon, pushed to this project's container registry on
+# every green dev push: $CI_REGISTRY_IMAGE:dev and :<short sha>, amd64 and arm64. It is a
+# quick build for trying a deployment while development moves fast, unsigned and not a
+# release; released images are built, checked and signed by the GitHub release workflow.
+# The binary reports dev-<short sha>. Pin a deployment to the sha tag, not :dev, so a
+# restart never changes the version underneath it.
+image-dev:
+  stage: deploy
+  tags: [shell]
+  needs: [public-boundary, go-check, web-typecheck]
+  resource_group: image-dev      # two quick pushes to dev cannot race on :dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev" && $CI_PIPELINE_SOURCE == "push"'
+  variables:
+    VERSION: dev-$CI_COMMIT_SHORT_SHA
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker buildx build --platform linux/amd64,linux/arm64 --provenance=false --push
+        --build-arg VERSION="$VERSION"
+        -t "$CI_REGISTRY_IMAGE:dev" -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - docker run --rm --platform linux/amd64 --entrypoint shepherd "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" version
+  after_script:
+    - docker logout "$CI_REGISTRY"
+
 # dev -> main. main only ever moves by fast-forward from a green dev (bin/promote.sh, which
 # fails closed and never forces). Runs only on a push pipeline of the dev branch, and only
 # once all three checks above have passed. The promotion's own push to main starts a pipeline
