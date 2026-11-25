@@ -108,6 +108,8 @@ func newFixture(t *testing.T, mode string) *fixture {
 		Store: st, Config: cfg, Dir: filepath.Join(root, "runs"),
 		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		lookPath: func(string) (string, error) { return agent, nil },
+		// Hermetic: the opencode installed on the machine, if any, is never probed.
+		OpenCode: fakeHost(),
 	}
 	// Runs, and what they set off, can outlive a test's last check: let them finish
 	// before the repo is removed (cleanups run last-registered first).
