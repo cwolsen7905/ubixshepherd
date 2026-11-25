@@ -1068,3 +1068,23 @@ func TestOpenCodeMergeAllowedOnlyWithMerge(t *testing.T) {
 		t.Errorf("approve: %q", got)
 	}
 }
+
+func TestOpenCodeVersionRE(t *testing.T) {
+	for out, want := range map[string]string{
+		"1.19.6\n":              "1.19.6",
+		"opencode v2.0.20\n":    "2.0.20",
+		"opencode 1.19.6 (abc)": "1.19.6",
+		"v3.1.0":                "3.1.0",
+		"no version here":       "",
+		"dev1.2.3":              "",
+	} {
+		m := openCodeVersionRE.FindStringSubmatch(out)
+		got := ""
+		if m != nil {
+			got = m[1] + "." + m[2] + "." + m[3]
+		}
+		if got != want {
+			t.Errorf("%q: got %q, want %q", out, got, want)
+		}
+	}
+}

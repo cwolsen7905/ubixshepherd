@@ -103,7 +103,9 @@ func openCodeBin(s config.OpenCode) string {
 	return ""
 }
 
-var openCodeVersionRE = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
+// openCodeVersionRE finds the version in `opencode --version`'s output, bare (1.19.6) or
+// with a v (opencode v2.0.20). A \b alone cannot start the match after a v.
+var openCodeVersionRE = regexp.MustCompile(`(?:^|[^\w.]|\bv)(\d+)\.(\d+)\.(\d+)\b`)
 
 // openCodeProbe runs the executable's `--version`.
 func openCodeProbe(bin string) (string, error) {
@@ -117,7 +119,7 @@ func openCodeProbe(bin string) (string, error) {
 	if m == nil {
 		return "", fmt.Errorf("opencode --version (%s) printed %q, which is not a version", bin, strings.TrimSpace(string(out)))
 	}
-	return m[0], nil
+	return m[1] + "." + m[2] + "." + m[3], nil
 }
 
 // version runs `bin --version`, remembering the answer for as long as the file is
