@@ -15,6 +15,12 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# controller: the daemon people sign in to and workers link to (hosted mode, an Ingress).
+# worker: a daemon that links out to a controller (seed.controllerUrl) and takes no
+# connections in: no Ingress, no public listener. Use a worker image for its toolchain,
+# such as the image's `-go` variant.
+mode: controller
+
 # Seeds the home's config.yaml on first start only (an empty volume). After that the
 # home's config.yaml is the source: change it in Settings or by hand, then
 # `shepherd daemon reload`. Changing these values later has no effect on a seeded home.
@@ -26,6 +32,9 @@ seed:
   # the controller's own range, never the whole pod network unless the NetworkPolicy
   # below admits only the ingress controller.
   trustedProxies: ""
+  # Required for mode: worker. The controller's https address. The worker links once
+  # `shepherd cluster join <controllerUrl> <code>` has been run in it (docs/kubernetes.md).
+  controllerUrl: ""
 
 credentials:
   # The Secret holding the credential files (keys in docs/kubernetes.md). It is not made

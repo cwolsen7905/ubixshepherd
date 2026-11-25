@@ -1,17 +1,25 @@
 #!/bin/sh
 # Seed an empty home, then run the command (the daemon) by exec, so tini's child is the daemon.
-# SHEPHERD_PUBLIC_URL and SHEPHERD_TRUSTED_PROXIES (a comma list of addresses or CIDRs of
-# the reverse proxy) are read only when config.yaml does not exist yet.
+# Read only when config.yaml does not exist yet:
+# - a worker: SHEPHERD_CONTROLLER_URL, the https address of the controller it links to;
+# - otherwise a hosted controller: SHEPHERD_PUBLIC_URL and SHEPHERD_TRUSTED_PROXIES (a comma
+#   list of addresses or CIDRs of the reverse proxy).
 set -eu
 home="${SHEPHERD_HOME:?SHEPHERD_HOME is not set}"
 if [ ! -e "$home/config.yaml" ]; then
-  : "${SHEPHERD_PUBLIC_URL:?set SHEPHERD_PUBLIC_URL (https://shepherd.example.com) to seed a new home}"
-  : "${SHEPHERD_TRUSTED_PROXIES:?set SHEPHERD_TRUSTED_PROXIES (the reverse proxy address or CIDR) to seed a new home}"
-  case "$SHEPHERD_TRUSTED_PROXIES" in REPLACE*) echo "shepherd: SHEPHERD_TRUSTED_PROXIES is still the placeholder; set the reverse proxy address or CIDR" >&2; exit 1 ;; esac
   mkdir -p "$home"
-  sed -e "s|@PUBLIC_URL@|$SHEPHERD_PUBLIC_URL|" \
-      -e "s|@TRUSTED_PROXIES@|$SHEPHERD_TRUSTED_PROXIES|" \
-      /usr/share/shepherd/config.seed.yaml > "$home/config.yaml.tmp"
+  if [ -n "${SHEPHERD_CONTROLLER_URL:-}" ]; then
+    case "$SHEPHERD_CONTROLLER_URL" in https://*) ;; *) echo "shepherd: SHEPHERD_CONTROLLER_URL must be an https:// address" >&2; exit 1 ;; esac
+    sed -e "s|@CONTROLLER_URL@|$SHEPHERD_CONTROLLER_URL|" \
+        /usr/share/shepherd/config.seed-worker.yaml > "$home/config.yaml.tmp"
+  else
+    : "${SHEPHERD_PUBLIC_URL:?set SHEPHERD_PUBLIC_URL (https://shepherd.example.com) to seed a new home, or SHEPHERD_CONTROLLER_URL for a worker}"
+    : "${SHEPHERD_TRUSTED_PROXIES:?set SHEPHERD_TRUSTED_PROXIES (the reverse proxy address or CIDR) to seed a new home}"
+    case "$SHEPHERD_TRUSTED_PROXIES" in REPLACE*) echo "shepherd: SHEPHERD_TRUSTED_PROXIES is still the placeholder; set the reverse proxy address or CIDR" >&2; exit 1 ;; esac
+    sed -e "s|@PUBLIC_URL@|$SHEPHERD_PUBLIC_URL|" \
+        -e "s|@TRUSTED_PROXIES@|$SHEPHERD_TRUSTED_PROXIES|" \
+        /usr/share/shepherd/config.seed.yaml > "$home/config.yaml.tmp"
+  fi
   mv "$home/config.yaml.tmp" "$home/config.yaml"
   echo "shepherd: seeded $home/config.yaml"
 fi

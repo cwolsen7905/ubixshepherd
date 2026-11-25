@@ -1,8 +1,22 @@
-{{- $url := required "seed.publicUrl is required (https://shepherd.example.com)" .Values.seed.publicUrl -}}
+{{- $worker := eq .Values.mode "worker" -}}
+{{- if not (has .Values.mode (list "controller" "worker")) -}}
+{{- fail "mode must be controller or worker" -}}
+{{- end -}}
+{{- $url := "" -}}
+{{- $proxies := "" -}}
+{{- $controller := "" -}}
+{{- if $worker -}}
+{{- $controller = required "seed.controllerUrl is required for mode: worker (https://shepherd.example.com)" .Values.seed.controllerUrl -}}
+{{- if not (hasPrefix "https://" $controller) -}}
+{{- fail "seed.controllerUrl must start with https://" -}}
+{{- end -}}
+{{- else -}}
+{{- $url = required "seed.publicUrl is required (https://shepherd.example.com)" .Values.seed.publicUrl -}}
 {{- if not (hasPrefix "https://" $url) -}}
 {{- fail "seed.publicUrl must start with https://" -}}
 {{- end -}}
-{{- $proxies := required "seed.trustedProxies is required: the ingress controller's pod addresses" .Values.seed.trustedProxies -}}
+{{- $proxies = required "seed.trustedProxies is required: the ingress controller's pod addresses" .Values.seed.trustedProxies -}}
+{{- end -}}
 # One replica: the home lock refuses a second daemon, and the volume is ReadWriteOnce.
 apiVersion: apps/v1
 kind: StatefulSet
@@ -80,7 +94,9 @@ spec:
               put glab-config glab/config.yml
               put gh-hosts gh/hosts.yml
               put claude-credentials claude/.credentials.json
+              {{- if not $worker }}
               [ -f $d/totp-key ] || { echo "no totp-key in the {{ .Values.credentials.secretName }} Secret" >&2; exit 1; }
+              {{- end }}
           securityContext: {{- include "shepherd.containerSecurity" . | nindent 12 }}
           volumeMounts:
             - {name: credentials-source, mountPath: /secret-source, readOnly: true}
@@ -91,10 +107,14 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             # Read only when the home is empty, to seed config.yaml. Not credentials.
+            {{- if $worker }}
+            - {name: SHEPHERD_CONTROLLER_URL, value: {{ $controller | quote }}}
+            {{- else }}
             - {name: SHEPHERD_PUBLIC_URL, value: {{ $url | quote }}}
             - {name: SHEPHERD_TRUSTED_PROXIES, value: {{ $proxies | quote }}}
           ports:
             - {name: https, containerPort: 8443}
+            {{- end }}
           # Readiness hits the unauthenticated GET /v1/health on the public listener,
           # over plain HTTP: TLS ends at the Ingress, and the daemon only takes proxied
           # plain HTTP (trusted_proxies) there. The public listener opens only once an
@@ -112,7 +132,12 @@ spec:
             timeoutSeconds: 10
             failureThreshold: 3
           readinessProbe:
+            {{- if $worker }}
+            # A worker has no public listener: ready once its daemon answers.
+            exec: {command: ["shepherd", "status"]}
+            {{- else }}
             httpGet: {path: /v1/health, port: 8443, scheme: HTTP}
+            {{- end }}
             periodSeconds: 15
             timeoutSeconds: 10
           resources: {{- toYaml .Values.resources | nindent 12 }}

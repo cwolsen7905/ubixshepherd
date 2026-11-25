@@ -121,7 +121,8 @@ web-typecheck:
     - web_run 'cd web && npm ci && npm run typecheck'
 
 # A development image for a hosted daemon, pushed to this project's container registry on
-# every green dev push: $CI_REGISTRY_IMAGE:dev and :<short sha>, amd64 and arm64. It is a
+# every green dev push: $CI_REGISTRY_IMAGE:dev and :<short sha>, amd64 and arm64, and the
+# worker image (Go and Node) as :dev-go and :<short sha>-go. It is a
 # quick build for trying a deployment while development moves fast, unsigned and not a
 # release; released images are built, checked and signed by the GitHub release workflow.
 # The binary reports dev-<short sha>. Pin a deployment to the sha tag, not :dev, so a
@@ -138,18 +139,26 @@ image-dev:
     VERSION: dev-$CI_COMMIT_SHORT_SHA
   script:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    # Push the sha tag only, check it on both architectures, and only then move :dev to
-    # it, so a broken image never replaces :dev.
+    # Push the sha tags only, check them on both architectures, and only then move :dev and
+    # :dev-go to them, so a broken image never replaces either. The -go image is the worker
+    # target (Go, Node and make on the base), built from the same layers.
     - docker buildx build --platform linux/amd64,linux/arm64 --provenance=false --push
         --build-arg VERSION="$VERSION"
         -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" .
+    - docker buildx build --platform linux/amd64,linux/arm64 --provenance=false --push
+        --build-arg VERSION="$VERSION" --target worker-go
+        -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA-go" .
     - |
       for p in linux/amd64 linux/arm64; do
-        got="$(docker run --rm --pull always --platform "$p" --entrypoint shepherd "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" version)"
-        echo "$p: $got"
-        [ "$got" = "shepherd $VERSION" ] || { echo "expected: shepherd $VERSION"; exit 1; }
+        for tag in "$CI_COMMIT_SHORT_SHA" "$CI_COMMIT_SHORT_SHA-go"; do
+          got="$(docker run --rm --pull always --platform "$p" --entrypoint shepherd "$CI_REGISTRY_IMAGE:$tag" version)"
+          echo "$p $tag: $got"
+          [ "$got" = "shepherd $VERSION" ] || { echo "expected: shepherd $VERSION"; exit 1; }
+        done
+        docker run --rm --platform "$p" --entrypoint sh "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA-go" -c 'go version && node --version && npm --version && make --version | head -1'
       done
     - docker buildx imagetools create -t "$CI_REGISTRY_IMAGE:dev" "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker buildx imagetools create -t "$CI_REGISTRY_IMAGE:dev-go" "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA-go"
   after_script:
     - docker logout "$CI_REGISTRY"
 

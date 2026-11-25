@@ -48,9 +48,11 @@ RUN set -eu; \
     mkdir cc oc; tar -xzf cc.tgz -C cc --strip-components=1 package/claude; tar -xzf oc.tgz -C oc opencode; \
     install -D -m 0755 cc/claude /out/claude; install -D -m 0755 oc/opencode /out/opencode
 
-# 4. The runtime. Debian 13 ships git 2.47 (the daemon needs 2.31 or newer), glab, gh,
-# tini and the sqlite3 shell the backup job uses.
-FROM debian:trixie-slim
+# 4. The base runtime. Debian 13 ships git 2.47 (the daemon needs 2.31 or newer), glab, gh,
+# tini and the sqlite3 shell the backup job uses. This is the controller's image (the
+# default target, at the end of the file) and the base every worker image builds on:
+# FROM it, switch to root, add a toolchain, and switch back to 10001.
+FROM debian:trixie-slim AS base
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates git openssh-client tini glab gh sqlite3 \
@@ -72,7 +74,7 @@ RUN printf 'Host *\n  IdentityFile /run/secrets/shepherd/ssh/id\n  UserKnownHost
 COPY --from=build /out/shepherd /usr/local/bin/shepherd
 COPY --from=clis /out/claude /out/opencode /usr/local/bin/
 COPY deploy/docker/entrypoint.sh /usr/local/bin/shepherd-entrypoint
-COPY deploy/docker/config.seed.yaml /usr/share/shepherd/config.seed.yaml
+COPY deploy/docker/config.seed.yaml deploy/docker/config.seed-worker.yaml /usr/share/shepherd/
 
 ENV SHEPHERD_HOME=/data/home \
     SHEPHERD_NO_AUTOSTART=1 \
@@ -100,3 +102,32 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # starts the daemon's drain.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/shepherd-entrypoint"]
 CMD ["shepherd", "daemon"]
+
+# 5. A worker image for Go and JavaScript repos (`--target worker-go`): the base plus Go,
+# Node, npm and make, so a lane's gate (make check, npm test and the like) runs in the pod.
+# The toolchains come from their official images for the target architecture. Their caches
+# live under the home, on the volume. GOTOOLCHAIN=local: a go.mod asking for a newer Go
+# fails plainly rather than downloading one. There is no C compiler, so cgo is off.
+FROM golang:1.26-bookworm AS gotool
+FROM node:22-bookworm-slim AS nodetool
+FROM base AS worker-go
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends make \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=gotool /usr/local/go /usr/local/go
+COPY --from=nodetool /usr/local/bin/node /usr/local/bin/node
+COPY --from=nodetool /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+ && /usr/local/go/bin/go version && node --version && npm --version && make --version | head -1
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOPATH=/data/home/cli/go \
+    GOCACHE=/data/home/cli/go-build \
+    GOTOOLCHAIN=local \
+    CGO_ENABLED=0 \
+    NPM_CONFIG_CACHE=/data/home/cli/npm \
+    NPM_CONFIG_UPDATE_NOTIFIER=false
+USER 10001:10001
+
+# The default target: the base image, which the controller and plain workers run.
+FROM base
