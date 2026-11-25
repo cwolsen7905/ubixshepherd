@@ -133,6 +133,8 @@ func commands() []command {
 			"shepherd member add <name> | list [--json] | revoke <name> | remove <name> | confirm <name>", runMember},
 		{"logout", "Log out of a hosted daemon, revoking this machine's token and forgetting it here",
 			"shepherd logout [URL]", runLogout},
+		{"account", "Set a hosted daemon's owner password and second factor, on the daemon's own machine",
+			"shepherd account set [--password-stdin] | sign-out-all", runAccount},
 		{"version", "Print the version", "shepherd version", runVersion},
 	}
 }

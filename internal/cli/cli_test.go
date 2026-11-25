@@ -187,6 +187,30 @@ func TestLoginLogoutRegisteredAndDispatch(t *testing.T) {
 	}
 }
 
+// account set is how a hosted daemon gets its owner and opens its public listener
+// (docs/hosted.md); unregistered, a hosted daemon can never be logged in to.
+func TestAccountRegisteredAndDispatch(t *testing.T) {
+	found := false
+	for _, c := range commands() {
+		if c.name == "account" {
+			found = true
+			if c.summary == "" || c.usage == "" || c.run == nil {
+				t.Errorf("account is registered without a summary, usage or runner")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("account is not registered")
+	}
+	h := newHarness(t, "", false)
+	if code := h.run("help"); code != 0 || !strings.Contains(h.out.String(), "account") {
+		t.Errorf("help does not list account: %d\n%s", code, h.out)
+	}
+	if code := h.run("account"); code == 0 || strings.Contains(h.err.String(), "unknown command") {
+		t.Errorf("account did not dispatch to its runner: %d %s", code, h.err)
+	}
+}
+
 func TestNoDaemon(t *testing.T) {
 	env := Env{Stdout: io.Discard, Stderr: &bytes.Buffer{}, Layout: paths.Layout{Home: t.TempDir()}, Cwd: t.TempDir()}
 	if code := Run(context.Background(), env, []string{"status"}); code != 1 ||
