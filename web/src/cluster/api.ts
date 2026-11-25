@@ -1,7 +1,7 @@
-// The cluster's calls: a hub's members, listed and managed from Settings.
+// The cluster's calls: a controller's workers, listed and managed from Settings.
 import { get, post } from '../api/client'
 
-export interface Member {
+export interface Worker {
   name: string
   daemon_id?: string
   enrolled: boolean
@@ -20,23 +20,23 @@ export interface Member {
 }
 
 export interface ClusterView {
-  role: 'hub' | 'member' | 'alone'
+  role: 'controller' | 'worker' | 'alone'
   daemon_id: string
-  members?: Member[]
+  workers?: Worker[]
 }
 
-export interface MemberCode {
+export interface WorkerCode {
   name: string
   code: string
   expires: string
 }
 
-const member = (name: string, act: string) => `/v1/cluster/members/${encodeURIComponent(name)}/${act}`
+const worker = (name: string, act: string) => `/v1/cluster/workers/${encodeURIComponent(name)}/${act}`
 
 export const cluster = {
   get: () => get<ClusterView>('/v1/cluster'),
-  add: (name: string) => post<MemberCode>('/v1/cluster/members', { name }),
-  revoke: (name: string) => post<unknown>(member(name, 'revoke'), {}),
-  remove: (name: string) => post<unknown>(member(name, 'remove'), {}),
-  confirm: (name: string) => post<unknown>(member(name, 'confirm'), {}),
+  add: (name: string) => post<WorkerCode>('/v1/cluster/workers', { name }),
+  revoke: (name: string) => post<unknown>(worker(name, 'revoke'), {}),
+  remove: (name: string) => post<unknown>(worker(name, 'remove'), {}),
+  confirm: (name: string) => post<unknown>(worker(name, 'confirm'), {}),
 }

@@ -22,10 +22,11 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/version"
 )
 
-// The member's side of the cluster: enrolling with a hub, then holding one link to it
-// and redialling when it drops. The member only ever dials out.
+// The worker's side of the cluster: enrolling with a controller, then holding one link to
+// it and redialling when it drops. The worker only ever dials out, and only once it has
+// joined: a daemon with no cluster config and no link file dials nothing.
 
-// LinkFile is where a member keeps what enrolment gave it, in the Shepherd home. It
+// LinkFile is where a worker keeps what enrolment gave it, in the Shepherd home. It
 // holds the link credential, so it is for its owner alone and never in the config.
 const LinkFile = "cluster-link.json"
 
@@ -34,18 +35,20 @@ var (
 	// zero and the current step, which doubles from the base up to the max.
 	linkBackoffBase = defaultBackoffBase
 	linkBackoffMax  = defaultBackoffMax
-	// linkIdleEvery is how often a member that is not joined looks again for a hub.
+	// linkIdleEvery is how often a worker that is not joined looks again for a
+	// controller.
 	linkIdleEvery = time.Second
 	// linkRand is the jitter's source, a variable so a test can fix it.
 	linkRand = rand.Float64
 )
 
-// linkFile is the file's content.
+// linkFile is the file's content. ControllerID keeps the key it was first written with,
+// hub_daemon_id, so a file from before the rename still reads, and the reverse.
 type linkFile struct {
-	URL        string `json:"url"`
-	Name       string `json:"name"`
-	Credential string `json:"credential"`
-	HubID      string `json:"hub_daemon_id"`
+	URL          string `json:"url"`
+	Name         string `json:"name"`
+	Credential   string `json:"credential"`
+	ControllerID string `json:"hub_daemon_id"`
 }
 
 func (s *Server) linkPath() string { return filepath.Join(s.Home, LinkFile) }
@@ -67,7 +70,7 @@ func (s *Server) loadLink() (linkFile, bool) {
 
 func (s *Server) hasLinkFile() bool { _, ok := s.loadLink(); return ok }
 
-// linkState is a member's link as GET /v1/cluster shows it.
+// linkState is a worker's link as GET /v1/cluster shows it.
 type linkState struct {
 	mu sync.Mutex
 	v  api.ClusterLink
@@ -100,10 +103,10 @@ func (s *Server) linkView() api.ClusterLink {
 	if v.State == "" {
 		v.State = api.LinkNotJoined
 	}
-	if v.Hub == "" {
-		v.Hub = s.LiveConfig().Cluster.Hub
-		if f, ok := s.loadLink(); ok && v.Hub == "" {
-			v.Hub = f.URL
+	if v.Controller == "" {
+		v.Controller = s.LiveConfig().Cluster.Controller
+		if f, ok := s.loadLink(); ok && v.Controller == "" {
+			v.Controller = f.URL
 		}
 	}
 	return v
@@ -116,24 +119,24 @@ func (s *Server) clusterClient() *http.Client {
 	return &http.Client{Timeout: 30 * time.Second}
 }
 
-// clusterJoin is POST /v1/cluster/join: trade a hub's enrolment code for a link
-// credential and keep it in the Shepherd home. The daemon then links to the hub.
+// clusterJoin is POST /v1/cluster/join: trade a controller's enrolment code for a link
+// credential and keep it in the Shepherd home. The daemon then links to the controller.
 func (s *Server) clusterJoin(w http.ResponseWriter, r *http.Request) {
-	if s.LiveConfig().Cluster.IsHub() {
-		writeError(w, http.StatusConflict, errors.New("this daemon is a hub: a hub does not join another"))
+	if s.LiveConfig().Cluster.IsController() {
+		writeError(w, http.StatusConflict, errors.New("this daemon is a controller: a controller does not join another"))
 		return
 	}
 	var req api.ClusterJoin
 	if !decode(w, r, &req) {
 		return
 	}
-	hub, err := config.NormalizeURL(req.URL)
+	ctl, err := config.NormalizeURL(req.URL)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("the hub's address %q %v", req.URL, err))
+		writeError(w, http.StatusBadRequest, fmt.Errorf("the controller's address %q %v", req.URL, err))
 		return
 	}
-	if cfg := s.LiveConfig().Cluster.Hub; cfg != "" && cfg != hub {
-		writeError(w, http.StatusConflict, fmt.Errorf("cluster.hub in the config is %s, not %s: change one so they agree", cfg, hub))
+	if cfg := s.LiveConfig().Cluster.Controller; cfg != "" && cfg != ctl {
+		writeError(w, http.StatusConflict, fmt.Errorf("cluster.controller in the config is %s, not %s: change one so they agree", cfg, ctl))
 		return
 	}
 	if s.Home == "" {
@@ -143,7 +146,7 @@ func (s *Server) clusterJoin(w http.ResponseWriter, r *http.Request) {
 	body, _ := json.Marshal(api.ClusterEnrol{Code: req.Code, DaemonID: s.DaemonID()})
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, hub+api.PathClusterEnrol, bytes.NewReader(body))
+	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, ctl+api.PathClusterEnrol, bytes.NewReader(body))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -152,7 +155,7 @@ func (s *Server) clusterJoin(w http.ResponseWriter, r *http.Request) {
 	hr.Header.Set(api.ClientHeader, "shepherd-daemon/"+version.Version)
 	resp, err := s.clusterClient().Do(hr)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not reach the hub at %s: %w", hub, err))
+		writeError(w, http.StatusBadGateway, fmt.Errorf("could not reach the controller at %s: %w", ctl, err))
 		return
 	}
 	defer resp.Body.Close()
@@ -161,24 +164,24 @@ func (s *Server) clusterJoin(w http.ResponseWriter, r *http.Request) {
 		var e api.Error
 		json.Unmarshal(raw, &e)
 		if e.Error == "" {
-			e.Error = "the hub answered " + resp.Status
+			e.Error = "the controller answered " + resp.Status
 		}
-		writeError(w, http.StatusBadGateway, errors.New("the hub refused the enrolment: "+e.Error))
+		writeError(w, http.StatusBadGateway, errors.New("the controller refused the enrolment: "+e.Error))
 		return
 	}
 	var got api.ClusterEnrolled
 	if err := json.Unmarshal(raw, &got); err != nil || got.Credential == "" {
-		writeError(w, http.StatusBadGateway, errors.New("the hub's answer was not an enrolment"))
+		writeError(w, http.StatusBadGateway, errors.New("the controller's answer was not an enrolment"))
 		return
 	}
-	f := linkFile{URL: hub, Name: got.Name, Credential: got.Credential, HubID: got.HubID}
+	f := linkFile{URL: ctl, Name: got.Name, Credential: got.Credential, ControllerID: got.ID()}
 	b, _ := json.MarshalIndent(f, "", "  ")
 	if err := writeFileAtomic(s.linkPath(), b); err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("joined a hub", "hub", hub, "as", got.Name)
-	writeJSON(w, http.StatusOK, api.ClusterJoined{Name: got.Name, Hub: hub})
+	s.Log.Info("joined a controller", "controller", ctl, "as", got.Name)
+	writeJSON(w, http.StatusOK, api.ClusterJoined{Name: got.Name, Controller: ctl})
 }
 
 // writeFileAtomic writes a file readable by its owner only.
@@ -202,9 +205,9 @@ func writeFileAtomic(path string, b []byte) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// StartCluster starts the member's link, which dials the hub while the config names one
-// and a credential is held, and returns the function that ends it. On a hub or a daemon
-// on its own it does nothing but watch the config.
+// StartCluster starts the worker's link, which dials the controller while a credential
+// is held, and returns the function that ends it. On a controller or a daemon on its own
+// it does nothing but watch the config and the Shepherd home.
 func (s *Server) StartCluster(ctx context.Context) func() {
 	ctx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
@@ -215,7 +218,7 @@ func (s *Server) StartCluster(ctx context.Context) func() {
 	return func() { cancel(); <-done }
 }
 
-// holdLink is the member's loop: dial, hold, and redial after a wait.
+// holdLink is the worker's loop: dial, hold, and redial after a wait.
 func (s *Server) holdLink(ctx context.Context) {
 	ls := &s.cluster.link
 	step := linkBackoffBase
@@ -223,22 +226,22 @@ func (s *Server) holdLink(ctx context.Context) {
 		cfg := s.LiveConfig().Cluster
 		f, joined := s.loadLink()
 		switch {
-		case cfg.IsHub():
+		case cfg.IsController():
 			ls.setState(api.LinkNotJoined, "", time.Time{})
 			sleep(ctx, linkIdleEvery)
 			continue
 		case !joined:
-			ls.set(func(v *api.ClusterLink) { v.Hub = cfg.Hub })
+			ls.set(func(v *api.ClusterLink) { v.Controller = cfg.Controller })
 			ls.setState(api.LinkNotJoined, "", time.Time{})
 			sleep(ctx, linkIdleEvery)
 			continue
-		case cfg.Hub != "" && cfg.Hub != f.URL:
-			ls.set(func(v *api.ClusterLink) { v.Hub = cfg.Hub })
-			ls.setState(api.LinkRefused, fmt.Sprintf("the credential is for %s but cluster.hub is %s: run shepherd cluster join again", f.URL, cfg.Hub), time.Time{})
+		case cfg.Controller != "" && cfg.Controller != f.URL:
+			ls.set(func(v *api.ClusterLink) { v.Controller = cfg.Controller })
+			ls.setState(api.LinkRefused, fmt.Sprintf("the credential is for %s but cluster.controller is %s: run shepherd cluster join again", f.URL, cfg.Controller), time.Time{})
 			sleep(ctx, linkIdleEvery)
 			continue
 		}
-		ls.set(func(v *api.ClusterLink) { v.Hub = f.URL })
+		ls.set(func(v *api.ClusterLink) { v.Controller = f.URL })
 		ls.setState(api.LinkConnecting, "", time.Time{})
 		up, retryAfter, err := s.linkOnce(ctx, f)
 		if ctx.Err() != nil {
@@ -257,13 +260,13 @@ func (s *Server) holdLink(ctx context.Context) {
 			}
 		}
 		ls.setState(state, text, time.Now().Add(wait))
-		s.Log.Info("hub link down", "hub", f.URL, "why", text, "retry_in", wait.Round(time.Millisecond).String())
+		s.Log.Info("controller link down", "controller", f.URL, "why", text, "retry_in", wait.Round(time.Millisecond).String())
 		sleep(ctx, wait)
 	}
 }
 
 // linkWait is the wait before a redial: full jitter, a random wait between zero and the
-// step (rnd is in [0, 1)), and never less than the hub's Retry-After.
+// step (rnd is in [0, 1)), and never less than the controller's Retry-After.
 func linkWait(step time.Duration, rnd float64, retryAfter time.Duration) time.Duration {
 	return max(time.Duration(rnd*float64(step)), retryAfter)
 }
@@ -277,13 +280,13 @@ func sleep(ctx context.Context, d time.Duration) {
 	}
 }
 
-// errRefused marks an answer from the hub that retrying alone will not fix: a revoked
-// credential, a changed id. The member still retries, slowly, because the person may fix
-// it on the hub.
+// errRefused marks an answer from the controller that retrying alone will not fix: a
+// revoked credential, a changed id. The worker still retries, slowly, because the person
+// may fix it on the controller.
 var errRefused = errors.New("refused")
 
-// linkOnce dials the hub and holds the link until it ends. up says it got as far as the
-// hub's hello; retryAfter is the hub's floor for the next try.
+// linkOnce dials the controller and holds the link until it ends. up says it got as far
+// as the controller's hello; retryAfter is the controller's floor for the next try.
 func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter time.Duration, err error) {
 	id := s.DaemonID()
 	conn, resp, err := websocket.Dial(ctx, f.URL+api.PathClusterLink, &websocket.DialOptions{
@@ -296,7 +299,7 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	})
 	if err != nil {
 		if resp == nil {
-			return false, 0, fmt.Errorf("could not reach the hub: %w", err)
+			return false, 0, fmt.Errorf("could not reach the controller: %w", err)
 		}
 		defer resp.Body.Close()
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<12))
@@ -307,7 +310,7 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 		}
 		msg := e.Error
 		if msg == "" {
-			msg = "the hub answered " + resp.Status
+			msg = "the controller answered " + resp.Status
 		}
 		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 			// A refusal is slow to retry whatever its Retry-After.
@@ -332,13 +335,13 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	err = readFrame(hctx, conn, &hello)
 	hcancel()
 	if err != nil || hello.Type != api.FrameHello {
-		return false, 0, errors.New("the hub did not say hello")
+		return false, 0, errors.New("the controller did not say hello")
 	}
 	s.cluster.link.set(func(v *api.ClusterLink) {
-		v.HubID, v.HubAPI, v.HubVersion = hello.DaemonID, hello.APILevel, hello.Version
+		v.ControllerID, v.ControllerAPI, v.ControllerVersion = hello.DaemonID, hello.APILevel, hello.Version
 	})
 	s.cluster.link.setState(api.LinkConnected, "", time.Time{})
-	s.Log.Info("linked to the hub", "hub", f.URL, "version", hello.Version, "api_level", hello.APILevel)
+	s.Log.Info("linked to the controller", "controller", f.URL, "version", hello.Version, "api_level", hello.APILevel)
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -358,15 +361,15 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	for {
 		select {
 		case <-ctx.Done():
-			conn.Close(websocket.StatusNormalClosure, "the member is stopping")
+			conn.Close(websocket.StatusNormalClosure, "the worker is stopping")
 			return true, 0, nil
 		case err := <-readErr:
 			if cs := websocket.CloseStatus(err); cs != -1 {
-				return true, 0, fmt.Errorf("the hub closed the link: %s", closeReason(err))
+				return true, 0, fmt.Errorf("the controller closed the link: %s", closeReason(err))
 			}
 			return true, 0, errors.New("the link dropped")
 		case <-pinged:
-			return true, 0, errors.New("the hub stopped answering pings")
+			return true, 0, errors.New("the controller stopped answering pings")
 		case <-t.C:
 			s.sendStatus(lctx, conn)
 		}
@@ -381,7 +384,7 @@ func closeReason(err error) string {
 	return ""
 }
 
-// sendStatus tells the hub how many runs are going here and how many items wait on the
+// sendStatus tells the controller how many runs are going here and how many items wait on the
 // person.
 func (s *Server) sendStatus(ctx context.Context, conn *websocket.Conn) {
 	runs, wait := s.linkCounts(ctx)

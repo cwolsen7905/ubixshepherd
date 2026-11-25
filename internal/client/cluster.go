@@ -14,21 +14,21 @@ func (c *Client) Cluster(ctx context.Context) (api.Cluster, error) {
 	return out, c.do(ctx, http.MethodGet, api.PathCluster, nil, &out)
 }
 
-// MemberAdd names a member on a hub and returns its one-time enrolment code.
-func (c *Client) MemberAdd(ctx context.Context, name string) (api.MemberCode, error) {
-	var out api.MemberCode
-	return out, c.do(ctx, http.MethodPost, api.PathClusterMembers, api.MemberAdd{Name: name}, &out)
+// WorkerAdd names a worker on a controller and returns its one-time enrolment code.
+func (c *Client) WorkerAdd(ctx context.Context, name string) (api.WorkerCode, error) {
+	var out api.WorkerCode
+	return out, c.do(ctx, http.MethodPost, api.PathClusterWorkers, api.WorkerAdd{Name: name}, &out)
 }
 
-// MemberAct revokes, removes or confirms a member (act is "revoke", "remove" or "confirm").
-func (c *Client) MemberAct(ctx context.Context, name, act string) error {
+// WorkerAct revokes, removes or confirms a worker (act is "revoke", "remove" or "confirm").
+func (c *Client) WorkerAct(ctx context.Context, name, act string) error {
 	var ok struct{}
-	return c.do(ctx, http.MethodPost, api.PathClusterMembers+"/"+url.PathEscape(name)+"/"+act, nil, &ok)
+	return c.do(ctx, http.MethodPost, api.PathClusterWorkers+"/"+url.PathEscape(name)+"/"+act, nil, &ok)
 }
 
-// ClusterJoin has this daemon enrol with the hub at hubURL using a code from `shepherd
-// member add`.
-func (c *Client) ClusterJoin(ctx context.Context, hubURL, code string) (api.ClusterJoined, error) {
+// ClusterJoin has this daemon enrol with the controller at controllerURL using a code
+// from `shepherd worker add`.
+func (c *Client) ClusterJoin(ctx context.Context, controllerURL, code string) (api.ClusterJoined, error) {
 	var out api.ClusterJoined
-	return out, c.do(ctx, http.MethodPost, api.PathClusterJoin, api.ClusterJoin{URL: hubURL, Code: code}, &out)
+	return out, c.do(ctx, http.MethodPost, api.PathClusterJoin, api.ClusterJoin{URL: controllerURL, Code: code}, &out)
 }

@@ -917,7 +917,7 @@ func mcpTools() []mcpTool {
 		},
 		{
 			Name:        "cluster_status",
-			Description: "What this daemon is in a cluster. On a hub: each member machine (a work or home laptop) with whether it is connected and since when, its version, daemon id, and how many runs are going and items waiting there. On a member: whether its link to the hub is up. Use it to answer \"is my work laptop connected\". Read only.",
+			Description: "What this daemon is in a cluster. On a controller: each worker machine (a work or home laptop) with whether it is connected and since when, its version, daemon id, and how many runs are going and items waiting there. On a worker: whether its link to the controller is up. Use it to answer \"is my work laptop connected\". Read only.",
 			InputSchema: obj(map[string]any{}),
 			args:        func(map[string]any) ([]string, error) { return []string{"cluster", "status", "--json"}, nil },
 		},

@@ -38,7 +38,7 @@ type Config struct {
 	KeepGoing KeepGoing `yaml:"keep_going,omitempty" json:"keep_going"`
 	// Next holds the next-up list's settings.
 	Next Next `yaml:"next,omitempty" json:"next"`
-	// Cluster joins this daemon to a hub, or makes it one (docs/cluster.md).
+	// Cluster links this daemon to a controller, or makes it one (docs/cluster.md).
 	Cluster Cluster `yaml:"cluster,omitempty" json:"cluster,omitempty"`
 	// Muster sets the upkeep pass that tidies lists that have gone stale.
 	Muster Muster `yaml:"muster,omitempty" json:"muster"`
@@ -1001,7 +1001,8 @@ func Parse(b []byte) (Config, error) {
 	return c, err
 }
 
-// ParseWarn is Parse, and also returns a warning for each retired key found.
+// ParseWarn is Parse, and also returns a warning for each retired key found, and for
+// each deprecated name still read (Cluster.Warnings).
 func ParseWarn(b []byte) (Config, []string, error) {
 	b, warns, err := stripRetired(b)
 	if err != nil {
@@ -1058,6 +1059,7 @@ func ParseWarn(b []byte) (Config, []string, error) {
 	if err := c.Validate(); err != nil {
 		return c, warns, err
 	}
+	warns = append(warns, c.Cluster.Warnings()...)
 	return c, append(warns, c.ModelWarnings()...), nil
 }
 

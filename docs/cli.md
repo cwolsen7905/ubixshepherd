@@ -78,3 +78,18 @@ differs from origin's. Closing an adopted lane removes the worktree but never de
 the branch, merged or not. See [lanes](lanes.md).
 
 The `lane_open` MCP tool takes the same choice as `adopt: true`.
+
+## cluster and worker
+
+```sh
+shepherd cluster status [--json] | join <https URL> <code>
+shepherd worker add <name> | list [--json] | revoke <name> | remove <name> | confirm <name>
+```
+
+Clustering is opt-in, described in [cluster.md](cluster.md). `cluster status` says what
+this daemon is (a controller, a worker or alone), and `cluster join` enrols it as a worker
+with a code from the controller. The `worker` subcommands run on a controller and manage
+the machines that link to it. `cluster status` is also the `cluster_status` MCP tool.
+
+`shepherd member ...` is the old name of the `worker` subcommands: it still runs them for
+one release, after a note on stderr.
