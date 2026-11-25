@@ -5,7 +5,7 @@ description: |
   ReadWriteOnce volume, behind an Ingress that ends TLS. See docs/kubernetes.md.
 type: application
 # The chart's own version: bump it on any chart change, independent of the app.
-version: 0.1.0
+version: 0.1.1
 # The Shepherd release this chart was last checked against. The image tag is not taken
 # from it: set image.tag (a release tag, or a development image's sha tag) explicitly.
 appVersion: "0.6.0-beta.1"
