@@ -48,14 +48,17 @@ carries the release name. Keep the data, replace the rest:
 ```sh
 kubectl -n shepherd delete statefulset shepherd --cascade=orphan   # the pod and the claim stay
 kubectl -n shepherd delete service,ingress,networkpolicy shepherd
-kubectl -n shepherd delete cronjob shepherd-backup --ignore-not-found
+kubectl -n shepherd delete cronjob,serviceaccount,role,rolebinding shepherd-backup --ignore-not-found
+kubectl -n shepherd delete configmap shepherd-snapshot --ignore-not-found
 kubectl -n shepherd delete pod shepherd-0
 helm upgrade --install shepherd deploy/charts/shepherd -n shepherd -f my-values.yaml
 ```
 
 Name the release `shepherd`, as above, so the StatefulSet is `shepherd` again and the
 claim `data-shepherd-0` is reused with the home and workspace on it. The seeded
-`config.yaml` on the volume is kept, so the `seed` values do not change it.
+`config.yaml` on the volume is kept, so the `seed` values do not change it. The old
+manifests took a VolumeSnapshot after each store backup; the chart does that only with
+`backup.snapshot.enabled: true` (and `backup.snapshot.className`), so set it to keep them.
 
 ## Agent CLIs in the image
 
