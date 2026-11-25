@@ -35,18 +35,30 @@ spec:
       # below copies each file to a private volume at 0600.
       securityContext: {{- include "shepherd.podSecurity" . | nindent 8 }}
       initContainers:
-        # Make the two directories on a new volume. fsGroup makes the volume writable by
-        # the daemon's group, so nothing here runs as root and the pod meets the
-        # restricted Pod Security level.
+        # Make the two directories on the volume before the daemon's subPath mounts need
+        # them; a subPath that does not exist yet is made by the kubelet, owned by root, and
+        # the daemon cannot write it. The volume is mounted at /volume, not /data: the image
+        # declares /data/home and /data/workspace as volumes, which would shadow a mount at
+        # /data with throwaway ones. An empty directory not owned by the daemon (left by an
+        # earlier start) is replaced. fsGroup makes the volume writable by the daemon's group,
+        # so nothing here runs as root and the pod meets the restricted Pod Security level.
         - name: make-directories
           image: {{ include "shepherd.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["/bin/sh", "-c"]
           args:
-            - mkdir -p /data/home /data/workspace && chmod 0700 /data/home
+            - |
+              set -eu
+              cd /volume
+              for d in home workspace; do
+                if [ -d "$d" ] && [ ! -O "$d" ] && [ -z "$(ls -A "$d")" ]; then rmdir "$d"; fi
+                mkdir -p "$d"
+                [ -O "$d" ] && [ -w "$d" ] || { echo "/volume/$d is not the daemon's and not empty; fix its owner" >&2; exit 1; }
+              done
+              chmod 0700 home
           securityContext: {{- include "shepherd.containerSecurity" . | nindent 12 }}
           volumeMounts:
-            - {name: data, mountPath: /data}
+            - {name: data, mountPath: /volume}
         # Copy each credential to a private in-memory volume at mode 0600, owned by the
         # daemon's user. The Secret mount itself is not given to the daemon. The agent and
         # forge CLIs' directories (glab, gh, claude) are only seeds: the entrypoint copies

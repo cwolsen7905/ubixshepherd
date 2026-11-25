@@ -73,6 +73,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Fixed
 
+- The Helm chart's first start works on an empty volume. Its directory step mounted the volume at
+  `/data`, where the image's own `/data/home` and `/data/workspace` volumes hid it, so the
+  directories were never made on the volume and the daemon could not write its home. The step now
+  mounts the volume at `/volume`, and replaces an empty directory left behind by such a start.
 - The daemon now serves the desk chat's attachment routes, so uploading an image no longer
   answers "no endpoint POST /v1/desk/attachments", and it runs the lane-stall check every
   five minutes. The check's state is held on the server, not in a package-level map.
