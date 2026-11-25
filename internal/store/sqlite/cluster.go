@@ -10,14 +10,15 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
 
-// Members is the store's view as a store.MemberStore.
-func (s *DB) Members() store.MemberStore { return memberStore{s} }
+// Workers is the store's view as a store.WorkerStore. The tables keep their first names,
+// cluster_members and member_credentials.
+func (s *DB) Workers() store.WorkerStore { return workerStore{s} }
 
-type memberStore struct{ s *DB }
+type workerStore struct{ s *DB }
 
-var _ store.MemberStore = memberStore{}
+var _ store.WorkerStore = workerStore{}
 
-func (m memberStore) AddMember(ctx context.Context, name, codeHash string, until time.Time) error {
+func (m workerStore) AddWorker(ctx context.Context, name, codeHash string, until time.Time) error {
 	tx, err := m.s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -38,7 +39,7 @@ func (m memberStore) AddMember(ctx context.Context, name, codeHash string, until
 	return tx.Commit()
 }
 
-func (m memberStore) Members(ctx context.Context) ([]store.Member, error) {
+func (m workerStore) Workers(ctx context.Context) ([]store.Worker, error) {
 	rows, err := m.s.db.QueryContext(ctx, `SELECT name, daemon_id, pending_id, code_hash, code_until, version, api_level,
 		capabilities, created, last_seen, EXISTS (SELECT 1 FROM member_credentials c WHERE c.member = cluster_members.name)
 		FROM cluster_members ORDER BY name`)
@@ -46,9 +47,9 @@ func (m memberStore) Members(ctx context.Context) ([]store.Member, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []store.Member
+	var out []store.Worker
 	for rows.Next() {
-		var mb store.Member
+		var mb store.Worker
 		var code, until, caps, created, seen string
 		if err := rows.Scan(&mb.Name, &mb.DaemonID, &mb.PendingID, &code, &until, &mb.Version, &mb.APILevel, &caps, &created, &seen, &mb.Enrolled); err != nil {
 			return nil, err
@@ -63,7 +64,7 @@ func (m memberStore) Members(ctx context.Context) ([]store.Member, error) {
 	return out, rows.Err()
 }
 
-func (m memberStore) Enrol(ctx context.Context, codeHash, daemonID, credID, credHash string, now time.Time) (string, error) {
+func (m workerStore) Enrol(ctx context.Context, codeHash, daemonID, credID, credHash string, now time.Time) (string, error) {
 	tx, err := m.s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -87,7 +88,7 @@ func (m memberStore) Enrol(ctx context.Context, codeHash, daemonID, credID, cred
 	return name, tx.Commit()
 }
 
-func (m memberStore) CredentialMember(ctx context.Context, credHash string) (string, error) {
+func (m workerStore) CredentialWorker(ctx context.Context, credHash string) (string, error) {
 	var name string
 	err := m.s.db.QueryRowContext(ctx, `SELECT member FROM member_credentials WHERE hash = ?`, credHash).Scan(&name)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -96,7 +97,7 @@ func (m memberStore) CredentialMember(ctx context.Context, credHash string) (str
 	return name, err
 }
 
-func (m memberStore) Handshake(ctx context.Context, name, version string, apiLevel int, caps []string, seen time.Time) error {
+func (m workerStore) Handshake(ctx context.Context, name, version string, apiLevel int, caps []string, seen time.Time) error {
 	if caps == nil {
 		caps = []string{}
 	}
@@ -105,31 +106,31 @@ func (m memberStore) Handshake(ctx context.Context, name, version string, apiLev
 		version, apiLevel, string(b), tstr(seen), name)
 }
 
-func (m memberStore) Seen(ctx context.Context, name string, seen time.Time) error {
+func (m workerStore) Seen(ctx context.Context, name string, seen time.Time) error {
 	return m.exec(ctx, `UPDATE cluster_members SET last_seen = ? WHERE name = ?`, tstr(seen), name)
 }
 
-func (m memberStore) SetPendingID(ctx context.Context, name, id string) error {
+func (m workerStore) SetPendingID(ctx context.Context, name, id string) error {
 	return m.exec(ctx, `UPDATE cluster_members SET pending_id = ? WHERE name = ?`, id, name)
 }
 
-func (m memberStore) ConfirmID(ctx context.Context, name string) error {
+func (m workerStore) ConfirmID(ctx context.Context, name string) error {
 	return m.exec(ctx, `UPDATE cluster_members SET daemon_id = pending_id, pending_id = '' WHERE name = ? AND pending_id != ''`, name)
 }
 
-func (m memberStore) RevokeMember(ctx context.Context, name string) error {
+func (m workerStore) RevokeWorker(ctx context.Context, name string) error {
 	if _, err := m.s.db.ExecContext(ctx, `DELETE FROM member_credentials WHERE member = ?`, name); err != nil {
 		return err
 	}
 	return m.exec(ctx, `UPDATE cluster_members SET daemon_id = '', pending_id = '' WHERE name = ?`, name)
 }
 
-func (m memberStore) RemoveMember(ctx context.Context, name string) error {
+func (m workerStore) RemoveWorker(ctx context.Context, name string) error {
 	return m.exec(ctx, `DELETE FROM cluster_members WHERE name = ?`, name)
 }
 
-// exec runs a write that must touch one member.
-func (m memberStore) exec(ctx context.Context, q string, args ...any) error {
+// exec runs a write that must touch one worker.
+func (m workerStore) exec(ctx context.Context, q string, args ...any) error {
 	res, err := m.s.db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return err

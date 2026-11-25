@@ -2,38 +2,41 @@ package api
 
 import "time"
 
-// The cluster's routes (docs/cluster.md): a hub, and members that link to it.
+// The cluster's routes (docs/cluster.md): a controller, and workers that link to it.
 const (
 	PathCluster = "/v1/cluster"
-	// PathClusterLink is the member's long-lived connection to the hub, a WebSocket, opened
-	// with a link credential.
+	// PathClusterLink is the worker's long-lived connection to the controller, a
+	// WebSocket, opened with a link credential.
 	PathClusterLink = "/v1/cluster/link"
 	// PathClusterEnrol trades an enrolment code for a link credential. It takes no token:
 	// the code is the proof.
 	PathClusterEnrol = "/v1/cluster/enrol"
-	// PathClusterMembers adds a member (POST); a member's own routes sit beneath it:
+	// PathClusterWorkers adds a worker (POST); a worker's own routes sit beneath it:
 	// /{name}/revoke, /{name}/remove, /{name}/confirm.
-	PathClusterMembers = "/v1/cluster/members"
-	// PathClusterJoin asks this daemon to enrol with a hub (POST).
+	PathClusterWorkers = "/v1/cluster/workers"
+	// PathClusterMembersOld is the old name of PathClusterWorkers, still served, with the
+	// same routes beneath it, for one release.
+	PathClusterMembersOld = "/v1/cluster/members"
+	// PathClusterJoin asks this daemon to enrol with a controller (POST).
 	PathClusterJoin = "/v1/cluster/join"
 )
 
-// ClusterAPILevel is what this build tells a hub or member about the link's own wire:
-// it moves when a frame changes in a way an older peer cannot read.
+// ClusterAPILevel is what this build tells a controller or worker about the link's own
+// wire: it moves when a frame changes in a way an older peer cannot read.
 const ClusterAPILevel = 1
 
-// DaemonIDHeader carries a member's daemon id on the request that opens its link, so the
-// hub can refuse a changed id before it upgrades.
+// DaemonIDHeader carries a worker's daemon id on the request that opens its link, so the
+// controller can refuse a changed id before it upgrades.
 const DaemonIDHeader = "X-Shepherd-Daemon-Id"
 
 // Roles in a Cluster answer.
 const (
-	RoleHub    = "hub"
-	RoleMember = "member"
-	RoleAlone  = "alone"
+	RoleController = "controller"
+	RoleWorker     = "worker"
+	RoleAlone      = "alone"
 )
 
-// Link states on a member.
+// Link states on a worker.
 const (
 	LinkNotJoined  = "not joined"
 	LinkConnecting = "connecting"
@@ -42,96 +45,115 @@ const (
 	LinkWaiting    = "waiting to retry"
 )
 
-// Cluster is GET /v1/cluster: what this daemon is in a cluster. A hub lists its members;
-// a member says how its link to the hub is.
+// Cluster is GET /v1/cluster: what this daemon is in a cluster. A controller lists its
+// workers; a worker says how its link to the controller is.
 type Cluster struct {
 	Role     string `json:"role"`
 	DaemonID string `json:"daemon_id"`
-	// Members are a hub's members, by name.
-	Members []ClusterMember `json:"members,omitempty"`
-	// Link is a member's link to its hub; nil on a hub or a daemon on its own.
+	// Workers are a controller's workers, by name.
+	Workers []ClusterWorker `json:"workers,omitempty"`
+	// Link is a worker's link to its controller; nil on a controller or a daemon on its
+	// own.
 	Link *ClusterLink `json:"link,omitempty"`
 }
 
-// ClusterMember is one member as a hub sees it.
-type ClusterMember struct {
+// ClusterWorker is one worker as a controller sees it.
+type ClusterWorker struct {
 	Name     string `json:"name"`
 	DaemonID string `json:"daemon_id,omitempty"`
-	// Enrolled says the member holds a credential; one that does not is waiting for its
+	// Enrolled says the worker holds a credential; one that does not is waiting for its
 	// code to be used (CodeExpires) or has been revoked.
 	Enrolled bool `json:"enrolled"`
 	Online   bool `json:"online"`
-	// Since is when the member came online, or, offline, when it was last seen; zero if
+	// Since is when the worker came online, or, offline, when it was last seen; zero if
 	// it never linked.
 	Since        time.Time `json:"since,omitempty"`
 	Version      string    `json:"version,omitempty"`
 	APILevel     int       `json:"api_level,omitempty"`
 	Capabilities []string  `json:"capabilities,omitempty"`
-	// RunsGoing and Waiting are the member's last report; zero while it is offline.
+	// RunsGoing and Waiting are the worker's last report; zero while it is offline.
 	RunsGoing int `json:"runs_going"`
 	Waiting   int `json:"waiting"`
-	// PendingID is a daemon id the member presented that differs from the one it enrolled
+	// PendingID is a daemon id the worker presented that differs from the one it enrolled
 	// with: the link is refused until the person confirms it.
 	PendingID   string    `json:"pending_id,omitempty"`
 	CodeExpires time.Time `json:"code_expires,omitempty"`
 }
 
-// ClusterLink is a member's link to its hub.
+// ClusterLink is a worker's link to its controller.
 type ClusterLink struct {
-	Hub   string `json:"hub,omitempty"`
-	State string `json:"state"`
+	Controller string `json:"controller,omitempty"`
+	State      string `json:"state"`
 	// Since is when the state began.
 	Since time.Time `json:"since,omitempty"`
-	// Error is why the last try failed, or the hub refused.
+	// Error is why the last try failed, or the controller refused.
 	Error string `json:"error,omitempty"`
-	// NextTry is when the member will dial again, while it waits to.
-	NextTry    time.Time `json:"next_try,omitempty"`
-	HubID      string    `json:"hub_daemon_id,omitempty"`
-	HubAPI     int       `json:"hub_api_level,omitempty"`
-	HubVersion string    `json:"hub_version,omitempty"`
+	// NextTry is when the worker will dial again, while it waits to.
+	NextTry           time.Time `json:"next_try,omitempty"`
+	ControllerID      string    `json:"controller_daemon_id,omitempty"`
+	ControllerAPI     int       `json:"controller_api_level,omitempty"`
+	ControllerVersion string    `json:"controller_version,omitempty"`
 }
 
-// MemberAdd is POST /v1/cluster/members.
-type MemberAdd struct {
+// WorkerAdd is POST /v1/cluster/workers.
+type WorkerAdd struct {
 	Name string `json:"name"`
 }
 
-// MemberCode is the one-time enrolment code a hub shows once.
-type MemberCode struct {
+// WorkerCode is the one-time enrolment code a controller shows once.
+type WorkerCode struct {
 	Name    string    `json:"name"`
 	Code    string    `json:"code"`
 	Expires time.Time `json:"expires"`
 }
 
-// ClusterEnrol is POST /v1/cluster/enrol, from the member's daemon to the hub.
+// ClusterEnrol is POST /v1/cluster/enrol, from the worker's daemon to the controller.
 type ClusterEnrol struct {
 	Code     string `json:"code"`
 	DaemonID string `json:"daemon_id"`
 }
 
-// ClusterEnrolled is the hub's answer: the member's name and its link credential, shown
-// once.
+// ClusterEnrolled is the controller's answer: the worker's name and its link credential,
+// shown once. It crosses between daemons that may run different versions, so the
+// controller's id goes under both its name and its old one, hub_daemon_id, and a worker
+// reads either (ID).
 type ClusterEnrolled struct {
-	Name       string `json:"name"`
-	Credential string `json:"credential"`
-	HubID      string `json:"hub_daemon_id"`
+	Name         string `json:"name"`
+	Credential   string `json:"credential"`
+	ControllerID string `json:"controller_daemon_id,omitempty"`
+	// HubID is ControllerID under its old name, for a worker from before the rename.
+	HubID string `json:"hub_daemon_id,omitempty"`
 }
 
-// ClusterJoin is POST /v1/cluster/join, to the member's own daemon.
+// NewClusterEnrolled is the answer a controller sends, with its id under both names.
+func NewClusterEnrolled(name, credential, controllerID string) ClusterEnrolled {
+	return ClusterEnrolled{Name: name, Credential: credential, ControllerID: controllerID, HubID: controllerID}
+}
+
+// ID is the controller's daemon id, from whichever name the controller sent it under.
+func (e ClusterEnrolled) ID() string {
+	if e.ControllerID != "" {
+		return e.ControllerID
+	}
+	return e.HubID
+}
+
+// ClusterJoin is POST /v1/cluster/join, to the worker's own daemon.
 type ClusterJoin struct {
 	URL  string `json:"url"`
 	Code string `json:"code"`
 }
 
-// ClusterJoined says which member this daemon now is.
+// ClusterJoined says which worker this daemon now is.
 type ClusterJoined struct {
-	Name string `json:"name"`
-	Hub  string `json:"hub"`
+	Name       string `json:"name"`
+	Controller string `json:"controller"`
 }
 
-// LinkFrame is one message on the link, a JSON text message. The member opens with a
-// hello and the hub answers with its own; after that the member sends a status at each
-// ping. Phase 1 carries nothing else.
+// LinkFrame is one message on the link, a JSON text message. The worker opens with a
+// hello and the controller answers with its own; after that the worker sends a status at
+// each ping. Phase 1 carries nothing else. No frame names a role, so a worker and a
+// controller from either side of the hub and member rename read each other's frames.
 type LinkFrame struct {
 	Type         string   `json:"type"`
 	DaemonID     string   `json:"daemon_id,omitempty"`

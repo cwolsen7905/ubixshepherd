@@ -11,7 +11,7 @@ import (
 )
 
 // runCluster is `shepherd cluster status | join`: what this daemon is in a cluster, and
-// enrolling it with a hub (docs/cluster.md).
+// enrolling it with a controller (docs/cluster.md).
 func runCluster(ctx context.Context, env Env, args []string) error {
 	sub := "status"
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
@@ -49,8 +49,8 @@ func runCluster(ctx context.Context, env Env, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(env.Stdout, "joined %s as %s; the daemon is linking now (shepherd cluster status)\n", got.Hub, got.Name)
-		fmt.Fprintf(env.Stdout, "to keep it across a config reload, you may set cluster.hub: %s in the config\n", got.Hub)
+		fmt.Fprintf(env.Stdout, "joined %s as %s; the daemon is linking now (shepherd cluster status)\n", got.Controller, got.Name)
+		fmt.Fprintf(env.Stdout, "to keep it across a config reload, you may set cluster.controller: %s in the config\n", got.Controller)
 		return nil
 	}
 	return errUsage
@@ -58,47 +58,47 @@ func runCluster(ctx context.Context, env Env, args []string) error {
 
 func writeCluster(w io.Writer, c api.Cluster, now time.Time) {
 	switch c.Role {
-	case api.RoleHub:
-		fmt.Fprintf(w, "hub %s\n", c.DaemonID)
-		if len(c.Members) == 0 {
-			fmt.Fprintln(w, "  no members yet: shepherd member add <name>, then shepherd cluster join <url> <code> on the machine")
+	case api.RoleController:
+		fmt.Fprintf(w, "controller %s\n", c.DaemonID)
+		if len(c.Workers) == 0 {
+			fmt.Fprintln(w, "  no workers yet: shepherd worker add <name>, then shepherd cluster join <url> <code> on the machine")
 		}
-		for _, m := range c.Members {
-			fmt.Fprintf(w, "  %-12s %s\n", m.Name, memberLine(m, now))
+		for _, m := range c.Workers {
+			fmt.Fprintf(w, "  %-12s %s\n", m.Name, workerLine(m, now))
 		}
-	case api.RoleMember:
+	case api.RoleWorker:
 		l := c.Link
-		fmt.Fprintf(w, "member %s\n", c.DaemonID)
+		fmt.Fprintf(w, "worker %s\n", c.DaemonID)
 		if l == nil {
 			return
 		}
-		fmt.Fprintf(w, "  hub:   %s\n", l.Hub)
-		fmt.Fprintf(w, "  link:  %s%s\n", l.State, since(l.Since, now))
-		if l.HubID != "" && l.State == api.LinkConnected {
-			fmt.Fprintf(w, "  hub id %s, version %s, api %d\n", l.HubID, l.HubVersion, l.HubAPI)
+		fmt.Fprintf(w, "  controller: %s\n", l.Controller)
+		fmt.Fprintf(w, "  link:       %s%s\n", l.State, since(l.Since, now))
+		if l.ControllerID != "" && l.State == api.LinkConnected {
+			fmt.Fprintf(w, "  controller id %s, version %s, api %d\n", l.ControllerID, l.ControllerVersion, l.ControllerAPI)
 		}
 		if l.Error != "" {
-			fmt.Fprintf(w, "  why:   %s\n", l.Error)
+			fmt.Fprintf(w, "  why:        %s\n", l.Error)
 		}
 		if !l.NextTry.IsZero() {
-			fmt.Fprintf(w, "  next:  try again in %s\n", max(l.NextTry.Sub(now), 0).Round(time.Second))
+			fmt.Fprintf(w, "  next:       try again in %s\n", max(l.NextTry.Sub(now), 0).Round(time.Second))
 		}
 	default:
-		fmt.Fprintln(w, "alone: not a hub and not linked to one (cluster.role: hub, or shepherd cluster join <url> <code>)")
+		fmt.Fprintln(w, "alone: not a controller and not linked to one (cluster.role: controller, or shepherd cluster join <url> <code>)")
 	}
 }
 
-func memberLine(m api.ClusterMember, now time.Time) string {
+func workerLine(m api.ClusterWorker, now time.Time) string {
 	var parts []string
 	switch {
 	case m.PendingID != "":
-		parts = append(parts, "refused: its daemon id changed to "+m.PendingID+"; confirm with shepherd member confirm "+m.Name)
+		parts = append(parts, "refused: its daemon id changed to "+m.PendingID+"; confirm with shepherd worker confirm "+m.Name)
 	case m.Online:
 		parts = append(parts, "online"+since(m.Since, now))
 	case !m.Enrolled && !m.CodeExpires.IsZero():
 		parts = append(parts, "waiting to enrol, code ends in "+max(m.CodeExpires.Sub(now), 0).Round(time.Second).String())
 	case !m.Enrolled:
-		parts = append(parts, "not enrolled (revoked, or its code ended): shepherd member add "+m.Name)
+		parts = append(parts, "not enrolled (revoked, or its code ended): shepherd worker add "+m.Name)
 	case m.Since.IsZero():
 		parts = append(parts, "offline, never linked")
 	default:
