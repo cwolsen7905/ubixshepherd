@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -763,6 +764,123 @@ var leakProbes = map[string]func(*testing.T, context.Context, store.Store, leakW
 	},
 }
 
+// leakRefProbes write another tenant's id into each reference column a tenant's view
+// checks (tableTenancy's refs), through tenant 1's view and its own parent rows, and
+// expect not found; TestTenantsSeeNothingOfEachOther then checks tenant 2's reads did not
+// change. TestLeakSuiteCoversEveryRef fails on a declared ref with no probe here.
+var leakRefProbes = map[string]func(*testing.T, context.Context, store.Store, leakWorld, leakWorld){
+	"spend.ref": func(t *testing.T, c context.Context, a store.Store, b, _ leakWorld) {
+		refused(t, "AddSpend ref", a.AddSpend(c, store.Spend{Day: leakDay, Source: "intruder", Ref: b.run, USD: 9}), store.ErrNotFound)
+	},
+	"conversations.repo_id": func(t *testing.T, c context.Context, a store.Store, b, _ leakWorld) {
+		refused(t, "PutConversation repo_id", a.PutConversation(c, store.Conversation{ID: "conv-intruder", Agent: "claude", RepoID: b.repo}), store.ErrNotFound)
+	},
+	"usage.run_id": func(t *testing.T, c context.Context, a store.Store, b, _ leakWorld) {
+		refused(t, "AddUsage run_id", a.AddUsage(c, store.Usage{Day: leakDay, RunID: b.run, Agent: "claude", Requests: 1}), store.ErrNotFound)
+	},
+	"usage.workspace_id": func(t *testing.T, c context.Context, a store.Store, b, _ leakWorld) {
+		refused(t, "AddUsage workspace_id", a.AddUsage(c, store.Usage{Day: leakDay, WorkspaceID: b.ws, Agent: "desk", Requests: 1}), store.ErrNotFound)
+	},
+	"next_items.lane_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.AddNextItem(c, store.NextItem{Title: "intruder", LaneID: b.lane})
+		refused(t, "AddNextItem lane_id", err, store.ErrNotFound)
+		_, err = a.UpdateNextItem(c, w.next, store.NextPatch{LaneID: &b.lane})
+		refused(t, "UpdateNextItem lane_id", err, store.ErrNotFound)
+	},
+	"topics.merged_into": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.MergeTopics(c, w.topic, b.topic)
+		refused(t, "MergeTopics into", err, store.ErrNotFound)
+	},
+	"crook_verdicts.run_id": func(t *testing.T, c context.Context, a store.Store, b, _ leakWorld) {
+		_, err := a.AddCrookVerdict(c, store.CrookVerdict{Action: "lane_open", Kind: "proceed", Rule: "intruder", Run: b.run})
+		refused(t, "AddCrookVerdict run_id", err, store.ErrNotFound)
+	},
+	"lanes.origin_run": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.CreateLane(c, store.Lane{RepoID: w.repo, Name: "intruder", Branch: "intruder", Worktree: "/wt-intruder", State: store.LaneOpen, Origin: store.Origin{Run: b.run}})
+		refused(t, "CreateLane origin_run", err, store.ErrNotFound)
+	},
+	"runs.parent": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.CreateRun(c, store.Run{LaneID: w.lane, Agent: "claude", State: store.RunRunning, Parent: b.run})
+		refused(t, "CreateRun parent", err, store.ErrNotFound)
+	},
+	"decisions.answer_run": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		refused(t, "SetDecisionRun answer_run", a.SetDecisionRun(c, w.dec, b.run), store.ErrNotFound)
+	},
+	"requests.target_run": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		q, err := a.Request(c, w.req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q.TargetRun = b.run
+		refused(t, "UpdateRequest target_run", a.UpdateRequest(c, q), store.ErrNotFound)
+	},
+	"requests.reply_run": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		q, err := a.Request(c, w.req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		q.ReplyRun = b.run
+		refused(t, "UpdateRequest reply_run", a.UpdateRequest(c, q), store.ErrNotFound)
+	},
+	"artifacts.workspace_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, _, err := a.UpsertArtifact(c, store.Artifact{WorkspaceID: b.ws, RepoID: w.repo, LaneID: w.lane, Path: "docs/intruder-ws.md"})
+		refused(t, "UpsertArtifact workspace_id", err, store.ErrNotFound)
+	},
+	"artifacts.repo_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, _, err := a.UpsertArtifact(c, store.Artifact{WorkspaceID: w.ws, RepoID: b.repo, LaneID: w.lane, Path: "docs/intruder-repo.md"})
+		refused(t, "UpsertArtifact repo_id", err, store.ErrNotFound)
+	},
+	"artifacts.run_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, _, err := a.UpsertArtifact(c, store.Artifact{WorkspaceID: w.ws, RepoID: w.repo, LaneID: w.lane, RunID: b.run, Path: "docs/intruder-run.md"})
+		refused(t, "UpsertArtifact run_id", err, store.ErrNotFound)
+	},
+	"artifact_versions.run_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.AddArtifactVersion(c, store.ArtifactVersion{ArtifactID: w.art, SHA256: "intruder", Size: 1, RunID: b.run})
+		refused(t, "AddArtifactVersion run_id", err, store.ErrNotFound)
+	},
+	"reservations.lane_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.CreateReservation(c, store.Reservation{RepoID: w.repo, LaneID: b.lane, Tag: "v-intruder", State: store.TagReserved})
+		refused(t, "CreateReservation lane_id", err, store.ErrNotFound)
+	},
+	"check_files.item_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.ApproveCheckFiles(c, []store.CheckFile{{RepoID: w.repo, Path: "check-intruder", Blob: "b", BaseCommit: "c", ApprovedBy: "x", ItemID: b.next}})
+		refused(t, "ApproveCheckFiles item_id", err, store.ErrNotFound)
+	},
+	"desk_questions.topic_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.AddQuestion(c, store.Question{WorkspaceID: w.ws, Text: "intruder", TopicID: b.topic})
+		refused(t, "AddQuestion topic_id", err, store.ErrNotFound)
+	},
+	"desk_questions.lane_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.AddQuestion(c, store.Question{WorkspaceID: w.ws, Text: "intruder", LaneID: b.lane})
+		refused(t, "AddQuestion lane_id", err, store.ErrNotFound)
+	},
+	"desk_questions.next_id": func(t *testing.T, c context.Context, a store.Store, b, w leakWorld) {
+		_, err := a.AddQuestion(c, store.Question{WorkspaceID: w.ws, Text: "intruder", NextID: b.next})
+		refused(t, "AddQuestion next_id", err, store.ErrNotFound)
+	},
+}
+
+// Every reference a tenant's view checks has a probe.
+func TestLeakSuiteCoversEveryRef(t *testing.T) {
+	for table, ten := range tableTenancy {
+		for _, r := range ten.refs {
+			if _, ok := leakRefProbes[table+"."+r.column]; !ok {
+				t.Errorf("declared ref %s.%s has no probe in leakRefProbes", table, r.column)
+			}
+		}
+	}
+	for k := range leakRefProbes {
+		table, col, _ := strings.Cut(k, ".")
+		found := false
+		for _, r := range tableTenancy[table].refs {
+			found = found || r.column == col
+		}
+		if !found {
+			t.Errorf("leakRefProbes has %s, which is not a declared ref", k)
+		}
+	}
+}
+
 func TestTenantsSeeNothingOfEachOther(t *testing.T) {
 	ctx := context.Background()
 	db, _ := open(t)
@@ -795,6 +913,14 @@ func TestTenantsSeeNothingOfEachOther(t *testing.T) {
 	sort.Strings(names)
 	for _, n := range names {
 		t.Run(n, func(t *testing.T) { leakProbes[n](t, ctx, a, wb, wa) })
+	}
+	refNames := make([]string, 0, len(leakRefProbes))
+	for n := range leakRefProbes {
+		refNames = append(refNames, n)
+	}
+	sort.Strings(refNames)
+	for _, n := range refNames {
+		t.Run("ref "+n, func(t *testing.T) { leakRefProbes[n](t, ctx, a, wb, wa) })
 	}
 	diffReads(t, "tenant 2 after tenant 1's view was given its ids", readsB, readAll(ctx, b, wb))
 

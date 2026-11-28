@@ -70,6 +70,9 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 	if it.DependsOn, err = s.checkDeps(ctx, tx, 0, it.DependsOn); err != nil {
 		return it, err
 	}
+	if err := s.mustOwnRefs(ctx, tx, "next_items", map[string]int64{"lane_id": it.LaneID}); err != nil {
+		return it, err
+	}
 	rank, err := s.bottomRank(ctx, tx, it.State)
 	if err != nil {
 		return it, err
@@ -210,6 +213,9 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 	set(&it.MR, p.MR)
 	set(&it.Note, p.Note)
 	if p.LaneID != nil {
+		if err := s.mustOwnRefs(ctx, tx, "next_items", map[string]int64{"lane_id": *p.LaneID}); err != nil {
+			return it, err
+		}
 		it.LaneID = *p.LaneID
 	}
 	if p.DoneWhen != nil {

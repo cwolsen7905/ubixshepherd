@@ -38,11 +38,11 @@ func (s *DB) AddUsage(ctx context.Context, u store.Usage) error {
 		return err
 	}
 	defer tx.Rollback()
+	// A run's or a workspace's record is its tenant's: another tenant's is not found.
+	if err := s.mustOwnRefs(ctx, tx, "usage", map[string]int64{"run_id": u.RunID, "workspace_id": u.WorkspaceID}); err != nil {
+		return err
+	}
 	if u.RunID != 0 {
-		// A run's record is its tenant's: another tenant's run is not found.
-		if err := s.mustOwn(ctx, tx, "runs", "id", u.RunID); err != nil {
-			return err
-		}
 		cond, args := s.in("usage")
 		if _, err := tx.ExecContext(ctx, `DELETE FROM usage WHERE run_id = ?`+cond, append([]any{u.RunID}, args...)...); err != nil {
 			return err

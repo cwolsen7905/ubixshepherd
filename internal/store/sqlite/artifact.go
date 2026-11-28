@@ -61,6 +61,9 @@ func (s *DB) UpsertArtifact(ctx context.Context, a store.Artifact) (store.Artifa
 	if err := s.mustOwn(ctx, s.db, "lanes", "id", a.LaneID); err != nil {
 		return a, false, err
 	}
+	if err := s.mustOwnRefs(ctx, s.db, "artifacts", map[string]int64{"workspace_id": a.WorkspaceID, "repo_id": a.RepoID, "run_id": a.RunID}); err != nil {
+		return a, false, err
+	}
 	t := now()
 	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO artifacts
 		(workspace_id, repo_id, lane_id, run_id, path, title, kind, source, intent, intent_by, state, sha256, size, created, updated)
@@ -112,6 +115,9 @@ func (s *DB) AddArtifactVersion(ctx context.Context, v store.ArtifactVersion) (b
 	}
 	defer tx.Rollback()
 	if err := s.mustOwn(ctx, tx, "artifacts", "id", v.ArtifactID); err != nil {
+		return false, err
+	}
+	if err := s.mustOwnRefs(ctx, tx, "artifact_versions", map[string]int64{"run_id": v.RunID}); err != nil {
 		return false, err
 	}
 	res, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO artifact_versions (artifact_id, sha256, size, run_id, seen) VALUES (?, ?, ?, ?, ?)`,

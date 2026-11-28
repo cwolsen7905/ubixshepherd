@@ -60,6 +60,9 @@ func (s *DB) ApproveCheckFiles(ctx context.Context, files []store.CheckFile) ([]
 		if err := s.mustOwn(ctx, tx, "repos", "id", f.RepoID); err != nil {
 			return nil, err
 		}
+		if err := s.mustOwnRefs(ctx, tx, "check_files", map[string]int64{"item_id": f.ItemID}); err != nil {
+			return nil, err
+		}
 		var live int
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM check_files WHERE repo_id = ? AND path = ? AND released = ''`, f.RepoID, f.Path).Scan(&live); err != nil {
 			return nil, err

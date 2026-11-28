@@ -1195,7 +1195,10 @@ type Store interface {
 	Tenants(ctx context.Context) ([]Tenant, error)
 	// ForTenant is the store as one tenant sees it: every read and write of a tenant's
 	// rows touches only that tenant's, by id or by listing, and a new row is that
-	// tenant's. A row of another tenant is ErrNotFound, as if it did not exist.
+	// tenant's. A row of another tenant is ErrNotFound, as if it did not exist, and so is
+	// another tenant's id written into a reference (a run's parent, a request's target).
+	// id is greater than 0: ForTenant panics for 0 or less, so an unset tenant never
+	// falls back to the unscoped store.
 	ForTenant(id int64) Store
 	// Tenant is the tenant this store is scoped to, 0 for the unscoped store, which sees
 	// every tenant and puts new rows in DefaultTenantID.
