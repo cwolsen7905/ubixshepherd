@@ -67,7 +67,7 @@ func (h *feedHub) poll() {
 			h.s.KeepGoing().Trigger()
 		}
 		// The front desk is the default tenant's: it wakes for that tenant's items only.
-		h.s.desks.Wake(defaultTenantItems(h.st, from, items))
+		h.s.desks.Wake(deskItems(h.st, defaultTenantItems(h.st, from, items)))
 		h.mu.Lock()
 		close(h.changed)
 		h.changed = make(chan struct{})

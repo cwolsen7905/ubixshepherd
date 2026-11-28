@@ -155,7 +155,8 @@ limit routes as before: a browser cannot call an operator-only route at any role
 A row of another tenant is answered `404`, as a row that does not exist, whether a route names
 it in its path or in its body. Background work (the forge watcher, routing, muster and the
 front desk) still runs over every tenant's rows, so a feed item it writes about another
-tenant's lane lands in `default` for now.
+tenant's lane lands in `default`'s feed for now. The front desk, which is `default`'s, hears
+only of runs, decisions and requests in `default`.
 
 ## Using the CLI against a hosted daemon
 

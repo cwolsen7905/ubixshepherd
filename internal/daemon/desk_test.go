@@ -244,7 +244,19 @@ func TestDeskWakesForTheFeed(t *testing.T) {
 	r := newDeskRig(t, config.WakeAttached, time.Millisecond)
 	// Nobody attached: the event waits.
 	call(t, r.ts, r.s.Token, "GET", api.PathDeskStatus, nil, nil) // start the desk
-	r.s.Store.AddFeed(context.Background(), store.FeedRunFailed, "run 3: claude in lane x failed, 0 commit(s)", 3)
+	// The desk hears only of rows in its tenant: the items name a real run and decision.
+	ctx := context.Background()
+	if _, err := r.s.Store.SaveWorkspace(ctx, store.Workspace{Name: r.ws.Name, Path: r.ws.Path}, []store.Repo{{Name: "repo", Path: r.ws.Path + "/repo"}}); err != nil {
+		t.Fatal(err)
+	}
+	repos, _ := r.s.Store.Repos(ctx, r.ws.ID)
+	lane, err := r.s.Store.CreateLane(ctx, store.Lane{RepoID: repos[0].ID, Name: "x", Branch: "x", Worktree: "/wt-x", State: store.LaneOpen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, _ := r.s.Store.CreateRun(ctx, store.Run{LaneID: lane.ID, Agent: "claude", State: store.RunFailed})
+	dec, _ := r.s.Store.CreateDecision(ctx, store.Decision{RunID: run.ID, Question: "go?"})
+	r.s.Store.AddFeed(ctx, store.FeedRunFailed, fmt.Sprintf("run %d: claude in lane x failed, 0 commit(s)", run.ID), run.ID)
 	time.Sleep(3 * feedPoll)
 	var hist api.DeskHistory
 	call(t, r.ts, r.s.Token, "GET", api.PathDeskHistory, nil, &hist)
@@ -254,7 +266,7 @@ func TestDeskWakesForTheFeed(t *testing.T) {
 	// Attaching delivers it as one digest turn.
 	ch, _ := r.stream(t, api.PathDeskStream+"?after=0", nil)
 	got := until(t, ch, store.DeskTurnEnd)
-	if got[0].kind != store.DeskSystem || got[0].data.Origin != store.DeskBySystem || !strings.Contains(got[0].data.Text, "run 3") {
+	if got[0].kind != store.DeskSystem || got[0].data.Origin != store.DeskBySystem || !strings.Contains(got[0].data.Text, fmt.Sprintf("run %d", run.ID)) {
 		t.Errorf("first = %+v", got[0])
 	}
 	if !strings.Contains(r.claudeLog(), "ANSWER 403 [Shepherd]") {
@@ -262,9 +274,11 @@ func TestDeskWakesForTheFeed(t *testing.T) {
 	}
 	// While attached, a new event wakes it at once; one that is not a wake-up does not.
 	r.s.Store.AddFeed(context.Background(), store.FeedLaneOpened, "lane y opened", 0)
-	r.s.Store.AddFeed(context.Background(), store.FeedDecision, "decision 4 waits for you", 4)
+	// An item about a decision this tenant does not have never reaches the desk.
+	r.s.Store.AddFeed(context.Background(), store.FeedDecision, "decision 999 is someone else's", 999)
+	r.s.Store.AddFeed(context.Background(), store.FeedDecision, fmt.Sprintf("decision %d waits for you", dec.ID), dec.ID)
 	got = until(t, ch, store.DeskTurnEnd)
-	if !strings.Contains(got[0].data.Text, "decision 4") || strings.Contains(got[0].data.Text, "lane y") {
+	if !strings.Contains(got[0].data.Text, fmt.Sprintf("decision %d", dec.ID)) || strings.Contains(got[0].data.Text, "lane y") || strings.Contains(got[0].data.Text, "999") {
 		t.Errorf("second wake-up = %+v", got[0])
 	}
 }

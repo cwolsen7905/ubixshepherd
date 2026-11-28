@@ -459,3 +459,40 @@ func (c *streamSlots) take() bool {
 }
 
 func (c *streamSlots) give() { <-c.n }
+
+// deskItems are the feed items the front desk may hear of: the desk is the default
+// tenant's, and an item that wakes it names a run, a decision or a request by its ref.
+// Background work writes its items through the unscoped store, so they sit in the default
+// tenant's feed whatever row they are about; an item whose ref is not in the default
+// tenant's view is left out, so the desk's summary never tells of another tenant's work.
+func deskItems(st store.Store, items []store.FeedItem) []store.FeedItem {
+	if st.Tenant() != 0 && st.Tenant() != store.DefaultTenantID {
+		return nil
+	}
+	view, ctx := st, context.Background()
+	if st.Tenant() == 0 {
+		view = st.ForTenant(store.DefaultTenantID)
+	}
+	var out []store.FeedItem
+	for _, it := range items {
+		if deskRefOK(ctx, view, it) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// deskRefOK says whether the row an item that wakes the desk names is in the view. An item
+// of a kind that never wakes the desk is kept: the desk ignores it.
+func deskRefOK(ctx context.Context, view store.Store, it store.FeedItem) bool {
+	var err error
+	switch api.EventKind(it.Kind) {
+	case api.EventRunEnded, api.EventRunPassed, api.EventRunFailed, api.EventRunInterrupted, api.EventRunQuota:
+		_, err = view.Run(ctx, it.Ref)
+	case api.EventDecisionAsked:
+		_, err = view.Decision(ctx, it.Ref)
+	case api.EventRequestAttention:
+		_, err = view.Request(ctx, it.Ref)
+	}
+	return err == nil
+}

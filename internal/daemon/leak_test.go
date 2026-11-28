@@ -420,7 +420,6 @@ func normalize(s string) string {
 var defaultTenantGaps = map[string]string{
 	"GET " + api.PathFeed:       "background work's feed items land in the default tenant",
 	"GET " + api.PathFeedStream: "background work's feed items land in the default tenant",
-	"GET " + api.PathDeskStream: "the front desk is the default tenant's, and wakes for background work's feed items",
 }
 
 // withoutWords drops the lines, and the JSON feed items, that name any of the words.

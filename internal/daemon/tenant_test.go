@@ -153,3 +153,31 @@ func (rig *leakRig) resessionNew(t *testing.T, user string) {
 	rig.cookies[user] = &http.Cookie{Name: "shepherd_" + rig.s.listenPort(), Value: val}
 	rig.csrf[user] = ws.csrf
 }
+
+// The front desk hears only of the default tenant's runs, decisions and requests, even
+// when background work filed an item about another tenant's in the default tenant's feed.
+func TestDeskHearsOnlyItsTenant(t *testing.T) {
+	var home, away tenantWorld
+	rig := leakDaemon(t, func(st store.Store) {
+		home = seedWorld(t, st.ForTenant(store.DefaultTenantID), "home")
+		away = seedWorld(t, st.ForTenant(otherTenant), "away")
+	})
+	var items []store.FeedItem
+	for _, w := range []tenantWorld{home, away} {
+		items = append(items,
+			store.FeedItem{Kind: store.FeedRunFailed, Ref: w.run, Text: "run " + w.tag},
+			store.FeedItem{Kind: store.FeedDecision, Ref: w.dec, Text: "decision " + w.tag},
+			store.FeedItem{Kind: store.FeedRequestFailed, Ref: w.req, Text: "request " + w.tag})
+	}
+	items = append(items, store.FeedItem{Kind: store.FeedLaneOpened, Ref: away.lane, Text: "never wakes"})
+	var got []string
+	for _, it := range deskItems(rig.s.Store, items) {
+		got = append(got, it.Text)
+	}
+	if want := "run home,decision home,request home,never wakes"; strings.Join(got, ",") != want {
+		t.Errorf("the desk hears %q, want %q", strings.Join(got, ","), want)
+	}
+	if n := len(deskItems(rig.s.Store.ForTenant(otherTenant), items)); n != 0 {
+		t.Errorf("another tenant's view gives the desk %d items", n)
+	}
+}
