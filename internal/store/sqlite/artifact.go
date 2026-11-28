@@ -38,7 +38,8 @@ func scanArtifact(row scanner) (store.Artifact, error) {
 }
 
 func (s *DB) LaneArtifact(ctx context.Context, laneID int64, path string) (store.Artifact, error) {
-	return scanArtifact(s.db.QueryRowContext(ctx, `SELECT `+artifactCols+` FROM artifacts WHERE lane_id = ? AND path = ?`, laneID, path))
+	cond, args := s.in("artifacts")
+	return scanArtifact(s.db.QueryRowContext(ctx, `SELECT `+artifactCols+` FROM artifacts WHERE lane_id = ? AND path = ?`+cond, append([]any{laneID, path}, args...)...))
 }
 
 func (s *DB) UpsertArtifact(ctx context.Context, a store.Artifact) (store.Artifact, bool, error) {
@@ -56,6 +57,9 @@ func (s *DB) UpsertArtifact(ctx context.Context, a store.Artifact) (store.Artifa
 	}
 	if a.State == "" {
 		a.State = store.ArtifactLive
+	}
+	if err := s.mustOwn(ctx, s.db, "lanes", "id", a.LaneID); err != nil {
+		return a, false, err
 	}
 	t := now()
 	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO artifacts
@@ -107,6 +111,9 @@ func (s *DB) AddArtifactVersion(ctx context.Context, v store.ArtifactVersion) (b
 		return false, err
 	}
 	defer tx.Rollback()
+	if err := s.mustOwn(ctx, tx, "artifacts", "id", v.ArtifactID); err != nil {
+		return false, err
+	}
 	res, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO artifact_versions (artifact_id, sha256, size, run_id, seen) VALUES (?, ?, ?, ?, ?)`,
 		v.ArtifactID, v.SHA256, v.Size, v.RunID, t)
 	if err != nil {
@@ -123,7 +130,8 @@ func (s *DB) AddArtifactVersion(ctx context.Context, v store.ArtifactVersion) (b
 }
 
 func (s *DB) Artifact(ctx context.Context, id int64) (store.Artifact, error) {
-	a, err := scanArtifact(s.db.QueryRowContext(ctx, `SELECT `+artifactCols+` FROM artifacts WHERE id = ?`, id))
+	cond, cargs := s.in("artifacts")
+	a, err := scanArtifact(s.db.QueryRowContext(ctx, `SELECT `+artifactCols+` FROM artifacts WHERE id = ?`+cond, append([]any{id}, cargs...)...))
 	if err != nil {
 		return a, err
 	}
@@ -202,6 +210,9 @@ func (s *DB) ListArtifacts(ctx context.Context, f store.ArtifactFilter) ([]store
 			    AND EXISTS (SELECT 1 FROM topic_links WHERE kind = ? AND topic_id = ? AND ref = CAST(a.lane_id AS TEXT))))`,
 			store.TopicArtifact, f.TopicID, store.TopicArtifact, store.TopicLane, f.TopicID)
 	}
+	if cond, a := s.inAs("artifacts", "a"); cond != "" {
+		add(strings.TrimPrefix(cond, " AND "), a...)
+	}
 	q := `SELECT ` + aliased(artifactCols) + ` FROM artifacts a`
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, ` AND `)
@@ -232,6 +243,9 @@ func (s *DB) queryArtifacts(ctx context.Context, q string, args ...any) ([]store
 }
 
 func (s *DB) LinkArtifact(ctx context.Context, l store.ArtifactLink) error {
+	if err := s.mustOwn(ctx, s.db, "artifacts", "id", l.ArtifactID); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO artifact_links (artifact_id, kind, ref, created) VALUES (?, ?, ?, ?)`,
 		l.ArtifactID, l.Kind, l.Ref, now())
 	return err
@@ -271,13 +285,17 @@ func (s *DB) SetArtifactState(ctx context.Context, id int64, state string, closi
 }
 
 func (s *DB) MarkVersionSnapshotted(ctx context.Context, artifactID int64, sha string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE artifact_versions SET snapshotted = ? WHERE artifact_id = ? AND sha256 = ? AND snapshotted = ''`,
-		now(), artifactID, sha)
+	cond, args := s.in("artifact_versions")
+	_, err := s.db.ExecContext(ctx, `UPDATE artifact_versions SET snapshotted = ? WHERE artifact_id = ? AND sha256 = ? AND snapshotted = ''`+cond,
+		append([]any{now(), artifactID, sha}, args...)...)
 	return err
 }
 
+// artifactUpdate runs an UPDATE of one artifact whose query ends in its WHERE clause, scoped
+// to this store's tenant.
 func (s *DB) artifactUpdate(ctx context.Context, id int64, q string, args ...any) error {
-	res, err := s.db.ExecContext(ctx, q, args...)
+	cond, cargs := s.in("artifacts")
+	res, err := s.db.ExecContext(ctx, q+cond, append(args, cargs...)...)
 	if err != nil {
 		return err
 	}

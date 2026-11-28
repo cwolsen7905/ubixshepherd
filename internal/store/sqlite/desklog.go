@@ -25,6 +25,9 @@ func (s *DB) SaveDeskTurnLog(ctx context.Context, l store.DeskTurnLog) error {
 	if l.Waiting != nil {
 		waiting = *l.Waiting
 	}
+	if err := s.mustOwn(ctx, s.db, "workspaces", "id", l.WorkspaceID); err != nil {
+		return err
+	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO desk_turn_log (workspace_id, turn, started_by, topic, waiting, events, created)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (workspace_id, turn) DO UPDATE SET started_by = excluded.started_by, topic = excluded.topic, waiting = excluded.waiting,
@@ -34,8 +37,9 @@ func (s *DB) SaveDeskTurnLog(ctx context.Context, l store.DeskTurnLog) error {
 }
 
 func (s *DB) DeskTurnLogs(ctx context.Context, workspaceID int64) ([]store.DeskTurnLog, error) {
+	cond, args := s.in("desk_turn_log")
 	rows, err := s.db.QueryContext(ctx, `SELECT workspace_id, turn, started_by, topic, waiting, events, created
-		FROM desk_turn_log WHERE workspace_id = ? ORDER BY turn`, workspaceID)
+		FROM desk_turn_log WHERE workspace_id = ?`+cond+` ORDER BY turn`, append([]any{workspaceID}, args...)...)
 	if err != nil {
 		return nil, err
 	}

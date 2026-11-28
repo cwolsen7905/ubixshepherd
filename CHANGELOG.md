@@ -72,6 +72,11 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Changed
 
+- The store can be seen as one tenant (`ForTenant`): every read and write of that view touches
+  only the tenant's rows, another tenant's row reads as missing, and a key or path another
+  tenant holds is a conflict, never taken over. Nothing uses a tenant's view yet, so nothing
+  changes in use; a leak suite checks every store method, and fails for a new one it does
+  not cover.
 - The owner account is now user `owner`. The store's migration makes it the owner of the
   `default` tenant and keeps its password, factor, recovery codes, device tokens and
   sessions, so nobody signs in again. A daemon one release older refuses the store afterwards.

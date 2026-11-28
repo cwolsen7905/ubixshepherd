@@ -20,9 +20,10 @@ func (s *DB) KeepGoing(ctx context.Context, workspaceID int64) (store.KeepGoing,
 	k := store.KeepGoing{WorkspaceID: workspaceID}
 	var on int
 	var since, off, last string
+	cond, args := s.in("keep_going")
 	err := s.db.QueryRowContext(ctx, `
 		SELECT on_, since, by, spent_at_start, reason_off, off_at, last_action, cap_usd, max_runs, idle_hours
-		FROM keep_going WHERE workspace_id = ?`, workspaceID).
+		FROM keep_going WHERE workspace_id = ?`+cond, append([]any{workspaceID}, args...)...).
 		Scan(&on, &since, &k.By, &k.SpentAtStart, &k.ReasonOff, &off, &last, &k.Cap, &k.MaxRuns, &k.IdleHours)
 	if errors.Is(err, sql.ErrNoRows) {
 		return k, nil
@@ -48,6 +49,9 @@ func (s *DB) SetKeepGoing(ctx context.Context, k store.KeepGoing) error {
 	if k.On {
 		on = 1
 	}
+	if err := s.mustOwn(ctx, s.db, "workspaces", "id", k.WorkspaceID); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO keep_going (workspace_id, on_, since, by, spent_at_start, reason_off, off_at, last_action, cap_usd, max_runs, idle_hours)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -62,7 +66,8 @@ func (s *DB) SetKeepGoing(ctx context.Context, k store.KeepGoing) error {
 
 func (s *DB) LaneStarts(ctx context.Context, laneID int64, day string) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT n FROM keep_going_starts WHERE lane_id = ? AND day = ?`, laneID, day).Scan(&n)
+	cond, args := s.in("keep_going_starts")
+	err := s.db.QueryRowContext(ctx, `SELECT n FROM keep_going_starts WHERE lane_id = ? AND day = ?`+cond, append([]any{laneID, day}, args...)...).Scan(&n)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -71,6 +76,9 @@ func (s *DB) LaneStarts(ctx context.Context, laneID int64, day string) (int, err
 
 func (s *DB) CountLaneStart(ctx context.Context, laneID int64, day string) (int, error) {
 	var n int
+	if err := s.mustOwn(ctx, s.db, "lanes", "id", laneID); err != nil {
+		return 0, err
+	}
 	err := s.db.QueryRowContext(ctx, `
 		INSERT INTO keep_going_starts (lane_id, day, n) VALUES (?, ?, 1)
 		ON CONFLICT(lane_id, day) DO UPDATE SET n = n + 1 RETURNING n`, laneID, day).Scan(&n)

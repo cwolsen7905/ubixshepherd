@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -46,15 +47,20 @@ func (s *DB) AddMuster(ctx context.Context, it store.MusterItem) (store.MusterIt
 	}
 	t := now()
 	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO muster_items
-		(key, kind, subject_kind, subject_id, repo, reason, fix, fix_arg, before, state, auto, created, updated, applied, undo_until)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(key, kind, subject_kind, subject_id, repo, reason, fix, fix_arg, before, state, auto, created, updated, applied, undo_until, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.Key, it.Kind, it.SubjectKind, it.SubjectID, it.Repo, it.Reason, it.Fix, it.FixArg, it.Before, it.State,
-		b2i(it.Auto), t, t, ptrText(it.Applied), ptrText(it.UndoUntil))
+		b2i(it.Auto), t, t, ptrText(it.Applied), ptrText(it.UndoUntil), s.newRowTenant())
 	if err != nil {
 		return it, false, err
 	}
 	n, _ := res.RowsAffected()
-	got, err := scanMuster(s.db.QueryRowContext(ctx, `SELECT `+musterCols+` FROM muster_items WHERE key = ?`, it.Key))
+	cond, args := s.in("muster_items")
+	got, err := scanMuster(s.db.QueryRowContext(ctx, `SELECT `+musterCols+` FROM muster_items WHERE key = ?`+cond, append([]any{it.Key}, args...)...))
+	if errors.Is(err, sql.ErrNoRows) && s.tenant != 0 {
+		// The key is still unique across tenants (a shared key, see tableTenancy).
+		return it, false, fmt.Errorf("%w: muster key %q belongs to another team", store.ErrConflict, it.Key)
+	}
 	return got, n > 0, err
 }
 
@@ -66,7 +72,8 @@ func b2i(b bool) int {
 }
 
 func (s *DB) MusterItem(ctx context.Context, id int64) (store.MusterItem, error) {
-	m, err := scanMuster(s.db.QueryRowContext(ctx, `SELECT `+musterCols+` FROM muster_items WHERE id = ?`, id))
+	cond, args := s.in("muster_items")
+	m, err := scanMuster(s.db.QueryRowContext(ctx, `SELECT `+musterCols+` FROM muster_items WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, store.ErrNotFound
 	}
@@ -77,9 +84,10 @@ func (s *DB) MusterItems(ctx context.Context, f store.MusterFilter) ([]store.Mus
 	if f.Limit <= 0 {
 		f.Limit = 500
 	}
+	cond, args := s.in("muster_items")
 	rows, err := s.db.QueryContext(ctx, `SELECT `+musterCols+` FROM muster_items
-		WHERE (? = '' OR state = ?) AND (? = '' OR kind = ?) ORDER BY id DESC LIMIT ?`,
-		f.State, f.State, f.Kind, f.Kind, f.Limit)
+		WHERE (? = '' OR state = ?) AND (? = '' OR kind = ?)`+cond+` ORDER BY id DESC LIMIT ?`,
+		append(append([]any{f.State, f.State, f.Kind, f.Kind}, args...), f.Limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,8 +123,9 @@ func (s *DB) UpdateMuster(ctx context.Context, id int64, p store.MusterPatch) (s
 	if p.UndoUntil != nil {
 		m.UndoUntil = p.UndoUntil
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE muster_items SET state = ?, reason = ?, before = ?, applied = ?, undo_until = ?, updated = ? WHERE id = ?`,
-		m.State, m.Reason, m.Before, ptrText(m.Applied), ptrText(m.UndoUntil), now(), id)
+	cond, args := s.in("muster_items")
+	_, err = s.db.ExecContext(ctx, `UPDATE muster_items SET state = ?, reason = ?, before = ?, applied = ?, undo_until = ?, updated = ? WHERE id = ?`+cond,
+		append([]any{m.State, m.Reason, m.Before, ptrText(m.Applied), ptrText(m.UndoUntil), now(), id}, args...)...)
 	if err != nil {
 		return m, err
 	}

@@ -706,6 +706,8 @@ var migrations = []string{
 // DB is a SQLite-backed store.Store.
 type DB struct {
 	db *sql.DB
+	// tenant scopes every query to one tenant (ForTenant); 0 is unscoped.
+	tenant int64
 }
 
 var _ store.Store = (*DB)(nil)
@@ -756,7 +758,14 @@ func (s *DB) migrate(ctx context.Context) error {
 }
 
 func (s *DB) Driver() string { return "sqlite" }
-func (s *DB) Close() error   { return s.db.Close() }
+
+// Close closes the database. A tenant's view (ForTenant) shares it and closes nothing.
+func (s *DB) Close() error {
+	if s.tenant != 0 {
+		return nil
+	}
+	return s.db.Close()
+}
 
 func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
 
@@ -772,10 +781,28 @@ func (s *DB) SaveWorkspace(ctx context.Context, ws store.Workspace, repos []stor
 	}
 	defer tx.Rollback()
 
+	if s.tenant != 0 {
+		// Paths stay unique across tenants: a workspace or repo path of another tenant's
+		// is a conflict, never taken over.
+		var other int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM workspaces WHERE path = ? AND tenant_id != ?`, ws.Path, s.tenant).Scan(&other); err != nil {
+			return store.Workspace{}, err
+		}
+		for _, r := range repos {
+			var n int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM repos r JOIN workspaces w ON w.id = r.workspace_id WHERE r.path = ? AND w.tenant_id != ?`, r.Path, s.tenant).Scan(&n); err != nil {
+				return store.Workspace{}, err
+			}
+			other += n
+		}
+		if other > 0 {
+			return store.Workspace{}, fmt.Errorf("%w: workspace %q: a path is already another team's", store.ErrConflict, ws.Name)
+		}
+	}
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO workspaces (name, path, created) VALUES (?, ?, ?)
+		INSERT INTO workspaces (name, path, created, tenant_id) VALUES (?, ?, ?, ?)
 		ON CONFLICT (path) DO UPDATE SET name = excluded.name`,
-		ws.Name, ws.Path, now())
+		ws.Name, ws.Path, now(), s.newRowTenant())
 	if err != nil {
 		return store.Workspace{}, fmt.Errorf("save workspace %q: %w", ws.Name, err)
 	}
@@ -807,7 +834,8 @@ func (s *DB) SaveWorkspace(ctx context.Context, ws store.Workspace, repos []stor
 }
 
 func (s *DB) Workspaces(ctx context.Context) ([]store.Workspace, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, path, created FROM workspaces ORDER BY name`)
+	cond, args := s.in("workspaces")
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, path, created FROM workspaces WHERE 1 = 1`+cond+` ORDER BY name`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -855,7 +883,8 @@ func scanRepo(sc interface{ Scan(...any) error }) (store.Repo, error) {
 }
 
 func (s *DB) repos(ctx context.Context, workspaceID int64, where string) ([]store.Repo, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+repoCols+` FROM repos WHERE workspace_id = ? `+where+` ORDER BY name`, workspaceID)
+	cond, args := s.in("repos")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+repoCols+` FROM repos WHERE workspace_id = ? `+where+cond+` ORDER BY name`, append([]any{workspaceID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -876,7 +905,8 @@ func (s *DB) SetRepoRemoved(ctx context.Context, id int64, at *time.Time) error 
 	if at != nil {
 		v = at.UTC().Format(time.RFC3339Nano)
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE repos SET removed = ? WHERE id = ?`, v, id)
+	cond, args := s.in("repos")
+	res, err := s.db.ExecContext(ctx, `UPDATE repos SET removed = ? WHERE id = ?`+cond, append([]any{v, id}, args...)...)
 	if err != nil {
 		return err
 	}
@@ -910,8 +940,9 @@ func scanLane(sc interface{ Scan(...any) error }) (store.Lane, error) {
 
 // Lanes returns a repo's lanes that are not closed.
 func (s *DB) Lanes(ctx context.Context, repoID int64) ([]store.Lane, error) {
+	cond, args := s.in("lanes")
 	rows, err := s.db.QueryContext(ctx, `SELECT `+laneCols+`
-		FROM lanes WHERE repo_id = ? AND state != ? ORDER BY name`, repoID, store.LaneClosed)
+		FROM lanes WHERE repo_id = ? AND state != ?`+cond+` ORDER BY name`, append([]any{repoID, store.LaneClosed}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -928,7 +959,8 @@ func (s *DB) Lanes(ctx context.Context, repoID int64) ([]store.Lane, error) {
 }
 
 func (s *DB) Lane(ctx context.Context, id int64) (store.Lane, error) {
-	l, err := scanLane(s.db.QueryRowContext(ctx, `SELECT `+laneCols+` FROM lanes WHERE id = ?`, id))
+	cond, args := s.in("lanes")
+	l, err := scanLane(s.db.QueryRowContext(ctx, `SELECT `+laneCols+` FROM lanes WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return l, store.ErrNotFound
 	}
@@ -938,6 +970,9 @@ func (s *DB) Lane(ctx context.Context, id int64) (store.Lane, error) {
 func (s *DB) CreateLane(ctx context.Context, l store.Lane) (store.Lane, error) {
 	scope, err := json.Marshal(nonNil(l.Scope))
 	if err != nil {
+		return l, err
+	}
+	if err := s.mustOwn(ctx, s.db, "repos", "id", l.RepoID); err != nil {
 		return l, err
 	}
 	res, err := s.db.ExecContext(ctx, `
@@ -964,7 +999,8 @@ func (s *DB) SetLaneState(ctx context.Context, id int64, state string) error {
 	if state == store.LaneClosed {
 		closed = now()
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE lanes SET state = ?, closed = ? WHERE id = ?`, state, closed, id)
+	cond, args := s.in("lanes")
+	res, err := s.db.ExecContext(ctx, `UPDATE lanes SET state = ?, closed = ? WHERE id = ?`+cond, append([]any{state, closed, id}, args...)...)
 	if err != nil {
 		return err
 	}
@@ -979,17 +1015,20 @@ func (s *DB) SetLaneScope(ctx context.Context, id int64, scope []string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE lanes SET scope = ? WHERE id = ?`, string(b), id)
+	cond, args := s.in("lanes")
+	_, err = s.db.ExecContext(ctx, `UPDATE lanes SET scope = ? WHERE id = ?`+cond, append([]any{string(b), id}, args...)...)
 	return err
 }
 
 func (s *DB) DeleteLane(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM lanes WHERE id = ?`, id)
+	cond, args := s.in("lanes")
+	_, err := s.db.ExecContext(ctx, `DELETE FROM lanes WHERE id = ?`+cond, append([]any{id}, args...)...)
 	return err
 }
 
 func (s *DB) Repo(ctx context.Context, id int64) (store.Repo, error) {
-	r, err := scanRepo(s.db.QueryRowContext(ctx, `SELECT `+repoCols+` FROM repos WHERE id = ?`, id))
+	cond, args := s.in("repos")
+	r, err := scanRepo(s.db.QueryRowContext(ctx, `SELECT `+repoCols+` FROM repos WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, store.ErrNotFound
 	}
@@ -1026,6 +1065,9 @@ func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 }
 
 func (s *DB) CreateRun(ctx context.Context, r store.Run) (store.Run, error) {
+	if err := s.mustOwn(ctx, s.db, "lanes", "id", r.LaneID); err != nil {
+		return r, err
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO runs (lane_id, agent, model, prompt, state, log, start_sha, started, session, parent)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1054,12 +1096,13 @@ func (s *DB) UpdateRun(ctx context.Context, r store.Run) error {
 	if r.Ended != nil {
 		ended = r.Ended.UTC().Format(time.RFC3339Nano)
 	}
+	cond, args := s.in("runs")
 	_, err = s.db.ExecContext(ctx, `
 		UPDATE runs SET state = ?, pid = ?, log = ?, end_sha = ?, commits = ?, outside = ?,
 			exit_code = ?, error = ?, ended = ?, session = ?, cost_usd = ?, credits = ?,
-			session_usd = ?, session_credits = ?, cost_estimated = ?, reason = ? WHERE id = ?`,
-		r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits,
-		r.SessionUSD, r.SessionCredits, r.CostEstimated, r.Reason, r.ID)
+			session_usd = ?, session_credits = ?, cost_estimated = ?, reason = ? WHERE id = ?`+cond,
+		append([]any{r.State, r.PID, r.Log, r.EndSHA, r.Commits, string(outside), exit, r.Error, ended, r.Session, r.CostUSD, r.Credits,
+			r.SessionUSD, r.SessionCredits, r.CostEstimated, r.Reason, r.ID}, args...)...)
 	return err
 }
 
@@ -1084,7 +1127,8 @@ func (s *DB) DismissRun(ctx context.Context, id int64, at *time.Time) error {
 }
 
 func (s *DB) Run(ctx context.Context, id int64) (store.Run, error) {
-	r, err := scanRun(s.db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs WHERE id = ?`, id))
+	cond, args := s.in("runs")
+	r, err := scanRun(s.db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return r, store.ErrNotFound
 	}
@@ -1093,8 +1137,9 @@ func (s *DB) Run(ctx context.Context, id int64) (store.Run, error) {
 
 // Runs returns the newest runs first; laneID 0 means every lane, state "" every state.
 func (s *DB) Runs(ctx context.Context, laneID int64, state string, limit int) ([]store.Run, error) {
-	q := `SELECT ` + runCols + ` FROM runs WHERE (? = 0 OR lane_id = ?) AND (? = '' OR state = ?) ORDER BY id DESC LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, laneID, laneID, state, state, limit)
+	cond, args := s.in("runs")
+	q := `SELECT ` + runCols + ` FROM runs WHERE (? = 0 OR lane_id = ?) AND (? = '' OR state = ?)` + cond + ` ORDER BY id DESC LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, q, append(append([]any{laneID, laneID, state, state}, args...), limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1111,6 +1156,9 @@ func (s *DB) Runs(ctx context.Context, laneID int64, state string, limit int) ([
 }
 
 func (s *DB) AddEvent(ctx context.Context, e store.Event) (store.Event, error) {
+	if err := s.mustOwn(ctx, s.db, "runs", "id", e.RunID); err != nil {
+		return e, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO events (run_id, kind, status, text, created) VALUES (?, ?, ?, ?, ?)`,
 		e.RunID, e.Kind, e.Status, e.Text, now())
 	if err != nil {
@@ -1121,7 +1169,8 @@ func (s *DB) AddEvent(ctx context.Context, e store.Event) (store.Event, error) {
 }
 
 func (s *DB) Events(ctx context.Context, runID int64) ([]store.Event, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, run_id, kind, status, text, created FROM events WHERE run_id = ? ORDER BY id`, runID)
+	cond, args := s.in("events")
+	rows, err := s.db.QueryContext(ctx, `SELECT id, run_id, kind, status, text, created FROM events WHERE run_id = ?`+cond+` ORDER BY id`, append([]any{runID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1163,6 +1212,9 @@ func (s *DB) CreateDecision(ctx context.Context, d store.Decision) (store.Decisi
 	if err != nil {
 		return d, err
 	}
+	if err := s.mustOwn(ctx, s.db, "runs", "id", d.RunID); err != nil {
+		return d, err
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO decisions (run_id, question, options, recommendation, why, state, created)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -1175,7 +1227,8 @@ func (s *DB) CreateDecision(ctx context.Context, d store.Decision) (store.Decisi
 }
 
 func (s *DB) Decision(ctx context.Context, id int64) (store.Decision, error) {
-	d, err := scanDecision(s.db.QueryRowContext(ctx, `SELECT `+decisionCols+` FROM decisions WHERE id = ?`, id))
+	cond, args := s.in("decisions")
+	d, err := scanDecision(s.db.QueryRowContext(ctx, `SELECT `+decisionCols+` FROM decisions WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return d, store.ErrNotFound
 	}
@@ -1184,7 +1237,8 @@ func (s *DB) Decision(ctx context.Context, id int64) (store.Decision, error) {
 
 // Decisions returns decisions in a state ("" for all), oldest first.
 func (s *DB) Decisions(ctx context.Context, state string) ([]store.Decision, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+decisionCols+` FROM decisions WHERE (? = '' OR state = ?) ORDER BY id`, state, state)
+	cond, args := s.in("decisions")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+decisionCols+` FROM decisions WHERE (? = '' OR state = ?)`+cond+` ORDER BY id`, append([]any{state, state}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1201,7 +1255,8 @@ func (s *DB) Decisions(ctx context.Context, state string) ([]store.Decision, err
 }
 
 func (s *DB) SetDecisionState(ctx context.Context, id int64, state string) (store.Decision, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET state = ? WHERE id = ?`, state, id)
+	cond, args := s.in("decisions")
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET state = ? WHERE id = ?`+cond, append([]any{state, id}, args...)...)
 	if err != nil {
 		return store.Decision{}, err
 	}
@@ -1213,8 +1268,9 @@ func (s *DB) SetDecisionState(ctx context.Context, id int64, state string) (stor
 
 // AnswerDecision records an answer to an open decision; ErrConflict if it is not open.
 func (s *DB) AnswerDecision(ctx context.Context, id int64, answer string) (store.Decision, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET state = ?, answer = ?, answered = ? WHERE id = ? AND state = ?`,
-		store.DecisionAnswered, answer, now(), id, store.DecisionOpen)
+	cond, args := s.in("decisions")
+	res, err := s.db.ExecContext(ctx, `UPDATE decisions SET state = ?, answer = ?, answered = ? WHERE id = ? AND state = ?`+cond,
+		append([]any{store.DecisionAnswered, answer, now(), id, store.DecisionOpen}, args...)...)
 	if err != nil {
 		return store.Decision{}, err
 	}
@@ -1228,7 +1284,8 @@ func (s *DB) AnswerDecision(ctx context.Context, id int64, answer string) (store
 }
 
 func (s *DB) SetDecisionRun(ctx context.Context, id, runID int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET answer_run = ? WHERE id = ?`, runID, id)
+	cond, args := s.in("decisions")
+	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET answer_run = ? WHERE id = ?`+cond, append([]any{runID, id}, args...)...)
 	return err
 }
 
@@ -1272,6 +1329,9 @@ func scanRequest(sc interface{ Scan(...any) error }) (store.Request, error) {
 }
 
 func (s *DB) CreateRequest(ctx context.Context, q store.Request) (store.Request, error) {
+	if err := s.mustOwn(ctx, s.db, "runs", "id", q.FromRun); err != nil {
+		return q, err
+	}
 	t := now()
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO requests (from_run, kind, lane, message, state, agent, depth, note, created, updated,
@@ -1287,15 +1347,17 @@ func (s *DB) CreateRequest(ctx context.Context, q store.Request) (store.Request,
 }
 
 func (s *DB) UpdateRequest(ctx context.Context, q store.Request) error {
+	cond, args := s.in("requests")
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE requests SET lane = ?, state = ?, agent = ?, target_run = ?, reply = ?, reply_run = ?, note = ?, updated = ?
-		WHERE id = ?`,
-		q.Lane, q.State, q.Agent, q.TargetRun, q.Reply, q.ReplyRun, q.Note, now(), q.ID)
+		WHERE id = ?`+cond,
+		append([]any{q.Lane, q.State, q.Agent, q.TargetRun, q.Reply, q.ReplyRun, q.Note, now(), q.ID}, args...)...)
 	return err
 }
 
 func (s *DB) Request(ctx context.Context, id int64) (store.Request, error) {
-	q, err := scanRequest(s.db.QueryRowContext(ctx, `SELECT `+requestCols+` FROM requests WHERE id = ?`, id))
+	cond, args := s.in("requests")
+	q, err := scanRequest(s.db.QueryRowContext(ctx, `SELECT `+requestCols+` FROM requests WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return q, store.ErrNotFound
 	}
@@ -1304,7 +1366,8 @@ func (s *DB) Request(ctx context.Context, id int64) (store.Request, error) {
 
 // Requests returns requests in any of the states (all when none), oldest first.
 func (s *DB) Requests(ctx context.Context, states ...string) ([]store.Request, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+requestCols+` FROM requests ORDER BY id`)
+	cond, args := s.in("requests")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+requestCols+` FROM requests WHERE 1 = 1`+cond+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -1327,13 +1390,14 @@ func (s *DB) Requests(ctx context.Context, states ...string) ([]store.Request, e
 }
 
 func (s *DB) AddFeed(ctx context.Context, kind, text string, ref int64) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO feed (kind, text, ref, created) VALUES (?, ?, ?, ?)`, kind, text, ref, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO feed (kind, text, ref, created, tenant_id) VALUES (?, ?, ?, ?, ?)`, kind, text, ref, now(), s.newRowTenant())
 	return err
 }
 
 // Feed returns items after an id, oldest first.
 func (s *DB) Feed(ctx context.Context, after int64, limit int) ([]store.FeedItem, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, text, ref, created FROM feed WHERE id > ? ORDER BY id LIMIT ?`, after, limit)
+	cond, args := s.in("feed")
+	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, text, ref, created FROM feed WHERE id > ?`+cond+` ORDER BY id LIMIT ?`, append(append([]any{after}, args...), limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1354,13 +1418,15 @@ func (s *DB) Feed(ctx context.Context, after int64, limit int) ([]store.FeedItem
 // LastFeed is the newest feed id, 0 when there is none.
 func (s *DB) LastFeed(ctx context.Context) (int64, error) {
 	var id sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM feed`).Scan(&id)
+	cond, args := s.in("feed")
+	err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM feed WHERE 1 = 1`+cond, args...).Scan(&id)
 	return id.Int64, err
 }
 
 func (s *DB) Setting(ctx context.Context, key string) (string, error) {
 	var v string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&v)
+	cond, args := s.in("settings")
+	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`+cond, append([]any{key}, args...)...).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -1368,17 +1434,31 @@ func (s *DB) Setting(ctx context.Context, key string) (string, error) {
 }
 
 func (s *DB) SetSetting(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+	if s.tenant == 0 {
+		_, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
 		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, key, value)
-	return err
+		return err
+	}
+	// The key is still unique across tenants (a shared key, see tableTenancy): another
+	// tenant's row with this key is a conflict, never overwritten.
+	res, err := s.db.ExecContext(ctx, `INSERT INTO settings (key, value, tenant_id) VALUES (?, ?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE settings.tenant_id = excluded.tenant_id`, key, value, s.tenant)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: setting %q belongs to another team", store.ErrConflict, key)
+	}
+	return nil
 }
 
 func (s *DB) LaneForge(ctx context.Context, laneID int64) (store.LaneForge, error) {
 	f := store.LaneForge{LaneID: laneID}
 	var created, updated, started, finished string
+	cond, args := s.in("lane_forge")
 	err := s.db.QueryRowContext(ctx, `SELECT mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
 		mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, threads_seen, owner_blocking
-		FROM lane_forge WHERE lane_id = ?`, laneID).
+		FROM lane_forge WHERE lane_id = ?`+cond, append([]any{laneID}, args...)...).
 		Scan(&f.MR, &f.MRState, &f.MRURL, &f.Pipeline, &f.PipelineStatus, &f.FixTries, &f.GateTries, &f.MergeSHA,
 			&created, &updated, &started, &finished, &f.Approved, &f.RequireApproval, &f.ThreadsSeen, &f.OwnerBlocking)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -1398,6 +1478,9 @@ func timeText(t time.Time) string {
 }
 
 func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
+	if err := s.mustOwn(ctx, s.db, "lanes", "id", f.LaneID); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO lane_forge (lane_id, mr, mr_state, mr_url, pipeline, pipeline_status, fix_tries, gate_tries, merge_sha,
 			mr_created, mr_updated, pipeline_started, pipeline_finished, approved, require_approval, threads_seen, owner_blocking, updated)
@@ -1415,14 +1498,15 @@ func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 }
 
 func (s *DB) AddSpend(ctx context.Context, sp store.Spend) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO spend (day, source, ref, usd, credits, created) VALUES (?, ?, ?, ?, ?, ?)`,
-		sp.Day, sp.Source, sp.Ref, sp.USD, sp.Credits, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO spend (day, source, ref, usd, credits, created, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		sp.Day, sp.Source, sp.Ref, sp.USD, sp.Credits, now(), s.newRowTenant())
 	return err
 }
 
 // SpendOn totals a day's spend by source.
 func (s *DB) SpendOn(ctx context.Context, day string) (map[string]store.Spend, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT source, SUM(usd), SUM(credits), COUNT(*) FROM spend WHERE day = ? GROUP BY source`, day)
+	cond, args := s.in("spend")
+	rows, err := s.db.QueryContext(ctx, `SELECT source, SUM(usd), SUM(credits), COUNT(*) FROM spend WHERE day = ?`+cond+` GROUP BY source`, append([]any{day}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1440,6 +1524,9 @@ func (s *DB) SpendOn(ctx context.Context, day string) (map[string]store.Spend, e
 }
 
 func (s *DB) CreateReservation(ctx context.Context, r store.Reservation) (store.Reservation, error) {
+	if err := s.mustOwn(ctx, s.db, "repos", "id", r.RepoID); err != nil {
+		return r, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO reservations (repo_id, lane_id, tag, state, created) VALUES (?, ?, ?, ?, ?)`,
 		r.RepoID, r.LaneID, r.Tag, r.State, now())
 	if err != nil {
@@ -1454,8 +1541,9 @@ func (s *DB) CreateReservation(ctx context.Context, r store.Reservation) (store.
 
 // Reservations returns a repo's live reservations (not released), oldest first.
 func (s *DB) Reservations(ctx context.Context, repoID int64) ([]store.Reservation, error) {
+	cond, args := s.in("reservations")
 	rows, err := s.db.QueryContext(ctx, `SELECT id, repo_id, lane_id, tag, state, sha, created FROM reservations
-		WHERE repo_id = ? AND state != ? ORDER BY id`, repoID, store.TagReleased)
+		WHERE repo_id = ? AND state != ?`+cond+` ORDER BY id`, append([]any{repoID, store.TagReleased}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1474,27 +1562,38 @@ func (s *DB) Reservations(ctx context.Context, repoID int64) ([]store.Reservatio
 }
 
 func (s *DB) SetReservation(ctx context.Context, id int64, state, sha string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE reservations SET state = ?, sha = CASE WHEN ? = '' THEN sha ELSE ? END WHERE id = ?`, state, sha, sha, id)
+	cond, args := s.in("reservations")
+	_, err := s.db.ExecContext(ctx, `UPDATE reservations SET state = ?, sha = CASE WHEN ? = '' THEN sha ELSE ? END WHERE id = ?`+cond, append([]any{state, sha, sha, id}, args...)...)
 	return err
 }
 
 // PutConversation adds an adopted conversation, or refreshes what is known about it.
 func (s *DB) PutConversation(ctx context.Context, c store.Conversation) error {
 	b, _ := json.Marshal(nonNil(c.Branches))
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO conversations (id, agent, repo_id, dir, title, branches, file, started, last, imported)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	// A conversation's id is the agent's session id, unique across tenants: another
+	// tenant's conversation with this id is a conflict, never overwritten.
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO conversations (id, agent, repo_id, dir, title, branches, file, started, last, imported, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET repo_id = excluded.repo_id, dir = excluded.dir, title = excluded.title,
-			branches = excluded.branches, file = excluded.file, started = excluded.started, last = excluded.last`,
+			branches = excluded.branches, file = excluded.file, started = excluded.started, last = excluded.last
+			WHERE ? = 0 OR conversations.tenant_id = excluded.tenant_id`,
 		c.ID, c.Agent, c.RepoID, c.Dir, c.Title, string(b), c.File,
-		c.Started.UTC().Format(time.RFC3339Nano), c.Last.UTC().Format(time.RFC3339Nano), now())
-	return err
+		c.Started.UTC().Format(time.RFC3339Nano), c.Last.UTC().Format(time.RFC3339Nano), now(), s.newRowTenant(), s.tenant)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 && s.tenant != 0 {
+		return fmt.Errorf("%w: conversation %s belongs to another team", store.ErrConflict, c.ID)
+	}
+	return nil
 }
 
 // Conversations returns adopted conversations, most recent first; repoID 0 for all.
 func (s *DB) Conversations(ctx context.Context, repoID int64) ([]store.Conversation, error) {
+	cond, args := s.in("conversations")
 	rows, err := s.db.QueryContext(ctx, `SELECT id, agent, repo_id, dir, title, branches, file, started, last
-		FROM conversations WHERE (? = 0 OR repo_id = ?) ORDER BY last DESC`, repoID, repoID)
+		FROM conversations WHERE (? = 0 OR repo_id = ?)`+cond+` ORDER BY last DESC`, append([]any{repoID, repoID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1525,6 +1624,9 @@ type execer interface {
 }
 
 func (s *DB) AddDeskEvent(ctx context.Context, e store.DeskEvent) (store.DeskEvent, error) {
+	if err := s.mustOwn(ctx, s.db, "workspaces", "id", e.WorkspaceID); err != nil {
+		return e, err
+	}
 	return addDeskEvent(ctx, s.db, e)
 }
 
@@ -1549,16 +1651,18 @@ func addDeskEvent(ctx context.Context, db execer, e store.DeskEvent) (store.Desk
 }
 
 func (s *DB) DeskEvents(ctx context.Context, workspaceID, after int64, limit int) ([]store.DeskEvent, error) {
+	cond, args := s.in("desk_events")
 	return s.deskEvents(ctx, `SELECT seq, workspace_id, kind, text, turn, origin, created FROM desk_events
-		WHERE workspace_id = ? AND seq > ? ORDER BY seq LIMIT ?`, workspaceID, after, limit)
+		WHERE workspace_id = ? AND seq > ?`+cond+` ORDER BY seq LIMIT ?`, append(append([]any{workspaceID, after}, args...), limit)...)
 }
 
 func (s *DB) DeskHistory(ctx context.Context, workspaceID, before int64, limit int) ([]store.DeskEvent, error) {
 	if before <= 0 {
 		before = math.MaxInt64
 	}
+	cond, args := s.in("desk_events")
 	out, err := s.deskEvents(ctx, `SELECT seq, workspace_id, kind, text, turn, origin, created FROM desk_events
-		WHERE workspace_id = ? AND seq < ? ORDER BY seq DESC LIMIT ?`, workspaceID, before, limit)
+		WHERE workspace_id = ? AND seq < ?`+cond+` ORDER BY seq DESC LIMIT ?`, append(append([]any{workspaceID, before}, args...), limit)...)
 	slices.Reverse(out)
 	return out, err
 }
@@ -1587,6 +1691,11 @@ func (s *DB) deskEvents(ctx context.Context, q string, args ...any) ([]store.Des
 }
 
 func (s *DB) TrimDeskEvents(ctx context.Context, workspaceID int64, keep int) error {
+	if err := s.mustOwn(ctx, s.db, "workspaces", "id", workspaceID); errors.Is(err, store.ErrNotFound) {
+		return nil // another tenant's workspace trims as a missing one does: nothing
+	} else if err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `DELETE FROM desk_events WHERE workspace_id = ? AND seq <= (
 		SELECT seq FROM desk_events WHERE workspace_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?)`, workspaceID, workspaceID, keep)
 	return err

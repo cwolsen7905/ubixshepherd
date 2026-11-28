@@ -24,6 +24,9 @@ func scanAttachment(sc interface{ Scan(...any) error }) (store.Attachment, error
 func (s *DB) AddAttachment(ctx context.Context, a store.Attachment) (store.Attachment, error) {
 	a.Created = time.Now().UTC()
 	a.Turn = 0
+	if err := s.mustOwn(ctx, s.db, "workspaces", "id", a.WorkspaceID); err != nil {
+		return a, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_attachments (workspace_id, turn, sha, name, mime, kind, size, created)
 		VALUES (?, 0, ?, ?, ?, ?, ?, ?)`, a.WorkspaceID, a.SHA, a.Name, a.Mime, a.Kind, a.Size, a.Created.Format(time.RFC3339Nano))
 	if err != nil {
@@ -34,7 +37,8 @@ func (s *DB) AddAttachment(ctx context.Context, a store.Attachment) (store.Attac
 }
 
 func (s *DB) Attachment(ctx context.Context, id int64) (store.Attachment, error) {
-	a, err := scanAttachment(s.db.QueryRowContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE id = ?`, id))
+	cond, args := s.in("desk_attachments")
+	a, err := scanAttachment(s.db.QueryRowContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, store.ErrNotFound
 	}
@@ -47,7 +51,7 @@ func (s *DB) TakeAttachments(ctx context.Context, workspaceID, turn int64, ids [
 		return nil, err
 	}
 	defer tx.Rollback()
-	out, err := takeAttachments(ctx, tx, workspaceID, turn, ids)
+	out, err := s.takeAttachments(ctx, tx, workspaceID, turn, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -60,10 +64,13 @@ func (s *DB) AddDeskEventWithFiles(ctx context.Context, e store.DeskEvent, ids [
 		return e, err
 	}
 	defer tx.Rollback()
+	if err := s.mustOwn(ctx, tx, "workspaces", "id", e.WorkspaceID); err != nil {
+		return e, err
+	}
 	// Take the files first: a refusal leaves no message behind.
 	var taken []store.Attachment
 	if len(ids) > 0 {
-		if taken, err = takeAttachments(ctx, tx, e.WorkspaceID, -1, ids); err != nil {
+		if taken, err = s.takeAttachments(ctx, tx, e.WorkspaceID, -1, ids); err != nil {
 			return e, err
 		}
 	}
@@ -82,10 +89,11 @@ func (s *DB) AddDeskEventWithFiles(ctx context.Context, e store.DeskEvent, ids [
 
 // takeAttachments marks the files as the turn's inside tx, refusing any that is unknown,
 // another workspace's or already taken.
-func takeAttachments(ctx context.Context, tx *sql.Tx, workspaceID, turn int64, ids []int64) ([]store.Attachment, error) {
+func (s *DB) takeAttachments(ctx context.Context, tx *sql.Tx, workspaceID, turn int64, ids []int64) ([]store.Attachment, error) {
 	var out []store.Attachment
+	cond, args := s.in("desk_attachments")
 	for _, id := range ids {
-		a, err := scanAttachment(tx.QueryRowContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE id = ?`, id))
+		a, err := scanAttachment(tx.QueryRowContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE id = ?`+cond, append([]any{id}, args...)...))
 		if errors.Is(err, sql.ErrNoRows) || (err == nil && (a.WorkspaceID != workspaceID || a.Turn != 0)) {
 			return nil, fmt.Errorf("%w: attachment %d is unknown or already sent", store.ErrConflict, id)
 		}
@@ -107,10 +115,13 @@ func (s *DB) SweepAttachments(ctx context.Context, before time.Time) ([]string, 
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT sha FROM desk_attachments WHERE
-		(turn = 0 AND created < ?) OR (turn != 0 AND NOT EXISTS (
-			SELECT 1 FROM desk_events e WHERE e.workspace_id = desk_attachments.workspace_id AND e.seq = desk_attachments.turn))`,
-		before.UTC().Format(time.RFC3339Nano))
+	// On a tenant's view only that tenant's attachments are swept; a file is freed only
+	// when no attachment of any tenant still names it.
+	cond, cargs := s.in("desk_attachments")
+	stale := `((turn = 0 AND created < ?) OR (turn != 0 AND NOT EXISTS (
+			SELECT 1 FROM desk_events e WHERE e.workspace_id = desk_attachments.workspace_id AND e.seq = desk_attachments.turn)))` + cond
+	sweepArgs := append([]any{before.UTC().Format(time.RFC3339Nano)}, cargs...)
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT sha FROM desk_attachments WHERE `+stale, sweepArgs...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,10 +135,7 @@ func (s *DB) SweepAttachments(ctx context.Context, before time.Time) ([]string, 
 		shas = append(shas, sha)
 	}
 	rows.Close()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM desk_attachments WHERE
-		(turn = 0 AND created < ?) OR (turn != 0 AND NOT EXISTS (
-			SELECT 1 FROM desk_events e WHERE e.workspace_id = desk_attachments.workspace_id AND e.seq = desk_attachments.turn))`,
-		before.UTC().Format(time.RFC3339Nano)); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM desk_attachments WHERE `+stale, sweepArgs...); err != nil {
 		return nil, err
 	}
 	var free []string
@@ -156,7 +164,8 @@ func (s *DB) fillAttachments(ctx context.Context, es []store.DeskEvent) error {
 	if len(turns) == 0 {
 		return nil
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE turn IN (?`+strings.Repeat(",?", len(turns)-1)+`) ORDER BY id`, turns...)
+	cond, args := s.in("desk_attachments")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+attachCols+` FROM desk_attachments WHERE turn IN (?`+strings.Repeat(",?", len(turns)-1)+`)`+cond+` ORDER BY id`, append(turns, args...)...)
 	if err != nil {
 		return err
 	}

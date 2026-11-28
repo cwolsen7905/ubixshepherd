@@ -37,6 +37,9 @@ func (s *DB) AddGateResult(ctx context.Context, g store.GateResult) (store.GateR
 	if g.Passed {
 		passed = 1
 	}
+	if err := s.mustOwn(ctx, s.db, "lanes", "id", g.LaneID); err != nil {
+		return g, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO gate_results (lane_id, sha, gate, passed, at, source) VALUES (?, ?, ?, ?, ?, ?)`,
 		g.LaneID, g.SHA, g.Gate, passed, g.At.UTC().Format(time.RFC3339Nano), g.Source)
 	if err != nil {
@@ -47,9 +50,11 @@ func (s *DB) AddGateResult(ctx context.Context, g store.GateResult) (store.GateR
 }
 
 func (s *DB) GateResultFor(ctx context.Context, laneID int64, sha string) (*store.GateResult, error) {
-	return scanGate(s.db.QueryRowContext(ctx, `SELECT `+gateCols+` FROM gate_results WHERE lane_id = ? AND sha = ? ORDER BY id DESC LIMIT 1`, laneID, sha))
+	cond, args := s.in("gate_results")
+	return scanGate(s.db.QueryRowContext(ctx, `SELECT `+gateCols+` FROM gate_results WHERE lane_id = ? AND sha = ?`+cond+` ORDER BY id DESC LIMIT 1`, append([]any{laneID, sha}, args...)...))
 }
 
 func (s *DB) LastGateResult(ctx context.Context, laneID int64) (*store.GateResult, error) {
-	return scanGate(s.db.QueryRowContext(ctx, `SELECT `+gateCols+` FROM gate_results WHERE lane_id = ? ORDER BY id DESC LIMIT 1`, laneID))
+	cond, args := s.in("gate_results")
+	return scanGate(s.db.QueryRowContext(ctx, `SELECT `+gateCols+` FROM gate_results WHERE lane_id = ?`+cond+` ORDER BY id DESC LIMIT 1`, append([]any{laneID}, args...)...))
 }

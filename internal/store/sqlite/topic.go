@@ -34,8 +34,8 @@ func (s *DB) AddTopic(ctx context.Context, t store.Topic) (store.Topic, error) {
 		t.Source = store.TopicByPerson
 	}
 	n := now()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO topics (title, status, summary, source, created, updated)
-		VALUES (?, ?, ?, ?, ?, ?)`, t.Title, store.TopicOpen, t.Summary, t.Source, n, n)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO topics (title, status, summary, source, created, updated, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`, t.Title, store.TopicOpen, t.Summary, t.Source, n, n, s.newRowTenant())
 	if err != nil {
 		return t, err
 	}
@@ -45,8 +45,9 @@ func (s *DB) AddTopic(ctx context.Context, t store.Topic) (store.Topic, error) {
 
 func (s *DB) Topic(ctx context.Context, id int64) (store.Topic, error) {
 	// A merge chain is short; the bound only keeps a corrupt cycle from looping.
+	cond, args := s.in("topics")
 	for i := 0; i < 16; i++ {
-		t, err := scanTopic(s.db.QueryRowContext(ctx, `SELECT `+topicCols+` FROM topics WHERE id = ?`, id))
+		t, err := scanTopic(s.db.QueryRowContext(ctx, `SELECT `+topicCols+` FROM topics WHERE id = ?`+cond, append([]any{id}, args...)...))
 		if errors.Is(err, sql.ErrNoRows) {
 			return t, store.ErrNotFound
 		}
@@ -59,7 +60,8 @@ func (s *DB) Topic(ctx context.Context, id int64) (store.Topic, error) {
 }
 
 func (s *DB) Topics(ctx context.Context) ([]store.Topic, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+topicCols+` FROM topics WHERE merged_into = 0 ORDER BY updated DESC, id DESC`)
+	cond, args := s.in("topics")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+topicCols+` FROM topics WHERE merged_into = 0`+cond+` ORDER BY updated DESC, id DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +126,8 @@ func (s *DB) MergeTopics(ctx context.Context, from, into int64) (store.Topic, er
 		dst *int64
 	}{{from, &f}, {into, &i}} {
 		var merged int64
-		err := tx.QueryRowContext(ctx, `SELECT id, merged_into FROM topics WHERE id = ?`, c.id).Scan(c.dst, &merged)
+		cond, args := s.in("topics")
+		err := tx.QueryRowContext(ctx, `SELECT id, merged_into FROM topics WHERE id = ?`+cond, append([]any{c.id}, args...)...).Scan(c.dst, &merged)
 		if errors.Is(err, sql.ErrNoRows) {
 			return store.Topic{}, store.ErrNotFound
 		}
@@ -181,6 +184,13 @@ func (s *DB) LinkTopic(ctx context.Context, l store.TopicLink) (store.TopicLink,
 	switch {
 	case err == nil:
 		cur.Created = parseTime(created)
+		// kind and ref are still unique across tenants (a shared key, see tableTenancy):
+		// a link held by another tenant's topic is a conflict, never moved.
+		if err := s.mustOwn(ctx, tx, "topics", "id", cur.TopicID); errors.Is(err, store.ErrNotFound) {
+			return l, fmt.Errorf("%w: %s %s is linked by another team", store.ErrConflict, l.Kind, l.Ref)
+		} else if err != nil {
+			return l, err
+		}
 		if cur.TopicID == l.TopicID && cur.By == l.By || !store.TopicLinkWins(l.By, cur.By) {
 			return cur, nil
 		}
@@ -207,8 +217,9 @@ func (s *DB) LinkTopic(ctx context.Context, l store.TopicLink) (store.TopicLink,
 }
 
 func (s *DB) TopicLinks(ctx context.Context, topicID int64) ([]store.TopicLink, error) {
+	cond, args := s.in("topic_links")
 	rows, err := s.db.QueryContext(ctx, `SELECT topic_id, kind, ref, by, created FROM topic_links
-		WHERE topic_id = ? ORDER BY created, rowid`, topicID)
+		WHERE topic_id = ?`+cond+` ORDER BY created, rowid`, append([]any{topicID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -229,8 +240,9 @@ func (s *DB) TopicLinks(ctx context.Context, topicID int64) ([]store.TopicLink, 
 func (s *DB) TopicOf(ctx context.Context, kind, ref string) (store.TopicLink, error) {
 	var l store.TopicLink
 	var created string
-	err := s.db.QueryRowContext(ctx, `SELECT topic_id, kind, ref, by, created FROM topic_links WHERE kind = ? AND ref = ?`,
-		kind, ref).Scan(&l.TopicID, &l.Kind, &l.Ref, &l.By, &created)
+	cond, args := s.in("topic_links")
+	err := s.db.QueryRowContext(ctx, `SELECT topic_id, kind, ref, by, created FROM topic_links WHERE kind = ? AND ref = ?`+cond,
+		append([]any{kind, ref}, args...)...).Scan(&l.TopicID, &l.Kind, &l.Ref, &l.By, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return l, store.ErrNotFound
 	}

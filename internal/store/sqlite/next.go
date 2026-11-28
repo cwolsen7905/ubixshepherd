@@ -67,10 +67,10 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 		return it, err
 	}
 	defer tx.Rollback()
-	if it.DependsOn, err = checkDeps(ctx, tx, 0, it.DependsOn); err != nil {
+	if it.DependsOn, err = s.checkDeps(ctx, tx, 0, it.DependsOn); err != nil {
 		return it, err
 	}
-	rank, err := bottomRank(ctx, tx, it.State)
+	rank, err := s.bottomRank(ctx, tx, it.State)
 	if err != nil {
 		return it, err
 	}
@@ -79,10 +79,10 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 	if it.State == store.NextDone {
 		done = t
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO next_items (title, repo, plan, lane, lane_id, mr, state, rank, source, note, created, updated, done_at, done_when, depends_on)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	res, err := tx.ExecContext(ctx, `INSERT INTO next_items (title, repo, plan, lane, lane_id, mr, state, rank, source, note, created, updated, done_at, done_when, depends_on, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.Title, it.Repo, it.Plan, it.Lane, it.LaneID, it.MR, it.State, rank, it.Source, it.Note, t, t, done,
-		it.DoneWhen, store.FormatDeps(it.DependsOn))
+		it.DoneWhen, store.FormatDeps(it.DependsOn), s.newRowTenant())
 	if err != nil {
 		return it, err
 	}
@@ -95,11 +95,13 @@ func (s *DB) AddNextItem(ctx context.Context, it store.NextItem) (store.NextItem
 
 // checkDeps returns deps without repeats and checks them for item id (0 for one not yet
 // added): each must be another item, and the list must not close a cycle.
-func checkDeps(ctx context.Context, tx *sql.Tx, id int64, deps []int64) ([]int64, error) {
+// Only this tenant's items can be depended on.
+func (s *DB) checkDeps(ctx context.Context, tx *sql.Tx, id int64, deps []int64) ([]int64, error) {
 	if len(deps) == 0 {
 		return nil, nil
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, depends_on FROM next_items`)
+	cond, args := s.in("next_items")
+	rows, err := tx.QueryContext(ctx, `SELECT id, depends_on FROM next_items WHERE 1 = 1`+cond, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -139,17 +141,19 @@ func checkDeps(ctx context.Context, tx *sql.Tx, id int64, deps []int64) ([]int64
 	return out, nil
 }
 
-// bottomRank is the rank after the last item of a state.
-func bottomRank(ctx context.Context, q interface {
+// bottomRank is the rank after the last item of a state, in this tenant's list.
+func (s *DB) bottomRank(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, state string) (int, error) {
 	var r int
-	err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(rank), 0) + 1 FROM next_items WHERE state = ?`, state).Scan(&r)
+	cond, args := s.in("next_items")
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(MAX(rank), 0) + 1 FROM next_items WHERE state = ?`+cond, append([]any{state}, args...)...).Scan(&r)
 	return r, err
 }
 
 func (s *DB) NextItem(ctx context.Context, id int64) (store.NextItem, error) {
-	it, err := scanNext(s.db.QueryRowContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE id = ?`, id))
+	cond, args := s.in("next_items")
+	it, err := scanNext(s.db.QueryRowContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return it, store.ErrNotFound
 	}
@@ -157,7 +161,8 @@ func (s *DB) NextItem(ctx context.Context, id int64) (store.NextItem, error) {
 }
 
 func (s *DB) NextItems(ctx context.Context) ([]store.NextItem, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+nextCols+` FROM next_items `+nextOrder)
+	cond, args := s.in("next_items")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE 1 = 1`+cond+` `+nextOrder, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +184,8 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 		return store.NextItem{}, err
 	}
 	defer tx.Rollback()
-	it, err := scanNext(tx.QueryRowContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE id = ?`, id))
+	cond, cargs := s.in("next_items")
+	it, err := scanNext(tx.QueryRowContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE id = ?`+cond, append([]any{id}, cargs...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return it, store.ErrNotFound
 	}
@@ -210,7 +216,7 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 		it.DoneWhen = strings.TrimSpace(*p.DoneWhen)
 	}
 	if p.DependsOn != nil {
-		if it.DependsOn, err = checkDeps(ctx, tx, id, *p.DependsOn); err != nil {
+		if it.DependsOn, err = s.checkDeps(ctx, tx, id, *p.DependsOn); err != nil {
 			return it, err
 		}
 	}
@@ -219,7 +225,7 @@ func (s *DB) UpdateNextItem(ctx context.Context, id int64, p store.NextPatch) (s
 			return it, fmt.Errorf("unknown state %q", *p.State)
 		}
 		it.State = *p.State
-		if it.Rank, err = bottomRank(ctx, tx, it.State); err != nil {
+		if it.Rank, err = s.bottomRank(ctx, tx, it.State); err != nil {
 			return it, err
 		}
 		if it.State != store.NextDone {
@@ -281,14 +287,15 @@ func (s *DB) MoveNextItem(ctx context.Context, id int64, how string) (store.Next
 		return store.NextItem{}, err
 	}
 	defer tx.Rollback()
-	it, err := scanNext(tx.QueryRowContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE id = ?`, id))
+	cond, cargs := s.in("next_items")
+	it, err := scanNext(tx.QueryRowContext(ctx, `SELECT `+nextCols+` FROM next_items WHERE id = ?`+cond, append([]any{id}, cargs...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return it, store.ErrNotFound
 	}
 	if err != nil {
 		return it, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id FROM next_items WHERE state = ? ORDER BY rank, id`, it.State)
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM next_items WHERE state = ?`+cond+` ORDER BY rank, id`, append([]any{it.State}, cargs...)...)
 	if err != nil {
 		return it, err
 	}

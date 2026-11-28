@@ -50,9 +50,11 @@ func (s *DB) LaneHistory(ctx context.Context, f store.LaneHistoryFilter) ([]stor
 		WHERE (? = 0 OR r.workspace_id = ?) AND (? = 0 OR l.repo_id = ?) AND (? = 0 OR l.id = ?)
 			AND (? = 'all' OR (? = 'closed') = (l.state = 'closed'))
 			AND (? = '' OR l.state != 'closed' OR l.closed >= ?)`
+	cond, cargs := s.inAs("lanes", "l")
+	q += cond
 	cut := coarse(f.Since)
-	rows, err := s.db.QueryContext(ctx, q, f.WorkspaceID, f.WorkspaceID, f.RepoID, f.RepoID, f.LaneID, f.LaneID,
-		state, state, cut, cut)
+	rows, err := s.db.QueryContext(ctx, q, append([]any{f.WorkspaceID, f.WorkspaceID, f.RepoID, f.RepoID, f.LaneID, f.LaneID,
+		state, state, cut, cut}, cargs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -118,15 +120,16 @@ func taskLine(prompt string) string {
 func (s *DB) RunHistory(ctx context.Context, f store.RunHistoryFilter) (store.RunHistory, error) {
 	var h store.RunHistory
 	cut := coarse(f.Since)
+	rcond, rargs := s.inAs("runs", "x")
 	// The prompt is clipped in SQL: a task line never needs more, and the totals walk
 	// every run in the range.
 	q := `SELECT x.id, x.lane_id, r.name, l.name, l.state, x.agent, x.model, x.state, x.commits,
 			x.cost_usd, x.credits, x.cost_estimated, x.started, x.ended, substr(x.prompt, 1, 1000)
 		FROM runs x JOIN lanes l ON l.id = x.lane_id JOIN repos r ON r.id = l.repo_id
 		WHERE (? = 0 OR r.workspace_id = ?) AND (? = 0 OR l.repo_id = ?)
-			AND (? = '' OR x.state = ?) AND (? = '' OR x.started >= ?)
+			AND (? = '' OR x.state = ?) AND (? = '' OR x.started >= ?)` + rcond + `
 		ORDER BY x.id DESC`
-	rows, err := s.db.QueryContext(ctx, q, f.WorkspaceID, f.WorkspaceID, f.RepoID, f.RepoID, f.State, f.State, cut, cut)
+	rows, err := s.db.QueryContext(ctx, q, append([]any{f.WorkspaceID, f.WorkspaceID, f.RepoID, f.RepoID, f.State, f.State, cut, cut}, rargs...)...)
 	if err != nil {
 		return h, err
 	}
