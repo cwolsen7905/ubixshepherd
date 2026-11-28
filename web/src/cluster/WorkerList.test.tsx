@@ -25,6 +25,23 @@ describe('WorkerList', () => {
     expect(screen.getByText(/offline, last seen 2d ago/)).toBeTruthy()
   })
 
+  it("lists an online worker's tenant, agents and repos, and says when a worker is too old to report them", async () => {
+    const rows = [
+      wk({ tenant: 'default', capabilities: ['status', 'repos'], agents: ['claude', 'copilot'], repos: [{ origin: 'gitlab.example.com/g/app', name: 'app' }] }),
+      wk({ name: 'old', capabilities: ['status'] }),
+      wk({ name: 'bare', capabilities: ['status', 'repos'] }),
+      wk({ name: 'away', online: false, capabilities: ['status', 'repos'] }),
+    ]
+    render(<WorkerList ops={ops(rows)} now={now} />)
+    expect(await screen.findByText(/tenant default/)).toBeTruthy()
+    expect(screen.getByText('Agents: claude, copilot')).toBeTruthy()
+    expect(screen.getByText('gitlab.example.com/g/app')).toBeTruthy()
+    expect(screen.getByTitle('gitlab.example.com/g/app').textContent).toContain('app')
+    expect(screen.getAllByText(/not reported: this worker's version predates the report/)).toHaveLength(1)
+    expect(screen.getByText('Agents: none found')).toBeTruthy()
+    expect(screen.getByText('Repos: none with an origin')).toBeTruthy()
+  })
+
   it('says so when no worker exists and when one waits to enrol or has a changed id', async () => {
     const { unmount } = render(<WorkerList ops={ops([])} now={now} />)
     expect(await screen.findByText(/No worker yet/)).toBeTruthy()

@@ -76,6 +76,7 @@ export function WorkerList({ ops = live, now = () => Date.now() }: { ops?: Ops; 
                   {' '}· {m.version ? `v${m.version.replace(/^v/, '')} · ` : ''}api {m.api_level} · {m.runs_going} running, {m.waiting} waiting
                 </span>
               )}
+              {m.tenant && <span> · tenant {m.tenant}</span>}
               {m.daemon_id && <span title="The worker's daemon id"> · id <code>{m.daemon_id}</code></span>}{' '}
               {m.pending_id && (
                 <Button size="small" onClick={() => ops.confirm(m.name).then(load, fail)}>
@@ -90,6 +91,7 @@ export function WorkerList({ ops = live, now = () => Date.now() }: { ops?: Ops; 
               <Button size="small" variant="danger" onClick={() => setPending({ worker: m, act: 'remove' })}>
                 Remove
               </Button>
+              {m.online && <WorkerReport m={m} />}
             </li>
           ))}
         </ul>
@@ -147,6 +149,35 @@ export function WorkerList({ ops = live, now = () => Date.now() }: { ops?: Ops; 
         }}
       />
     </section>
+  )
+}
+
+/** What an online worker reported over its link: the agent CLIs it has, and its repos by
+ * origin with its own name for each. */
+function WorkerReport({ m }: { m: Worker }) {
+  if (!m.capabilities?.includes('repos')) {
+    return <div className="sh-row-sub">Repos and agents not reported: this worker&apos;s version predates the report.</div>
+  }
+  const repos = m.repos ?? []
+  return (
+    <>
+      <div className="sh-row-sub">Agents: {m.agents?.length ? m.agents.join(', ') : 'none found'}</div>
+      <div className="sh-row-sub">
+        {repos.length === 0 ? (
+          'Repos: none with an origin'
+        ) : (
+          <>
+            Repos:{' '}
+            {repos.map((r, i) => (
+              <span key={`${r.origin} ${r.name}`} title={r.origin}>
+                {i > 0 && ', '}
+                {r.name} <code>{r.origin}</code>
+              </span>
+            ))}
+          </>
+        )}
+      </div>
+    </>
   )
 }
 

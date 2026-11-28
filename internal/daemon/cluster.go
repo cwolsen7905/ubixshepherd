@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -82,12 +83,15 @@ type clusterState struct {
 	link linkState
 }
 
-// liveLink is one worker's link on the controller.
+// liveLink is one worker's link on the controller. What the worker reported, its counts,
+// repos and agents, lives here and goes with the link: it is live data, never stored.
 type liveLink struct {
 	since     time.Time
 	cancel    context.CancelFunc
 	runs      int
 	waiting   int
+	repos     []api.LinkRepo
+	agents    []string
 	daemonID  string
 	closeWith string
 }
@@ -193,9 +197,12 @@ func (s *Server) clusterGet(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
+		slugs := s.tenantSlugs(r.Context())
 		out.Workers = []api.ClusterWorker{}
 		for _, m := range list {
-			out.Workers = append(out.Workers, s.workerView(m))
+			v := s.workerView(m)
+			v.Tenant = slugs[s.workerTenant(r.Context(), m.Name)]
+			out.Workers = append(out.Workers, v)
 		}
 	case cfg.Controller != "" || s.hasLinkFile():
 		out.Role = api.RoleWorker
@@ -217,6 +224,7 @@ func (s *Server) workerView(m store.Worker) api.ClusterWorker {
 	if l := s.cluster.links[m.Name]; l != nil {
 		v.Online, v.Since, v.RunsGoing, v.Waiting = true, l.since, l.runs, l.waiting
 		v.DaemonID = l.daemonID
+		v.Repos, v.Agents = slices.Clone(l.repos), slices.Clone(l.agents)
 	}
 	s.cluster.mu.Unlock()
 	return v
@@ -442,7 +450,7 @@ func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms
 	}
 	err = writeFrame(ctx, conn, api.LinkFrame{
 		Type: api.FrameHello, DaemonID: s.DaemonID(), Version: version.Version, APILevel: api.ClusterAPILevel,
-		Capabilities: []string{"status"},
+		Capabilities: []string{api.CapStatus}, Tenant: s.tenantSlugs(ctx)[s.workerTenant(ctx, m.Name)],
 	})
 	if err != nil {
 		return "could not answer the hello"
@@ -451,6 +459,7 @@ func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms
 		s.Log.Error("record a worker's handshake", "worker", m.Name, "err", err)
 	}
 	s.cluster.mu.Lock()
+	l.repos, l.agents = hello.Repos, hello.Agents
 	if s.cluster.links == nil {
 		s.cluster.links = map[string]*liveLink{}
 	}
@@ -486,9 +495,14 @@ func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms
 	for {
 		select {
 		case f := <-frames:
-			if f.Type == api.FrameStatus {
+			switch f.Type {
+			case api.FrameStatus:
 				s.cluster.mu.Lock()
 				l.runs, l.waiting = f.RunsGoing, f.Waiting
+				s.cluster.mu.Unlock()
+			case api.FrameRepos:
+				s.cluster.mu.Lock()
+				l.repos, l.agents = f.Repos, f.Agents
 				s.cluster.mu.Unlock()
 			}
 		case err := <-readErr:
@@ -574,4 +588,31 @@ func (s *Server) linkCounts(ctx context.Context) (runs, wait int) {
 		wait = w.Count
 	}
 	return
+}
+
+// workerTenant is the id of the tenant a worker's credential belongs to: the store's
+// answer when it keeps one per worker, else the default tenant, which every worker is in
+// until a store says otherwise.
+func (s *Server) workerTenant(ctx context.Context, name string) int64 {
+	if wt, ok := s.Store.(interface {
+		WorkerTenant(ctx context.Context, name string) (int64, error)
+	}); ok {
+		if id, err := wt.WorkerTenant(ctx, name); err == nil && id > 0 {
+			return id
+		}
+	}
+	return store.DefaultTenantID
+}
+
+// tenantSlugs maps the store's tenants' ids to their slugs.
+func (s *Server) tenantSlugs(ctx context.Context) map[int64]string {
+	out := map[int64]string{}
+	ts, err := s.Store.Tenants(ctx)
+	if err != nil {
+		s.Log.Warn("list tenants", "err", err)
+	}
+	for _, t := range ts {
+		out[t.ID] = t.Slug
+	}
+	return out
 }

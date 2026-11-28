@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,6 +66,7 @@ func writeCluster(w io.Writer, c api.Cluster, now time.Time) {
 		}
 		for _, m := range c.Workers {
 			fmt.Fprintf(w, "  %-12s %s\n", m.Name, workerLine(m, now))
+			writeWorkerReport(w, m)
 		}
 	case api.RoleWorker:
 		l := c.Link
@@ -74,6 +76,9 @@ func writeCluster(w io.Writer, c api.Cluster, now time.Time) {
 		}
 		fmt.Fprintf(w, "  controller: %s\n", l.Controller)
 		fmt.Fprintf(w, "  link:       %s%s\n", l.State, since(l.Since, now))
+		if l.Tenant != "" {
+			fmt.Fprintf(w, "  tenant:     %s\n", l.Tenant)
+		}
 		if l.ControllerID != "" && l.State == api.LinkConnected {
 			fmt.Fprintf(w, "  controller id %s, version %s, api %d\n", l.ControllerID, l.ControllerVersion, l.ControllerAPI)
 		}
@@ -110,10 +115,42 @@ func workerLine(m api.ClusterWorker, now time.Time) string {
 		}
 		parts = append(parts, fmt.Sprintf("api %d", m.APILevel), fmt.Sprintf("%d running, %d waiting", m.RunsGoing, m.Waiting))
 	}
+	if m.Tenant != "" {
+		parts = append(parts, "tenant "+m.Tenant)
+	}
 	if m.DaemonID != "" {
 		parts = append(parts, "id "+m.DaemonID)
 	}
 	return strings.Join(parts, "  ")
+}
+
+// writeWorkerReport lists what an online worker reported over its link: the agent CLIs it
+// has and its repos, by origin and its own name for each.
+func writeWorkerReport(w io.Writer, m api.ClusterWorker) {
+	if !m.Online {
+		return
+	}
+	const pad = "               "
+	if !slices.Contains(m.Capabilities, api.CapRepos) {
+		fmt.Fprintln(w, pad+"repos and agents not reported: the worker's version predates the report")
+		return
+	}
+	agents := "none found"
+	if len(m.Agents) > 0 {
+		agents = strings.Join(m.Agents, ", ")
+	}
+	fmt.Fprintln(w, pad+"agents  "+agents)
+	if len(m.Repos) == 0 {
+		fmt.Fprintln(w, pad+"repos   none with an origin")
+		return
+	}
+	for i, r := range m.Repos {
+		label := "        "
+		if i == 0 {
+			label = "repos   "
+		}
+		fmt.Fprintf(w, "%s%s%s as %s\n", pad, label, r.Origin, r.Name)
+	}
 }
 
 func since(t, now time.Time) string {

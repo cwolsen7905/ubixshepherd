@@ -9,8 +9,9 @@ machines (a work laptop, a home laptop) can be its **workers**. A worker dials o
 controller over HTTPS and holds one connection open. The controller never dials a worker, so
 a laptop behind NAT, a VPN or a work network that allows only outbound HTTPS works.
 
-This is the first step, and it is status only: the controller lists its workers and whether
-each is connected. No repos, events or actions cross the link yet.
+This is the first step: the controller lists its workers, whether each is connected, which
+tenant each is in, and the repos and agent CLIs each one reports. No events or actions
+cross the link yet, and nothing is routed to a worker.
 
 ## What you need
 
@@ -63,15 +64,49 @@ the daemon independent again.
 ```
 $ shepherd cluster status
 controller 6f1c2e0a-...
-  work         online since 09:12 (2h ago)  v0.9.0  api 1  1 running, 2 waiting  id 3a9d...
-  home         offline, last seen 2d ago  id 71be...
+  work         online since 09:12 (2h ago)  v0.9.0  api 1  1 running, 2 waiting  tenant default  id 3a9d...
+               agents  claude, copilot
+               repos   github.com/example/lib as lib
+                       gitlab.example.com/group/app as app
+  home         offline, last seen 2d ago  tenant default  id 71be...
 ```
 
 `--json` gives the same as `GET /v1/cluster`: `role` is `controller`, `worker` or `alone`,
-and a controller lists `workers`. On a worker the command shows the link: its state
-(`connected`, `connecting`, `waiting to retry`, `refused`), since when, why the last try
-failed and when the next one is. The desk answers "is my work laptop connected" with the
-`cluster_status` MCP tool. In the web UI, Settings lists the workers on a controller.
+and a controller lists `workers`. Each worker has its `tenant` (the slug), and, while it is
+online, `repos` (each an `origin` and the worker's `name` for it) and `agents`. On a worker
+the command shows the link: its state (`connected`, `connecting`, `waiting to retry`,
+`refused`), its tenant, since when, why the last try failed and when the next one is. The
+desk answers "is my work laptop connected" and "which machine has this repo" with the
+`cluster_status` MCP tool. In the web UI, Settings lists the workers on a controller, with
+each online worker's agents and repos.
+
+## What a worker reports
+
+A worker reports what it has, so the controller knows which machine can work on what:
+
+- **Repos**: each managed repo with an origin remote, by origin, with the worker's own name
+  for it. The origin is normalised to host and path, lowercase, without `.git`, a user or a
+  port, so `git@gitlab.example.com:group/app.git` and `https://gitlab.example.com/group/app`
+  are one repo. A repo with no remote is left out, since it cannot be matched to another
+  machine's.
+- **Agents**: the agent CLIs the worker can start (`claude`, `copilot`, `cursor`,
+  `opencode`), found the way a run finds them, on the daemon's PATH.
+
+The worker sends both in its hello, then checks them again at each status (every 20
+seconds) and sends a `repos` frame when either changed, so a repo added on a worker shows at
+the controller within one status interval. The controller keeps the report in memory with
+the link: it is live, gone when the link drops, and never stored. A worker from before the
+report sends none; the controller still links it and lists it as not reporting.
+
+## Tenants
+
+Each worker's credential belongs to a tenant, and the controller's hello names it. The
+worker records the first tenant it is linked in, in `cluster-link.json`, and shows it in its
+link. If a later hello names another tenant, the worker refuses the link (state `refused`,
+with both tenants in the reason) and retries slowly: a credential does not move between
+tenants. Enrol it again (`shepherd worker add` on the controller, `shepherd cluster join`
+on the worker) to link it in the new one. A controller that names no tenant is not a
+change.
 
 ## Commands
 
@@ -112,9 +147,15 @@ enrolment answer carries the controller's id under both `controller_daemon_id` a
 
 - A worker opens `GET /v1/cluster/link` with its credential and the header
   `X-Shepherd-Daemon-Id`, and upgrades it to a WebSocket (`github.com/coder/websocket`).
-- Each side sends a hello (daemon id, version, `api_level`, capabilities), then the worker
-  sends a status (runs going, items waiting) at once and at every ping. The controller
-  records what the worker reports. No frame names a role.
+- Each side sends a hello (daemon id, version, `api_level`, capabilities). The controller's
+  names the worker's `tenant`; the worker's carries its `repos` and `agents` and the
+  capability `repos`. Then the worker sends a status (runs going, items waiting) at once
+  and at every ping, and a `repos` frame (its whole report, replacing the last) when its
+  repos or agents change. The controller records what the worker reports. No frame names a
+  role.
+- Each side ignores a frame type or field it does not know, so the report and the tenant
+  were added without moving `api_level`: an older controller drops them, and an older
+  worker sends neither.
 - Each side pings every 20 seconds; two pings in a row with no pong close the link.
 - A dropped link is redialled after a random wait between zero and a step that doubles from
   one second to a cap of 60. A `Retry-After` from the controller is a floor. A link that
@@ -146,9 +187,12 @@ enrolment answer carries the controller's id under both `controller_daemon_id` a
 | `cluster.controller` is optional once a credential exists | The credential file already names the controller it is for |
 | A worker whose id changed gets `Retry-After: 60` | It is waiting on a person, so it need not retry fast |
 | Status goes up at each ping rather than on change | Simplest; the controller's view is at most 20 seconds old |
+| Repos and agents are checked at each status and sent on change | A change shows within one interval, and an unchanged report costs nothing on the wire |
+| A worker's report is kept in memory with its link, not in the store | It describes the machine now; an offline worker's old report would mislead |
+| A worker refuses a changed tenant rather than following it | Which tenant a machine works for is the person's choice, made by enrolling it |
 
 ## Not here yet
 
-Repo homes, reads through the link, the journal and the thread, offline replay, acting on a
+Routing work to a worker by its repos, repo homes, reads through the link, the journal and the thread, offline replay, acting on a
 worker's repos and spend across machines are later steps. A worker's own desk and repos are
 untouched and keep working while it is unlinked.

@@ -11,6 +11,19 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **Workers report their repos and agents, in their tenant.** A worker's hello now carries its
+  managed repos by origin (normalised, so the SSH and HTTPS forms of one remote are one
+  repo) with its local name for each, and the agent CLIs it can start; it sends a `repos`
+  frame when either changes, checked at each status, so a change shows at the controller
+  within one status interval. The controller keeps the report with the live link, never in
+  the store. The controller's hello names the tenant of the worker's credential; the worker
+  records it and refuses a link whose tenant changed until it is enrolled again.
+  `shepherd cluster status`, the `cluster_status` MCP tool and Settings, Workers list each
+  worker's tenant, agents and repos. An older worker still links and shows as not
+  reporting; an older controller ignores the new frame and fields, so `api_level` stays 1.
+  Interface changes: link frame type `repos`, capability `repos`, frame fields `tenant`,
+  `repos` and `agents`; HTTP `GET /v1/cluster` worker fields `tenant`, `repos` and `agents`,
+  and link field `tenant`. See "What a worker reports" in [docs/cluster.md](docs/cluster.md).
 - **Users on a hosted daemon.** `shepherd user add|list|role|set-password|signout|remove` (on
   the daemon's machine) gives more people their own login: password, second factor, recovery
   codes, device tokens and sessions. `shepherd login --user` and the login routes' `user` field
