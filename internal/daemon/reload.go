@@ -85,7 +85,7 @@ func (s *Server) postFeed(ctx context.Context, kind string, ref int64, text stri
 	if s.Store == nil {
 		return
 	}
-	if err := s.Store.AddFeed(ctx, kind, text, ref); err != nil {
+	if err := s.db(ctx).AddFeed(ctx, kind, text, ref); err != nil {
 		s.Log.Error("write feed", "kind", kind, "err", err)
 	}
 }
@@ -164,7 +164,7 @@ func amount(v *float64) string {
 // recorded pid is signalled only while it still leads its own process group and started
 // when its run did, so a pid the system has since reused is left alone.
 func (s *Server) ReapOrphans(ctx context.Context) {
-	runs, err := s.Store.Runs(ctx, 0, store.RunRunning, 1000)
+	runs, err := s.db(ctx).Runs(ctx, 0, store.RunRunning, 1000)
 	if err != nil {
 		s.Log.Error("list runs left running", "err", err)
 		return

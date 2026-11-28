@@ -22,7 +22,7 @@ func (s *Server) listChecks(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("repo_id is required"))
 		return
 	}
-	repo, err := s.Store.Repo(ctx, repoID)
+	repo, err := s.db(ctx).Repo(ctx, repoID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -42,7 +42,7 @@ func (s *Server) listChecks(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	files, err := s.Store.CheckFiles(ctx, repo.ID, q.Get("all") == "")
+	files, err := s.db(ctx).CheckFiles(ctx, repo.ID, q.Get("all") == "")
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -67,7 +67,7 @@ func (s *Server) checksActor(w http.ResponseWriter, r *http.Request, a crook.Act
 			return "", "", false
 		}
 		ctx := r.Context()
-		dec, err := s.Store.Decision(ctx, decision)
+		dec, err := s.db(ctx).Decision(ctx, decision)
 		if err != nil {
 			s.fail(w, err)
 			return "", "", false
@@ -78,12 +78,12 @@ func (s *Server) checksActor(w http.ResponseWriter, r *http.Request, a crook.Act
 		}
 		// The decision must have been raised in this repo, so an answer about something
 		// else cannot stand for an approval here.
-		run, err := s.Store.Run(ctx, dec.RunID)
+		run, err := s.db(ctx).Run(ctx, dec.RunID)
 		if err != nil {
 			s.fail(w, err)
 			return "", "", false
 		}
-		lane, err := s.Store.Lane(ctx, run.LaneID)
+		lane, err := s.db(ctx).Lane(ctx, run.LaneID)
 		if err != nil {
 			s.fail(w, err)
 			return "", "", false
@@ -120,6 +120,9 @@ func (s *Server) approveChecks(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if !s.ours(w, r, repoRef(req.RepoID), itemRef(req.ItemID)) {
+		return
+	}
 	by, cited, ok := s.checksActor(w, r, crook.ActionChecksApprove, req.Decision, req.RepoID)
 	if !ok {
 		return
@@ -145,6 +148,9 @@ func (s *Server) approveChecks(w http.ResponseWriter, r *http.Request) {
 func (s *Server) releaseChecks(w http.ResponseWriter, r *http.Request) {
 	var req api.ReleaseChecks
 	if !decode(w, r, &req) {
+		return
+	}
+	if !s.ours(w, r, repoRef(req.RepoID)) {
 		return
 	}
 	by, cited, ok := s.checksActor(w, r, crook.ActionChecksRelease, req.Decision, req.RepoID)

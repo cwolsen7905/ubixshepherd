@@ -22,7 +22,7 @@ func (s *Server) feedStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if after < 0 {
-		last, err := s.Store.LastFeed(ctx)
+		last, err := s.db(ctx).LastFeed(ctx)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -34,7 +34,7 @@ func (s *Server) feedStream(w http.ResponseWriter, r *http.Request) {
 	defer beat.Stop()
 	for {
 		changed := s.hub.Changed()
-		items, err := s.Store.Feed(ctx, after, 200)
+		items, err := s.db(ctx).Feed(ctx, after, 200)
 		if err != nil {
 			s.Log.Error("feed stream", "err", err)
 			return

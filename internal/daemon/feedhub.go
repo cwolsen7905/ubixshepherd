@@ -61,11 +61,13 @@ func (h *feedHub) poll() {
 		if len(items) == 0 {
 			return
 		}
+		from := h.last
 		h.last = items[len(items)-1].ID
 		if runEnded(items) {
 			h.s.KeepGoing().Trigger()
 		}
-		h.s.desks.Wake(items)
+		// The front desk is the default tenant's: it wakes for that tenant's items only.
+		h.s.desks.Wake(deskItems(h.st, defaultTenantItems(h.st, from, items)))
 		h.mu.Lock()
 		close(h.changed)
 		h.changed = make(chan struct{})
@@ -86,4 +88,23 @@ func runEnded(items []store.FeedItem) bool {
 		}
 	}
 	return false
+}
+
+// defaultTenantItems are the items, read after from, that are the default tenant's.
+func defaultTenantItems(st store.Store, from int64, items []store.FeedItem) []store.FeedItem {
+	if st.Tenant() != 0 {
+		return items
+	}
+	mine, err := st.ForTenant(store.DefaultTenantID).Feed(context.Background(), from, len(items))
+	if err != nil {
+		return nil
+	}
+	last := items[len(items)-1].ID
+	out := mine[:0]
+	for _, it := range mine {
+		if it.ID <= last {
+			out = append(out, it)
+		}
+	}
+	return out
 }

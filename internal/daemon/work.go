@@ -104,12 +104,12 @@ func (s *Server) projectWork(ctx context.Context, project string) (api.ProjectWo
 	out := api.ProjectWork{Project: project, Repos: []api.RepoWork{}, Drift: []api.WorkDrift{}}
 	byName := map[string]store.Repo{}
 	var all []string
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return out, err
 	}
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(ctx, ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			return out, err
 		}
@@ -140,11 +140,11 @@ func (s *Server) projectWork(ctx context.Context, project string) (api.ProjectWo
 		base := cfg.Profile(name).BaseBranch
 		ref, blob, res, found := readWork(ctx, rp.Path, base)
 		rw.Ref, rw.Blob, rw.Found, rw.Warnings = ref, blob, found, res.Warnings
-		lanes, err := s.Store.Lanes(ctx, rp.ID) // open lanes only
+		lanes, err := s.db(ctx).Lanes(ctx, rp.ID) // open lanes only
 		if err != nil {
 			return out, err
 		}
-		closed, err := s.Store.LaneHistory(ctx, store.LaneHistoryFilter{RepoID: rp.ID, State: store.HistoryClosed, Limit: closedLanesRead})
+		closed, err := s.db(ctx).LaneHistory(ctx, store.LaneHistoryFilter{RepoID: rp.ID, State: store.HistoryClosed, Limit: closedLanesRead})
 		if err != nil {
 			return out, err
 		}

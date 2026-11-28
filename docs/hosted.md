@@ -99,8 +99,7 @@ Like `shepherd account`, these run on the daemon's machine with the operator tok
 never over `--host`. A user is one person across tenants, with a role in each tenant they
 belong to (`default` is the only tenant for now, and a new user is a member of it unless
 `--role` says otherwise). A tenant's last owner can be neither removed nor given another
-role. Roles are recorded now and enforced from a later release; until then every user who
-signs in can do what the owner can, so add only people you would give the owner's login.
+role. Roles are enforced: see "Tenants and roles" below.
 
 Upgrading turns the owner account into user `owner`, the owner of `default`, with its
 password, factor, recovery codes, device tokens and sessions: nobody signs in again. A
@@ -125,6 +124,39 @@ expired gets one answer, "log in again", which says nothing of its age.
 Logging out ends one session. "Sign out everywhere" ends every session and every device
 token of the user who asks, and no one else's. Both are rows in the store, so they hold
 across a restart.
+
+### Tenants and roles
+
+Every request acts in one tenant, with the caller's role there. A user's browser session and
+device tokens are theirs: a user who is a member of one tenant acts in it, and one who is a
+member of several names the tenant with the `X-Shepherd-Tenant` header, by its slug. With no
+header they act in `default` when they are a member of it, and are refused otherwise. A
+tenant they are not a member of is refused with one answer, `no such tenant, or you are not a
+member of it`, whether it exists or not. The operator token, on loopback, acts in `default`
+or in the tenant the header names. Worker and desk tokens act in `default` only.
+
+`shepherd --tenant SLUG <command>` sends the header on every request of that command line,
+locally or over `--host`. The web UI sends none, so it works in a user's only tenant, or in
+`default`.
+
+| Role | May |
+|---|---|
+| viewer | Read: lanes, runs, decisions, the feed, history, spend; sign out their own sessions and devices |
+| member | What a viewer may, and open, close and ship lanes, start and stop runs, answer decisions, add next-up items, topics and questions, approve check files, talk to the front desk |
+| admin | What a member may, and change the tenant's settings, repos and workspaces, approve project briefs, and edit the daemon's config |
+| owner | What an admin may |
+
+Each route's least role is in one table in the daemon, and a route missing from it is never
+served. Some routes are the deployment's rather than a tenant's: the config file, the
+release check and upgrade, the cluster, sign-in links and users, the front desk and
+keep-going mode. Only the `default` tenant may call those for now. Kinds of token still
+limit routes as before: a browser cannot call an operator-only route at any role.
+
+A row of another tenant is answered `404`, as a row that does not exist, whether a route names
+it in its path or in its body. Background work (the forge watcher, routing, muster and the
+front desk) still runs over every tenant's rows, so a feed item it writes about another
+tenant's lane lands in `default`'s feed for now. The front desk, which is `default`'s, hears
+only of runs, decisions and requests in `default`.
 
 ## Using the CLI against a hosted daemon
 
@@ -225,6 +257,16 @@ restart, the 404 for the operator token, and a TLS listener started from a certi
 two users, each lists only their own device tokens, signing out everywhere ends only the
 caller's, an unknown user gets the wrong-password answer, and a removed user's session and
 token stop working.
+
+The tenancy tests list every route from the router, so a new route is covered without
+editing them. Two daemons hold the same two tenants, and each a second copy of everything,
+one in the victim tenant and one in a third tenant; a member of one tenant, and the operator
+naming one, call every route with the other tenant's ids in the path, the query and the
+body. The answers must match between the two daemons, name none of the other tenant's words,
+and leave its rows as they were: no rows, counts, ids or feed items. A viewer is refused
+every route that changes something, but signing out their own sessions and devices. A test
+also reads the daemon's source and fails when a handler reaches the store other than through
+the request's tenant.
 
 ## Deployment examples
 

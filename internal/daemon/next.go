@@ -55,20 +55,20 @@ func (s *Server) nextView(ctx context.Context, it store.NextItem) api.NextItemVi
 	if it.LaneID == 0 {
 		return v
 	}
-	lane, err := s.Store.Lane(ctx, it.LaneID)
+	lane, err := s.db(ctx).Lane(ctx, it.LaneID)
 	if err != nil {
 		return v
 	}
-	lf, _ := s.Store.LaneForge(ctx, lane.ID)
+	lf, _ := s.db(ctx).LaneForge(ctx, lane.ID)
 	v.LaneID, v.LaneName, v.LaneState = lane.ID, lane.Name, lane.State
-	if repo, err := s.Store.Repo(ctx, lane.RepoID); err == nil {
+	if repo, err := s.db(ctx).Repo(ctx, lane.RepoID); err == nil {
 		v.LaneRepo = repo.Name
 	}
 	if lf.MR != 0 {
 		v.MR, v.MRURL, v.MRState = "!"+strconv.Itoa(lf.MR), lf.MRURL, lf.MRState
 	}
 	if lane.State == store.LaneOpen {
-		if runs, err := s.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(runs) > 0 {
+		if runs, err := s.db(ctx).Runs(ctx, lane.ID, store.RunRunning, 1); err == nil && len(runs) > 0 {
 			v.Running = true
 		}
 	}
@@ -105,7 +105,7 @@ func (st nextStates) blockedOn(it store.NextItem) []api.NextBlocker {
 func (s *Server) itemView(ctx context.Context, it store.NextItem) api.NextItemView {
 	v := s.nextView(ctx, it)
 	if len(it.DependsOn) > 0 {
-		if all, err := s.Store.NextItems(ctx); err == nil {
+		if all, err := s.db(ctx).NextItems(ctx); err == nil {
 			v.BlockedOn = s.effectiveStates(ctx, all).blockedOn(it)
 		}
 	}
@@ -121,11 +121,11 @@ func (s *Server) settleNext(ctx context.Context, items []store.NextItem) []store
 		if it.LaneID == 0 || it.State == store.NextDone || it.State == store.NextDropped {
 			continue
 		}
-		lane, err := s.Store.Lane(ctx, it.LaneID)
+		lane, err := s.db(ctx).Lane(ctx, it.LaneID)
 		if err != nil {
 			continue
 		}
-		lf, _ := s.Store.LaneForge(ctx, lane.ID)
+		lf, _ := s.db(ctx).LaneForge(ctx, lane.ID)
 		if st := store.Settle(it, &lane, lf); !st.Merged {
 			continue
 		}
@@ -138,7 +138,7 @@ func (s *Server) settleNext(ctx context.Context, items []store.NextItem) []store
 			mr := "!" + strconv.Itoa(lf.MR)
 			patch.MR = &mr
 		}
-		upd, err := s.Store.UpdateNextItem(ctx, it.ID, patch)
+		upd, err := s.db(ctx).UpdateNextItem(ctx, it.ID, patch)
 		if err != nil {
 			s.Log.Warn("settle a next item", "item", it.ID, "err", err)
 			continue
@@ -152,7 +152,7 @@ func (s *Server) settleNext(ctx context.Context, items []store.NextItem) []store
 
 func (s *Server) listNext(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	items, err := s.Store.NextItems(ctx)
+	items, err := s.db(ctx).NextItems(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -187,7 +187,7 @@ func (s *Server) getNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("bad item id"))
 		return
 	}
-	it, err := s.Store.NextItem(ctx, id)
+	it, err := s.db(ctx).NextItem(ctx, id)
 	if err != nil {
 		s.nextError(w, err)
 		return
@@ -278,7 +278,7 @@ func (s *Server) addNext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("propose is for the front desk"))
 		return
 	}
-	it, err := s.Store.AddNextItem(r.Context(), store.NextItem{
+	it, err := s.db(r.Context()).AddNextItem(r.Context(), store.NextItem{
 		Title: req.Title, Repo: req.Repo, Plan: req.Plan, Lane: req.Lane, Note: req.Note,
 		State: req.State, Source: src, DoneWhen: req.DoneWhen, DependsOn: req.DependsOn,
 	})
@@ -321,12 +321,12 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.LaneID != nil && *req.LaneID != 0 {
-		if _, err := s.Store.Lane(ctx, *req.LaneID); err != nil {
+		if _, err := s.db(ctx).Lane(ctx, *req.LaneID); err != nil {
 			s.nextError(w, fmt.Errorf("lane %d: %w", *req.LaneID, err))
 			return
 		}
 	}
-	before, err := s.Store.NextItem(ctx, id)
+	before, err := s.db(ctx).NextItem(ctx, id)
 	if err != nil {
 		s.nextError(w, err)
 		return
@@ -339,13 +339,13 @@ func (s *Server) patchNext(w http.ResponseWriter, r *http.Request) {
 		checked := time.Now().UTC()
 		patch.Checked = &checked
 	}
-	it, err := s.Store.UpdateNextItem(ctx, id, patch)
+	it, err := s.db(ctx).UpdateNextItem(ctx, id, patch)
 	if err != nil {
 		s.nextError(w, err)
 		return
 	}
 	if req.Move != "" {
-		if it, err = s.Store.MoveNextItem(ctx, id, req.Move); err != nil {
+		if it, err = s.db(ctx).MoveNextItem(ctx, id, req.Move); err != nil {
 			s.nextError(w, err)
 			return
 		}
@@ -387,7 +387,7 @@ func (s *Server) nextError(w http.ResponseWriter, err error) {
 // "" when nothing was linked.
 func (s *Server) linkLaneItem(ctx context.Context, lane store.Lane, repoName string, item int64) (string, error) {
 	if item == 0 {
-		items, err := s.Store.NextItems(ctx)
+		items, err := s.db(ctx).NextItems(ctx)
 		if err != nil {
 			return "", err
 		}
@@ -404,7 +404,7 @@ func (s *Server) linkLaneItem(ctx context.Context, lane store.Lane, repoName str
 	}
 	repo := repoName
 	patch := store.NextPatch{LaneID: &lane.ID}
-	it, err := s.Store.NextItem(ctx, item)
+	it, err := s.db(ctx).NextItem(ctx, item)
 	if err != nil {
 		return "", err
 	}
@@ -414,7 +414,7 @@ func (s *Server) linkLaneItem(ctx context.Context, lane store.Lane, repoName str
 	if it.Lane == "" {
 		patch.Lane = &lane.Name
 	}
-	if _, err := s.Store.UpdateNextItem(ctx, item, patch); err != nil {
+	if _, err := s.db(ctx).UpdateNextItem(ctx, item, patch); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("linked to next-up item %d: %s", item, it.Title), nil
@@ -429,7 +429,7 @@ func openNextState(state string) bool {
 // checkLaneItem refuses opening a lane for an item that cannot take one, before the lane
 // exists: unknown, done or dropped, or linked to a lane still open.
 func (s *Server) checkLaneItem(ctx context.Context, item int64) error {
-	it, err := s.Store.NextItem(ctx, item)
+	it, err := s.db(ctx).NextItem(ctx, item)
 	if err != nil {
 		return fmt.Errorf("item %d: %w", item, err)
 	}
@@ -437,7 +437,7 @@ func (s *Server) checkLaneItem(ctx context.Context, item int64) error {
 		return fmt.Errorf("%w: item %d is %s", store.ErrConflict, item, it.State)
 	}
 	if it.LaneID != 0 {
-		if l, err := s.Store.Lane(ctx, it.LaneID); err == nil && l.State != store.LaneClosed {
+		if l, err := s.db(ctx).Lane(ctx, it.LaneID); err == nil && l.State != store.LaneClosed {
 			return fmt.Errorf("%w: item %d already has lane %s open", store.ErrConflict, item, l.Name)
 		}
 	}
@@ -456,18 +456,18 @@ func (s *Server) waiting(w http.ResponseWriter, r *http.Request) {
 		}
 		ws = id
 	}
-	out, err := waiting.Collect(r.Context(), s.Store, s.LiveConfig(), ws)
+	out, err := waiting.Collect(r.Context(), s.db(r.Context()), s.LiveConfig(), ws)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	qs, err := s.Store.Questions(r.Context(), ws, store.QuestionOpen)
+	qs, err := s.db(r.Context()).Questions(r.Context(), ws, store.QuestionOpen)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out.AddQuestions(qs)
-	if held, err := waiting.MergedArtifactItems(r.Context(), s.Store, ws); err != nil {
+	if held, err := waiting.MergedArtifactItems(r.Context(), s.db(r.Context()), ws); err != nil {
 		s.Log.Warn("waiting: merged lanes with artifacts", "err", err)
 	} else if len(held) > 0 {
 		out.AddItems(held)

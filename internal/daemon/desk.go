@@ -79,7 +79,7 @@ func (s *Server) Close() {
 // deskModel is the desk's model: the desk.model setting (shepherd chat's /model), else
 // desk.model in config.yaml, else the agent's default.
 func (s *Server) deskModel(ctx context.Context) string {
-	if m, _ := s.Store.Setting(ctx, "desk.model"); m != "" {
+	if m, _ := s.db(ctx).Setting(ctx, "desk.model"); m != "" {
 		return m
 	}
 	return s.LiveConfig().Desk.Model
@@ -91,7 +91,7 @@ func (s *Server) deskFor(w http.ResponseWriter, r *http.Request, wsID int64) (*d
 	if wsID == 0 {
 		wsID, _ = strconv.ParseInt(r.URL.Query().Get("workspace_id"), 10, 64)
 	}
-	wss, err := s.Store.Workspaces(r.Context())
+	wss, err := s.db(r.Context()).Workspaces(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return nil, false
@@ -160,7 +160,7 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 		// The open check and the close are one step per question: two replies to one
 		// question cannot both reach the desk, and a skip cannot slip between them.
 		defer s.questionMu.lock(req.ReplyTo)()
-		q, err := s.Store.Question(r.Context(), req.ReplyTo)
+		q, err := s.db(r.Context()).Question(r.Context(), req.ReplyTo)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			writeError(w, http.StatusNotFound, fmt.Errorf("no question %d", req.ReplyTo))
@@ -217,7 +217,7 @@ func (s *Server) deskTurn(w http.ResponseWriter, r *http.Request) {
 			// the person replies again or skips it.
 			var cerr error
 			for try := 0; try < 2; try++ {
-				if _, cerr = s.Store.CloseQuestion(context.WithoutCancel(r.Context()), replyTo.ID, store.QuestionAnswered, id); cerr == nil || errors.Is(cerr, store.ErrConflict) {
+				if _, cerr = s.db(r.Context()).CloseQuestion(context.WithoutCancel(r.Context()), replyTo.ID, store.QuestionAnswered, id); cerr == nil || errors.Is(cerr, store.ErrConflict) {
 					break
 				}
 			}
@@ -240,7 +240,7 @@ func (s *Server) deskHistory(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
 	}
-	es, err := s.Store.DeskHistory(r.Context(), d.Workspace().ID, before, limit+1)
+	es, err := s.db(r.Context()).DeskHistory(r.Context(), d.Workspace().ID, before, limit+1)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -254,7 +254,7 @@ func (s *Server) deskHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.Get("log") == "1" {
 		// The desk log's per-turn rows (docs/desk-log.md), all of the workspace's.
-		if out.TurnLog, err = s.Store.DeskTurnLogs(r.Context(), d.Workspace().ID); err != nil {
+		if out.TurnLog, err = s.db(r.Context()).DeskTurnLogs(r.Context(), d.Workspace().ID); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -327,7 +327,7 @@ func (s *Server) deskStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if after < 0 {
-		latest, err := s.Store.DeskHistory(ctx, d.Workspace().ID, 0, 1)
+		latest, err := s.db(ctx).DeskHistory(ctx, d.Workspace().ID, 0, 1)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -344,7 +344,7 @@ func (s *Server) deskStream(w http.ResponseWriter, r *http.Request) {
 	defer beat.Stop()
 	for {
 		changed := d.Changed()
-		es, err := s.Store.DeskEvents(ctx, d.Workspace().ID, after, 200)
+		es, err := s.db(ctx).DeskEvents(ctx, d.Workspace().ID, after, 200)
 		if err != nil {
 			s.Log.Error("desk stream", "err", err)
 			return
@@ -459,3 +459,40 @@ func (c *streamSlots) take() bool {
 }
 
 func (c *streamSlots) give() { <-c.n }
+
+// deskItems are the feed items the front desk may hear of: the desk is the default
+// tenant's, and an item that wakes it names a run, a decision or a request by its ref.
+// Background work writes its items through the unscoped store, so they sit in the default
+// tenant's feed whatever row they are about; an item whose ref is not in the default
+// tenant's view is left out, so the desk's summary never tells of another tenant's work.
+func deskItems(st store.Store, items []store.FeedItem) []store.FeedItem {
+	if st.Tenant() != 0 && st.Tenant() != store.DefaultTenantID {
+		return nil
+	}
+	view, ctx := st, context.Background()
+	if st.Tenant() == 0 {
+		view = st.ForTenant(store.DefaultTenantID)
+	}
+	var out []store.FeedItem
+	for _, it := range items {
+		if deskRefOK(ctx, view, it) {
+			out = append(out, it)
+		}
+	}
+	return out
+}
+
+// deskRefOK says whether the row an item that wakes the desk names is in the view. An item
+// of a kind that never wakes the desk is kept: the desk ignores it.
+func deskRefOK(ctx context.Context, view store.Store, it store.FeedItem) bool {
+	var err error
+	switch api.EventKind(it.Kind) {
+	case api.EventRunEnded, api.EventRunPassed, api.EventRunFailed, api.EventRunInterrupted, api.EventRunQuota:
+		_, err = view.Run(ctx, it.Ref)
+	case api.EventDecisionAsked:
+		_, err = view.Decision(ctx, it.Ref)
+	case api.EventRequestAttention:
+		_, err = view.Request(ctx, it.Ref)
+	}
+	return err == nil
+}

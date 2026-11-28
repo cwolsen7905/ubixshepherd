@@ -40,18 +40,18 @@ type projectData struct {
 func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 	d := &projectData{cfg: s.LiveConfig(), laneRepo: map[int64]string{}, laneName: map[int64]string{}, running: map[int64]bool{},
 		budgets: map[string]dispatch.BudgetLine{}, today: map[string]float64{}}
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(ctx, ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			return nil, err
 		}
 		for _, rp := range repos {
 			d.repos = append(d.repos, rp.Name)
-			lanes, err := s.Store.Lanes(ctx, rp.ID)
+			lanes, err := s.db(ctx).Lanes(ctx, rp.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -62,7 +62,7 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 					continue
 				}
 				v := api.LaneView{Lane: l, Repo: rp.Name}
-				if lf, err := s.Store.LaneForge(ctx, l.ID); err == nil && lf.MR != 0 {
+				if lf, err := s.db(ctx).LaneForge(ctx, l.ID); err == nil && lf.MR != 0 {
 					v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
 					v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
 					v.Approved, v.RequireApproval = lf.Approved, lf.RequireApproval
@@ -73,7 +73,7 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 			}
 		}
 	}
-	runs, err := s.Store.Runs(ctx, 0, "", 200)
+	runs, err := s.db(ctx).Runs(ctx, 0, "", 200)
 	if err != nil {
 		return nil, err
 	}
@@ -88,12 +88,12 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 		d.runs = append(d.runs, api.RunView{Run: run, Lane: d.laneName[run.LaneID], Repo: repo})
 	}
 	sort.SliceStable(d.runs, func(i, j int) bool { return d.runs[i].Started.After(d.runs[j].Started) })
-	decs, err := s.Store.Decisions(ctx, store.DecisionOpen)
+	decs, err := s.db(ctx).Decisions(ctx, store.DecisionOpen)
 	if err != nil {
 		return nil, err
 	}
 	for _, dec := range decs {
-		run, err := s.Store.Run(ctx, dec.RunID)
+		run, err := s.db(ctx).Run(ctx, dec.RunID)
 		if err != nil {
 			return nil, err
 		}
@@ -103,12 +103,12 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 		}
 		d.decisions = append(d.decisions, api.DecisionView{Decision: dec, Agent: run.Agent, Lane: v.Lane, Repo: v.Repo})
 	}
-	reqs, err := s.Store.Requests(ctx, activeRequests...)
+	reqs, err := s.db(ctx).Requests(ctx, activeRequests...)
 	if err != nil {
 		return nil, err
 	}
 	for _, q := range reqs {
-		run, err := s.Store.Run(ctx, q.FromRun)
+		run, err := s.db(ctx).Run(ctx, q.FromRun)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 		}
 		d.requests = append(d.requests, api.RequestView{Request: q, FromAgent: run.Agent, FromLane: v.Lane, Repo: v.Repo})
 	}
-	lines, err := dispatch.BudgetLines(ctx, s.Store, d.cfg)
+	lines, err := dispatch.BudgetLines(ctx, s.db(ctx), d.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (s *Server) loadProjects(ctx context.Context) (*projectData, error) {
 		}
 	}
 	today := dispatch.Today()
-	roll, err := s.Store.SpendRollup(ctx, today, today)
+	roll, err := s.db(ctx).SpendRollup(ctx, today, today)
 	if err != nil {
 		return nil, err
 	}
@@ -296,18 +296,18 @@ func (s *Server) approvedBrief(ctx context.Context, name string, p config.Projec
 			}
 		}
 	}
-	b, err := s.Store.ApprovedBrief(ctx, name)
+	b, err := s.db(ctx).ApprovedBrief(ctx, name)
 	return approvedBriefResult{ProjectBrief: b}, false, err
 }
 
 // repoPath is the path of a workspace repo by name; "" when no workspace has it.
 func (s *Server) repoPath(ctx context.Context, name string) (string, error) {
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return "", err
 	}
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(ctx, ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			return "", err
 		}

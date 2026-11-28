@@ -84,7 +84,7 @@ func (s *Server) acted(describe actionDescriber, h http.HandlerFunc) http.Handle
 
 // recordAction appends the action to the workspace's desk.
 func (s *Server) recordAction(ctx context.Context, workspace int64, text string) error {
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return err
 	}
@@ -116,11 +116,11 @@ func pathID(r *http.Request) int64 {
 
 // workspaceOfLane is the workspace a lane's repo is in.
 func (s *Server) workspaceOfLane(ctx context.Context, laneID int64) (int64, store.Lane) {
-	lane, err := s.Store.Lane(ctx, laneID)
+	lane, err := s.db(ctx).Lane(ctx, laneID)
 	if err != nil {
 		return 0, lane
 	}
-	repo, err := s.Store.Repo(ctx, lane.RepoID)
+	repo, err := s.db(ctx).Repo(ctx, lane.RepoID)
 	if err != nil {
 		return 0, lane
 	}
@@ -129,7 +129,7 @@ func (s *Server) workspaceOfLane(ctx context.Context, laneID int64) (int64, stor
 
 // workspaceOfRun is the workspace a run's lane is in.
 func (s *Server) workspaceOfRun(ctx context.Context, runID int64) (int64, store.Lane) {
-	run, err := s.Store.Run(ctx, runID)
+	run, err := s.db(ctx).Run(ctx, runID)
 	if err != nil {
 		return 0, store.Lane{}
 	}
@@ -139,7 +139,7 @@ func (s *Server) workspaceOfRun(ctx context.Context, runID int64) (int64, store.
 func (s *Server) describeAnswer(ctx context.Context, r *http.Request, body, _ []byte) (int64, string) {
 	var req api.Answer
 	json.Unmarshal(body, &req)
-	d, err := s.Store.Decision(ctx, pathID(r))
+	d, err := s.db(ctx).Decision(ctx, pathID(r))
 	if err != nil {
 		return 0, ""
 	}
@@ -207,7 +207,7 @@ func (s *Server) describeShipLane(ctx context.Context, r *http.Request, _, _ []b
 
 // workspaceOfRequest is the workspace of the run that asked.
 func (s *Server) workspaceOfRequest(ctx context.Context, id int64) (int64, store.Request) {
-	q, err := s.Store.Request(ctx, id)
+	q, err := s.db(ctx).Request(ctx, id)
 	if err != nil {
 		return 0, q
 	}

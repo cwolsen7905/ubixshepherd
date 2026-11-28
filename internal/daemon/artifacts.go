@@ -66,7 +66,7 @@ func (s *Server) listArtifacts(w http.ResponseWriter, r *http.Request) {
 		f.Since = t
 	}
 	f.State, f.Kind = q.Get("state"), q.Get("kind")
-	list, err := s.Store.ListArtifacts(r.Context(), f)
+	list, err := s.db(r.Context()).ListArtifacts(r.Context(), f)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -81,7 +81,7 @@ func (s *Server) getArtifact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("bad artifact id"))
 		return
 	}
-	a, err := s.Store.Artifact(r.Context(), id)
+	a, err := s.db(r.Context()).Artifact(r.Context(), id)
 	if err != nil {
 		s.foldError(w, err)
 		return
@@ -107,7 +107,7 @@ func (s *Server) artifactContent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	a, err := s.Store.Artifact(r.Context(), id)
+	a, err := s.db(r.Context()).Artifact(r.Context(), id)
 	if err != nil {
 		s.foldError(w, err)
 		return

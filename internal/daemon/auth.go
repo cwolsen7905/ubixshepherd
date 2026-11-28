@@ -54,6 +54,12 @@ type principal struct {
 	user int64
 	// member is the cluster member a RoleLink credential belongs to.
 	member string
+	// tenant is the tenant the request acts in, and tenantSlug its slug (tenant.go);
+	// 0 before auth resolves it. role is a user's role there; "" is the system
+	// principal (the operator, a desk or a worker), which no role rule holds.
+	tenant     int64
+	tenantSlug string
+	role       auth.Role
 }
 
 // actor is who Crook sees acting for the principal: the front desk is the person's only
@@ -230,6 +236,14 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, errors.New("missing, wrong or revoked token"))
 			return
 		}
+		if p.Role != RoleLink {
+			var code int
+			var err error
+			if p, code, err = s.resolveTenant(r, p); err != nil {
+				writeError(w, code, err)
+				return
+			}
+		}
 		if sw, ok := w.(*statusWriter); ok {
 			sw.role = p.Role
 		}
@@ -253,8 +267,12 @@ const (
 )
 
 // guard refuses a request from a role the route is not for, before its handler runs.
-// Crook makes the call; the route's pattern names the action.
+// Crook makes the call; the route's pattern names the action. A user is also held to the
+// route's rule in routeRules (tenant_roles.go): their least role in the tenant, and
+// whether the route is the deployment's. A pattern with no rule panics here, so every
+// route is classified.
 func guard(pattern string, a access, h http.HandlerFunc) http.HandlerFunc {
+	rule := ruleFor(pattern)
 	return func(w http.ResponseWriter, r *http.Request) {
 		v, known := routeVerdict(pattern, a, r)
 		switch {
@@ -262,6 +280,8 @@ func guard(pattern string, a access, h http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, errors.New("missing, wrong or revoked token"))
 		case !v.OK():
 			writeError(w, http.StatusForbidden, errors.New(v.Reason))
+		case roleVerdict(principalOf(r.Context()), rule) != "":
+			writeError(w, http.StatusForbidden, errors.New(roleVerdict(principalOf(r.Context()), rule)))
 		default:
 			h(w, r)
 		}
@@ -304,11 +324,11 @@ func (s *Server) workerLane(r *http.Request) (*store.Lane, error) {
 	if p.Role != RoleWorker {
 		return nil, nil
 	}
-	run, err := s.Store.Run(r.Context(), p.Run)
+	run, err := s.db(r.Context()).Run(r.Context(), p.Run)
 	if err != nil {
 		return nil, err
 	}
-	l, err := s.Store.Lane(r.Context(), run.LaneID)
+	l, err := s.db(r.Context()).Lane(r.Context(), run.LaneID)
 	if err != nil {
 		return nil, err
 	}

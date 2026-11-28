@@ -65,29 +65,29 @@ func (s *Server) statusDetail(ctx context.Context) (api.StatusDetail, error) {
 		}
 		d.ReloadError, d.ReloadFailedAt = oneLine(rs.err), rs.failed
 	}
-	running, err := s.Store.Runs(ctx, 0, store.RunRunning, 1000)
+	running, err := s.db(ctx).Runs(ctx, 0, store.RunRunning, 1000)
 	if err != nil {
 		return d, err
 	}
 	d.Running = len(running)
-	decisions, err := s.Store.Decisions(ctx, store.DecisionOpen)
+	decisions, err := s.db(ctx).Decisions(ctx, store.DecisionOpen)
 	if err != nil {
 		return d, err
 	}
 	d.Decisions = len(decisions)
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return d, err
 	}
 	var remotes []string
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(ctx, ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			return d, err
 		}
 		for _, rp := range repos {
 			remotes = append(remotes, rp.Remote)
-			lanes, err := s.Store.Lanes(ctx, rp.ID)
+			lanes, err := s.db(ctx).Lanes(ctx, rp.ID)
 			if err != nil {
 				return d, err
 			}
@@ -98,7 +98,7 @@ func (s *Server) statusDetail(ctx context.Context) (api.StatusDetail, error) {
 			}
 		}
 	}
-	if d.SpendUSD, _, err = dispatch.Spent(ctx, s.Store, cfg); err != nil {
+	if d.SpendUSD, _, err = dispatch.Spent(ctx, s.db(ctx), cfg); err != nil {
 		return d, err
 	}
 	if b := cfg.Daemon.Budget; b != nil {

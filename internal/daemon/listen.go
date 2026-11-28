@@ -69,7 +69,7 @@ func (p *publicListener) open(ctx context.Context) error {
 		}
 		if err != nil {
 			p.s.Log.Error("public listener stopped", "err", err)
-			p.s.Store.AddFeed(context.Background(), store.FeedSession, fmt.Sprintf("the public listener is not serving: %v", err), 0)
+			p.s.db(context.Background()).AddFeed(context.Background(), store.FeedSession, fmt.Sprintf("the public listener is not serving: %v", err), 0)
 		}
 	}()
 	return nil
@@ -117,7 +117,7 @@ func (p *publicListener) watch(ctx context.Context) {
 		p.s.web.hosted.mu.Unlock()
 		if err := p.open(ctx); err != nil {
 			p.s.Log.Error("public listener not restarted", "err", err)
-			p.s.Store.AddFeed(context.Background(), store.FeedSession, fmt.Sprintf("the public listener is closed: %v", err), 0)
+			p.s.db(context.Background()).AddFeed(context.Background(), store.FeedSession, fmt.Sprintf("the public listener is closed: %v", err), 0)
 		}
 	}
 }

@@ -14,7 +14,7 @@ import (
 // finished and failed, the merge requests opened or merged, and why and when the mode
 // stopped (or that it is still on). It is empty when the mode was never turned on.
 func (k *KeepGoing) SinceYouLeft(ctx context.Context, ws int64) (string, error) {
-	st := k.s.Store
+	st := k.s.db(ctx)
 	row, err := st.KeepGoing(ctx, ws)
 	if err != nil {
 		return "", err

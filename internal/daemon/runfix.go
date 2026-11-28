@@ -18,7 +18,7 @@ func (s *Server) listDiagnoses(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	ds, err := s.Store.Diagnoses(r.Context(), run.ID)
+	ds, err := s.db(r.Context()).Diagnoses(r.Context(), run.ID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -88,7 +88,7 @@ func (s *Server) widenScope(ctx context.Context, run store.Run, res *dispatch.Fi
 	if err != nil {
 		return err
 	}
-	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.db(ctx).AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	res.Done, res.Message = true, "added "+strings.Join(add, ", ")+" to the lane's scope; continue the run to carry on"
 	return nil
@@ -101,7 +101,7 @@ func (s *Server) attachDiagnoses(ctx context.Context, views []api.RunView, full 
 	for i, v := range views {
 		ids[i] = v.ID
 	}
-	latest, err := s.Store.LatestDiagnoses(ctx, ids...)
+	latest, err := s.db(ctx).LatestDiagnoses(ctx, ids...)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (s *Server) attachLaneDiagnoses(ctx context.Context, lanes []api.LaneView) 
 	byRun := map[int64][]int{}
 	var ids []int64
 	for i, l := range lanes {
-		runs, err := s.Store.Runs(ctx, l.ID, "", 1)
+		runs, err := s.db(ctx).Runs(ctx, l.ID, "", 1)
 		if err != nil {
 			return err
 		}
@@ -138,7 +138,7 @@ func (s *Server) attachLaneDiagnoses(ctx context.Context, lanes []api.LaneView) 
 			lanes[i].Progress = s.RunProgress(ctx, runs[0], l.Worktree)
 		}
 	}
-	latest, err := s.Store.LatestDiagnoses(ctx, ids...)
+	latest, err := s.db(ctx).LatestDiagnoses(ctx, ids...)
 	if err != nil {
 		return err
 	}

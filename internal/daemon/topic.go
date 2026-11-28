@@ -45,12 +45,12 @@ func (s *Server) topicLinkView(ctx context.Context, l store.TopicLink) (api.Topi
 	id, _ := strconv.ParseInt(l.Ref, 10, 64)
 	switch l.Kind {
 	case store.TopicLane:
-		if lane, err := s.Store.Lane(ctx, id); err == nil {
+		if lane, err := s.db(ctx).Lane(ctx, id); err == nil {
 			v.Label, v.State = lane.Name, lane.State
 			closedWork = lane.State == store.LaneClosed
 		}
 	case store.TopicNextItem:
-		if it, err := s.Store.NextItem(ctx, id); err == nil {
+		if it, err := s.db(ctx).NextItem(ctx, id); err == nil {
 			v.Label, v.State, v.Time = it.Title, it.State, later(v.Time, it.Updated)
 			sv := s.nextView(ctx, it)
 			v.State = sv.State
@@ -58,7 +58,7 @@ func (s *Server) topicLinkView(ctx context.Context, l store.TopicLink) (api.Topi
 			closedWork = sv.State == store.NextDone || sv.State == store.NextDropped
 		}
 	case store.TopicDecision:
-		if d, err := s.Store.Decision(ctx, id); err == nil {
+		if d, err := s.db(ctx).Decision(ctx, id); err == nil {
 			v.Label, v.State = topicLabel(d.Question), d.State
 			v.Waits = d.State == store.DecisionOpen
 			v.Time = later(v.Time, d.Created)
@@ -68,17 +68,17 @@ func (s *Server) topicLinkView(ctx context.Context, l store.TopicLink) (api.Topi
 			closedWork = d.State != store.DecisionOpen
 		}
 	case store.TopicRequest:
-		if q, err := s.Store.Request(ctx, id); err == nil {
+		if q, err := s.db(ctx).Request(ctx, id); err == nil {
 			v.Label, v.State = topicLabel(q.Message), q.State
 			v.Waits = q.State == store.RequestNeedsRouting
 			v.Time = later(v.Time, q.Updated)
 		}
 	case store.TopicRun:
-		if r, err := s.Store.Run(ctx, id); err == nil {
+		if r, err := s.db(ctx).Run(ctx, id); err == nil {
 			v.Label, v.State = fmt.Sprintf("run %d (%s)", r.ID, r.Agent), r.State
 		}
 	case store.TopicArtifact:
-		if a, err := s.Store.Artifact(ctx, id); err == nil {
+		if a, err := s.db(ctx).Artifact(ctx, id); err == nil {
 			v.Label, v.State, v.Time = a.Path, a.State, later(v.Time, a.Updated)
 		}
 	}
@@ -96,7 +96,7 @@ func later(a, b time.Time) time.Time {
 func (s *Server) topicView(ctx context.Context, t store.Topic) api.TopicView {
 	v := api.TopicView{ID: t.ID, Title: t.Title, Status: t.Status, Summary: t.Summary, Source: t.Source,
 		Created: t.Created, Updated: t.Updated, ClearedAt: t.ClearedAt, Activity: t.Updated, Links: []api.TopicLinkView{}}
-	links, err := s.Store.TopicLinks(ctx, t.ID)
+	links, err := s.db(ctx).TopicLinks(ctx, t.ID)
 	if err != nil {
 		s.Log.Warn("read a topic's links", "topic", t.ID, "err", err)
 		return v
@@ -131,17 +131,17 @@ func (s *Server) topicView(ctx context.Context, t store.Topic) api.TopicView {
 		case store.TopicLane:
 			haveLane[id] = true
 		case store.TopicNextItem:
-			if it, err := s.Store.NextItem(ctx, id); err == nil && it.LaneID != 0 {
+			if it, err := s.db(ctx).NextItem(ctx, id); err == nil && it.LaneID != 0 {
 				candidates = append(candidates, it.LaneID)
 			}
 		case store.TopicRun:
-			if r, err := s.Store.Run(ctx, id); err == nil && r.LaneID != 0 {
+			if r, err := s.db(ctx).Run(ctx, id); err == nil && r.LaneID != 0 {
 				candidates = append(candidates, r.LaneID)
 			}
 		}
 	}
 	for _, id := range candidates {
-		if haveLane[id] || store.LaneTopic(ctx, s.Store, id) != t.ID {
+		if haveLane[id] || store.LaneTopic(ctx, s.db(ctx), id) != t.ID {
 			continue
 		}
 		haveLane[id] = true
@@ -156,7 +156,7 @@ func (s *Server) topicView(ctx context.Context, t store.Topic) api.TopicView {
 	// A decision an agent holds in a run of a linked lane belongs to the topic by that
 	// link, as Shepherd tags by existing links: derived here, never stored, so it cannot
 	// disagree with the lane.
-	if ds, err := s.Store.Decisions(ctx, store.DecisionOpen); err == nil && len(ds) > 0 {
+	if ds, err := s.db(ctx).Decisions(ctx, store.DecisionOpen); err == nil && len(ds) > 0 {
 		have := map[string]bool{}
 		laneOf := map[int64]bool{}
 		for _, l := range links {
@@ -171,10 +171,10 @@ func (s *Server) topicView(ctx context.Context, t store.Topic) api.TopicView {
 			if have[store.TopicDecision+":"+ref] {
 				continue
 			}
-			if run, err := s.Store.Run(ctx, d.RunID); err != nil || !laneOf[run.LaneID] {
+			if run, err := s.db(ctx).Run(ctx, d.RunID); err != nil || !laneOf[run.LaneID] {
 				continue
 			}
-			if other, err := s.Store.TopicOf(ctx, store.TopicDecision, ref); err == nil && other.TopicID != t.ID {
+			if other, err := s.db(ctx).TopicOf(ctx, store.TopicDecision, ref); err == nil && other.TopicID != t.ID {
 				continue
 			}
 			lv, _ := s.topicLinkView(ctx, store.TopicLink{TopicID: t.ID, Kind: store.TopicDecision, Ref: ref, By: store.TopicLinkShepherd, Created: d.Created})
@@ -196,7 +196,7 @@ func (s *Server) topicView(ctx context.Context, t store.Topic) api.TopicView {
 
 func (s *Server) listTopics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	ts, err := s.Store.Topics(ctx)
+	ts, err := s.db(ctx).Topics(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -237,7 +237,7 @@ func (s *Server) getTopic(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	t, err := s.Store.Topic(r.Context(), id)
+	t, err := s.db(r.Context()).Topic(r.Context(), id)
 	if err != nil {
 		s.topicError(w, err)
 		return
@@ -287,17 +287,17 @@ func (s *Server) checkTopicRef(ctx context.Context, ref *api.TopicRef) error {
 	var e error
 	switch ref.Kind {
 	case store.TopicLane:
-		_, e = s.Store.Lane(ctx, n)
+		_, e = s.db(ctx).Lane(ctx, n)
 	case store.TopicNextItem:
-		_, e = s.Store.NextItem(ctx, n)
+		_, e = s.db(ctx).NextItem(ctx, n)
 	case store.TopicDecision:
-		_, e = s.Store.Decision(ctx, n)
+		_, e = s.db(ctx).Decision(ctx, n)
 	case store.TopicRequest:
-		_, e = s.Store.Request(ctx, n)
+		_, e = s.db(ctx).Request(ctx, n)
 	case store.TopicRun:
-		_, e = s.Store.Run(ctx, n)
+		_, e = s.db(ctx).Run(ctx, n)
 	case store.TopicArtifact:
-		_, e = s.Store.Artifact(ctx, n)
+		_, e = s.db(ctx).Artifact(ctx, n)
 	}
 	if e != nil {
 		return fmt.Errorf("%s %d: %w", ref.Kind, n, e)
@@ -317,8 +317,8 @@ func (s *Server) linkAllowed(ctx context.Context, r *http.Request, topic int64, 
 		return http.StatusForbidden, fmt.Errorf("the front desk files only its own turn, #%d", p.Turn)
 	}
 	if linkBy(r) != store.TopicLinkPerson {
-		if cur, err := s.Store.TopicOf(ctx, ref.Kind, ref.Ref); err == nil && !s.deskMayRefile(ctx, ref.Kind, cur) {
-			if t, err := s.Store.Topic(ctx, cur.TopicID); err == nil && t.ID != topic {
+		if cur, err := s.db(ctx).TopicOf(ctx, ref.Kind, ref.Ref); err == nil && !s.deskMayRefile(ctx, ref.Kind, cur) {
+			if t, err := s.db(ctx).Topic(ctx, cur.TopicID); err == nil && t.ID != topic {
 				return http.StatusForbidden, errTopicNotPersons
 			}
 		}
@@ -344,17 +344,17 @@ func (s *Server) fileTurn(ctx context.Context, r *http.Request, topic int64) {
 		return
 	}
 	ref := strconv.FormatInt(p.Turn, 10)
-	if cur, err := s.Store.TopicOf(ctx, store.TopicTurn, ref); err == nil && cur.TopicID != topic && !s.deskMayRefile(ctx, store.TopicTurn, cur) {
+	if cur, err := s.db(ctx).TopicOf(ctx, store.TopicTurn, ref); err == nil && cur.TopicID != topic && !s.deskMayRefile(ctx, store.TopicTurn, cur) {
 		return
 	}
-	if _, err := s.Store.LinkTopic(ctx, store.TopicLink{TopicID: topic, Kind: store.TopicTurn, Ref: ref, By: linkBy(r)}); err != nil {
+	if _, err := s.db(ctx).LinkTopic(ctx, store.TopicLink{TopicID: topic, Kind: store.TopicTurn, Ref: ref, By: linkBy(r)}); err != nil {
 		s.Log.Warn("file the desk's turn", "topic", topic, "turn", p.Turn, "err", err)
 	}
 }
 
 // linkTopic ties a validated thing to a topic by the caller.
 func (s *Server) linkTopic(ctx context.Context, r *http.Request, topic int64, ref api.TopicRef) (int, error) {
-	if _, err := s.Store.LinkTopic(ctx, store.TopicLink{TopicID: topic, Kind: ref.Kind, Ref: ref.Ref, By: linkBy(r)}); err != nil {
+	if _, err := s.db(ctx).LinkTopic(ctx, store.TopicLink{TopicID: topic, Kind: ref.Kind, Ref: ref.Ref, By: linkBy(r)}); err != nil {
 		return http.StatusInternalServerError, err
 	}
 	return 0, nil
@@ -372,7 +372,7 @@ func (s *Server) addTopic(w http.ResponseWriter, r *http.Request) {
 	}
 	// A title that repeats an open topic's is refused with the existing id, so near
 	// duplicates do not pile up.
-	if ts, err := s.Store.Topics(ctx); err == nil {
+	if ts, err := s.db(ctx).Topics(ctx); err == nil {
 		for _, t := range ts {
 			if t.Status == store.TopicOpen && strings.EqualFold(t.Title, req.Title) {
 				writeError(w, http.StatusConflict, fmt.Errorf("%w: topic %d is already called %q; use it", store.ErrConflict, t.ID, t.Title))
@@ -390,7 +390,7 @@ func (s *Server) addTopic(w http.ResponseWriter, r *http.Request) {
 	if principalOf(ctx).Role == RoleDesk {
 		src = store.TopicByDesk
 	}
-	t, err := s.Store.AddTopic(ctx, store.Topic{Title: req.Title, Summary: req.Summary, Source: src})
+	t, err := s.db(ctx).AddTopic(ctx, store.Topic{Title: req.Title, Summary: req.Summary, Source: src})
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -435,7 +435,7 @@ func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errTopicNotPersons)
 		return
 	}
-	t, err := s.Store.Topic(ctx, id)
+	t, err := s.db(ctx).Topic(ctx, id)
 	if err != nil {
 		s.topicError(w, err)
 		return
@@ -454,13 +454,13 @@ func (s *Server) patchTopic(w http.ResponseWriter, r *http.Request) {
 		if req.Status != nil && *req.Status == store.TopicCleared && t.Status == store.TopicCleared {
 			req.Status = nil
 		}
-		if t, err = s.Store.UpdateTopic(ctx, t.ID, store.TopicPatch{Title: req.Title, Summary: req.Summary, Status: req.Status}); err != nil {
+		if t, err = s.db(ctx).UpdateTopic(ctx, t.ID, store.TopicPatch{Title: req.Title, Summary: req.Summary, Status: req.Status}); err != nil {
 			s.topicError(w, err)
 			return
 		}
 	}
 	if req.MergeInto != 0 {
-		if t, err = s.Store.MergeTopics(ctx, t.ID, req.MergeInto); err != nil {
+		if t, err = s.db(ctx).MergeTopics(ctx, t.ID, req.MergeInto); err != nil {
 			s.topicError(w, err)
 			return
 		}

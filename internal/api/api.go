@@ -14,6 +14,12 @@ import (
 // ClientHeader names the kind of client making a request (cli, mcp, hook), for logs.
 const ClientHeader = "X-Shepherd-Client"
 
+// TenantHeader names, by slug, the tenant a request acts in. A user who is a member of one
+// tenant need not send it; one in several sends it to choose (the default tenant when they
+// are a member of it and send none). The operator token acts in the default tenant without
+// it. The CLI sends it for --tenant.
+const TenantHeader = "X-Shepherd-Tenant"
+
 // Routes.
 const (
 	PathStatus     = "/v1/status"

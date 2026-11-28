@@ -118,6 +118,9 @@ func (c *Client) stream(ctx context.Context, path string, after int64, idle time
 	if c.Name != "" {
 		req.Header.Set(api.ClientHeader, c.Name)
 	}
+	if c.Tenant != "" {
+		req.Header.Set(api.TenantHeader, c.Tenant)
+	}
 	// The client's own timeout covers a whole request: a stream has none.
 	hc := &http.Client{}
 	if c.http != nil {
