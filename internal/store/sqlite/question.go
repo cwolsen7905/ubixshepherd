@@ -35,6 +35,9 @@ func (s *DB) AddQuestion(ctx context.Context, q store.Question) (store.Question,
 	if err := s.mustOwn(ctx, s.db, "workspaces", "id", q.WorkspaceID); err != nil {
 		return q, err
 	}
+	if err := s.mustOwnRefs(ctx, s.db, "desk_questions", map[string]int64{"topic_id": q.TopicID, "lane_id": q.LaneID, "next_id": q.NextID}); err != nil {
+		return q, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_questions (workspace_id, turn, topic_id, text, state, created, repo, lane_id, next_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, q.WorkspaceID, q.Turn, q.TopicID, q.Text, store.QuestionOpen, now(), q.Repo, q.LaneID, q.NextID)
 	if err != nil {

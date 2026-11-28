@@ -975,6 +975,9 @@ func (s *DB) CreateLane(ctx context.Context, l store.Lane) (store.Lane, error) {
 	if err := s.mustOwn(ctx, s.db, "repos", "id", l.RepoID); err != nil {
 		return l, err
 	}
+	if err := s.mustOwnRefs(ctx, s.db, "lanes", map[string]int64{"origin_run": l.Origin.Run}); err != nil {
+		return l, err
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO lanes (repo_id, name, branch, base, worktree, scope, state, created,
 			origin_via, origin_agent, origin_session, origin_run, origin_pid, origin_dir, origin_detail)
@@ -1066,6 +1069,9 @@ func scanRun(sc interface{ Scan(...any) error }) (store.Run, error) {
 
 func (s *DB) CreateRun(ctx context.Context, r store.Run) (store.Run, error) {
 	if err := s.mustOwn(ctx, s.db, "lanes", "id", r.LaneID); err != nil {
+		return r, err
+	}
+	if err := s.mustOwnRefs(ctx, s.db, "runs", map[string]int64{"parent": r.Parent}); err != nil {
 		return r, err
 	}
 	res, err := s.db.ExecContext(ctx, `
@@ -1284,6 +1290,9 @@ func (s *DB) AnswerDecision(ctx context.Context, id int64, answer string) (store
 }
 
 func (s *DB) SetDecisionRun(ctx context.Context, id, runID int64) error {
+	if err := s.mustOwnRefs(ctx, s.db, "decisions", map[string]int64{"answer_run": runID}); err != nil {
+		return err
+	}
 	cond, args := s.in("decisions")
 	_, err := s.db.ExecContext(ctx, `UPDATE decisions SET answer_run = ? WHERE id = ?`+cond, append([]any{runID, id}, args...)...)
 	return err
@@ -1347,6 +1356,9 @@ func (s *DB) CreateRequest(ctx context.Context, q store.Request) (store.Request,
 }
 
 func (s *DB) UpdateRequest(ctx context.Context, q store.Request) error {
+	if err := s.mustOwnRefs(ctx, s.db, "requests", map[string]int64{"target_run": q.TargetRun, "reply_run": q.ReplyRun}); err != nil {
+		return err
+	}
 	cond, args := s.in("requests")
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE requests SET lane = ?, state = ?, agent = ?, target_run = ?, reply = ?, reply_run = ?, note = ?, updated = ?
@@ -1498,6 +1510,9 @@ func (s *DB) PutLaneForge(ctx context.Context, f store.LaneForge) error {
 }
 
 func (s *DB) AddSpend(ctx context.Context, sp store.Spend) error {
+	if err := s.mustOwnRefs(ctx, s.db, "spend", map[string]int64{"ref": sp.Ref}); err != nil {
+		return err
+	}
 	_, err := s.db.ExecContext(ctx, `INSERT INTO spend (day, source, ref, usd, credits, created, tenant_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		sp.Day, sp.Source, sp.Ref, sp.USD, sp.Credits, now(), s.newRowTenant())
 	return err
@@ -1525,6 +1540,9 @@ func (s *DB) SpendOn(ctx context.Context, day string) (map[string]store.Spend, e
 
 func (s *DB) CreateReservation(ctx context.Context, r store.Reservation) (store.Reservation, error) {
 	if err := s.mustOwn(ctx, s.db, "repos", "id", r.RepoID); err != nil {
+		return r, err
+	}
+	if err := s.mustOwnRefs(ctx, s.db, "reservations", map[string]int64{"lane_id": r.LaneID}); err != nil {
 		return r, err
 	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO reservations (repo_id, lane_id, tag, state, created) VALUES (?, ?, ?, ?, ?)`,
@@ -1569,6 +1587,9 @@ func (s *DB) SetReservation(ctx context.Context, id int64, state, sha string) er
 
 // PutConversation adds an adopted conversation, or refreshes what is known about it.
 func (s *DB) PutConversation(ctx context.Context, c store.Conversation) error {
+	if err := s.mustOwnRefs(ctx, s.db, "conversations", map[string]int64{"repo_id": c.RepoID}); err != nil {
+		return err
+	}
 	b, _ := json.Marshal(nonNil(c.Branches))
 	// A conversation's id is the agent's session id, unique across tenants: another
 	// tenant's conversation with this id is a conflict, never overwritten.

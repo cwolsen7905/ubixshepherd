@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
@@ -37,35 +38,35 @@ var tableTenancy = map[string]tableTenure{
 	"workspaces":      {kind: rootTable, sharedKeys: []string{"name"}},
 	"settings":        {kind: rootTable, sharedKeys: []string{"key"}},
 	"feed":            {kind: rootTable},
-	"spend":           {kind: rootTable},
-	"conversations":   {kind: rootTable},
+	"spend":           {kind: rootTable, refs: refs("ref", "runs")},
+	"conversations":   {kind: rootTable, refs: refs("repo_id", "repos")},
 	"project_briefs":  {kind: rootTable, sharedKeys: []string{"one approved and one draft per project"}},
-	"usage":           {kind: rootTable},
-	"next_items":      {kind: rootTable},
+	"usage":           {kind: rootTable, refs: refs("run_id", "runs", "workspace_id", "workspaces")},
+	"next_items":      {kind: rootTable, refs: refs("lane_id", "lanes")},
 	"held_starts":     {kind: rootTable},
-	"topics":          {kind: rootTable},
-	"crook_verdicts":  {kind: rootTable},
+	"topics":          {kind: rootTable, refs: refs("merged_into", "topics")},
+	"crook_verdicts":  {kind: rootTable, refs: refs("run_id", "runs")},
 	"muster_items":    {kind: rootTable, sharedKeys: []string{"key"}},
 	"cluster_members": {kind: rootTable, sharedKeys: []string{"name"}},
 
 	"repos":              {kind: childTable, parent: "workspaces", via: "workspace_id"},
-	"lanes":              {kind: childTable, parent: "repos", via: "repo_id"},
-	"runs":               {kind: childTable, parent: "lanes", via: "lane_id"},
+	"lanes":              {kind: childTable, parent: "repos", via: "repo_id", refs: refs("origin_run", "runs")},
+	"runs":               {kind: childTable, parent: "lanes", via: "lane_id", refs: refs("parent", "runs")},
 	"events":             {kind: childTable, parent: "runs", via: "run_id"},
-	"decisions":          {kind: childTable, parent: "runs", via: "run_id"},
-	"requests":           {kind: childTable, parent: "runs", via: "from_run"},
+	"decisions":          {kind: childTable, parent: "runs", via: "run_id", refs: refs("answer_run", "runs")},
+	"requests":           {kind: childTable, parent: "runs", via: "from_run", refs: refs("target_run", "runs", "reply_run", "runs")},
 	"run_diagnoses":      {kind: childTable, parent: "runs", via: "run_id"},
 	"lane_forge":         {kind: childTable, parent: "lanes", via: "lane_id"},
 	"gate_results":       {kind: childTable, parent: "lanes", via: "lane_id"},
 	"keep_going_starts":  {kind: childTable, parent: "lanes", via: "lane_id"},
-	"artifacts":          {kind: childTable, parent: "lanes", via: "lane_id"},
-	"artifact_versions":  {kind: childTable, parent: "artifacts", via: "artifact_id"},
+	"artifacts":          {kind: childTable, parent: "lanes", via: "lane_id", refs: refs("workspace_id", "workspaces", "repo_id", "repos", "run_id", "runs")},
+	"artifact_versions":  {kind: childTable, parent: "artifacts", via: "artifact_id", refs: refs("run_id", "runs")},
 	"artifact_links":     {kind: childTable, parent: "artifacts", via: "artifact_id"},
-	"reservations":       {kind: childTable, parent: "repos", via: "repo_id"},
-	"check_files":        {kind: childTable, parent: "repos", via: "repo_id"},
+	"reservations":       {kind: childTable, parent: "repos", via: "repo_id", refs: refs("lane_id", "lanes")},
+	"check_files":        {kind: childTable, parent: "repos", via: "repo_id", refs: refs("item_id", "next_items")},
 	"keep_going":         {kind: childTable, parent: "workspaces", via: "workspace_id"},
 	"desk_events":        {kind: childTable, parent: "workspaces", via: "workspace_id"},
-	"desk_questions":     {kind: childTable, parent: "workspaces", via: "workspace_id"},
+	"desk_questions":     {kind: childTable, parent: "workspaces", via: "workspace_id", refs: refs("topic_id", "topics", "lane_id", "lanes", "next_id", "next_items")},
 	"desk_turn_log":      {kind: childTable, parent: "workspaces", via: "workspace_id"},
 	"desk_attachments":   {kind: childTable, parent: "workspaces", via: "workspace_id"},
 	"topic_links":        {kind: childTable, parent: "topics", via: "topic_id", sharedKeys: []string{"kind, ref"}},
@@ -93,6 +94,55 @@ type tableTenure struct {
 	// that holds the parent's key; key is that key's column in the parent, "id" when empty.
 	parent, via, key string
 	sharedKeys       []string
+	// refs are the table's other columns that hold the id of a row in a tenant table
+	// (0 for none). A tenant's view checks each one written is its own (mustOwnRefs);
+	// TestTenancyRefsAreDeclared fails on an id column that is neither declared here nor
+	// exempt.
+	refs []tableRef
+}
+
+// tableRef is a column holding the id of a row in another tenant table.
+type tableRef struct{ column, table string }
+
+// refs pairs column, table, column, table, ... into tableRefs.
+func refs(pairs ...string) []tableRef {
+	var out []tableRef
+	for i := 0; i+1 < len(pairs); i += 2 {
+		out = append(out, tableRef{pairs[i], pairs[i+1]})
+	}
+	return out
+}
+
+// mustOwnRefs checks, on a tenant's view, that each non-zero value written to one of
+// table's declared refs is the id of this tenant's row, and is store.ErrNotFound for the
+// first that is not. On the unscoped store it checks nothing. A column not declared in
+// tableTenancy is a programming error and panics, so a check cannot silently miss.
+func (s *DB) mustOwnRefs(ctx context.Context, q querier, table string, vals map[string]int64) error {
+	if s.tenant == 0 {
+		return nil
+	}
+	cols := make([]string, 0, len(vals))
+	for c := range vals {
+		cols = append(cols, c)
+	}
+	sort.Strings(cols)
+	for _, c := range cols {
+		var target string
+		for _, r := range tableTenancy[table].refs {
+			if r.column == c {
+				target = r.table
+			}
+		}
+		if target == "" {
+			panic("mustOwnRefs: " + table + "." + c + " is not a declared ref in tableTenancy")
+		}
+		if v := vals[c]; v != 0 {
+			if err := s.mustOwn(ctx, q, target, "id", v); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // tenantExpr is the SQL for the tenant of the row alias of table: the root's tenant_id,
@@ -116,9 +166,14 @@ func tenantExpr(table, alias string) string {
 }
 
 // ForTenant is the store seen by one tenant: every read and write of a tenant's table
-// touches only that tenant's rows, and a new root row is that tenant's. The unscoped
-// store (Open's) sees every tenant and puts new rows in the default one.
+// touches only that tenant's rows, and a new root row is that tenant's. id must be a
+// tenant's id, greater than 0: ForTenant panics for 0 or less, so an unset tenant can
+// never fall back to the unscoped store, which sees every tenant. The unscoped store is
+// the one Open returns. An id with no tenant row sees nothing.
 func (s *DB) ForTenant(id int64) store.Store {
+	if id <= 0 {
+		panic(fmt.Sprintf("store: ForTenant(%d): a tenant id is greater than 0; the unscoped store is the one Open returns", id))
+	}
 	return &DB{db: s.db, tenant: id}
 }
 

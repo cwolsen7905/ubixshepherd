@@ -23,6 +23,9 @@ func (s *DB) AddCrookVerdict(ctx context.Context, v store.CrookVerdict) (store.C
 	if v.Facts == "" {
 		v.Facts = "{}"
 	}
+	if err := s.mustOwnRefs(ctx, s.db, "crook_verdicts", map[string]int64{"run_id": v.Run}); err != nil {
+		return v, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO crook_verdicts
 		(at, action, actor, kind, rule, rule_version, stage, reason, repo, lane, run_id, facts, tenant_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
