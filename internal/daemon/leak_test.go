@@ -200,12 +200,17 @@ func leakDaemon(t *testing.T, seed func(st store.Store)) *leakRig {
 		ids[u.name] = got.ID
 	}
 	seed(st)
-	s, err := NewServer(st, config.Default(), "/cfg", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// Background work is kept still, so the two daemons of a comparison differ only in
+	// their rows: the desk never wakes by itself, and the suite waits for routing and the
+	// other start-up passes to finish (quiesce) before it compares.
+	cfg := config.Default()
+	cfg.Desk.Wake = config.WakeNever
+	s, err := NewServer(st, cfg, "/cfg", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.DeskAgent = nopDesk{}
-	s.Runner = &dispatch.Runner{Store: st, Config: config.Default(), Dir: filepath.Join(t.TempDir(), "runs"), Log: s.Log}
+	s.Runner = &dispatch.Runner{Store: st, Config: cfg, Dir: filepath.Join(t.TempDir(), "runs"), Log: s.Log}
 	rtPath := filepath.Join(t.TempDir(), "daemon.json")
 	rctx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
@@ -243,7 +248,53 @@ func leakDaemon(t *testing.T, seed func(st store.Store)) *leakRig {
 		}
 	}
 	rig.settleCrook(t)
+	// Routing runs once at start over the requests a previous daemon left: wait until none
+	// is still pending, then until nothing in the store moves.
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		qs, err := st.Requests(ctx, store.RequestPending)
+		if err == nil && len(qs) == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("requests still pending after start: %+v", qs)
+		}
+	}
+	rig.quiesce(t, 10, 30*time.Millisecond)
 	return rig
+}
+
+// stillness is what background work changes in the store, across every tenant.
+func (rig *leakRig) stillness() string {
+	ctx := context.Background()
+	st := rig.s.Store
+	var parts []any
+	add := func(v any, _ error) { parts = append(parts, v) }
+	add(st.LastFeed(ctx))
+	add(st.Requests(ctx))
+	add(st.Topics(ctx))
+	add(st.Decisions(ctx, ""))
+	add(st.NextItems(ctx))
+	add(st.CrookCounts(ctx, time.Time{}))
+	b, _ := json.Marshal(parts)
+	return string(b)
+}
+
+// quiesce waits until the store has not changed for n looks, every gap apart: no
+// background pass and no queued Crook verdict is still writing.
+func (rig *leakRig) quiesce(t *testing.T, n int, gap time.Duration) {
+	t.Helper()
+	last, same := rig.stillness(), 0
+	for deadline := time.Now().Add(30 * time.Second); same < n; {
+		time.Sleep(gap)
+		if now := rig.stillness(); now == last {
+			same++
+		} else {
+			last, same = now, 0
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the daemon never went still")
+		}
+	}
 }
 
 // call makes one request as the user, as their browser would, and returns the status and
@@ -535,6 +586,10 @@ func TestNoRouteCrossesTenants(t *testing.T) {
 				if method != http.MethodGet {
 					b = body
 				}
+				// Both daemons still before each comparison, so that what one did in the
+				// background and the other has not yet is never taken for a leak.
+				one.quiesce(t, 3, 10*time.Millisecond)
+				two.quiesce(t, 3, 10*time.Millisecond)
 				if strings.Contains(pattern, "/crook/") {
 					one.settleCrook(t)
 					two.settleCrook(t)
