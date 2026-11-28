@@ -68,8 +68,9 @@ func TestLaneForgeTimesMigrate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Step the schema back over the forge-times migration, which is the twentieth to last
-	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated, the approval columns, desk_questions, the chat relabel, threads_seen, the artifact tables, the next-up guard columns and the restart reason and held starts the crook verdict log, the check files, the hosted account tables, the desk turn log and the owner-blocked threads column), as a daemon one release old left it.
-	last := len(migrations) - 22
+	// (then repos.removed, next_items, gate_results, keep_going, topics, cost_estimated, the approval columns, desk_questions, the chat relabel, threads_seen, the artifact tables, the next-up guard columns and the restart reason and held starts the crook verdict log, the check files, the hosted account tables, the desk turn log, the owner-blocked threads column and tenants), as a daemon one release old left it.
+	last := len(migrations) - 23
+	undoTenants(t, db)
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE desk_turn_log`); err != nil {
 		t.Fatal(err)
 	}
