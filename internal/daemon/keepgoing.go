@@ -91,7 +91,7 @@ func (k *KeepGoing) day(t time.Time) string { return t.Format("2006-01-02") }
 
 // spentOn is a day's total spend, credits at the configured price.
 func (k *KeepGoing) spentOn(ctx context.Context, day string, cfg config.Config) (float64, error) {
-	by, err := k.s.Store.SpendOn(ctx, day)
+	by, err := k.s.db(ctx).SpendOn(ctx, day)
 	if err != nil {
 		return 0, err
 	}
@@ -135,7 +135,7 @@ func (k *KeepGoing) spentSince(ctx context.Context, row store.KeepGoing, now tim
 
 // running counts the runs running in the workspace's lanes.
 func (k *KeepGoing) running(ctx context.Context, ws int64) (int, error) {
-	repos, err := k.s.Store.Repos(ctx, ws)
+	repos, err := k.s.db(ctx).Repos(ctx, ws)
 	if err != nil {
 		return 0, err
 	}
@@ -143,13 +143,13 @@ func (k *KeepGoing) running(ctx context.Context, ws int64) (int, error) {
 	for _, r := range repos {
 		mine[r.ID] = true
 	}
-	runs, err := k.s.Store.Runs(ctx, 0, store.RunRunning, 1000)
+	runs, err := k.s.db(ctx).Runs(ctx, 0, store.RunRunning, 1000)
 	if err != nil {
 		return 0, err
 	}
 	n := 0
 	for _, run := range runs {
-		lane, err := k.s.Store.Lane(ctx, run.LaneID)
+		lane, err := k.s.db(ctx).Lane(ctx, run.LaneID)
 		if err == nil && mine[lane.RepoID] {
 			n++
 		}
@@ -222,7 +222,7 @@ func (k *KeepGoing) evaluate(ctx context.Context, row *store.KeepGoing) (bool, e
 
 func (k *KeepGoing) turnOff(ctx context.Context, row *store.KeepGoing, reason, by string) error {
 	row.On, row.ReasonOff, row.OffAt, row.By = false, reason, k.Now().UTC(), by
-	if err := k.s.Store.SetKeepGoing(ctx, *row); err != nil {
+	if err := k.s.db(ctx).SetKeepGoing(ctx, *row); err != nil {
 		return err
 	}
 	k.s.postFeed(ctx, FeedKeepGoing, 0, "keep-going is off: "+offText(reason))
@@ -252,7 +252,7 @@ func offText(reason string) string {
 func (k *KeepGoing) Enable(ctx context.Context, ws int64, by string, set api.KeepGoingSet) (store.KeepGoing, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	row, err := k.s.Store.KeepGoing(ctx, ws)
+	row, err := k.s.db(ctx).KeepGoing(ctx, ws)
 	if err != nil {
 		return row, err
 	}
@@ -271,7 +271,7 @@ func (k *KeepGoing) Enable(ctx context.Context, ws int64, by string, set api.Kee
 	}
 	row.Cap, row.MaxRuns, row.IdleHours = set.Cap, set.MaxRuns, set.IdleHours
 	row.LastAction = now.UTC()
-	if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
+	if err := k.s.db(ctx).SetKeepGoing(ctx, row); err != nil {
 		return row, err
 	}
 	lim := limitsOf(cfg.KeepGoing, row)
@@ -287,7 +287,7 @@ func (k *KeepGoing) Enable(ctx context.Context, ws int64, by string, set api.Kee
 func (k *KeepGoing) Disable(ctx context.Context, ws int64, by string) (store.KeepGoing, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	row, err := k.s.Store.KeepGoing(ctx, ws)
+	row, err := k.s.db(ctx).KeepGoing(ctx, ws)
 	if err != nil || !row.On {
 		return row, err
 	}
@@ -298,12 +298,12 @@ func (k *KeepGoing) Disable(ctx context.Context, ws int64, by string) (store.Kee
 func (k *KeepGoing) Touch(ctx context.Context, ws int64) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	row, err := k.s.Store.KeepGoing(ctx, ws)
+	row, err := k.s.db(ctx).KeepGoing(ctx, ws)
 	if err != nil || !row.On {
 		return
 	}
 	row.LastAction = k.Now().UTC()
-	if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
+	if err := k.s.db(ctx).SetKeepGoing(ctx, row); err != nil {
 		k.s.Log.Warn("keep-going: record activity", "err", err)
 	}
 }
@@ -313,7 +313,7 @@ func (k *KeepGoing) Touch(ctx context.Context, ws int64) {
 func (k *KeepGoing) Evaluate(ctx context.Context, ws int64) (store.KeepGoing, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	row, err := k.s.Store.KeepGoing(ctx, ws)
+	row, err := k.s.db(ctx).KeepGoing(ctx, ws)
 	if err != nil {
 		return row, err
 	}
@@ -324,7 +324,7 @@ func (k *KeepGoing) Evaluate(ctx context.Context, ws int64) (store.KeepGoing, er
 // EvaluateAll checks every workspace: on the timer, when a run ends, and at start, so
 // a restart past a limit turns the mode off before the desk's first turn.
 func (k *KeepGoing) EvaluateAll(ctx context.Context) {
-	wss, err := k.s.Store.Workspaces(ctx)
+	wss, err := k.s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		k.s.Log.Warn("keep-going: list workspaces", "err", err)
 		return
@@ -361,12 +361,12 @@ func (k *KeepGoing) Allow(ctx context.Context, ws int64, action string, lane int
 	if err := k.countStart(ctx, action, lane); err != nil {
 		return Decision{Reason: fmt.Sprintf("lane starts unwritable: %v", err)}
 	}
-	row, err := k.s.Store.KeepGoing(ctx, ws)
+	row, err := k.s.db(ctx).KeepGoing(ctx, ws)
 	if err != nil {
 		return Decision{Reason: fmt.Sprintf("keep-going state unreadable: %v", err)}
 	}
 	row.LastAction = k.Now().UTC()
-	if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
+	if err := k.s.db(ctx).SetKeepGoing(ctx, row); err != nil {
 		return Decision{Reason: fmt.Sprintf("keep-going state unwritable: %v", err)}
 	}
 	k.s.postFeed(ctx, FeedKeepGoing, lane, actionText(action, lane))
@@ -394,7 +394,7 @@ func (k *KeepGoing) permitLocked(ctx context.Context, ws int64, action string, l
 	if ws == 0 {
 		return refuse("keep-going cannot tell which workspace this %s belongs to (its lane or repo is unknown), so it starts nothing", action)
 	}
-	row, err := k.s.Store.KeepGoing(ctx, ws)
+	row, err := k.s.db(ctx).KeepGoing(ctx, ws)
 	if err != nil {
 		return refuse("keep-going state unreadable: %v", err)
 	}
@@ -423,7 +423,7 @@ func (k *KeepGoing) permitLocked(ctx context.Context, ws int64, action string, l
 	}
 	day := k.day(k.Now())
 	if counts && lane != 0 {
-		n, err := k.s.Store.LaneStarts(ctx, lane, day)
+		n, err := k.s.db(ctx).LaneStarts(ctx, lane, day)
 		if err != nil {
 			return refuse("lane starts unreadable: %v", err)
 		}
@@ -447,7 +447,7 @@ func (k *KeepGoing) countStart(ctx context.Context, action string, lane int64) e
 	if action == KeepScope || lane == 0 {
 		return nil
 	}
-	_, err := k.s.Store.CountLaneStart(ctx, lane, k.day(k.Now()))
+	_, err := k.s.db(ctx).CountLaneStart(ctx, lane, k.day(k.Now()))
 	return err
 }
 
@@ -472,11 +472,11 @@ const recentActions = 10
 // recent is the newest keep-going feed items, oldest first. The feed is shared, so it
 // looks back over a window rather than the whole history.
 func (k *KeepGoing) recent(ctx context.Context) []api.KeepGoingAction {
-	last, err := k.s.Store.LastFeed(ctx)
+	last, err := k.s.db(ctx).LastFeed(ctx)
 	if err != nil {
 		return nil
 	}
-	items, err := k.s.Store.Feed(ctx, max(last-2000, 0), 2000)
+	items, err := k.s.db(ctx).Feed(ctx, max(last-2000, 0), 2000)
 	if err != nil {
 		return nil
 	}
@@ -581,7 +581,7 @@ func (s *Server) pickWorkspace(w http.ResponseWriter, r *http.Request, wsID int6
 	if wsID == 0 {
 		wsID, _ = strconv.ParseInt(r.URL.Query().Get("workspace_id"), 10, 64)
 	}
-	wss, err := s.Store.Workspaces(r.Context())
+	wss, err := s.db(r.Context()).Workspaces(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return store.Workspace{}, false

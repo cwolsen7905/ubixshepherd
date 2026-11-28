@@ -29,11 +29,14 @@ var ErrNoDaemon = errors.New("the shepherd daemon is not running (start it with:
 // Client calls one daemon.
 type Client struct {
 	// Name says who is calling (cli, mcp, hook), for the daemon's log.
-	Name  string
-	mu    sync.RWMutex
-	base  string
-	token string
-	http  *http.Client
+	Name string
+	// Tenant, when set, is the slug of the tenant every request acts in (sent as
+	// api.TenantHeader); empty leaves the choice to the daemon.
+	Tenant string
+	mu     sync.RWMutex
+	base   string
+	token  string
+	http   *http.Client
 	// runtime is the daemon.json path FromRuntime remembered, so Redial can pick up a
 	// new address after the daemon restarts.
 	runtime string
@@ -196,7 +199,7 @@ func (c *Client) ShipLane(ctx context.Context, id int64) (dispatch.Shipped, erro
 	var out dispatch.Shipped
 	c.mu.RLock()
 	long := &Client{
-		Name: c.Name, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
+		Name: c.Name, Tenant: c.Tenant, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
 		http: &http.Client{Timeout: dispatch.GateTimeout + 5*time.Minute},
 	}
 	c.mu.RUnlock()
@@ -209,7 +212,7 @@ func (c *Client) GateLane(ctx context.Context, id int64) (fold.GateRun, error) {
 	var out fold.GateRun
 	c.mu.RLock()
 	long := &Client{
-		Name: c.Name, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
+		Name: c.Name, Tenant: c.Tenant, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
 		http: &http.Client{Timeout: fold.GateTimeout + 5*time.Minute},
 	}
 	c.mu.RUnlock()
@@ -304,7 +307,7 @@ func (c *Client) FixRun(ctx context.Context, id int64, req api.RunFix) (dispatch
 	var out dispatch.FixResult
 	c.mu.RLock()
 	long := &Client{
-		Name: c.Name, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
+		Name: c.Name, Tenant: c.Tenant, base: c.base, token: c.token, runtime: c.runtime, host: c.host,
 		http: &http.Client{Timeout: dispatch.GateTimeout + 5*time.Minute},
 	}
 	c.mu.RUnlock()
@@ -634,6 +637,9 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 	req.Header.Set("Authorization", "Bearer "+token)
 	if c.Name != "" {
 		req.Header.Set(api.ClientHeader, c.Name)
+	}
+	if c.Tenant != "" {
+		req.Header.Set(api.TenantHeader, c.Tenant)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")

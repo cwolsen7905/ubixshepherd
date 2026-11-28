@@ -63,11 +63,11 @@ var errNoMR = errors.New("this lane has no merge request")
 // laneMR is the forge and merge request of a lane, read live. The forge is nil when
 // Shepherd cannot read the lane's.
 func (s *Server) laneMR(ctx context.Context, laneID int64) (store.Lane, forge.Forge, *forge.MR, error) {
-	lane, err := s.Store.Lane(ctx, laneID)
+	lane, err := s.db(ctx).Lane(ctx, laneID)
 	if err != nil {
 		return lane, nil, nil, err
 	}
-	repo, err := s.Store.Repo(ctx, lane.RepoID)
+	repo, err := s.db(ctx).Repo(ctx, lane.RepoID)
 	if err != nil {
 		return lane, nil, nil, err
 	}
@@ -182,7 +182,7 @@ func (s *Server) approveLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("merge request approved from the web", "lane", lane.Name, "mr", v.MR, "sha", short(body.SHA))
-	s.Store.AddFeed(ctx, store.FeedMRApprove, fmt.Sprintf("!%d approved by the person from the web at %s (lane %s)", v.MR, short(body.SHA), lane.Name), lane.ID)
+	s.db(ctx).AddFeed(ctx, store.FeedMRApprove, fmt.Sprintf("!%d approved by the person from the web at %s (lane %s)", v.MR, short(body.SHA), lane.Name), lane.ID)
 
 	res := approveResult{laneApproval: v}
 	res.Approved = true

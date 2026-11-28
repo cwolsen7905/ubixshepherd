@@ -102,20 +102,20 @@ func (s *Server) SetLaneStallOptions(opts LaneStallOptions) {
 
 // Check looks at every open lane in every workspace.
 func (ls *LaneStall) Check(ctx context.Context) {
-	wss, err := ls.s.Store.Workspaces(ctx)
+	wss, err := ls.s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		ls.s.Log.Warn("lane stall: list workspaces", "err", err)
 		return
 	}
 	live := map[int64]bool{}
 	for _, ws := range wss {
-		repos, err := ls.s.Store.Repos(ctx, ws.ID)
+		repos, err := ls.s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			ls.s.Log.Warn("lane stall: list repos", "workspace", ws.ID, "err", err)
 			return // forget nothing: a failed read must not re-arm the alerts
 		}
 		for _, rp := range repos {
-			lanes, err := ls.s.Store.Lanes(ctx, rp.ID)
+			lanes, err := ls.s.db(ctx).Lanes(ctx, rp.ID)
 			if err != nil {
 				ls.s.Log.Warn("lane stall: list lanes", "repo", rp.Name, "err", err)
 				return
@@ -140,7 +140,7 @@ func (ls *LaneStall) Check(ctx context.Context) {
 
 func (ls *LaneStall) checkLane(ctx context.Context, rp store.Repo, l store.Lane) {
 	opts := ls.options()
-	runs, err := ls.s.Store.Runs(ctx, l.ID, "", 1)
+	runs, err := ls.s.db(ctx).Runs(ctx, l.ID, "", 1)
 	if err != nil {
 		ls.s.Log.Warn("lane stall: read runs", "lane", l.Name, "err", err)
 		return
@@ -194,7 +194,7 @@ func (ls *LaneStall) cause(ctx context.Context, l store.Lane, opts LaneStallOpti
 	if n > 0 {
 		parts = append(parts, fmt.Sprintf("%d commit(s) are not pushed", n))
 	}
-	lf, err := ls.s.Store.LaneForge(ctx, l.ID)
+	lf, err := ls.s.db(ctx).LaneForge(ctx, l.ID)
 	if err != nil {
 		return "", err
 	}

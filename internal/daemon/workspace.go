@@ -33,7 +33,7 @@ func (s *Server) renameWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("workspace name %q: must be non-empty with no slashes", req.Name))
 		return
 	}
-	ws, err := s.Store.RenameWorkspace(r.Context(), id, req.Name)
+	ws, err := s.db(r.Context()).RenameWorkspace(r.Context(), id, req.Name)
 	switch {
 	case errors.Is(err, store.ErrConflict):
 		writeError(w, http.StatusConflict, err)
@@ -45,7 +45,7 @@ func (s *Server) renameWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	repos, err := s.Store.Repos(r.Context(), ws.ID)
+	repos, err := s.db(r.Context()).Repos(r.Context(), ws.ID)
 	if err != nil {
 		s.fail(w, err)
 		return

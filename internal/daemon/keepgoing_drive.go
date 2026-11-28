@@ -87,11 +87,11 @@ func (k *KeepGoing) linkOf(q store.Question) QuestionLink {
 // otherwise the lane's own work is under way.
 func (k *KeepGoing) assess(ctx context.Context, ws int64) ([]driveItem, error) {
 	s := k.s
-	all, err := s.Store.NextItems(ctx)
+	all, err := s.db(ctx).NextItems(ctx)
 	if err != nil {
 		return nil, err
 	}
-	repos, err := s.Store.Repos(ctx, ws)
+	repos, err := s.db(ctx).Repos(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +102,12 @@ func (k *KeepGoing) assess(ctx context.Context, ws int64) ([]driveItem, error) {
 	// known is every repo in any workspace: an item for one of another workspace's
 	// repos is not this workspace's, but one for a repo in none is nobody's to start.
 	known := map[string]bool{}
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for _, w := range wss {
-		rs, err := s.Store.Repos(ctx, w.ID)
+		rs, err := s.db(ctx).Repos(ctx, w.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -125,11 +125,11 @@ func (k *KeepGoing) assess(ctx context.Context, ws int64) ([]driveItem, error) {
 		return nil, nil
 	}
 	states := s.effectiveStates(ctx, all)
-	w, err := waiting.Collect(ctx, s.Store, s.LiveConfig(), ws)
+	w, err := waiting.Collect(ctx, s.db(ctx), s.LiveConfig(), ws)
 	if err != nil {
 		return nil, err
 	}
-	qs, err := s.Store.Questions(ctx, ws, store.QuestionOpen)
+	qs, err := s.db(ctx).Questions(ctx, ws, store.QuestionOpen)
 	if err != nil {
 		return nil, err
 	}
@@ -138,11 +138,11 @@ func (k *KeepGoing) assess(ctx context.Context, ws int64) ([]driveItem, error) {
 	for _, it := range cands {
 		d := driveItem{item: it}
 		if it.LaneID != 0 {
-			lane, err := s.Store.Lane(ctx, it.LaneID)
+			lane, err := s.db(ctx).Lane(ctx, it.LaneID)
 			if err != nil || lane.State != store.LaneOpen {
 				continue // the lane is gone or closed: the person's to look at, not the drive's
 			}
-			if running, err := s.Store.Runs(ctx, lane.ID, store.RunRunning, 1); err != nil || len(running) > 0 {
+			if running, err := s.db(ctx).Runs(ctx, lane.ID, store.RunRunning, 1); err != nil || len(running) > 0 {
 				continue
 			}
 			d.lane = lane
@@ -191,7 +191,7 @@ func (k *KeepGoing) topicOf(ctx context.Context, kind string, id int64) int64 {
 	if id == 0 {
 		return 0
 	}
-	l, err := k.s.Store.TopicOf(ctx, kind, fmt.Sprint(id))
+	l, err := k.s.db(ctx).TopicOf(ctx, kind, fmt.Sprint(id))
 	if err != nil {
 		return 0
 	}
@@ -203,7 +203,7 @@ func (k *KeepGoing) topicOf(ctx context.Context, kind string, id int64) int64 {
 // run ended any other way is waiting on someone else, and gets "". It also returns the
 // lane's last run, zero for none.
 func (k *KeepGoing) laneAction(ctx context.Context, lane store.Lane) (string, store.Run) {
-	runs, err := k.s.Store.Runs(ctx, lane.ID, "", 1)
+	runs, err := k.s.db(ctx).Runs(ctx, lane.ID, "", 1)
 	if err != nil {
 		return "", store.Run{}
 	}
@@ -328,15 +328,15 @@ func (k *KeepGoing) recordAction(ctx context.Context, ws int64, c driveItem, run
 	if err := k.countStart(ctx, c.action, run.LaneID); err != nil {
 		k.s.Log.Warn("keep-going: count a lane start", "lane", run.LaneID, "err", err)
 	}
-	if row, err := k.s.Store.KeepGoing(ctx, ws); err == nil {
+	if row, err := k.s.db(ctx).KeepGoing(ctx, ws); err == nil {
 		row.LastAction = k.Now().UTC()
-		if err := k.s.Store.SetKeepGoing(ctx, row); err != nil {
+		if err := k.s.db(ctx).SetKeepGoing(ctx, row); err != nil {
 			k.s.Log.Warn("keep-going: record activity", "err", err)
 		}
 	}
 	k.mu.Unlock()
 	name := fmt.Sprint(run.LaneID)
-	if lane, err := k.s.Store.Lane(ctx, run.LaneID); err == nil {
+	if lane, err := k.s.db(ctx).Lane(ctx, run.LaneID); err == nil {
 		name = lane.Name
 	}
 	verb := map[string]string{KeepStartItem: "started", KeepContinue: "continued", KeepRerun: "re-ran an interrupted run of"}[c.action]
@@ -403,7 +403,7 @@ func (s *Server) driveStart(ctx context.Context, req DriveStart) (store.Run, err
 // refused to start in it. If the close is refused the lane stays linked, and the next pass
 // continues it.
 func (s *Server) driveUndo(ctx context.Context, req DriveStart, lane store.Lane) {
-	if runs, err := s.Store.Runs(ctx, lane.ID, "", 1); err != nil || len(runs) > 0 {
+	if runs, err := s.db(ctx).Runs(ctx, lane.ID, "", 1); err != nil || len(runs) > 0 {
 		return
 	}
 	if _, err := s.Fold.Close(ctx, lane.ID, false); err != nil {
@@ -411,7 +411,7 @@ func (s *Server) driveUndo(ctx context.Context, req DriveStart, lane store.Lane)
 		return
 	}
 	zero, hint := int64(0), req.Item.Lane
-	if _, err := s.Store.UpdateNextItem(ctx, req.Item.ID, store.NextPatch{LaneID: &zero, Lane: &hint}); err != nil {
+	if _, err := s.db(ctx).UpdateNextItem(ctx, req.Item.ID, store.NextPatch{LaneID: &zero, Lane: &hint}); err != nil {
 		s.Log.Warn("keep-going: unlink an item from a closed lane", "item", req.Item.ID, "err", err)
 	}
 	s.refreshView(lane.RepoID)
@@ -457,7 +457,7 @@ func planScope(repoPath, plan string) ([]string, error) {
 // If the run then fails to start, driveStart closes a new lane; an old one stays linked
 // and the next pass continues it.
 func (s *Server) driveOpen(ctx context.Context, req DriveStart) (store.Lane, bool, error) {
-	repos, err := s.Store.Repos(ctx, req.WorkspaceID)
+	repos, err := s.db(ctx).Repos(ctx, req.WorkspaceID)
 	if err != nil {
 		return store.Lane{}, false, err
 	}
@@ -473,7 +473,7 @@ func (s *Server) driveOpen(ctx context.Context, req DriveStart) (store.Lane, boo
 	name := driveLaneName(req.Item)
 	// A lane this item opened before, whose link failed, is taken up again: its scope
 	// would refuse a second open.
-	lanes, err := s.Store.Lanes(ctx, repo.ID)
+	lanes, err := s.db(ctx).Lanes(ctx, repo.ID)
 	if err != nil {
 		return store.Lane{}, false, err
 	}
@@ -497,7 +497,7 @@ func (s *Server) driveOpen(ctx context.Context, req DriveStart) (store.Lane, boo
 		return store.Lane{}, false, err
 	}
 	lane := opened.Lane
-	s.Store.AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s opened via keep-going (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.db(ctx).AddFeed(ctx, store.FeedLaneOpened, fmt.Sprintf("lane %s opened via keep-going (scope %s)", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	if _, err := s.linkLaneItem(ctx, lane, repo.Name, req.Item.ID); err != nil {
 		return store.Lane{}, true, fmt.Errorf("link item %d to its lane %s: %w", req.Item.ID, lane.Name, err)

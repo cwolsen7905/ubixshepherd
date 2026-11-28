@@ -27,7 +27,7 @@ func (s *Server) listQuestions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("state is open, answered or skipped, not %q", state))
 		return
 	}
-	qs, err := s.Store.Questions(r.Context(), ws, state)
+	qs, err := s.db(r.Context()).Questions(r.Context(), ws, state)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -52,7 +52,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 	topic := req.TopicID
 	if topic == 0 && turn != 0 {
-		if l, err := s.Store.TopicOf(ctx, store.TopicTurn, strconv.FormatInt(turn, 10)); err == nil {
+		if l, err := s.db(ctx).TopicOf(ctx, store.TopicTurn, strconv.FormatInt(turn, 10)); err == nil {
 			topic = l.TopicID
 		}
 	}
@@ -73,7 +73,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 		return true
 	}
 	if req.LaneID != 0 {
-		l, err := s.Store.Lane(ctx, req.LaneID)
+		l, err := s.db(ctx).Lane(ctx, req.LaneID)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("no lane %d", req.LaneID))
 			return
@@ -81,7 +81,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		r, err := s.Store.Repo(ctx, l.RepoID)
+		r, err := s.db(ctx).Repo(ctx, l.RepoID)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("lane %d has no repo", l.ID))
 			return
@@ -98,7 +98,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.NextID != 0 {
-		it, err := s.Store.NextItem(ctx, req.NextID)
+		it, err := s.db(ctx).NextItem(ctx, req.NextID)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("no next-up item %d", req.NextID))
 			return
@@ -111,7 +111,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if it.Repo != "" {
-			repos, err := s.Store.Repos(ctx, d.Workspace().ID)
+			repos, err := s.db(ctx).Repos(ctx, d.Workspace().ID)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
@@ -132,7 +132,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 	// Whatever repo the question ends up with, a standalone one included, is one of
 	// the desk's workspace.
 	if repo != "" {
-		repos, err := s.Store.Repos(ctx, d.Workspace().ID)
+		repos, err := s.db(ctx).Repos(ctx, d.Workspace().ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -146,7 +146,7 @@ func (s *Server) openQuestion(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	q, err := s.Store.AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text,
+	q, err := s.db(ctx).AddQuestion(ctx, store.Question{WorkspaceID: d.Workspace().ID, Turn: turn, TopicID: topic, Text: req.Text,
 		Repo: repo, LaneID: req.LaneID, NextID: req.NextID})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -161,7 +161,7 @@ func (s *Server) questionID(w http.ResponseWriter, r *http.Request) (store.Quest
 		writeError(w, http.StatusBadRequest, errors.New("bad question id"))
 		return store.Question{}, false
 	}
-	q, err := s.Store.Question(r.Context(), id)
+	q, err := s.db(r.Context()).Question(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("no question %d", id))
 		return q, false
@@ -196,7 +196,7 @@ func (s *Server) answerQuestion(w http.ResponseWriter, r *http.Request) {
 		// The turn in progress is the person's reply: the desk cannot name another.
 		req.AnsweredTurn = p.Turn
 	}
-	c, err := s.Store.CloseQuestion(ctx, q.ID, store.QuestionAnswered, req.AnsweredTurn)
+	c, err := s.db(ctx).CloseQuestion(ctx, q.ID, store.QuestionAnswered, req.AnsweredTurn)
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, err)
 		return
@@ -220,7 +220,7 @@ func (s *Server) skipQuestion(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errQuestionNotPersons)
 		return
 	}
-	c, err := s.Store.CloseQuestion(ctx, q.ID, store.QuestionSkipped, 0)
+	c, err := s.db(ctx).CloseQuestion(ctx, q.ID, store.QuestionSkipped, 0)
 	if errors.Is(err, store.ErrConflict) {
 		writeError(w, http.StatusConflict, err)
 		return
@@ -230,7 +230,7 @@ func (s *Server) skipQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The skip is recorded in the thread and told to the desk at its next turn.
-	if wss, err := s.Store.Workspaces(ctx); err == nil {
+	if wss, err := s.db(ctx).Workspaces(ctx); err == nil {
 		for _, ws := range wss {
 			if ws.ID != q.WorkspaceID {
 				continue

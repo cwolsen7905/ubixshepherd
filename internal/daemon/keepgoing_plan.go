@@ -114,7 +114,7 @@ func planVerdict(d store.Decision, lane store.Lane, item *store.NextItem) (bool,
 
 // approvedItemOf is the approved Next-up item the lane serves, nil when there is none.
 func (k *KeepGoing) approvedItemOf(ctx context.Context, lane store.Lane) *store.NextItem {
-	items, err := k.s.Store.NextItems(ctx)
+	items, err := k.s.db(ctx).NextItems(ctx)
 	if err != nil {
 		return nil
 	}
@@ -145,21 +145,21 @@ func (k *KeepGoing) autoApprovePlans(ctx context.Context, ws int64) {
 	if !k.s.LiveConfig().KeepGoing.PlansAutoApproved() {
 		return
 	}
-	open, err := k.s.Store.Decisions(ctx, store.DecisionOpen)
+	open, err := k.s.db(ctx).Decisions(ctx, store.DecisionOpen)
 	if err != nil {
 		k.s.Log.Warn("keep-going: list decisions", "err", err)
 		return
 	}
 	for _, d := range open {
-		run, err := k.s.Store.Run(ctx, d.RunID)
+		run, err := k.s.db(ctx).Run(ctx, d.RunID)
 		if err != nil {
 			continue
 		}
-		lane, err := k.s.Store.Lane(ctx, run.LaneID)
+		lane, err := k.s.db(ctx).Lane(ctx, run.LaneID)
 		if err != nil || lane.State != store.LaneOpen {
 			continue
 		}
-		repo, err := k.s.Store.Repo(ctx, lane.RepoID)
+		repo, err := k.s.db(ctx).Repo(ctx, lane.RepoID)
 		if err != nil || repo.WorkspaceID != ws {
 			continue
 		}
@@ -181,7 +181,7 @@ func (k *KeepGoing) autoApprovePlans(ctx context.Context, ws int64) {
 			k.s.Log.Warn("keep-going: auto-approve a plan", "decision", d.ID, "err", err)
 			continue
 		}
-		k.s.Store.AddFeed(ctx, FeedKeepGoing, fmt.Sprintf("keep-going auto-approved the plan in decision %d on lane %s (rule %s)", d.ID, lane.Name, PlanRule), d.ID)
+		k.s.db(ctx).AddFeed(ctx, FeedKeepGoing, fmt.Sprintf("keep-going auto-approved the plan in decision %d on lane %s (rule %s)", d.ID, lane.Name, PlanRule), d.ID)
 		k.Touch(ctx, ws)
 	}
 }

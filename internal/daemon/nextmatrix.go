@@ -27,19 +27,19 @@ func (s *Server) matrixRows(ctx context.Context, items []store.NextItem) []api.N
 			named[it.Repo+"\x00"+it.Lane] = true
 		}
 		if it.LaneID != 0 {
-			if l, err := s.Store.Lane(ctx, it.LaneID); err == nil {
+			if l, err := s.db(ctx).Lane(ctx, it.LaneID); err == nil {
 				named[it.Repo+"\x00"+l.Name] = true
 				named[it.Repo+"\x00"+l.Branch] = true
 			}
 		}
 	}
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return nil
 	}
 	var repos []store.Repo
 	for _, ws := range wss {
-		rs, err := s.Store.Repos(ctx, ws.ID)
+		rs, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			continue
 		}

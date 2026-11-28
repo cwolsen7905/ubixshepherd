@@ -40,6 +40,9 @@ type Env struct {
 	// the local one. Run sets it from --host, $SHEPHERD_HOST or hosts.yaml; a command run
 	// by another (an MCP tool) inherits it, and so shares the one tunnel.
 	Remote *remoteHost
+	// Tenant is --tenant: the slug of the tenant the daemon acts in for this command
+	// line, sent with every request; empty leaves the choice to the daemon.
+	Tenant string
 	// selected says Run has already applied the global options to this Env.
 	selected bool
 }
@@ -192,7 +195,7 @@ func Run(ctx context.Context, env Env, args []string) int {
 			fmt.Fprintln(env.Stderr, "shepherd:", err)
 			return 2
 		}
-		args, env.selected = rest, true
+		args, env.selected, env.Tenant = rest, true, g.tenant
 		if env.Remote != nil {
 			// Whatever ends this call, a panic included, ends the tunnel with it.
 			defer env.Remote.Close()
@@ -260,6 +263,7 @@ func usage(w io.Writer) {
 	fmt.Fprintf(w, "  --host NAME|ssh://[user@]host[:port]  (or $%s; NAME is in ~/.shepherd/hosts.yaml)\n", remote.HostEnv)
 	fmt.Fprintf(w, "  --workspace NAME  --repo NAME         what a current directory would pick (or $%s, $%s)\n", WorkspaceEnv, RepoEnv)
 	fmt.Fprintln(w, "  --local                               ignore a default host")
+	fmt.Fprintln(w, "  --tenant SLUG                         the tenant to act in, for a user in several")
 }
 
 // flags returns a FlagSet that reports errors instead of exiting, and parses
@@ -295,6 +299,14 @@ const NoAutostartEnv = "SHEPHERD_NO_AUTOSTART"
 // dial returns a client for a running daemon, starting one first if none answers and
 // autostart is allowed.
 func dial(ctx context.Context, env Env) (*client.Client, error) {
+	c, err := dialAny(ctx, env)
+	if c != nil {
+		c.Tenant = env.Tenant
+	}
+	return c, err
+}
+
+func dialAny(ctx context.Context, env Env) (*client.Client, error) {
 	if env.Remote != nil {
 		// Never start a daemon on someone else's machine: the person does that there.
 		return env.Remote.client(ctx, env.Client)

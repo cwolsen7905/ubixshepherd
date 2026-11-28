@@ -37,7 +37,7 @@ func (s *Server) gateVerdict(ctx context.Context, ws int64, action string, lane 
 
 // workspaceOfRepo is the workspace a repo is in, 0 when the repo is unknown.
 func (s *Server) workspaceOfRepo(r *http.Request, repoID int64) int64 {
-	repo, err := s.Store.Repo(r.Context(), repoID)
+	repo, err := s.db(r.Context()).Repo(r.Context(), repoID)
 	if err != nil {
 		return 0
 	}
@@ -47,7 +47,7 @@ func (s *Server) workspaceOfRepo(r *http.Request, repoID int64) int64 {
 // fixAction is the keep-going action a suggested fix is: a retry starts the run over
 // (rerun), anything else follows it up (fix).
 func (s *Server) fixAction(r *http.Request, runID int64, fixID string) string {
-	ds, err := s.Store.Diagnoses(r.Context(), runID)
+	ds, err := s.db(r.Context()).Diagnoses(r.Context(), runID)
 	if err == nil {
 		for _, d := range ds {
 			for _, f := range d.Fixes {

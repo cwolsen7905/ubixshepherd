@@ -124,6 +124,9 @@ type Server struct {
 	// the status detail; nil leaves it out of the answer. They must not block.
 	QuotaHolds func() []api.QuotaHold
 	ForgeWatch func() api.ForgeWatch
+	// routes are the patterns Handler registered through guard, for the tests that walk
+	// every route.
+	routes []string
 }
 
 // NewServer returns a Server with a fresh random token.
@@ -179,7 +182,11 @@ func NewLogger() *slog.Logger {
 func (s *Server) Handler() http.Handler {
 	s.background()
 	mux := http.NewServeMux()
-	handle := func(pattern string, a access, h http.HandlerFunc) { mux.HandleFunc(pattern, guard(pattern, a, h)) }
+	s.routes = nil
+	handle := func(pattern string, a access, h http.HandlerFunc) {
+		s.routes = append(s.routes, pattern)
+		mux.HandleFunc(pattern, guard(pattern, a, s.owned(pattern, h)))
+	}
 	const desk, worker, own, web = forDesk, forWorker, ownRun, forWeb
 	handle("GET "+api.PathStatus, desk|worker, s.status)
 	// The cluster (cluster.go). Reading it is the desk's and the browser's; adding,
@@ -231,7 +238,7 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathLanes+"/{id}/ship", desk, s.acted(s.describeShipLane, s.withRunner(s.shipLane)))
 	// A transcript holds full tool input and output: the person's alone, never the desk's
 	// or an agent's.
-	handle("GET "+api.PathLanes+"/{id}/conversation", web, api.LaneConversation(s.Store, convo.Source{}))
+	handle("GET "+api.PathLanes+"/{id}/conversation", web, s.scoped(func(st store.Store) http.HandlerFunc { return api.LaneConversation(st, convo.Source{}) }))
 	// What a lane holds against its base: a read of the worktree, redacted and bounded.
 	// Not for a worker: an agent reads its own tree itself.
 	handle("GET "+api.PathLanes+"/{id}/diff", desk|web, api.LaneDiff(s.Fold))
@@ -248,8 +255,8 @@ func (s *Server) Handler() http.Handler {
 	handle("POST "+api.PathRuns, desk, s.acted(s.describeStart, s.withRunner(s.startRun)))
 	handle("GET "+api.PathRuns, desk, s.listRuns)
 	// Read-only history: closed lanes with their outcome and cost, and every run in a range.
-	handle("GET "+api.PathHistoryLanes, desk, api.HistoryLanes(s.Store))
-	handle("GET "+api.PathHistoryRuns, desk, api.HistoryRuns(s.Store))
+	handle("GET "+api.PathHistoryLanes, desk, s.scoped(api.HistoryLanes))
+	handle("GET "+api.PathHistoryRuns, desk, s.scoped(api.HistoryRuns))
 	handle("GET "+api.PathRuns+"/{id}", desk|own, s.getRun)
 	handle("GET "+api.PathRuns+"/{id}/log", desk|own, s.runLog)
 	// A run's diagnoses are the person's and the desk's to read; no worker route, so an
@@ -440,24 +447,24 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := api.Status{
 		Version: version.Version, DaemonID: s.DaemonID(), PID: os.Getpid(), Started: s.started,
-		Store: s.Store.Driver(), Config: s.ConfigPath, Workspaces: []api.WorkspaceSummary{},
+		Store: s.db(ctx).Driver(), Config: s.ConfigPath, Workspaces: []api.WorkspaceSummary{},
 	}
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(ctx, ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
 		}
 		sum := api.WorkspaceSummary{Workspace: ws, Repos: len(repos)}
 		for _, rp := range repos {
-			lanes, err := s.Store.Lanes(ctx, rp.ID)
+			lanes, err := s.db(ctx).Lanes(ctx, rp.ID)
 			if err != nil {
 				s.fail(w, err)
 				return
@@ -518,14 +525,14 @@ func (s *Server) drain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
-	wss, err := s.Store.Workspaces(r.Context())
+	wss, err := s.db(r.Context()).Workspaces(r.Context())
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := []api.WorkspaceDetail{}
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(r.Context(), ws.ID)
+		repos, err := s.db(r.Context()).Repos(r.Context(), ws.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -547,12 +554,12 @@ func (s *Server) saveWorkspace(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	ws, err := s.Store.SaveWorkspace(r.Context(), store.Workspace{Name: req.Name, Path: req.Path}, req.Repos)
+	ws, err := s.db(r.Context()).SaveWorkspace(r.Context(), store.Workspace{Name: req.Name, Path: req.Path}, req.Repos)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	repos, err := s.Store.Repos(r.Context(), ws.ID)
+	repos, err := s.db(r.Context()).Repos(r.Context(), ws.ID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -600,7 +607,7 @@ func (s *Server) resolve(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("path %q: must be absolute", p))
 		return
 	}
-	res, err := Resolve(r.Context(), s.Store, s.LiveConfig(), p)
+	res, err := Resolve(r.Context(), s.db(r.Context()), s.LiveConfig(), p)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -670,7 +677,7 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repoID, _ := strconv.ParseInt(r.URL.Query().Get("repo_id"), 10, 64)
-	repos, err := s.Store.Repos(ctx, wsID)
+	repos, err := s.db(ctx).Repos(ctx, wsID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -680,12 +687,12 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 		if repoID != 0 && rp.ID != repoID {
 			continue
 		}
-		lanes, err := s.Store.Lanes(ctx, rp.ID)
+		lanes, err := s.db(ctx).Lanes(ctx, rp.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
 		}
-		active, err := s.Store.LaneActivity(ctx, rp.ID)
+		active, err := s.db(ctx).LaneActivity(ctx, rp.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -700,7 +707,7 @@ func (s *Server) listLanes(w http.ResponseWriter, r *http.Request) {
 		for _, l := range lanes {
 			v := api.LaneView{Lane: l, Repo: rp.Name}
 			// The store holds the last the forge said, so an unreachable forge keeps it.
-			lf, err := s.Store.LaneForge(ctx, l.ID)
+			lf, err := s.db(ctx).LaneForge(ctx, l.ID)
 			if err == nil && lf.MR != 0 {
 				v.MR, v.MRURL, v.MRState = lf.MR, lf.MRURL, api.MRState(lf.MRState)
 				v.Pipeline, v.PipelineStatus = lf.Pipeline, api.PipelineStatus(lf.PipelineStatus)
@@ -732,6 +739,9 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req := body.OpenRequest
+	if !s.ours(w, r, repoRef(req.RepoID), itemRef(body.Item), itemRef(req.ForItem)) {
+		return
+	}
 	if body.Item != 0 && !s.gate(w, r, s.workspaceOfRepo(r, req.RepoID), KeepStartItem, 0) {
 		return
 	}
@@ -747,7 +757,7 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 		s.foldError(w, err)
 		return
 	}
-	if repo, err := s.Store.Repo(r.Context(), lane.RepoID); err == nil {
+	if repo, err := s.db(r.Context()).Repo(r.Context(), lane.RepoID); err == nil {
 		note, err := s.linkLaneItem(r.Context(), lane.Lane, repo.Name, body.Item)
 		if err != nil {
 			s.Log.Warn("link a next item to its lane", "lane", lane.Name, "err", err)
@@ -756,7 +766,7 @@ func (s *Server) openLane(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.Log.Info("lane opened", "lane", lane.Name, "repo_id", lane.RepoID, "worktree", lane.Worktree, "origin", lane.Origin.String())
-	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened via %s (scope %s)", lane.Name, lane.Origin.Surface(), strings.Join(lane.Scope, ", ")), lane.ID)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s opened via %s (scope %s)", lane.Name, lane.Origin.Surface(), strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, lane)
 }
@@ -771,7 +781,7 @@ func (s *Server) fillOrigin(r *http.Request, o store.Origin) store.Origin {
 	}
 	ctx := r.Context()
 	if o.Run != 0 {
-		if run, err := s.Store.Run(ctx, o.Run); err == nil {
+		if run, err := s.db(ctx).Run(ctx, o.Run); err == nil {
 			if o.Agent == "" {
 				o.Agent = run.Agent
 			}
@@ -790,7 +800,7 @@ func (s *Server) fillOrigin(r *http.Request, o store.Origin) store.Origin {
 		}
 	}
 	if o.Via == store.OriginDesk && o.Session == "" {
-		o.Session, _ = s.Store.Setting(ctx, "desk.session")
+		o.Session, _ = s.db(ctx).Setting(ctx, "desk.session")
 	}
 	return o
 }
@@ -811,7 +821,7 @@ func (s *Server) closeLane(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("lane closed", "lane", res.Lane.Name, "force", req.Force, "branch_deleted", res.BranchDeleted)
-	s.Store.AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("lane %s closed", res.Lane.Name), res.Lane.ID)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("lane %s closed", res.Lane.Name), res.Lane.ID)
 	s.refreshView(res.Lane.RepoID)
 	writeJSON(w, http.StatusOK, res)
 }
@@ -831,7 +841,7 @@ func (s *Server) rescopeLane(w http.ResponseWriter, r *http.Request) {
 		s.foldError(w, err)
 		return
 	}
-	s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("lane %s scope is now %s", lane.Name, strings.Join(lane.Scope, ", ")), lane.ID)
 	s.refreshView(lane.RepoID)
 	writeJSON(w, http.StatusOK, api.Rescoped{Lane: lane, Excluded: excluded})
 }
@@ -882,6 +892,9 @@ func (s *Server) foldGC(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("workspace_id is required"))
 		return
 	}
+	if !s.ours(w, r, wsRef(wsID)) {
+		return
+	}
 	stale, err := s.Fold.GC(r.Context(), wsID)
 	if err != nil {
 		s.fail(w, err)
@@ -902,7 +915,7 @@ func (s *Server) prePush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("path %q: must be absolute", req.Path))
 		return
 	}
-	res, err := Resolve(r.Context(), s.Store, s.LiveConfig(), req.Path)
+	res, err := Resolve(r.Context(), s.db(r.Context()), s.LiveConfig(), req.Path)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -928,7 +941,7 @@ func (s *Server) repoHook(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	repo, err := s.Store.Repo(r.Context(), id)
+	repo, err := s.db(r.Context()).Repo(r.Context(), id)
 	if err != nil {
 		s.foldError(w, err)
 		return
@@ -959,9 +972,12 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	}
 	// A continue names the run, not the lane (shepherd run continue sends no lane_id):
 	// the gate needs the run's lane, or it reads workspace 0's empty keep-going row.
+	if !s.ours(w, r, laneRef(req.LaneID), runRef(req.Continue)) {
+		return
+	}
 	laneID := req.LaneID
 	if laneID == 0 && req.Continue != 0 {
-		if prev, err := s.Store.Run(r.Context(), req.Continue); err == nil {
+		if prev, err := s.db(r.Context()).Run(r.Context(), req.Continue); err == nil {
 			laneID = prev.LaneID
 		}
 	}
@@ -994,7 +1010,7 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 	if limit <= 0 || limit > 200 {
 		limit = 20
 	}
-	runs, err := s.Store.Runs(r.Context(), laneID, q.Get("state"), limit)
+	runs, err := s.db(r.Context()).Runs(r.Context(), laneID, q.Get("state"), limit)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1025,7 +1041,7 @@ func (s *Server) getRun(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	switch u, err := s.Store.RunUsage(r.Context(), run.ID); {
+	switch u, err := s.db(r.Context()).RunUsage(r.Context(), run.ID); {
 	case err == nil:
 		v.Usage = &u
 	case !errors.Is(err, store.ErrNotFound):
@@ -1089,7 +1105,7 @@ func (s *Server) dismissRun(dismiss bool) http.HandlerFunc {
 				now := time.Now().UTC()
 				at = &now
 			}
-			if err := s.Store.DismissRun(r.Context(), run.ID, at); err != nil {
+			if err := s.db(r.Context()).DismissRun(r.Context(), run.ID, at); err != nil {
 				if errors.Is(err, store.ErrConflict) {
 					writeError(w, http.StatusConflict, err)
 					return
@@ -1098,7 +1114,7 @@ func (s *Server) dismissRun(dismiss bool) http.HandlerFunc {
 				return
 			}
 			var err error
-			if run, err = s.Store.Run(r.Context(), run.ID); err != nil {
+			if run, err = s.db(r.Context()).Run(r.Context(), run.ID); err != nil {
 				s.foldError(w, err)
 				return
 			}
@@ -1135,12 +1151,12 @@ func (s *Server) runEvents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	events, err := s.Store.Events(r.Context(), run.ID)
+	events, err := s.db(r.Context()).Events(r.Context(), run.ID)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	all, err := s.Store.Decisions(r.Context(), "")
+	all, err := s.db(r.Context()).Decisions(r.Context(), "")
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1215,14 +1231,14 @@ func (s *Server) listRequests(w http.ResponseWriter, r *http.Request) {
 	if st := r.URL.Query().Get("state"); st != "" {
 		states = strings.Split(st, ",")
 	}
-	reqs, err := s.Store.Requests(r.Context(), states...)
+	reqs, err := s.db(r.Context()).Requests(r.Context(), states...)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := []api.RequestView{}
 	for _, q := range reqs {
-		run, err := s.Store.Run(r.Context(), q.FromRun)
+		run, err := s.db(r.Context()).Run(r.Context(), q.FromRun)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -1278,6 +1294,9 @@ func (s *Server) foldImport(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if !s.ours(w, r, repoRef(req.RepoID)) {
+		return
+	}
 	plan, err := s.Fold.ImportAdopt(r.Context(), req.RepoID, req.File, req.Apply, req.Adopt)
 	if err != nil {
 		s.foldError(w, err)
@@ -1290,7 +1309,7 @@ func (s *Server) foldImport(w http.ResponseWriter, r *http.Request) {
 				n++
 			}
 		}
-		s.Store.AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("imported %d lane(s) from the coordination file", n), req.RepoID)
+		s.db(r.Context()).AddFeed(r.Context(), store.FeedLaneOpened, fmt.Sprintf("imported %d lane(s) from the coordination file", n), req.RepoID)
 		s.refreshView(req.RepoID)
 	}
 	writeJSON(w, http.StatusOK, plan)
@@ -1299,6 +1318,9 @@ func (s *Server) foldImport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) foldReview(w http.ResponseWriter, r *http.Request) {
 	var req api.FoldImport
 	if !decode(w, r, &req) {
+		return
+	}
+	if !s.ours(w, r, repoRef(req.RepoID)) {
 		return
 	}
 	reviews, err := s.Fold.ReviewRepo(r.Context(), req.RepoID)
@@ -1317,13 +1339,16 @@ func (s *Server) foldRetire(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if !s.ours(w, r, repoRef(req.RepoID)) {
+		return
+	}
 	rev, err := s.Fold.Retire(r.Context(), req.RepoID, req.Worktree)
 	if err != nil {
 		s.foldError(w, err)
 		return
 	}
 	s.Log.Info("worktree retired", "worktree", rev.Worktree, "branch", rev.Branch)
-	s.Store.AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("retired worktree %s (%s): %s; branch kept", filepath.Base(rev.Worktree), rev.Branch, rev.Why), req.RepoID)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedLaneClosed, fmt.Sprintf("retired worktree %s (%s): %s; branch kept", filepath.Base(rev.Worktree), rev.Branch, rev.Why), req.RepoID)
 	writeJSON(w, http.StatusOK, rev)
 }
 
@@ -1332,7 +1357,7 @@ func (s *Server) foldView(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	repo, err := s.Store.Repo(r.Context(), req.RepoID)
+	repo, err := s.db(r.Context()).Repo(r.Context(), req.RepoID)
 	if err != nil {
 		s.foldError(w, err)
 		return
@@ -1373,14 +1398,14 @@ func (s *Server) importSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := []api.SessionView{}
 	for _, ws := range wss {
-		repos, err := s.Store.Repos(ctx, ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, ws.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -1404,14 +1429,14 @@ func (s *Server) importSessions(w http.ResponseWriter, r *http.Request) {
 			for _, f := range found {
 				c := store.Conversation{ID: f.ID, Agent: f.Agent, RepoID: repo.ID, Dir: f.Dir, Title: f.Title,
 					Branches: f.Branches, File: f.File, Started: f.Started, Last: f.Last}
-				if err := s.Store.PutConversation(ctx, c); err != nil {
+				if err := s.db(ctx).PutConversation(ctx, c); err != nil {
 					s.fail(w, err)
 					return
 				}
 				out = append(out, api.SessionView{Conversation: c, Repo: repo.Name, InUse: convo.InUse(f.File)})
 			}
 			if len(found) > 0 {
-				s.Store.AddFeed(ctx, store.FeedSession, fmt.Sprintf("adopted %d conversation(s) from %s", len(found), repo.Name), repo.ID)
+				s.db(ctx).AddFeed(ctx, store.FeedSession, fmt.Sprintf("adopted %d conversation(s) from %s", len(found), repo.Name), repo.ID)
 			}
 		}
 	}
@@ -1420,7 +1445,7 @@ func (s *Server) importSessions(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	repoID, _ := strconv.ParseInt(r.URL.Query().Get("repo_id"), 10, 64)
-	cs, err := s.Store.Conversations(r.Context(), repoID)
+	cs, err := s.db(r.Context()).Conversations(r.Context(), repoID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1428,7 +1453,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	out := []api.SessionView{}
 	for _, c := range cs {
 		v := api.SessionView{Conversation: c, InUse: convo.InUse(c.File)}
-		if repo, err := s.Store.Repo(r.Context(), c.RepoID); err == nil {
+		if repo, err := s.db(r.Context()).Repo(r.Context(), c.RepoID); err == nil {
 			v.Repo = repo.Name
 		}
 		out = append(out, v)
@@ -1446,7 +1471,7 @@ func (s *Server) askSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("ask a question"))
 		return
 	}
-	cs, err := s.Store.Conversations(r.Context(), 0)
+	cs, err := s.db(r.Context()).Conversations(r.Context(), 0)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1477,13 +1502,13 @@ func (s *Server) askSession(w http.ResponseWriter, r *http.Request) {
 	if a.USD > 0 && s.Runner != nil {
 		s.Runner.Spend(r.Context(), store.Spend{Source: "session", USD: a.USD})
 	} else if a.USD > 0 {
-		s.Store.AddSpend(r.Context(), store.Spend{Day: dispatch.Today(), Source: "session", USD: a.USD})
+		s.db(r.Context()).AddSpend(r.Context(), store.Spend{Day: dispatch.Today(), Source: "session", USD: a.USD})
 	}
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	s.Store.AddFeed(r.Context(), store.FeedSession, fmt.Sprintf("asked conversation %s (%s): %s", c.ID[:8], clipText(c.Title, 50), clipText(req.Question, 120)), 0)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedSession, fmt.Sprintf("asked conversation %s (%s): %s", c.ID[:8], clipText(c.Title, 50), clipText(req.Question, 120)), 0)
 	writeJSON(w, http.StatusOK, a)
 }
 
@@ -1509,7 +1534,7 @@ func clipText(s string, n int) string {
 
 func (s *Server) reserveTag(w http.ResponseWriter, r *http.Request) {
 	var req api.Reserve
-	if !decode(w, r, &req) {
+	if !decode(w, r, &req) || !s.ours(w, r, repoRef(req.RepoID), laneRef(req.LaneID)) {
 		return
 	}
 	if lane, err := s.workerLane(r); err != nil {
@@ -1529,10 +1554,10 @@ func (s *Server) reserveTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	who := "no lane"
-	if l, err := s.Store.Lane(r.Context(), res.LaneID); err == nil {
+	if l, err := s.db(r.Context()).Lane(r.Context(), res.LaneID); err == nil {
 		who = "lane " + l.Name
 	}
-	s.Store.AddFeed(r.Context(), store.FeedTag, fmt.Sprintf("%s reserved for %s", res.Tag, who), res.ID)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedTag, fmt.Sprintf("%s reserved for %s", res.Tag, who), res.ID)
 	s.refreshView(res.RepoID)
 	writeJSON(w, http.StatusOK, res)
 }
@@ -1543,7 +1568,7 @@ func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("repo_id is required"))
 		return
 	}
-	rs, err := s.Store.Reservations(r.Context(), repoID)
+	rs, err := s.db(r.Context()).Reservations(r.Context(), repoID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1551,7 +1576,7 @@ func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
 	out := []api.ReservationView{}
 	for _, res := range rs {
 		v := api.ReservationView{Reservation: res}
-		if l, err := s.Store.Lane(r.Context(), res.LaneID); err == nil {
+		if l, err := s.db(r.Context()).Lane(r.Context(), res.LaneID); err == nil {
 			v.Lane = l.Name
 		}
 		out = append(out, v)
@@ -1561,7 +1586,7 @@ func (s *Server) listTags(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) releaseTag(w http.ResponseWriter, r *http.Request) {
 	var req api.ReleaseTag
-	if !decode(w, r, &req) {
+	if !decode(w, r, &req) || !s.ours(w, r, repoRef(req.RepoID)) {
 		return
 	}
 	if lane, err := s.workerLane(r); err != nil {
@@ -1575,14 +1600,14 @@ func (s *Server) releaseTag(w http.ResponseWriter, r *http.Request) {
 		s.foldError(w, err)
 		return
 	}
-	s.Store.AddFeed(r.Context(), store.FeedTag, req.Tag+" released", 0)
+	s.db(r.Context()).AddFeed(r.Context(), store.FeedTag, req.Tag+" released", 0)
 	s.refreshView(req.RepoID)
 	writeJSON(w, http.StatusOK, req)
 }
 
 // reservedFor says whether tag is reserved in the repo for the lane.
 func (s *Server) reservedFor(ctx context.Context, repoID int64, tag string, laneID int64) bool {
-	rs, err := s.Store.Reservations(ctx, repoID)
+	rs, err := s.db(ctx).Reservations(ctx, repoID)
 	if err != nil {
 		return false
 	}
@@ -1596,7 +1621,7 @@ func (s *Server) reservedFor(ctx context.Context, repoID int64, tag string, lane
 
 func (s *Server) spendToday(w http.ResponseWriter, r *http.Request) {
 	cfg := s.LiveConfig()
-	total, by, err := dispatch.Spent(r.Context(), s.Store, cfg)
+	total, by, err := dispatch.Spent(r.Context(), s.db(r.Context()), cfg)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1631,7 +1656,7 @@ func (s *Server) usageStats(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("from %s is after to %s", from, to))
 		return
 	}
-	st, err := s.Store.UsageStats(r.Context(), from, to)
+	st, err := s.db(r.Context()).UsageStats(r.Context(), from, to)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1644,13 +1669,13 @@ func (s *Server) usageStats(w http.ResponseWriter, r *http.Request) {
 func (s *Server) reviewBots(w http.ResponseWriter, r *http.Request) {
 	s.botReadsOnce.Do(func() {
 		s.botReads.Forge = func(name string) (forge.Forge, error) {
-			wss, err := s.Store.Workspaces(context.Background())
+			wss, err := s.db(context.Background()).Workspaces(context.Background())
 			if err != nil {
 				return nil, err
 			}
 			var all []reviewbot.Repo
 			for _, ws := range wss {
-				repos, err := s.Store.Repos(context.Background(), ws.ID)
+				repos, err := s.db(context.Background()).Repos(context.Background(), ws.ID)
 				if err != nil {
 					return nil, err
 				}
@@ -1691,7 +1716,7 @@ func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	after, _ := strconv.ParseInt(q.Get("after"), 10, 64)
 	if q.Get("after") == "latest" {
-		last, err := s.Store.LastFeed(r.Context())
+		last, err := s.db(r.Context()).LastFeed(r.Context())
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -1699,7 +1724,7 @@ func (s *Server) feed(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, api.Feed{Items: []store.FeedItem{}, Events: []string{}, Last: last})
 		return
 	}
-	items, err := s.Store.Feed(r.Context(), after, 200)
+	items, err := s.db(r.Context()).Feed(r.Context(), after, 200)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1726,7 +1751,7 @@ func (s *Server) getSetting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("no setting %q", key))
 		return
 	}
-	v, err := s.Store.Setting(r.Context(), key)
+	v, err := s.db(r.Context()).Setting(r.Context(), key)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -1754,7 +1779,7 @@ func (s *Server) putSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v.Configured = ""
-	if err := s.Store.SetSetting(r.Context(), key, v.Value); err != nil {
+	if err := s.db(r.Context()).SetSetting(r.Context(), key, v.Value); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -1762,14 +1787,14 @@ func (s *Server) putSetting(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listDecisions(w http.ResponseWriter, r *http.Request) {
-	ds, err := s.Store.Decisions(r.Context(), r.URL.Query().Get("state"))
+	ds, err := s.db(r.Context()).Decisions(r.Context(), r.URL.Query().Get("state"))
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	out := []api.DecisionView{}
 	for _, d := range ds {
-		run, err := s.Store.Run(r.Context(), d.RunID)
+		run, err := s.db(r.Context()).Run(r.Context(), d.RunID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -1779,7 +1804,7 @@ func (s *Server) listDecisions(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
-		arts, err := s.Store.DecisionArtifacts(r.Context(), d.ID)
+		arts, err := s.db(r.Context()).DecisionArtifacts(r.Context(), d.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -1882,7 +1907,7 @@ func (s *Server) briefView(ctx context.Context, name string, p config.Project) (
 	case !errors.Is(err, store.ErrNotFound):
 		return view, err
 	}
-	d, err := s.Store.PendingBrief(ctx, name)
+	d, err := s.db(ctx).PendingBrief(ctx, name)
 	switch {
 	case err == nil:
 		view.Pending = &d
@@ -1922,7 +1947,7 @@ func (s *Server) draftBrief(w http.ResponseWriter, r *http.Request) {
 	if principalOf(r.Context()).Role == RoleDesk {
 		by = "desk"
 	}
-	b, err := s.Store.SaveBriefDraft(r.Context(), name, text, by)
+	b, err := s.db(r.Context()).SaveBriefDraft(r.Context(), name, text, by)
 	if err != nil {
 		s.briefError(w, err)
 		return
@@ -1945,7 +1970,7 @@ func (s *Server) approveBrief(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	d, err := s.Store.ProjectBrief(ctx, req.ID)
+	d, err := s.db(ctx).ProjectBrief(ctx, req.ID)
 	if err != nil {
 		s.briefError(w, err)
 		return
@@ -1954,7 +1979,7 @@ func (s *Server) approveBrief(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, fmt.Errorf("brief %d is for project %q, not %q", d.ID, d.Project, name))
 		return
 	}
-	b, err := s.Store.ApproveBrief(ctx, req.ID, "person")
+	b, err := s.db(ctx).ApproveBrief(ctx, req.ID, "person")
 	if err != nil {
 		s.briefError(w, err)
 		return
@@ -1969,7 +1994,7 @@ func (s *Server) pathRun(w http.ResponseWriter, r *http.Request) (store.Run, boo
 		writeError(w, http.StatusBadRequest, err)
 		return store.Run{}, false
 	}
-	run, err := s.Store.Run(r.Context(), id)
+	run, err := s.db(r.Context()).Run(r.Context(), id)
 	if err != nil {
 		s.foldError(w, err)
 		return run, false
@@ -1978,11 +2003,11 @@ func (s *Server) pathRun(w http.ResponseWriter, r *http.Request) (store.Run, boo
 }
 
 func (s *Server) runView(ctx context.Context, run store.Run) (api.RunView, error) {
-	lane, err := s.Store.Lane(ctx, run.LaneID)
+	lane, err := s.db(ctx).Lane(ctx, run.LaneID)
 	if err != nil {
 		return api.RunView{}, err
 	}
-	repo, err := s.Store.Repo(ctx, lane.RepoID)
+	repo, err := s.db(ctx).Repo(ctx, lane.RepoID)
 	if err != nil {
 		return api.RunView{}, err
 	}

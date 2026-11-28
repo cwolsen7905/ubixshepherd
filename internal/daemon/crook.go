@@ -70,21 +70,32 @@ func (c *crookFeedSeen) repeated(e crook.Entry) bool {
 // crookRecorder queues Crook's verdicts and a goroutine writes them to the store.
 type crookRecorder struct {
 	st      store.Store
-	q       chan crook.Entry
+	q       chan crookQueued
 	dropped atomic.Int64
 }
 
-func (r *crookRecorder) Record(_ context.Context, e crook.Entry) error {
+// crookQueued is a verdict and the tenant of the request it was for (0 for background
+// work), so it is logged in that tenant's view.
+type crookQueued struct {
+	crook.Entry
+	tenant int64
+}
+
+func (r *crookRecorder) Record(ctx context.Context, e crook.Entry) error {
 	select {
-	case r.q <- e:
+	case r.q <- crookQueued{Entry: e, tenant: principalOf(ctx).tenant}:
 		return nil
 	default:
 		return fmt.Errorf("crook log queue full: %d verdicts dropped so far", r.dropped.Add(1))
 	}
 }
 
-func (r *crookRecorder) write(ctx context.Context, e crook.Entry) error {
-	_, err := r.st.AddCrookVerdict(ctx, store.CrookVerdict{
+func (r *crookRecorder) write(ctx context.Context, q crookQueued) error {
+	st, e := r.st, q.Entry
+	if q.tenant > 0 {
+		st = st.ForTenant(q.tenant)
+	}
+	_, err := st.AddCrookVerdict(ctx, store.CrookVerdict{
 		At: e.At, Action: string(e.Action), Actor: string(e.Actor), Kind: string(e.Kind),
 		Rule: e.Rule, RuleVersion: e.RuleVersion, Stage: e.Stage, Reason: e.Reason,
 		Repo: e.Repo, Lane: e.Lane, Run: e.Run, Facts: e.Facts,
@@ -96,7 +107,7 @@ func (r *crookRecorder) write(ctx context.Context, e crook.Entry) error {
 // The returned func stops both, after the queue is written, and puts back the recorder
 // that was set before.
 func (s *Server) startCrookLog(ctx context.Context) func() {
-	rec := &crookRecorder{st: s.Store, q: make(chan crook.Entry, crookQueue)}
+	rec := &crookRecorder{st: s.Store, q: make(chan crookQueued, crookQueue)}
 	restore := crook.SetRecorder(rec, func(err error) { s.Log.Warn("log a crook verdict", "err", err) })
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
@@ -109,15 +120,15 @@ func (s *Server) startCrookLog(ctx context.Context) func() {
 				s.Log.Warn("write a crook verdict", "err", err)
 				continue
 			}
-			if e.Kind == crook.Proceed && crook.Consequential(e.Action) && !feeds.repeated(e) {
-				s.postFeed(context.Background(), FeedCrook, e.Run, crookFeedText(e))
+			if e.Kind == crook.Proceed && crook.Consequential(e.Action) && !feeds.repeated(e.Entry) {
+				s.postFeed(inTenant(context.Background(), e.tenant), FeedCrook, e.Run, crookFeedText(e.Entry))
 			}
 		}
 	}()
 	go func() {
 		defer wg.Done()
 		for {
-			if n, err := s.Store.PruneCrookProceeds(ctx, time.Now().Add(-crookKeepProceeds)); err != nil {
+			if n, err := s.db(ctx).PruneCrookProceeds(ctx, time.Now().Add(-crookKeepProceeds)); err != nil {
 				if ctx.Err() == nil {
 					s.Log.Warn("prune crook verdicts", "err", err)
 				}
@@ -183,7 +194,7 @@ func (s *Server) crookVerdicts(w http.ResponseWriter, r *http.Request) {
 		}
 		f.Since = t
 	}
-	vs, err := s.Store.CrookVerdicts(r.Context(), f)
+	vs, err := s.db(r.Context()).CrookVerdicts(r.Context(), f)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -200,7 +211,7 @@ func (s *Server) crookWhy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%q is not a verdict id", r.PathValue("id")))
 		return
 	}
-	v, err := s.Store.CrookVerdict(r.Context(), id)
+	v, err := s.db(r.Context()).CrookVerdict(r.Context(), id)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -229,7 +240,7 @@ func (s *Server) crookRules(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	rules, err := s.Store.CrookCounts(r.Context(), since)
+	rules, err := s.db(r.Context()).CrookCounts(r.Context(), since)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -243,7 +254,9 @@ func (s *Server) crookRules(w http.ResponseWriter, r *http.Request) {
 // shadowRecorder writes each row to the store as it is recorded, with no queue.
 type shadowRecorder struct{ w *crookRecorder }
 
-func (r shadowRecorder) Record(ctx context.Context, e crook.Entry) error { return r.w.write(ctx, e) }
+func (r shadowRecorder) Record(ctx context.Context, e crook.Entry) error {
+	return r.w.write(ctx, crookQueued{Entry: e, tenant: principalOf(ctx).tenant})
+}
 
 // ShadowRecorder writes the merge rules' shadow rows straight to the store. The shadow
 // pass runs apart from the poll and is one write per change, so it needs no queue; a

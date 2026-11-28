@@ -31,10 +31,12 @@ const (
 // globals are the options that come before the subcommand.
 type globals struct {
 	host, workspace, repo string
-	local                 bool
+	// tenant is --tenant: the slug of the tenant every request acts in.
+	tenant string
+	local  bool
 }
 
-// splitGlobals reads the leading --host, --local, --workspace and --repo of a command
+// splitGlobals reads the leading --host, --local, --workspace, --repo and --tenant of a command
 // line and returns the rest. They are not parsed by each command's own flag set, so
 // every command takes them the same way.
 func splitGlobals(args []string) (globals, []string, error) {
@@ -44,7 +46,7 @@ func splitGlobals(args []string) (globals, []string, error) {
 		if !strings.HasPrefix(args[0], "-") || name == "" {
 			break
 		}
-		dst := map[string]*string{"host": &g.host, "workspace": &g.workspace, "repo": &g.repo}[name]
+		dst := map[string]*string{"host": &g.host, "workspace": &g.workspace, "repo": &g.repo, "tenant": &g.tenant}[name]
 		switch {
 		case name == "local" && !hasVal:
 			g.local = true

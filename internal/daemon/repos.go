@@ -33,14 +33,14 @@ func (s *Server) listRepos(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) repoViews(ctx context.Context) ([]api.RepoView, error) {
 	cfg := s.LiveConfig()
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		return nil, err
 	}
 	named := map[string]bool{} // names listed, so the config's are not repeated
 	var out []api.RepoView
 	for _, ws := range wss {
-		all, err := s.Store.AllRepos(ctx, ws.ID)
+		all, err := s.db(ctx).AllRepos(ctx, ws.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +56,7 @@ func (s *Server) repoViews(ctx context.Context) ([]api.RepoView, error) {
 			if fi, err := os.Lstat(filepath.Join(rp.Path, ".git")); err != nil || !fi.IsDir() {
 				v.State = api.RepoMissing
 			}
-			lanes, err := s.Store.Lanes(ctx, rp.ID)
+			lanes, err := s.db(ctx).Lanes(ctx, rp.ID)
 			if err != nil {
 				return nil, err
 			}
@@ -151,7 +151,7 @@ func (s *Server) addRepos(w http.ResponseWriter, r *http.Request) {
 	s.repoMu.Lock()
 	defer s.repoMu.Unlock()
 	ctx := r.Context()
-	wss, err := s.Store.Workspaces(ctx)
+	wss, err := s.db(ctx).Workspaces(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -185,7 +185,7 @@ func (s *Server) addRepos(w http.ResponseWriter, r *http.Request) {
 	cfg := s.LiveConfig()
 	var out api.AddedRepos
 	for _, p := range plans {
-		all, err := s.Store.AllRepos(ctx, p.ws.ID)
+		all, err := s.db(ctx).AllRepos(ctx, p.ws.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -204,11 +204,11 @@ func (s *Server) addRepos(w http.ResponseWriter, r *http.Request) {
 		if !p.found.Suggest {
 			got.Reason = p.found.Reason
 		}
-		if _, err := s.Store.SaveWorkspace(ctx, p.ws, []store.Repo{got.Repo}); err != nil {
+		if _, err := s.db(ctx).SaveWorkspace(ctx, p.ws, []store.Repo{got.Repo}); err != nil {
 			s.fail(w, err)
 			return
 		}
-		repos, err := s.Store.Repos(ctx, p.ws.ID)
+		repos, err := s.db(ctx).Repos(ctx, p.ws.ID)
 		if err != nil {
 			s.fail(w, err)
 			return
@@ -297,7 +297,7 @@ func (s *Server) unmanageRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	s.repoMu.Lock()
 	defer s.repoMu.Unlock()
-	repo, err := s.Store.Repo(ctx, pathID(r))
+	repo, err := s.db(ctx).Repo(ctx, pathID(r))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("no repo %d", pathID(r)))
 		return
@@ -310,7 +310,7 @@ func (s *Server) unmanageRepo(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, repo)
 		return
 	}
-	lanes, err := s.Store.Lanes(ctx, repo.ID)
+	lanes, err := s.db(ctx).Lanes(ctx, repo.ID)
 	if err != nil {
 		s.fail(w, err)
 		return
@@ -326,20 +326,20 @@ func (s *Server) unmanageRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	// A run can outlive its lane's close, so look at every running run, not only the
 	// open lanes'.
-	runs, err := s.Store.Runs(ctx, 0, store.RunRunning, 1000)
+	runs, err := s.db(ctx).Runs(ctx, 0, store.RunRunning, 1000)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	for _, run := range runs {
-		l, err := s.Store.Lane(ctx, run.LaneID)
+		l, err := s.db(ctx).Lane(ctx, run.LaneID)
 		if err == nil && l.RepoID == repo.ID {
 			writeError(w, http.StatusConflict, fmt.Errorf("%s has run %d active in lane %s: stop it first", repo.Name, run.ID, l.Name))
 			return
 		}
 	}
 	at := time.Now().UTC()
-	if err := s.Store.SetRepoRemoved(ctx, repo.ID, &at); err != nil {
+	if err := s.db(ctx).SetRepoRemoved(ctx, repo.ID, &at); err != nil {
 		s.fail(w, err)
 		return
 	}
@@ -377,7 +377,7 @@ func (s *Server) describeAddRepos(ctx context.Context, _ *http.Request, _, resp 
 }
 
 func (s *Server) describeUnmanage(ctx context.Context, r *http.Request, _, _ []byte) (int64, string) {
-	repo, err := s.Store.Repo(ctx, pathID(r))
+	repo, err := s.db(ctx).Repo(ctx, pathID(r))
 	if err != nil {
 		return 0, ""
 	}

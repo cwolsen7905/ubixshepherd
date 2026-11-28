@@ -103,7 +103,7 @@ func (s *Server) keepUpload(ctx context.Context, ws int64, g *attach.Staged) (st
 	in := g.Info
 	// The row first: a failed insert then leaves no bytes behind, and a failed commit
 	// leaves a row the client never hears of, which the sweep forgets after a day.
-	a, err := s.Store.AddAttachment(ctx, store.Attachment{WorkspaceID: ws, SHA: g.SHA, Name: in.Name, Mime: in.Mime, Kind: in.Kind, Size: in.Size})
+	a, err := s.db(ctx).AddAttachment(ctx, store.Attachment{WorkspaceID: ws, SHA: g.SHA, Name: in.Name, Mime: in.Mime, Kind: in.Kind, Size: in.Size})
 	if err != nil {
 		g.Discard()
 		return a, err
@@ -123,7 +123,7 @@ func (s *Server) sweepAttachments(ctx context.Context) {
 	}
 	uploadMu.Lock()
 	defer uploadMu.Unlock()
-	free, err := s.Store.SweepAttachments(ctx, time.Now().Add(-attachKeep))
+	free, err := s.db(ctx).SweepAttachments(ctx, time.Now().Add(-attachKeep))
 	if err != nil {
 		s.Log.Warn("sweep attachments", "err", err)
 		return
@@ -158,7 +158,7 @@ func (s *Server) deskAttachGet(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("bad attachment id"))
 		return
 	}
-	a, err := s.Store.Attachment(r.Context(), id)
+	a, err := s.db(r.Context()).Attachment(r.Context(), id)
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, fmt.Errorf("no attachment %d", id))
 		return
@@ -221,7 +221,7 @@ func (s *Server) checkTurnAttachments(w http.ResponseWriter, r *http.Request, ws
 	var total int64
 	seen := map[int64]bool{}
 	for _, id := range ids {
-		a, err := s.Store.Attachment(r.Context(), id)
+		a, err := s.db(r.Context()).Attachment(r.Context(), id)
 		switch {
 		case seen[id]:
 			writeError(w, http.StatusBadRequest, fmt.Errorf("attachment %d is listed twice", id))

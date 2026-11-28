@@ -113,7 +113,7 @@ func (s *Server) PreparePublic(ctx context.Context, home string) error {
 	if key.Fallback {
 		s.Log.Warn(auth.KeyFallbackWarning)
 		if fresh {
-			s.Store.AddFeed(ctx, store.FeedSession, auth.KeyFallbackWarning, 0)
+			s.db(ctx).AddFeed(ctx, store.FeedSession, auth.KeyFallbackWarning, 0)
 		}
 	}
 	users := ap.Users()
@@ -129,7 +129,7 @@ func (s *Server) PreparePublic(ctx context.Context, home string) error {
 		OnLock: func(addr netip.Addr, until time.Time) {
 			msg := fmt.Sprintf("sign-in locked until %s after repeated failures", until.UTC().Format("15:04 MST"))
 			s.Log.Warn("sign-in locked", "until", until.UTC().Format(time.RFC3339), "addr", addr.String())
-			s.Store.AddFeed(context.Background(), store.FeedSession, msg, 0)
+			s.db(context.Background()).AddFeed(context.Background(), store.FeedSession, msg, 0)
 		},
 	}
 	if _, err := st.Account(ctx); err == nil {
