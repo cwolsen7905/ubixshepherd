@@ -38,6 +38,9 @@ func (s *DB) AddDiagnosis(ctx context.Context, d store.Diagnosis) (store.Diagnos
 		reset = d.ResetAt.UTC().Format(time.RFC3339Nano)
 	}
 	d.Created = parseTime(now())
+	if err := s.mustOwn(ctx, s.db, "runs", "id", d.RunID); err != nil {
+		return d, err
+	}
 	res, err := s.db.ExecContext(ctx, `
 		INSERT INTO run_diagnoses (run_id, kind, summary, evidence, command, exit_code, files, log, reset_at, fixes, created)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -51,7 +54,8 @@ func (s *DB) AddDiagnosis(ctx context.Context, d store.Diagnosis) (store.Diagnos
 
 // Diagnoses returns a run's diagnoses, newest first.
 func (s *DB) Diagnoses(ctx context.Context, runID int64) ([]store.Diagnosis, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+diagCols+` FROM run_diagnoses WHERE run_id = ? ORDER BY id DESC`, runID)
+	cond, args := s.in("run_diagnoses")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+diagCols+` FROM run_diagnoses WHERE run_id = ?`+cond+` ORDER BY id DESC`, append([]any{runID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +82,9 @@ func (s *DB) LatestDiagnoses(ctx context.Context, runIDs ...int64) (map[int64]st
 	for i, id := range runIDs {
 		args[i] = id
 	}
+	cond, cargs := s.in("run_diagnoses")
 	rows, err := s.db.QueryContext(ctx, `SELECT `+diagCols+` FROM run_diagnoses
-		WHERE id IN (SELECT MAX(id) FROM run_diagnoses WHERE run_id IN (`+marks+`) GROUP BY run_id)`, args...)
+		WHERE id IN (SELECT MAX(id) FROM run_diagnoses WHERE run_id IN (`+marks+`) GROUP BY run_id)`+cond, append(args, cargs...)...)
 	if err != nil {
 		return nil, err
 	}

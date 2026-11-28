@@ -1190,8 +1190,16 @@ type Store interface {
 	SetQuestionState(ctx context.Context, id int64, state string) (Question, error)
 	// SetDecisionState does the same for a decision.
 	SetDecisionState(ctx context.Context, id int64, state string) (Decision, error)
-	// Tenants lists the tenants, oldest first. Every store has DefaultTenantID.
+	// Tenants lists the tenants, oldest first. Every store has DefaultTenantID. It is the
+	// same on a tenant's view: the list of tenants belongs to the deployment.
 	Tenants(ctx context.Context) ([]Tenant, error)
+	// ForTenant is the store as one tenant sees it: every read and write of a tenant's
+	// rows touches only that tenant's, by id or by listing, and a new row is that
+	// tenant's. A row of another tenant is ErrNotFound, as if it did not exist.
+	ForTenant(id int64) Store
+	// Tenant is the tenant this store is scoped to, 0 for the unscoped store, which sees
+	// every tenant and puts new rows in DefaultTenantID.
+	Tenant() int64
 	Driver() string
 	Close() error
 }

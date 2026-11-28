@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -25,7 +26,9 @@ GROUP BY lane_id, kind`
 // LaneActivity folds the per-source maxima in Go: the stored times are RFC3339 text, and
 // parsing them keeps the comparison exact where a SQL string MAX would not be.
 func (s *DB) LaneActivity(ctx context.Context, repoID int64) (map[int64]store.Activity, error) {
-	rows, err := s.db.QueryContext(ctx, laneActivitySQL, repoID, store.LaneClosed)
+	cond, args := s.in("lanes")
+	q := strings.Replace(laneActivitySQL, `state != ?)`, `state != ?`+cond+`)`, 1)
+	rows, err := s.db.QueryContext(ctx, q, append([]any{repoID, store.LaneClosed}, args...)...)
 	if err != nil {
 		return nil, err
 	}

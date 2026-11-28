@@ -23,6 +23,8 @@ func (s *DB) RenameWorkspace(ctx context.Context, id int64, name string) (store.
 	}
 	defer tx.Rollback()
 
+	// The name is still unique across tenants (a shared key, see tableTenancy), so a name
+	// another tenant uses is a conflict too.
 	var other int64
 	err = tx.QueryRowContext(ctx, `SELECT id FROM workspaces WHERE name = ? AND id != ?`, name, id).Scan(&other)
 	switch {
@@ -31,7 +33,8 @@ func (s *DB) RenameWorkspace(ctx context.Context, id int64, name string) (store.
 	case !errors.Is(err, sql.ErrNoRows):
 		return store.Workspace{}, err
 	}
-	res, err := tx.ExecContext(ctx, `UPDATE workspaces SET name = ? WHERE id = ?`, name, id)
+	cond, args := s.in("workspaces")
+	res, err := tx.ExecContext(ctx, `UPDATE workspaces SET name = ? WHERE id = ?`+cond, append([]any{name, id}, args...)...)
 	if err != nil {
 		// A rename that raced past the check above still meets the UNIQUE column.
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {

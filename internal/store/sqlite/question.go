@@ -32,6 +32,9 @@ func (s *DB) AddQuestion(ctx context.Context, q store.Question) (store.Question,
 	if len(q.Text) > store.MaxQuestionText {
 		q.Text = q.Text[:store.MaxQuestionText]
 	}
+	if err := s.mustOwn(ctx, s.db, "workspaces", "id", q.WorkspaceID); err != nil {
+		return q, err
+	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO desk_questions (workspace_id, turn, topic_id, text, state, created, repo, lane_id, next_id)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, q.WorkspaceID, q.Turn, q.TopicID, q.Text, store.QuestionOpen, now(), q.Repo, q.LaneID, q.NextID)
 	if err != nil {
@@ -42,7 +45,8 @@ func (s *DB) AddQuestion(ctx context.Context, q store.Question) (store.Question,
 }
 
 func (s *DB) Question(ctx context.Context, id int64) (store.Question, error) {
-	q, err := scanQuestion(s.db.QueryRowContext(ctx, `SELECT `+questionCols+` FROM desk_questions WHERE id = ?`, id))
+	cond, args := s.in("desk_questions")
+	q, err := scanQuestion(s.db.QueryRowContext(ctx, `SELECT `+questionCols+` FROM desk_questions WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return q, store.ErrNotFound
 	}
@@ -50,9 +54,10 @@ func (s *DB) Question(ctx context.Context, id int64) (store.Question, error) {
 }
 
 func (s *DB) Questions(ctx context.Context, workspaceID int64, state string) ([]store.Question, error) {
+	cond, args := s.in("desk_questions")
 	rows, err := s.db.QueryContext(ctx, `SELECT `+questionCols+` FROM desk_questions
-		WHERE (? = 0 OR workspace_id = ?) AND (? = '' OR state = ?) ORDER BY created, id`,
-		workspaceID, workspaceID, state, state)
+		WHERE (? = 0 OR workspace_id = ?) AND (? = '' OR state = ?)`+cond+` ORDER BY created, id`,
+		append([]any{workspaceID, workspaceID, state, state}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -72,8 +77,9 @@ func (s *DB) CloseQuestion(ctx context.Context, id int64, state string, answered
 	if state != store.QuestionAnswered && state != store.QuestionSkipped {
 		return store.Question{}, fmt.Errorf("a question closes as answered or skipped, not %q", state)
 	}
+	cond, args := s.in("desk_questions")
 	res, err := s.db.ExecContext(ctx, `UPDATE desk_questions SET state = ?, answered_turn = ?, closed = ?
-		WHERE id = ? AND state = 'open'`, state, answeredTurn, now(), id)
+		WHERE id = ? AND state = 'open'`+cond, append([]any{state, answeredTurn, now(), id}, args...)...)
 	if err != nil {
 		return store.Question{}, err
 	}
@@ -92,7 +98,8 @@ func (s *DB) SetQuestionState(ctx context.Context, id int64, state string) (stor
 	if state == store.QuestionOpen {
 		closed = ""
 	}
-	res, err := s.db.ExecContext(ctx, `UPDATE desk_questions SET state = ?, closed = ? WHERE id = ?`, state, closed, id)
+	cond, args := s.in("desk_questions")
+	res, err := s.db.ExecContext(ctx, `UPDATE desk_questions SET state = ?, closed = ? WHERE id = ?`+cond, append([]any{state, closed, id}, args...)...)
 	if err != nil {
 		return store.Question{}, err
 	}

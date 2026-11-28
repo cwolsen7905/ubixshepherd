@@ -24,11 +24,12 @@ func scanCheck(sc interface{ Scan(...any) error }) (store.CheckFile, error) {
 }
 
 func (s *DB) CheckFiles(ctx context.Context, repoID int64, liveOnly bool) ([]store.CheckFile, error) {
-	q := `SELECT ` + checkCols + ` FROM check_files WHERE repo_id = ?`
+	cond, args := s.in("check_files")
+	q := `SELECT ` + checkCols + ` FROM check_files WHERE repo_id = ?` + cond
 	if liveOnly {
 		q += ` AND released = ''`
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id DESC`, repoID)
+	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id DESC`, append([]any{repoID}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -55,6 +56,9 @@ func (s *DB) ApproveCheckFiles(ctx context.Context, files []store.CheckFile) ([]
 	for _, f := range files {
 		if f.Path == "" || f.Blob == "" || f.BaseCommit == "" || f.ApprovedBy == "" {
 			return nil, fmt.Errorf("a check file needs a path, a blob, a base commit and an approver")
+		}
+		if err := s.mustOwn(ctx, tx, "repos", "id", f.RepoID); err != nil {
+			return nil, err
 		}
 		var live int
 		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM check_files WHERE repo_id = ? AND path = ? AND released = ''`, f.RepoID, f.Path).Scan(&live); err != nil {
@@ -87,7 +91,8 @@ func (s *DB) ReleaseCheckFiles(ctx context.Context, repoID int64, paths []string
 	t := now()
 	var out []store.CheckFile
 	for _, p := range paths {
-		c, err := scanCheck(tx.QueryRowContext(ctx, `SELECT `+checkCols+` FROM check_files WHERE repo_id = ? AND path = ? AND released = ''`, repoID, p))
+		cond, args := s.in("check_files")
+		c, err := scanCheck(tx.QueryRowContext(ctx, `SELECT `+checkCols+` FROM check_files WHERE repo_id = ? AND path = ? AND released = ''`+cond, append([]any{repoID, p}, args...)...))
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, fmt.Errorf("%w: %s is not an approved check file", store.ErrNotFound, p)

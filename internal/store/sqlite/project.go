@@ -33,13 +33,18 @@ func (s *DB) SaveBriefDraft(ctx context.Context, project, text, draftedBy string
 		return store.ProjectBrief{}, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `UPDATE project_briefs SET state = ? WHERE project = ? AND state = ?`,
-		store.BriefSuperseded, project, store.BriefDraft); err != nil {
+	cond, args := s.in("project_briefs")
+	if _, err := tx.ExecContext(ctx, `UPDATE project_briefs SET state = ? WHERE project = ? AND state = ?`+cond,
+		append([]any{store.BriefSuperseded, project, store.BriefDraft}, args...)...); err != nil {
 		return store.ProjectBrief{}, err
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO project_briefs (project, text, state, drafted_by, created) VALUES (?, ?, ?, ?, ?)`,
-		project, text, store.BriefDraft, draftedBy, now())
+	res, err := tx.ExecContext(ctx, `INSERT INTO project_briefs (project, text, state, drafted_by, created, tenant_id) VALUES (?, ?, ?, ?, ?, ?)`,
+		project, text, store.BriefDraft, draftedBy, now(), s.newRowTenant())
 	if err != nil {
+		// One draft per project is still across tenants (a shared key, see tableTenancy).
+		if s.tenant != 0 && strings.Contains(err.Error(), "UNIQUE") {
+			return store.ProjectBrief{}, fmt.Errorf("%w: project %q has a draft brief in another team", store.ErrConflict, project)
+		}
 		return store.ProjectBrief{}, err
 	}
 	id, _ := res.LastInsertId()
@@ -55,7 +60,8 @@ func (s *DB) ApproveBrief(ctx context.Context, id int64, approvedBy string) (sto
 		return store.ProjectBrief{}, err
 	}
 	defer tx.Rollback()
-	b, err := scanBrief(tx.QueryRowContext(ctx, `SELECT `+briefCols+` FROM project_briefs WHERE id = ?`, id))
+	cond, cargs := s.in("project_briefs")
+	b, err := scanBrief(tx.QueryRowContext(ctx, `SELECT `+briefCols+` FROM project_briefs WHERE id = ?`+cond, append([]any{id}, cargs...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, store.ErrNotFound
 	}
@@ -69,12 +75,16 @@ func (s *DB) ApproveBrief(ctx context.Context, id int64, approvedBy string) (sto
 		return b, store.ErrSelfApproval
 	}
 	t := now()
-	if _, err := tx.ExecContext(ctx, `UPDATE project_briefs SET state = ? WHERE project = ? AND state = ?`,
-		store.BriefSuperseded, b.Project, store.BriefApproved); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE project_briefs SET state = ? WHERE project = ? AND state = ?`+cond,
+		append([]any{store.BriefSuperseded, b.Project, store.BriefApproved}, cargs...)...); err != nil {
 		return b, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE project_briefs SET state = ?, approved_by = ?, approved_at = ? WHERE id = ?`,
 		store.BriefApproved, approvedBy, t, id); err != nil {
+		// One approved brief per project is still across tenants (a shared key).
+		if s.tenant != 0 && strings.Contains(err.Error(), "UNIQUE") {
+			return b, fmt.Errorf("%w: project %q has an approved brief in another team", store.ErrConflict, b.Project)
+		}
 		return b, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -84,7 +94,8 @@ func (s *DB) ApproveBrief(ctx context.Context, id int64, approvedBy string) (sto
 }
 
 func (s *DB) oneBrief(ctx context.Context, where string, args ...any) (store.ProjectBrief, error) {
-	b, err := scanBrief(s.db.QueryRowContext(ctx, `SELECT `+briefCols+` FROM project_briefs WHERE `+where+` ORDER BY id DESC LIMIT 1`, args...))
+	cond, cargs := s.in("project_briefs")
+	b, err := scanBrief(s.db.QueryRowContext(ctx, `SELECT `+briefCols+` FROM project_briefs WHERE `+where+cond+` ORDER BY id DESC LIMIT 1`, append(args, cargs...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return b, store.ErrNotFound
 	}
@@ -104,7 +115,8 @@ func (s *DB) PendingBrief(ctx context.Context, project string) (store.ProjectBri
 }
 
 func (s *DB) BriefHistory(ctx context.Context, project string) ([]store.ProjectBrief, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+briefCols+` FROM project_briefs WHERE project = ? ORDER BY id DESC`, project)
+	cond, args := s.in("project_briefs")
+	rows, err := s.db.QueryContext(ctx, `SELECT `+briefCols+` FROM project_briefs WHERE project = ?`+cond+` ORDER BY id DESC`, append([]any{project}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -124,11 +136,12 @@ func (s *DB) BriefHistory(ctx context.Context, project string) ([]store.ProjectB
 // lane. The desk's entries and entries with no run are not any repo's.
 func (s *DB) SpendRollup(ctx context.Context, from, to string) (store.SpendRollup, error) {
 	out := store.SpendRollup{From: from, To: to, Desk: store.Spend{Source: store.OriginDesk}, Other: store.Spend{Source: "other"}}
+	spCond, spArgs := s.inAs("spend", "sp")
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT r.id, r.name, COUNT(*), SUM(sp.usd), SUM(sp.credits)
 		FROM spend sp JOIN runs ru ON ru.id = sp.ref JOIN lanes l ON l.id = ru.lane_id JOIN repos r ON r.id = l.repo_id
-		WHERE sp.day >= ? AND sp.day <= ? AND sp.ref != 0 AND sp.source != ?
-		GROUP BY r.id ORDER BY r.name, r.id`, from, to, store.OriginDesk)
+		WHERE sp.day >= ? AND sp.day <= ? AND sp.ref != 0 AND sp.source != ?`+spCond+`
+		GROUP BY r.id ORDER BY r.name, r.id`, append([]any{from, to, store.OriginDesk}, spArgs...)...)
 	if err != nil {
 		return out, err
 	}
@@ -149,8 +162,8 @@ func (s *DB) SpendRollup(ctx context.Context, from, to string) (store.SpendRollu
 		SELECT sp.source = ?, COUNT(*), COALESCE(SUM(sp.usd), 0), COALESCE(SUM(sp.credits), 0)
 		FROM spend sp
 		WHERE sp.day >= ? AND sp.day <= ?
-			AND (sp.source = ? OR sp.ref = 0 OR NOT EXISTS (SELECT 1 FROM runs ru JOIN lanes l ON l.id = ru.lane_id WHERE ru.id = sp.ref))
-		GROUP BY sp.source = ?`, store.OriginDesk, from, to, store.OriginDesk, store.OriginDesk)
+			AND (sp.source = ? OR sp.ref = 0 OR NOT EXISTS (SELECT 1 FROM runs ru JOIN lanes l ON l.id = ru.lane_id WHERE ru.id = sp.ref))`+spCond+`
+		GROUP BY sp.source = ?`, append(append([]any{store.OriginDesk, from, to, store.OriginDesk}, spArgs...), store.OriginDesk)...)
 	if err != nil {
 		return out, err
 	}

@@ -39,18 +39,23 @@ func (s *DB) AddUsage(ctx context.Context, u store.Usage) error {
 	}
 	defer tx.Rollback()
 	if u.RunID != 0 {
-		if _, err := tx.ExecContext(ctx, `DELETE FROM usage WHERE run_id = ?`, u.RunID); err != nil {
+		// A run's record is its tenant's: another tenant's run is not found.
+		if err := s.mustOwn(ctx, tx, "runs", "id", u.RunID); err != nil {
+			return err
+		}
+		cond, args := s.in("usage")
+		if _, err := tx.ExecContext(ctx, `DELETE FROM usage WHERE run_id = ?`+cond, append([]any{u.RunID}, args...)...); err != nil {
 			return err
 		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO usage (day, kind, run_id, workspace_id, turn, agent, model, context_window, requests,
 			input_tokens, cache_read_tokens, cache_creation_tokens, output_tokens, peak_context, compactions,
-			cost_usd, credits, cost_estimated, created)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cost_usd, credits, cost_estimated, created, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.Day, u.Kind, u.RunID, u.WorkspaceID, u.Turn, u.Agent, u.Model, u.ContextWindow, u.Requests,
 		u.Input, u.CacheRead, u.CacheCreation, u.Output, u.PeakContext, u.Compactions,
-		u.CostUSD, u.Credits, u.CostEstimated, now()); err != nil {
+		u.CostUSD, u.Credits, u.CostEstimated, now(), s.newRowTenant()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -58,7 +63,8 @@ func (s *DB) AddUsage(ctx context.Context, u store.Usage) error {
 
 // RunUsage returns the usage recorded for a run.
 func (s *DB) RunUsage(ctx context.Context, runID int64) (store.Usage, error) {
-	u, err := scanUsage(s.db.QueryRowContext(ctx, `SELECT `+usageCols+` FROM usage WHERE run_id = ? AND run_id != 0`, runID))
+	cond, args := s.in("usage")
+	u, err := scanUsage(s.db.QueryRowContext(ctx, `SELECT `+usageCols+` FROM usage WHERE run_id = ? AND run_id != 0`+cond, append([]any{runID}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, store.ErrNotFound
 	}
@@ -68,14 +74,15 @@ func (s *DB) RunUsage(ctx context.Context, runID int64) (store.Usage, error) {
 // UsageStats totals the days from to to inclusive. A run's lane is read through the run,
 // so a record whose run is gone is counted with no lane.
 func (s *DB) UsageStats(ctx context.Context, from, to string) (store.UsageStats, error) {
+	cond, args := s.inAs("usage", "u")
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT `+prefixed(usageCols, "u.")+`, COALESCE(l.name, ''), COALESCE(r.name, '')
 		FROM usage u
 		LEFT JOIN runs ru ON ru.id = u.run_id AND u.run_id != 0
 		LEFT JOIN lanes l ON l.id = ru.lane_id
 		LEFT JOIN repos r ON r.id = l.repo_id
-		WHERE u.day >= ? AND u.day <= ?
-		ORDER BY u.id`, from, to)
+		WHERE u.day >= ? AND u.day <= ?`+cond+`
+		ORDER BY u.id`, append([]any{from, to}, args...)...)
 	if err != nil {
 		return store.UsageStats{}, err
 	}

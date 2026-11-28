@@ -2,7 +2,9 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -25,10 +27,14 @@ const (
 // column that reaches it.
 //
 // sharedKeys names unique keys that are still unique across all tenants. They are correct
-// while there is one tenant; query scoping (tenancy phase T3) makes each unique within a
-// tenant before a second tenant can be made.
+// while there is one tenant; the change that lets a second tenant be made makes each unique
+// within a tenant first. A filesystem path (a workspace's, a repo's, a worktree) stays
+// unique across tenants: a path is one place on a machine whoever uses it.
+//
+// The map is also how queries are scoped (scope): a root table is filtered on its
+// tenant_id, a child table through the chain of parents up to a root.
 var tableTenancy = map[string]tableTenure{
-	"workspaces":      {kind: rootTable, sharedKeys: []string{"name", "path"}},
+	"workspaces":      {kind: rootTable, sharedKeys: []string{"name"}},
 	"settings":        {kind: rootTable, sharedKeys: []string{"key"}},
 	"feed":            {kind: rootTable},
 	"spend":           {kind: rootTable},
@@ -42,7 +48,7 @@ var tableTenancy = map[string]tableTenure{
 	"muster_items":    {kind: rootTable, sharedKeys: []string{"key"}},
 	"cluster_members": {kind: rootTable, sharedKeys: []string{"name"}},
 
-	"repos":              {kind: childTable, parent: "workspaces", via: "workspace_id", sharedKeys: []string{"path"}},
+	"repos":              {kind: childTable, parent: "workspaces", via: "workspace_id"},
 	"lanes":              {kind: childTable, parent: "repos", via: "repo_id"},
 	"runs":               {kind: childTable, parent: "lanes", via: "lane_id"},
 	"events":             {kind: childTable, parent: "runs", via: "run_id"},
@@ -63,7 +69,7 @@ var tableTenancy = map[string]tableTenure{
 	"desk_turn_log":      {kind: childTable, parent: "workspaces", via: "workspace_id"},
 	"desk_attachments":   {kind: childTable, parent: "workspaces", via: "workspace_id"},
 	"topic_links":        {kind: childTable, parent: "topics", via: "topic_id", sharedKeys: []string{"kind, ref"}},
-	"member_credentials": {kind: childTable, parent: "cluster_members", via: "member"},
+	"member_credentials": {kind: childTable, parent: "cluster_members", via: "member", key: "name"},
 
 	// Who is in a tenant, with what role, is that tenant's own data.
 	"memberships": {kind: rootTable},
@@ -84,9 +90,102 @@ var tableTenancy = map[string]tableTenure{
 type tableTenure struct {
 	kind tenancyKind
 	// parent and via name, for a child table, the table it belongs to and its column
-	// that holds the parent's key.
-	parent, via string
-	sharedKeys  []string
+	// that holds the parent's key; key is that key's column in the parent, "id" when empty.
+	parent, via, key string
+	sharedKeys       []string
+}
+
+// tenantExpr is the SQL for the tenant of the row alias of table: the root's tenant_id,
+// or a child's parent's, followed up the chain as correlated subqueries.
+func tenantExpr(table, alias string) string {
+	t, ok := tableTenancy[table]
+	switch {
+	case !ok:
+		panic("tenantExpr: table " + table + " is not in tableTenancy")
+	case t.kind == rootTable:
+		return alias + ".tenant_id"
+	case t.kind == childTable:
+		key := t.key
+		if key == "" {
+			key = "id"
+		}
+		p := "tp_" + t.parent
+		return fmt.Sprintf("(SELECT %s FROM %s %s WHERE %s.%s = %s.%s)", tenantExpr(t.parent, p), t.parent, p, p, key, alias, t.via)
+	}
+	panic("tenantExpr: " + table + " belongs to the deployment, not a tenant")
+}
+
+// ForTenant is the store seen by one tenant: every read and write of a tenant's table
+// touches only that tenant's rows, and a new root row is that tenant's. The unscoped
+// store (Open's) sees every tenant and puts new rows in the default one.
+func (s *DB) ForTenant(id int64) store.Store {
+	return &DB{db: s.db, tenant: id}
+}
+
+// Tenant is the tenant this store is scoped to, 0 when it is not.
+func (s *DB) Tenant() int64 { return s.tenant }
+
+// newRowTenant is the tenant a new root row gets: this store's, or the default one.
+func (s *DB) newRowTenant() int64 {
+	if s.tenant == 0 {
+		return store.DefaultTenantID
+	}
+	return s.tenant
+}
+
+// scope is a condition, to AND into a WHERE clause, that the row alias of table is this
+// store's tenant's, with its argument; on the unscoped store it is true and takes none.
+func (s *DB) scope(table, alias string) (string, []any) {
+	if s.tenant == 0 {
+		return "1 = 1", nil
+	}
+	return tenantExpr(table, alias) + " = ?", []any{s.tenant}
+}
+
+// in is " AND <scope>" for a query on table under its own name, with its arguments; on
+// the unscoped store it is empty, so the query is what it was before tenants.
+func (s *DB) in(table string) (string, []any) {
+	return s.inAs(table, table)
+}
+
+// inAs is in for a query that names table as alias.
+func (s *DB) inAs(table, alias string) (string, []any) {
+	if s.tenant == 0 {
+		return "", nil
+	}
+	c, a := s.scope(table, alias)
+	return " AND " + c, a
+}
+
+// mustOwn is nil when the row of table whose column is key is this tenant's (or exists, on
+// the unscoped store), and store.ErrNotFound otherwise. On the unscoped store it checks
+// nothing, so a missing parent fails as it did before tenants.
+func (s *DB) mustOwn(ctx context.Context, q querier, table, column string, key any) error {
+	if s.tenant == 0 {
+		return nil
+	}
+	ok, err := s.owns(ctx, q, table, column, key)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: no %s %v", store.ErrNotFound, strings.TrimSuffix(table, "s"), key)
+	}
+	return nil
+}
+
+// owns says whether the row of table whose key column is key belongs to this store's
+// tenant. It is true on the unscoped store when the row exists.
+func (s *DB) owns(ctx context.Context, q querier, table, column string, key any) (bool, error) {
+	cond, args := s.scope(table, table)
+	var n int
+	err := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM `+table+` WHERE `+column+` = ? AND `+cond, append([]any{key}, args...)...).Scan(&n)
+	return n > 0, err
+}
+
+// querier is a *sql.DB or a *sql.Tx.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 func (s *DB) Tenants(ctx context.Context) ([]store.Tenant, error) {

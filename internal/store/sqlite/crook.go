@@ -24,9 +24,9 @@ func (s *DB) AddCrookVerdict(ctx context.Context, v store.CrookVerdict) (store.C
 		v.Facts = "{}"
 	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO crook_verdicts
-		(at, action, actor, kind, rule, rule_version, stage, reason, repo, lane, run_id, facts)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		v.At.Format(crookTime), v.Action, v.Actor, v.Kind, v.Rule, v.RuleVersion, v.Stage, v.Reason, v.Repo, v.Lane, v.Run, v.Facts)
+		(at, action, actor, kind, rule, rule_version, stage, reason, repo, lane, run_id, facts, tenant_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		v.At.Format(crookTime), v.Action, v.Actor, v.Kind, v.Rule, v.RuleVersion, v.Stage, v.Reason, v.Repo, v.Lane, v.Run, v.Facts, s.newRowTenant())
 	if err != nil {
 		return v, err
 	}
@@ -45,7 +45,8 @@ func scanCrook(r rowScanner) (store.CrookVerdict, error) {
 }
 
 func (s *DB) CrookVerdict(ctx context.Context, id int64) (store.CrookVerdict, error) {
-	v, err := scanCrook(s.db.QueryRowContext(ctx, `SELECT `+crookCols+` FROM crook_verdicts WHERE id = ?`, id))
+	cond, args := s.in("crook_verdicts")
+	v, err := scanCrook(s.db.QueryRowContext(ctx, `SELECT `+crookCols+` FROM crook_verdicts WHERE id = ?`+cond, append([]any{id}, args...)...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return v, store.ErrNotFound
 	}
@@ -74,6 +75,10 @@ func (s *DB) CrookVerdicts(ctx context.Context, f store.CrookFilter) ([]store.Cr
 	if !f.Since.IsZero() {
 		add("at >= ?", f.Since.UTC().Format(crookTime))
 	}
+	if cond, a := s.in("crook_verdicts"); cond != "" {
+		where = append(where, strings.TrimPrefix(cond, " AND "))
+		args = append(args, a...)
+	}
 	q := `SELECT ` + crookCols + ` FROM crook_verdicts`
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
@@ -99,8 +104,9 @@ func (s *DB) CrookVerdicts(ctx context.Context, f store.CrookFilter) ([]store.Cr
 }
 
 func (s *DB) CrookCounts(ctx context.Context, since time.Time) ([]store.CrookRuleCount, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT rule, kind, COUNT(*) FROM crook_verdicts WHERE at >= ?
-		GROUP BY rule, kind ORDER BY rule`, since.UTC().Format(crookTime))
+	cond, args := s.in("crook_verdicts")
+	rows, err := s.db.QueryContext(ctx, `SELECT rule, kind, COUNT(*) FROM crook_verdicts WHERE at >= ?`+cond+`
+		GROUP BY rule, kind ORDER BY rule`, append([]any{since.UTC().Format(crookTime)}, args...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +137,8 @@ func (s *DB) CrookCounts(ctx context.Context, since time.Time) ([]store.CrookRul
 }
 
 func (s *DB) PruneCrookProceeds(ctx context.Context, before time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM crook_verdicts WHERE kind = 'proceed' AND at < ?`, before.UTC().Format(crookTime))
+	cond, args := s.in("crook_verdicts")
+	res, err := s.db.ExecContext(ctx, `DELETE FROM crook_verdicts WHERE kind = 'proceed' AND at < ?`+cond, append([]any{before.UTC().Format(crookTime)}, args...)...)
 	if err != nil {
 		return 0, err
 	}
