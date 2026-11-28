@@ -65,6 +65,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Changed
 
+- The store records which tenant each row belongs to. Every store has one tenant,
+  `default`, and every existing row moves into it when the daemon upgrades, so nothing
+  changes in use. An older binary refuses to open the store afterwards, as with any new
+  migration: back up `shepherd.db` before upgrading if you might go back.
 - The Kubernetes manifests in `deploy/kubernetes/` are replaced by the Helm chart. The
   pod, its probes and its credential handling are unchanged; the labels now carry the
   release name (`app.kubernetes.io/instance`), so an existing install is replaced rather

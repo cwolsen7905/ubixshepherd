@@ -15,6 +15,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	db, path := open(t)
 	ws, _ := db.SaveWorkspace(ctx, store.Workspace{Name: "w", Path: "/w"}, []store.Repo{{Name: "a", Path: "/w/a"}})
 	// Put the database back to the version before the migration, as an older daemon left it.
+	undoTenants(t, db)
 	for _, c := range []string{"approved", "require_approval"} {
 		if _, err := db.db.ExecContext(ctx, `ALTER TABLE lane_forge DROP COLUMN `+c); err != nil {
 			t.Fatal(err)
@@ -84,7 +85,7 @@ func TestRemovedRepoMigrationApplies(t *testing.T) {
 	if _, err := db.db.ExecContext(ctx, `ALTER TABLE repos DROP COLUMN removed`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-21)); err != nil {
+	if _, err := db.db.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, len(migrations)-22)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
