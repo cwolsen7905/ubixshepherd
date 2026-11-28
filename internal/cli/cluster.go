@@ -140,7 +140,7 @@ func writeWorkerReport(w io.Writer, m api.ClusterWorker) {
 		agents = strings.Join(m.Agents, ", ")
 	}
 	fmt.Fprintln(w, pad+"agents  "+agents)
-	if len(m.Repos) == 0 {
+	if len(m.Repos) == 0 && m.ReposTruncated == 0 {
 		fmt.Fprintln(w, pad+"repos   none with an origin")
 		return
 	}
@@ -150,6 +150,9 @@ func writeWorkerReport(w io.Writer, m api.ClusterWorker) {
 			label = "repos   "
 		}
 		fmt.Fprintf(w, "%s%s%s as %s\n", pad, label, r.Origin, r.Name)
+	}
+	if m.ReposTruncated > 0 {
+		fmt.Fprintf(w, "%s        and %d more, left out of the report to keep it under the link's size limit\n", pad, m.ReposTruncated)
 	}
 }
 

@@ -19,6 +19,8 @@ export interface Worker {
    * worker without the "repos" capability, whose version predates the report. */
   repos?: WorkerRepo[]
   agents?: string[]
+  /** How many more repos the worker has than its report could carry. */
+  repos_truncated?: number
   /** A daemon id that differs from the one it enrolled with: refused until confirmed. */
   pending_id?: string
   /** When an unspent enrolment code ends. */

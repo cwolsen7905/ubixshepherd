@@ -329,14 +329,13 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 		}
 		return false, retryAfter, errors.New(msg)
 	}
-	conn.SetReadLimit(64 << 10)
+	conn.SetReadLimit(api.LinkReadLimit)
 	lctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer conn.CloseNow()
-	repos, agents := s.linkReport(lctx)
 	err = writeFrame(lctx, conn, api.LinkFrame{
 		Type: api.FrameHello, DaemonID: id, Version: version.Version, APILevel: api.ClusterAPILevel,
-		Capabilities: []string{api.CapStatus, api.CapRepos}, Repos: repos, Agents: agents,
+		Capabilities: []string{api.CapStatus, api.CapRepos},
 	})
 	if err != nil {
 		return false, 0, err
@@ -371,6 +370,24 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	}()
 	pinged := make(chan error, 1)
 	go pingLoop(lctx, conn, pinged)
+	// The report goes first, then the status: the controller lists the worker at the
+	// first frame after the hellos. A report that cannot be read now is sent at a later
+	// tick; until then, and after a failed read, the last one sent stands.
+	var sent *api.LinkFrame
+	report := func() {
+		r, err := s.linkReport(lctx)
+		if err != nil {
+			s.Log.Warn("read this worker's repos for the controller", "err", err)
+			return
+		}
+		if sent != nil && slices.Equal(r.Repos, sent.Repos) && slices.Equal(r.Agents, sent.Agents) && r.ReposTruncated == sent.ReposTruncated {
+			return
+		}
+		if writeFrame(lctx, conn, r) == nil {
+			sent = &r
+		}
+	}
+	report()
 	s.sendStatus(lctx, conn)
 	t := time.NewTicker(linkPingEvery)
 	defer t.Stop()
@@ -388,11 +405,7 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 			return true, 0, errors.New("the controller stopped answering pings")
 		case <-t.C:
 			s.sendStatus(lctx, conn)
-			if r, a := s.linkReport(lctx); !slices.Equal(r, repos) || !slices.Equal(a, agents) {
-				if writeFrame(lctx, conn, api.LinkFrame{Type: api.FrameRepos, Repos: r, Agents: a}) == nil {
-					repos, agents = r, a
-				}
-			}
+			report()
 		}
 	}
 }
@@ -437,26 +450,43 @@ func (s *Server) checkLinkTenant(f linkFile, tenant string) error {
 	return nil
 }
 
-// linkReport is what a worker tells its controller it has: its managed repos with an
-// origin, by normalised origin and local name, and the agent CLIs it can start. A repo
-// with no remote cannot be matched to another machine's, so it is left out.
-func (s *Server) linkReport(ctx context.Context) ([]api.LinkRepo, []string) {
+// linkReport is the repos frame a worker tells its controller what it has in: its managed
+// repos with an origin, by normalised origin and local name, and the agent CLIs it can
+// start. A repo with no remote cannot be matched to another machine's, so it is left out.
+// The repos are capped (api.MaxReportRepos, api.MaxReportBytes) so the frame always fits
+// the link's read limit, and the rest counted. A store error is returned, not taken for
+// no repos.
+func (s *Server) linkReport(ctx context.Context) (api.LinkFrame, error) {
+	f := api.LinkFrame{Type: api.FrameRepos}
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		return f, err
+	}
 	var repos []api.LinkRepo
-	if wss, err := s.Store.Workspaces(ctx); err == nil {
-		for _, ws := range wss {
-			rs, err := s.Store.Repos(ctx, ws.ID)
-			if err != nil {
-				continue
-			}
-			for _, r := range rs {
-				if o := workspace.NormalizeRemote(r.Remote); o != "" {
-					repos = append(repos, api.LinkRepo{Origin: o, Name: r.Name})
-				}
+	for _, ws := range wss {
+		rs, err := s.Store.Repos(ctx, ws.ID)
+		if err != nil {
+			return f, err
+		}
+		for _, r := range rs {
+			if o := workspace.NormalizeRemote(r.Remote); o != "" {
+				repos = append(repos, api.LinkRepo{Origin: o, Name: r.Name})
 			}
 		}
 	}
 	slices.SortFunc(repos, func(a, b api.LinkRepo) int {
 		return cmp.Or(cmp.Compare(a.Origin, b.Origin), cmp.Compare(a.Name, b.Name))
 	})
-	return slices.Compact(repos), s.Runner.InstalledAgents()
+	repos = slices.Compact(repos)
+	size := 0
+	for i, r := range repos {
+		b, _ := json.Marshal(r)
+		if size += len(b) + 1; i >= api.MaxReportRepos || size > api.MaxReportBytes {
+			f.ReposTruncated = len(repos) - i
+			repos = repos[:i]
+			break
+		}
+	}
+	f.Repos, f.Agents = repos, s.Runner.InstalledAgents()
+	return f, nil
 }

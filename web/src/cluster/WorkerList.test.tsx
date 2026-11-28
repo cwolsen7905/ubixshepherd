@@ -27,7 +27,7 @@ describe('WorkerList', () => {
 
   it("lists an online worker's tenant, agents and repos, and says when a worker is too old to report them", async () => {
     const rows = [
-      wk({ tenant: 'default', capabilities: ['status', 'repos'], agents: ['claude', 'copilot'], repos: [{ origin: 'gitlab.example.com/g/app', name: 'app' }] }),
+      wk({ tenant: 'default', capabilities: ['status', 'repos'], agents: ['claude', 'copilot'], repos: [{ origin: 'gitlab.example.com/g/app', name: 'app' }], repos_truncated: 3 }),
       wk({ name: 'old', capabilities: ['status'] }),
       wk({ name: 'bare', capabilities: ['status', 'repos'] }),
       wk({ name: 'away', online: false, capabilities: ['status', 'repos'] }),
@@ -38,6 +38,7 @@ describe('WorkerList', () => {
     expect(screen.getByText('gitlab.example.com/g/app')).toBeTruthy()
     expect(screen.getByTitle('gitlab.example.com/g/app').textContent).toContain('app')
     expect(screen.getAllByText(/not reported: this worker's version predates the report/)).toHaveLength(1)
+    expect(screen.getByText(/and 3 more left out of the report/)).toBeTruthy()
     expect(screen.getByText('Agents: none found')).toBeTruthy()
     expect(screen.getByText('Repos: none with an origin')).toBeTruthy()
   })

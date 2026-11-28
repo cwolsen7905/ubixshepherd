@@ -159,11 +159,12 @@ function WorkerReport({ m }: { m: Worker }) {
     return <div className="sh-row-sub">Repos and agents not reported: this worker&apos;s version predates the report.</div>
   }
   const repos = m.repos ?? []
+  const more = m.repos_truncated ?? 0
   return (
     <>
       <div className="sh-row-sub">Agents: {m.agents?.length ? m.agents.join(', ') : 'none found'}</div>
       <div className="sh-row-sub">
-        {repos.length === 0 ? (
+        {repos.length === 0 && more === 0 ? (
           'Repos: none with an origin'
         ) : (
           <>
@@ -174,6 +175,7 @@ function WorkerReport({ m }: { m: Worker }) {
                 {r.name} <code>{r.origin}</code>
               </span>
             ))}
+            {more > 0 && `, and ${more} more left out of the report to keep it under the link's size limit`}
           </>
         )}
       </div>

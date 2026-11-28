@@ -82,6 +82,8 @@ type ClusterWorker struct {
 	// report.
 	Repos  []LinkRepo `json:"repos,omitempty"`
 	Agents []string   `json:"agents,omitempty"`
+	// ReposTruncated is how many more repos the worker has than its report could carry.
+	ReposTruncated int `json:"repos_truncated,omitempty"`
 	// PendingID is a daemon id the worker presented that differs from the one it enrolled
 	// with: the link is refused until the person confirms it.
 	PendingID   string    `json:"pending_id,omitempty"`
@@ -162,8 +164,9 @@ type ClusterJoined struct {
 }
 
 // LinkFrame is one message on the link, a JSON text message. The worker opens with a
-// hello and the controller answers with its own; after that the worker sends a status at
-// each ping, and a repos frame whenever its repos or agents change. No frame names a
+// hello and the controller answers with its own; once the worker accepts that hello it
+// sends its report in a repos frame and a status, then a status at each ping and a repos
+// frame whenever its repos or agents change. No frame names a
 // role, so a worker and a controller from either side of the hub and member rename read
 // each other's frames.
 //
@@ -181,11 +184,25 @@ type LinkFrame struct {
 	// Tenant, on the controller's hello, is the slug of the tenant the worker's
 	// credential belongs to.
 	Tenant string `json:"tenant,omitempty"`
-	// Repos and Agents, on a worker's hello and its repos frames, are its whole report:
-	// a repos frame replaces the last one, and one with neither says it has none.
-	Repos  []LinkRepo `json:"repos,omitempty"`
-	Agents []string   `json:"agents,omitempty"`
+	// Repos and Agents, on a worker's repos frame, are its whole report: each frame
+	// replaces the last one, and one with neither says it has none. ReposTruncated is how
+	// many repos were left out to keep the frame under the link's read limit
+	// (MaxReportRepos, MaxReportBytes).
+	Repos          []LinkRepo `json:"repos,omitempty"`
+	Agents         []string   `json:"agents,omitempty"`
+	ReposTruncated int        `json:"repos_truncated,omitempty"`
 }
+
+// LinkReadLimit is the largest frame either side reads; a bigger one closes the link.
+const LinkReadLimit = 64 << 10
+
+// A worker's report is capped so its repos frame always fits LinkReadLimit, whatever the
+// peer's version: at most MaxReportRepos repos, and at most MaxReportBytes of them as
+// JSON. The rest are counted in ReposTruncated.
+const (
+	MaxReportRepos = 500
+	MaxReportBytes = 48 << 10
+)
 
 // LinkRepo is one repo a worker has: its origin, normalised so the SSH and HTTPS forms
 // of one repo are equal (host/path, lowercase), and the worker's own name for it.
@@ -205,7 +222,6 @@ const (
 const (
 	// CapStatus is the status frame's counts.
 	CapStatus = "status"
-	// CapRepos says a worker reports its repos and agents: in its hello and in repos
-	// frames.
+	// CapRepos says a worker reports its repos and agents, in repos frames.
 	CapRepos = "repos"
 )

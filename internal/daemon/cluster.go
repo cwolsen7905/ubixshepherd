@@ -92,8 +92,23 @@ type liveLink struct {
 	waiting   int
 	repos     []api.LinkRepo
 	agents    []string
+	truncated int
 	daemonID  string
 	closeWith string
+}
+
+// apply records what a frame from the worker reports, under the cluster's lock. A report
+// is kept to api.MaxReportRepos repos, whatever a worker sends.
+func (l *liveLink) apply(f api.LinkFrame) {
+	switch f.Type {
+	case api.FrameStatus:
+		l.runs, l.waiting = f.RunsGoing, f.Waiting
+	case api.FrameRepos:
+		l.repos, l.agents, l.truncated = f.Repos, f.Agents, f.ReposTruncated
+		if n := len(l.repos); n > api.MaxReportRepos {
+			l.repos, l.truncated = l.repos[:api.MaxReportRepos], l.truncated+n-api.MaxReportRepos
+		}
+	}
 }
 
 // DaemonID is this daemon's id: a random UUID written to the Shepherd home on first
@@ -224,7 +239,7 @@ func (s *Server) workerView(m store.Worker) api.ClusterWorker {
 	if l := s.cluster.links[m.Name]; l != nil {
 		v.Online, v.Since, v.RunsGoing, v.Waiting = true, l.since, l.runs, l.waiting
 		v.DaemonID = l.daemonID
-		v.Repos, v.Agents = slices.Clone(l.repos), slices.Clone(l.agents)
+		v.Repos, v.Agents, v.ReposTruncated = slices.Clone(l.repos), slices.Clone(l.agents), l.truncated
 	}
 	s.cluster.mu.Unlock()
 	return v
@@ -413,7 +428,7 @@ func (s *Server) clusterLink(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return // Accept has answered
 	}
-	conn.SetReadLimit(64 << 10)
+	conn.SetReadLimit(api.LinkReadLimit)
 	lctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	l := &liveLink{since: time.Now().UTC(), cancel: cancel, daemonID: id}
@@ -448,6 +463,8 @@ func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms
 	if hello.DaemonID != l.daemonID {
 		return "the hello's daemon id is not the header's"
 	}
+	// The tenant is the default one until the store records a worker's tenant
+	// (workerTenant).
 	err = writeFrame(ctx, conn, api.LinkFrame{
 		Type: api.FrameHello, DaemonID: s.DaemonID(), Version: version.Version, APILevel: api.ClusterAPILevel,
 		Capabilities: []string{api.CapStatus}, Tenant: s.tenantSlugs(ctx)[s.workerTenant(ctx, m.Name)],
@@ -455,11 +472,22 @@ func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms
 	if err != nil {
 		return "could not answer the hello"
 	}
+	// The worker checks the controller's hello (its tenant) before it sends anything
+	// more, and every worker sends a frame at once when it accepts. Until that first
+	// frame the worker is not listed: one that refuses the hello never shows as online,
+	// in this tenant or any other.
+	var first api.LinkFrame
+	fctx, fcancel := context.WithTimeout(ctx, linkHelloWait)
+	err = readFrame(fctx, conn, &first)
+	fcancel()
+	if err != nil {
+		return "the worker did not accept the hello"
+	}
 	if err := ms.Handshake(ctx, m.Name, hello.Version, hello.APILevel, hello.Capabilities, time.Now()); err != nil {
 		s.Log.Error("record a worker's handshake", "worker", m.Name, "err", err)
 	}
 	s.cluster.mu.Lock()
-	l.repos, l.agents = hello.Repos, hello.Agents
+	l.apply(first)
 	if s.cluster.links == nil {
 		s.cluster.links = map[string]*liveLink{}
 	}
@@ -495,16 +523,9 @@ func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms
 	for {
 		select {
 		case f := <-frames:
-			switch f.Type {
-			case api.FrameStatus:
-				s.cluster.mu.Lock()
-				l.runs, l.waiting = f.RunsGoing, f.Waiting
-				s.cluster.mu.Unlock()
-			case api.FrameRepos:
-				s.cluster.mu.Lock()
-				l.repos, l.agents = f.Repos, f.Agents
-				s.cluster.mu.Unlock()
-			}
+			s.cluster.mu.Lock()
+			l.apply(f)
+			s.cluster.mu.Unlock()
 		case err := <-readErr:
 			if ctx.Err() != nil {
 				return "link closed"

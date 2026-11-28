@@ -92,17 +92,22 @@ A worker reports what it has, so the controller knows which machine can work on 
 - **Agents**: the agent CLIs the worker can start (`claude`, `copilot`, `cursor`,
   `opencode`), found the way a run finds them, on the daemon's PATH.
 
-The worker sends both in its hello, then checks them again at each status (every 20
-seconds) and sends a `repos` frame when either changed, so a repo added on a worker shows at
-the controller within one status interval. The controller keeps the report in memory with
+The worker sends both in a `repos` frame once it has accepted the controller's hello, then
+checks them again at each status (every 20 seconds) and sends another when either changed,
+so a repo added on a worker shows at the controller within one status interval. If the
+worker cannot read its own repos, it sends nothing and the last report stands. A report
+carries at most 500 repos and 48 KiB of them, so a frame always fits the link's 64 KiB read
+limit; any more are counted, and the status says how many were left out. The controller keeps the report in memory with
 the link: it is live, gone when the link drops, and never stored. A worker from before the
 report sends none; the controller still links it and lists it as not reporting.
 
 ## Tenants
 
-Each worker's credential belongs to a tenant, and the controller's hello names it. The
+Each worker's credential belongs to a tenant, and the controller's hello names it. Until
+the store records a worker's tenant, every worker is reported in the default tenant. The
 worker records the first tenant it is linked in, in `cluster-link.json`, and shows it in its
-link. If a later hello names another tenant, the worker refuses the link (state `refused`,
+link. The controller lists a worker only once it has accepted the hello, at its first frame
+after it. If a later hello names another tenant, the worker refuses the link (state `refused`,
 with both tenants in the reason) and retries slowly: a credential does not move between
 tenants. Enrol it again (`shepherd worker add` on the controller, `shepherd cluster join`
 on the worker) to link it in the new one. A controller that names no tenant is not a
@@ -148,10 +153,11 @@ enrolment answer carries the controller's id under both `controller_daemon_id` a
 - A worker opens `GET /v1/cluster/link` with its credential and the header
   `X-Shepherd-Daemon-Id`, and upgrades it to a WebSocket (`github.com/coder/websocket`).
 - Each side sends a hello (daemon id, version, `api_level`, capabilities). The controller's
-  names the worker's `tenant`; the worker's carries its `repos` and `agents` and the
-  capability `repos`. Then the worker sends a status (runs going, items waiting) at once
-  and at every ping, and a `repos` frame (its whole report, replacing the last) when its
-  repos or agents change. The controller records what the worker reports. No frame names a
+  names the worker's `tenant`; the worker's names the capability `repos`. Once the worker
+  accepts the controller's hello it sends a `repos` frame (its whole report, replacing the
+  last) and a status (runs going, items waiting), then a status at every ping and a `repos`
+  frame when its repos or agents change. The controller lists the worker from its first
+  frame after the hellos. The controller records what the worker reports. No frame names a
   role.
 - Each side ignores a frame type or field it does not know, so the report and the tenant
   were added without moving `api_level`: an older controller drops them, and an older

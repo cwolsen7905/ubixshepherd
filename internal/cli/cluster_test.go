@@ -120,7 +120,7 @@ func TestClusterStatusListsReposAndAgents(t *testing.T) {
 	c := api.Cluster{Role: api.RoleController, DaemonID: "c1", Workers: []api.ClusterWorker{
 		{Name: "work", Enrolled: true, Online: true, Since: now, APILevel: 1, Tenant: "default",
 			Capabilities: []string{api.CapStatus, api.CapRepos}, Agents: []string{"claude", "copilot"},
-			Repos: []api.LinkRepo{{Origin: "github.com/o/lib", Name: "lib"}, {Origin: "gitlab.example.com/g/app", Name: "app"}}},
+			Repos: []api.LinkRepo{{Origin: "github.com/o/lib", Name: "lib"}, {Origin: "gitlab.example.com/g/app", Name: "app"}}, ReposTruncated: 7},
 		{Name: "old", Enrolled: true, Online: true, Since: now, APILevel: 1, Capabilities: []string{api.CapStatus}},
 		{Name: "empty", Enrolled: true, Online: true, Since: now, APILevel: 1, Capabilities: []string{api.CapStatus, api.CapRepos}},
 	}}
@@ -129,7 +129,7 @@ func TestClusterStatusListsReposAndAgents(t *testing.T) {
 	out := b.String()
 	for _, want := range []string{
 		"tenant default", "agents  claude, copilot", "repos   github.com/o/lib as lib", "gitlab.example.com/g/app as app",
-		"repos and agents not reported", "agents  none found", "repos   none with an origin",
+		"repos and agents not reported", "agents  none found", "repos   none with an origin", "and 7 more, left out",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status has no %q:\n%s", want, out)

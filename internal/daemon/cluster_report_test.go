@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,8 +27,8 @@ import (
 // decodes: the fields it does not know are dropped, not an error.
 func TestRepoFramesRoundTrip(t *testing.T) {
 	for _, f := range []api.LinkFrame{
-		{Type: api.FrameHello, DaemonID: "d1", Version: "1.2.0", APILevel: 1, Capabilities: []string{api.CapStatus, api.CapRepos},
-			Repos: []api.LinkRepo{{Origin: "gitlab.example.com/g/app", Name: "app"}}, Agents: []string{"claude", "copilot"}},
+		{Type: api.FrameHello, DaemonID: "d1", Version: "1.2.0", APILevel: 1, Capabilities: []string{api.CapStatus, api.CapRepos}},
+		{Type: api.FrameRepos, Repos: []api.LinkRepo{{Origin: "gitlab.example.com/g/app", Name: "app"}}, Agents: []string{"claude", "copilot"}, ReposTruncated: 4},
 		{Type: api.FrameHello, DaemonID: "c1", Version: "1.2.0", APILevel: 1, Capabilities: []string{api.CapStatus}, Tenant: "default"},
 		{Type: api.FrameRepos, Repos: []api.LinkRepo{{Origin: "github.com/o/lib", Name: "lib"}}, Agents: []string{"opencode"}},
 		{Type: api.FrameRepos},
@@ -205,15 +206,16 @@ func (s *tenantStore) Tenants(ctx context.Context) ([]store.Tenant, error) {
 // refused until it enrols again, which starts it over.
 func TestChangedTenantIsRefused(t *testing.T) {
 	fastLink(t)
-	h := newControllerRig(t)
-	ts := &tenantStore{DB: h.st}
+	ts := &tenantStore{}
 	ts.tenant.Store(store.DefaultTenantID)
-	h.s.Store = ts
+	h := newControllerRigWith(t, func(db *sqlite.DB) store.Store { ts.DB = db; return ts })
 	m := h.worker(t, "")
 	m.join(h.addWorker("work"))
 	stop := m.s.StartCluster(context.Background())
 	defer stop()
 	eventually(t, "online in default", func() bool { v := m.cluster().Link; return v.State == api.LinkConnected && v.Tenant == "default" })
+	// The controller lists the worker at its first frame, a moment after the worker is up.
+	eventually(t, "listed in default", func() bool { mb, _ := workerOf(h.cluster(), "work"); return mb.Online && mb.Tenant == "default" })
 
 	ts.tenant.Store(2)
 	h.s.dropLink("work", "test")
@@ -259,5 +261,124 @@ func TestNoTenantIsNotAChange(t *testing.T) {
 	got, _ = n.s.loadLink()
 	if err := n.s.checkLinkTenant(got, "other"); !errors.Is(err, errRefused) {
 		t.Fatalf("a changed tenant: %v", err)
+	}
+}
+
+// failStore is a worker's store whose repo reads can be made to fail.
+type failStore struct {
+	*sqlite.DB
+	fail atomic.Bool
+}
+
+func (s *failStore) Repos(ctx context.Context, id int64) ([]store.Repo, error) {
+	if s.fail.Load() {
+		return nil, errors.New("database is locked")
+	}
+	return s.DB.Repos(ctx, id)
+}
+
+// A store error is not a report of no repos: the last good report stands, and nothing
+// is sent until a read works again.
+func TestStoreErrorKeepsTheLastReport(t *testing.T) {
+	fastLink(t)
+	h := newControllerRig(t)
+	fs := &failStore{}
+	m := h.workerWith(t, "", func(db *sqlite.DB) store.Store { fs.DB = db; return fs })
+	m.saveRepos("work", store.Repo{Name: "app", Remote: "git@gitlab.example.com:g/app.git"})
+	m.join(h.addWorker("work"))
+	stop := m.s.StartCluster(context.Background())
+	defer stop()
+	eventually(t, "the report", func() bool { mb, _ := workerOf(h.cluster(), "work"); return mb.Online && len(mb.Repos) == 1 })
+
+	fs.fail.Store(true)
+	m.saveRepos("work", store.Repo{Name: "lib", Remote: "https://github.com/o/lib"})
+	time.Sleep(5 * linkPingEvery)
+	if mb, _ := workerOf(h.cluster(), "work"); !mb.Online || len(mb.Repos) != 1 || mb.Repos[0].Name != "app" {
+		t.Fatalf("a failed read changed the report: %+v", mb)
+	}
+	fs.fail.Store(false)
+	eventually(t, "the report once reads work", func() bool { mb, _ := workerOf(h.cluster(), "work"); return len(mb.Repos) == 2 })
+}
+
+// A worker with more repos than a frame can carry under the read limit sends a capped
+// report with a count of the rest, and stays linked.
+func TestOversizedReportIsCappedAndLinks(t *testing.T) {
+	fastLink(t)
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	const n = 1200
+	long := strings.Repeat("x", 120)
+	var repos []store.Repo
+	for i := range n {
+		repos = append(repos, store.Repo{Name: fmt.Sprintf("r%04d", i), Remote: fmt.Sprintf("git@gitlab.example.com:%s/r%04d.git", long, i)})
+	}
+	m.saveRepos("work", repos...)
+	f, err := m.s.linkReport(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	all := f
+	all.Repos = append([]api.LinkRepo(nil), f.Repos...)
+	for i := len(f.Repos); i < n; i++ {
+		all.Repos = append(all.Repos, api.LinkRepo{Origin: fmt.Sprintf("gitlab.example.com/%s/r%04d", long, i), Name: fmt.Sprintf("r%04d", i)})
+	}
+	if whole, _ := json.Marshal(all); len(whole) <= api.LinkReadLimit {
+		t.Fatalf("the test's report (%d bytes) is not over the read limit", len(whole))
+	}
+	raw, _ := json.Marshal(f)
+	if len(raw) > api.LinkReadLimit || f.ReposTruncated == 0 || len(f.Repos)+f.ReposTruncated != n || len(f.Repos) > api.MaxReportRepos {
+		t.Fatalf("capped report: %d bytes, %d repos, %d left out", len(raw), len(f.Repos), f.ReposTruncated)
+	}
+
+	m.join(h.addWorker("work"))
+	stop := m.s.StartCluster(context.Background())
+	defer stop()
+	eventually(t, "online with the capped report", func() bool {
+		mb, _ := workerOf(h.cluster(), "work")
+		return mb.Online && mb.ReposTruncated == f.ReposTruncated && len(mb.Repos) == len(f.Repos)
+	})
+	time.Sleep(5 * linkPingEvery)
+	if v := m.cluster().Link; v.State != api.LinkConnected {
+		t.Fatalf("the link did not hold: %+v", v)
+	}
+
+	// The controller keeps no more than the cap, whatever a worker sends.
+	l := &liveLink{}
+	big := make([]api.LinkRepo, api.MaxReportRepos+20)
+	l.apply(api.LinkFrame{Type: api.FrameRepos, Repos: big, ReposTruncated: 5})
+	if len(l.repos) != api.MaxReportRepos || l.truncated != 25 {
+		t.Fatalf("kept %d repos, %d left out", len(l.repos), l.truncated)
+	}
+}
+
+// A worker that refuses the controller's tenant is never listed online there, and none of
+// its report is kept.
+func TestRefusedTenantIsNeverListed(t *testing.T) {
+	fastLink(t)
+	ts := &tenantStore{}
+	ts.tenant.Store(2)
+	h := newControllerRigWith(t, func(db *sqlite.DB) store.Store { ts.DB = db; return ts })
+	m := h.worker(t, "")
+	m.saveRepos("work", store.Repo{Name: "app", Remote: "git@gitlab.example.com:g/app.git"})
+	m.join(h.addWorker("work"))
+	f, _ := m.s.loadLink()
+	f.Tenant = "default"
+	b, _ := json.Marshal(f)
+	os.WriteFile(m.s.linkPath(), b, 0o600)
+	stop := m.s.StartCluster(context.Background())
+	defer stop()
+	eventually(t, "refused", func() bool {
+		mb, _ := workerOf(h.cluster(), "work")
+		if mb.Online || len(mb.Repos) > 0 {
+			t.Fatalf("a worker refusing the tenant was listed: %+v", mb)
+		}
+		v := m.cluster().Link
+		return v.State == api.LinkRefused && strings.Contains(v.Error, "acme")
+	})
+	for range 10 {
+		if mb, _ := workerOf(h.cluster(), "work"); mb.Online || len(mb.Repos) > 0 {
+			t.Fatalf("a worker refusing the tenant was listed: %+v", mb)
+		}
+		time.Sleep(linkPingEvery)
 	}
 }
