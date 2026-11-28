@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
 	"github.com/ubixsys/ubixshepherd/internal/version"
+	"github.com/ubixsys/ubixshepherd/internal/workspace"
 )
 
 // The worker's side of the cluster: enrolling with a controller, then holding one link to
@@ -43,12 +46,15 @@ var (
 )
 
 // linkFile is the file's content. ControllerID keeps the key it was first written with,
-// hub_daemon_id, so a file from before the rename still reads, and the reverse.
+// hub_daemon_id, so a file from before the rename still reads, and the reverse. Tenant is
+// the tenant the controller first named for this credential; a later hello that names
+// another is refused until the worker enrols again, which writes a new file without one.
 type linkFile struct {
 	URL          string `json:"url"`
 	Name         string `json:"name"`
 	Credential   string `json:"credential"`
 	ControllerID string `json:"hub_daemon_id"`
+	Tenant       string `json:"tenant,omitempty"`
 }
 
 func (s *Server) linkPath() string { return filepath.Join(s.Home, LinkFile) }
@@ -103,11 +109,15 @@ func (s *Server) linkView() api.ClusterLink {
 	if v.State == "" {
 		v.State = api.LinkNotJoined
 	}
+	f, joined := s.loadLink()
 	if v.Controller == "" {
 		v.Controller = s.LiveConfig().Cluster.Controller
-		if f, ok := s.loadLink(); ok && v.Controller == "" {
+		if joined && v.Controller == "" {
 			v.Controller = f.URL
 		}
+	}
+	if v.Tenant == "" && joined {
+		v.Tenant = f.Tenant
 	}
 	return v
 }
@@ -319,13 +329,13 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 		}
 		return false, retryAfter, errors.New(msg)
 	}
-	conn.SetReadLimit(64 << 10)
+	conn.SetReadLimit(api.LinkReadLimit)
 	lctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer conn.CloseNow()
 	err = writeFrame(lctx, conn, api.LinkFrame{
 		Type: api.FrameHello, DaemonID: id, Version: version.Version, APILevel: api.ClusterAPILevel,
-		Capabilities: []string{"status"},
+		Capabilities: []string{api.CapStatus, api.CapRepos},
 	})
 	if err != nil {
 		return false, 0, err
@@ -337,8 +347,13 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	if err != nil || hello.Type != api.FrameHello {
 		return false, 0, errors.New("the controller did not say hello")
 	}
+	if err := s.checkLinkTenant(f, hello.Tenant); err != nil {
+		conn.Close(websocket.StatusPolicyViolation, "the worker refuses a changed tenant")
+		return false, linkBackoffMax / 2, err
+	}
 	s.cluster.link.set(func(v *api.ClusterLink) {
 		v.ControllerID, v.ControllerAPI, v.ControllerVersion = hello.DaemonID, hello.APILevel, hello.Version
+		v.Tenant = cmp.Or(hello.Tenant, f.Tenant)
 	})
 	s.cluster.link.setState(api.LinkConnected, "", time.Time{})
 	s.Log.Info("linked to the controller", "controller", f.URL, "version", hello.Version, "api_level", hello.APILevel)
@@ -355,6 +370,24 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	}()
 	pinged := make(chan error, 1)
 	go pingLoop(lctx, conn, pinged)
+	// The report goes first, then the status: the controller lists the worker at the
+	// first frame after the hellos. A report that cannot be read now is sent at a later
+	// tick; until then, and after a failed read, the last one sent stands.
+	var sent *api.LinkFrame
+	report := func() {
+		r, err := s.linkReport(lctx)
+		if err != nil {
+			s.Log.Warn("read this worker's repos for the controller", "err", err)
+			return
+		}
+		if sent != nil && slices.Equal(r.Repos, sent.Repos) && slices.Equal(r.Agents, sent.Agents) && r.ReposTruncated == sent.ReposTruncated {
+			return
+		}
+		if writeFrame(lctx, conn, r) == nil {
+			sent = &r
+		}
+	}
+	report()
 	s.sendStatus(lctx, conn)
 	t := time.NewTicker(linkPingEvery)
 	defer t.Stop()
@@ -372,6 +405,7 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 			return true, 0, errors.New("the controller stopped answering pings")
 		case <-t.C:
 			s.sendStatus(lctx, conn)
+			report()
 		}
 	}
 }
@@ -389,4 +423,70 @@ func closeReason(err error) string {
 func (s *Server) sendStatus(ctx context.Context, conn *websocket.Conn) {
 	runs, wait := s.linkCounts(ctx)
 	writeFrame(ctx, conn, api.LinkFrame{Type: api.FrameStatus, RunsGoing: runs, Waiting: wait})
+}
+
+// checkLinkTenant holds a worker to the tenant its credential was first linked in. The
+// first hello that names a tenant records it in the link file; one that names another
+// is refused, since a credential does not move between tenants: the person enrols the
+// worker again. A controller that names none (one from before tenants were on the link)
+// is not refused.
+func (s *Server) checkLinkTenant(f linkFile, tenant string) error {
+	switch {
+	case tenant == "" || tenant == f.Tenant:
+		return nil
+	case f.Tenant != "":
+		return fmt.Errorf("%w: this worker was linked in tenant %s, and the controller now names tenant %s; enrol it again with shepherd worker add on the controller and shepherd cluster join here", errRefused, f.Tenant, tenant)
+	}
+	// Record it, unless a join replaced the file since it was read.
+	cur, ok := s.loadLink()
+	if !ok || cur.Credential != f.Credential {
+		return nil
+	}
+	cur.Tenant = tenant
+	b, _ := json.MarshalIndent(cur, "", "  ")
+	if err := writeFileAtomic(s.linkPath(), b); err != nil {
+		s.Log.Warn("could not record the link's tenant", "err", err)
+	}
+	return nil
+}
+
+// linkReport is the repos frame a worker tells its controller what it has in: its managed
+// repos with an origin, by normalised origin and local name, and the agent CLIs it can
+// start. A repo with no remote cannot be matched to another machine's, so it is left out.
+// The repos are capped (api.MaxReportRepos, api.MaxReportBytes) so the frame always fits
+// the link's read limit, and the rest counted. A store error is returned, not taken for
+// no repos.
+func (s *Server) linkReport(ctx context.Context) (api.LinkFrame, error) {
+	f := api.LinkFrame{Type: api.FrameRepos}
+	wss, err := s.Store.Workspaces(ctx)
+	if err != nil {
+		return f, err
+	}
+	var repos []api.LinkRepo
+	for _, ws := range wss {
+		rs, err := s.Store.Repos(ctx, ws.ID)
+		if err != nil {
+			return f, err
+		}
+		for _, r := range rs {
+			if o := workspace.NormalizeRemote(r.Remote); o != "" {
+				repos = append(repos, api.LinkRepo{Origin: o, Name: r.Name})
+			}
+		}
+	}
+	slices.SortFunc(repos, func(a, b api.LinkRepo) int {
+		return cmp.Or(cmp.Compare(a.Origin, b.Origin), cmp.Compare(a.Name, b.Name))
+	})
+	repos = slices.Compact(repos)
+	size := 0
+	for i, r := range repos {
+		b, _ := json.Marshal(r)
+		if size += len(b) + 1; i >= api.MaxReportRepos || size > api.MaxReportBytes {
+			f.ReposTruncated = len(repos) - i
+			repos = repos[:i]
+			break
+		}
+	}
+	f.Repos, f.Agents = repos, s.Runner.InstalledAgents()
+	return f, nil
 }

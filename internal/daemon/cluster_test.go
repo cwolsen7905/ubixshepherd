@@ -34,6 +34,13 @@ type node struct {
 
 func newNode(t *testing.T, cfg config.Config, home string) *node {
 	t.Helper()
+	return newNodeWith(t, cfg, home, nil)
+}
+
+// newNodeWith is newNode with the server's store wrapped (wrap may be nil), set before
+// the server starts so nothing reads it while it changes.
+func newNodeWith(t *testing.T, cfg config.Config, home string, wrap func(*sqlite.DB) store.Store) *node {
+	t.Helper()
 	if home == "" {
 		home = t.TempDir()
 	}
@@ -42,7 +49,11 @@ func newNode(t *testing.T, cfg config.Config, home string) *node {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	s, err := NewServer(st, cfg, "/cfg", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var ss store.Store = st
+	if wrap != nil {
+		ss = wrap(st)
+	}
+	s, err := NewServer(ss, cfg, "/cfg", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,12 +110,17 @@ type controllerRig struct {
 
 func newControllerRig(t *testing.T) *controllerRig {
 	t.Helper()
+	return newControllerRigWith(t, nil)
+}
+
+func newControllerRigWith(t *testing.T, wrap func(*sqlite.DB) store.Store) *controllerRig {
+	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile, pool := selfSigned(t, dir)
 	cfg := config.Default()
 	cfg.Daemon.Public = &config.Public{Listen: "0.0.0.0:8443", URL: pubURL, TLS: config.PublicTLS{Cert: certFile, Key: keyFile}}
 	cfg.Cluster.Role = config.ClusterRoleController
-	n := newNode(t, cfg, "")
+	n := newNodeWith(t, cfg, "", wrap)
 	if err := n.s.PreparePublic(context.Background(), n.home); err != nil {
 		t.Fatal(err)
 	}
@@ -132,9 +148,14 @@ func newControllerRig(t *testing.T) *controllerRig {
 // worker makes a worker daemon whose config names the controller.
 func (h *controllerRig) worker(t *testing.T, home string) *node {
 	t.Helper()
+	return h.workerWith(t, home, nil)
+}
+
+func (h *controllerRig) workerWith(t *testing.T, home string, wrap func(*sqlite.DB) store.Store) *node {
+	t.Helper()
 	cfg := config.Default()
 	cfg.Cluster.Controller = pubURL
-	n := newNode(t, cfg, home)
+	n := newNodeWith(t, cfg, home, wrap)
 	n.s.ClusterClient = h.client
 	return n
 }

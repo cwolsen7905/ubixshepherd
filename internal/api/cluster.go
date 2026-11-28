@@ -74,6 +74,16 @@ type ClusterWorker struct {
 	// RunsGoing and Waiting are the worker's last report; zero while it is offline.
 	RunsGoing int `json:"runs_going"`
 	Waiting   int `json:"waiting"`
+	// Tenant is the slug of the tenant the worker's credential belongs to.
+	Tenant string `json:"tenant,omitempty"`
+	// Repos and Agents are what the worker reported over its link: its repos by origin
+	// and the agent CLIs it has. They are live, kept with the link and empty while it is
+	// offline, and empty for a worker without the CapRepos capability, which predates the
+	// report.
+	Repos  []LinkRepo `json:"repos,omitempty"`
+	Agents []string   `json:"agents,omitempty"`
+	// ReposTruncated is how many more repos the worker has than its report could carry.
+	ReposTruncated int `json:"repos_truncated,omitempty"`
 	// PendingID is a daemon id the worker presented that differs from the one it enrolled
 	// with: the link is refused until the person confirms it.
 	PendingID   string    `json:"pending_id,omitempty"`
@@ -93,6 +103,9 @@ type ClusterLink struct {
 	ControllerID      string    `json:"controller_daemon_id,omitempty"`
 	ControllerAPI     int       `json:"controller_api_level,omitempty"`
 	ControllerVersion string    `json:"controller_version,omitempty"`
+	// Tenant is the tenant the controller puts this worker in, from its hello; empty
+	// for a controller from before tenants were named on the link.
+	Tenant string `json:"tenant,omitempty"`
 }
 
 // WorkerAdd is POST /v1/cluster/workers.
@@ -151,9 +164,15 @@ type ClusterJoined struct {
 }
 
 // LinkFrame is one message on the link, a JSON text message. The worker opens with a
-// hello and the controller answers with its own; after that the worker sends a status at
-// each ping. Phase 1 carries nothing else. No frame names a role, so a worker and a
-// controller from either side of the hub and member rename read each other's frames.
+// hello and the controller answers with its own; once the worker accepts that hello it
+// sends its report in a repos frame and a status, then a status at each ping and a repos
+// frame whenever its repos or agents change. No frame names a
+// role, so a worker and a controller from either side of the hub and member rename read
+// each other's frames.
+//
+// Each side ignores a frame type and a field it does not know, so a newer peer adds both
+// without moving ClusterAPILevel: an older controller drops a repos frame and the
+// fields below, and an older worker sends neither and says so by not naming CapRepos.
 type LinkFrame struct {
 	Type         string   `json:"type"`
 	DaemonID     string   `json:"daemon_id,omitempty"`
@@ -162,10 +181,47 @@ type LinkFrame struct {
 	Capabilities []string `json:"capabilities,omitempty"`
 	RunsGoing    int      `json:"runs_going,omitempty"`
 	Waiting      int      `json:"waiting,omitempty"`
+	// Tenant, on the controller's hello, is the slug of the tenant the worker's
+	// credential belongs to.
+	Tenant string `json:"tenant,omitempty"`
+	// Repos and Agents, on a worker's repos frame, are its whole report: each frame
+	// replaces the last one, and one with neither says it has none. ReposTruncated is how
+	// many repos were left out to keep the frame under the link's read limit
+	// (MaxReportRepos, MaxReportBytes).
+	Repos          []LinkRepo `json:"repos,omitempty"`
+	Agents         []string   `json:"agents,omitempty"`
+	ReposTruncated int        `json:"repos_truncated,omitempty"`
+}
+
+// LinkReadLimit is the largest frame either side reads; a bigger one closes the link.
+const LinkReadLimit = 64 << 10
+
+// A worker's report is capped so its repos frame always fits LinkReadLimit, whatever the
+// peer's version: at most MaxReportRepos repos, and at most MaxReportBytes of them as
+// JSON. The rest are counted in ReposTruncated.
+const (
+	MaxReportRepos = 500
+	MaxReportBytes = 48 << 10
+)
+
+// LinkRepo is one repo a worker has: its origin, normalised so the SSH and HTTPS forms
+// of one repo are equal (host/path, lowercase), and the worker's own name for it.
+type LinkRepo struct {
+	Origin string `json:"origin"`
+	Name   string `json:"name"`
 }
 
 // Link frame types.
 const (
 	FrameHello  = "hello"
 	FrameStatus = "status"
+	FrameRepos  = "repos"
+)
+
+// Link capabilities, named in a hello.
+const (
+	// CapStatus is the status frame's counts.
+	CapStatus = "status"
+	// CapRepos says a worker reports its repos and agents, in repos frames.
+	CapRepos = "repos"
 )

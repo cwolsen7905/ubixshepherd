@@ -13,10 +13,24 @@ export interface Worker {
   capabilities?: string[]
   runs_going: number
   waiting: number
+  /** The slug of the tenant the worker's credential belongs to. */
+  tenant?: string
+  /** What the worker reported over its link, live: empty while offline, and absent for a
+   * worker without the "repos" capability, whose version predates the report. */
+  repos?: WorkerRepo[]
+  agents?: string[]
+  /** How many more repos the worker has than its report could carry. */
+  repos_truncated?: number
   /** A daemon id that differs from the one it enrolled with: refused until confirmed. */
   pending_id?: string
   /** When an unspent enrolment code ends. */
   code_expires?: string
+}
+
+/** A repo a worker has: its origin as host/path, and the worker's own name for it. */
+export interface WorkerRepo {
+  origin: string
+  name: string
 }
 
 export interface ClusterView {

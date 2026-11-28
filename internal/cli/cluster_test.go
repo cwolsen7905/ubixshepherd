@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
 	"github.com/ubixsys/ubixshepherd/internal/config"
@@ -110,4 +111,33 @@ func TestClusterStatusTool(t *testing.T) {
 		return
 	}
 	t.Fatal("no cluster_status tool")
+}
+
+// cluster status lists each online worker's tenant, agents and repos, and says when a
+// worker is too old to report them.
+func TestClusterStatusListsReposAndAgents(t *testing.T) {
+	now := time.Now()
+	c := api.Cluster{Role: api.RoleController, DaemonID: "c1", Workers: []api.ClusterWorker{
+		{Name: "work", Enrolled: true, Online: true, Since: now, APILevel: 1, Tenant: "default",
+			Capabilities: []string{api.CapStatus, api.CapRepos}, Agents: []string{"claude", "copilot"},
+			Repos: []api.LinkRepo{{Origin: "github.com/o/lib", Name: "lib"}, {Origin: "gitlab.example.com/g/app", Name: "app"}}, ReposTruncated: 7},
+		{Name: "old", Enrolled: true, Online: true, Since: now, APILevel: 1, Capabilities: []string{api.CapStatus}},
+		{Name: "empty", Enrolled: true, Online: true, Since: now, APILevel: 1, Capabilities: []string{api.CapStatus, api.CapRepos}},
+	}}
+	var b strings.Builder
+	writeCluster(&b, c, now)
+	out := b.String()
+	for _, want := range []string{
+		"tenant default", "agents  claude, copilot", "repos   github.com/o/lib as lib", "gitlab.example.com/g/app as app",
+		"repos and agents not reported", "agents  none found", "repos   none with an origin", "and 7 more, left out",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status has no %q:\n%s", want, out)
+		}
+	}
+	b.Reset()
+	writeCluster(&b, api.Cluster{Role: api.RoleWorker, Link: &api.ClusterLink{State: api.LinkConnected, Tenant: "acme"}}, now)
+	if !strings.Contains(b.String(), "tenant:     acme") {
+		t.Errorf("a worker's status has no tenant:\n%s", b.String())
+	}
 }
