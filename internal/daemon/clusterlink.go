@@ -299,6 +299,10 @@ var errRefused = errors.New("refused")
 // as the controller's hello; retryAfter is the controller's floor for the next try.
 func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter time.Duration, err error) {
 	id := s.DaemonID()
+	// The first report is built before dialling: reading it can run slow probes (an agent
+	// CLI's version check), and the controller gives the worker only linkHelloWait after
+	// the hellos to send its first frame.
+	first, firstErr := s.linkReport(ctx)
 	conn, resp, err := websocket.Dial(ctx, f.URL+api.PathClusterLink, &websocket.DialOptions{
 		HTTPClient: s.clusterClient(),
 		HTTPHeader: http.Header{
@@ -371,8 +375,9 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 	pinged := make(chan error, 1)
 	go pingLoop(lctx, conn, pinged)
 	// The report goes first, then the status: the controller lists the worker at the
-	// first frame after the hellos. A report that cannot be read now is sent at a later
-	// tick; until then, and after a failed read, the last one sent stands.
+	// first frame after the hellos. The first report was read before dialling, so slow
+	// probes never eat into the controller's wait. A report that cannot be read is sent at
+	// a later tick; until then, and after a failed read, the last one sent stands.
 	var sent *api.LinkFrame
 	report := func() {
 		r, err := s.linkReport(lctx)
@@ -387,7 +392,11 @@ func (s *Server) linkOnce(ctx context.Context, f linkFile) (up bool, retryAfter 
 			sent = &r
 		}
 	}
-	report()
+	if firstErr != nil {
+		s.Log.Warn("read this worker's repos for the controller", "err", firstErr)
+	} else if writeFrame(lctx, conn, first) == nil {
+		sent = &first
+	}
 	s.sendStatus(lctx, conn)
 	t := time.NewTicker(linkPingEvery)
 	defer t.Stop()

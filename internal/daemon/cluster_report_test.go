@@ -382,3 +382,34 @@ func TestRefusedTenantIsNeverListed(t *testing.T) {
 		time.Sleep(linkPingEvery)
 	}
 }
+
+// slowStore takes its time listing workspaces, as a worker does whose report runs a slow
+// probe.
+type slowStore struct {
+	*sqlite.DB
+	delay time.Duration
+}
+
+func (s *slowStore) Workspaces(ctx context.Context) ([]store.Workspace, error) {
+	time.Sleep(s.delay)
+	return s.DB.Workspaces(ctx)
+}
+
+// A report slower to read than the controller's wait for the worker's first frame still
+// links, with the report: it is read before the worker dials, not inside the wait.
+func TestASlowReportStillLinks(t *testing.T) {
+	fastLink(t)
+	old := linkHelloWait
+	linkHelloWait = 300 * time.Millisecond
+	t.Cleanup(func() { linkHelloWait = old })
+	h := newControllerRig(t)
+	m := h.workerWith(t, "", func(db *sqlite.DB) store.Store { return &slowStore{DB: db, delay: 3 * linkHelloWait} })
+	m.saveRepos("work", store.Repo{Name: "app", Remote: "git@gitlab.example.com:g/app.git"})
+	m.join(h.addWorker("work"))
+	stop := m.s.StartCluster(context.Background())
+	defer stop()
+	eventually(t, "the worker online with its report", func() bool {
+		mb, _ := workerOf(h.cluster(), "work")
+		return mb.Online && len(mb.Repos) == 1
+	})
+}
