@@ -1,0 +1,8 @@
+# Written once into an empty home by the image's entrypoint, for a worker (SHEPHERD_CONTROLLER_URL
+# set). A worker opens no public listener: it dials out to its controller and nothing dials in.
+# After that the home's config.yaml is yours: edit it and `shepherd daemon reload`. The worker
+# links once `shepherd cluster join <controller URL> <code>` has stored its credential.
+daemon:
+  listen: 127.0.0.1:8420
+cluster:
+  controller: @CONTROLLER_URL@

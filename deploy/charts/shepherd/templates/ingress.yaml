@@ -1,4 +1,4 @@
-{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.enabled (ne .Values.mode "worker") }}
 {{- $host := required "ingress.host is required when ingress.enabled" .Values.ingress.host }}
 # TLS ends here. The daemon only takes plain HTTP from the proxy addresses in
 # daemon.public.trusted_proxies, and only with X-Forwarded-Proto: https, which ingress-nginx

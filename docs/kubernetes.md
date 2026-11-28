@@ -1,8 +1,8 @@
 # Running on Kubernetes
 
 Shepherd ships a Helm chart in `deploy/charts/shepherd/`; [hosted.md](hosted.md) covers the
-hosted deployment as a whole. This page covers installing the chart, its values, the image's
-agent CLIs and the Secret the pod reads.
+hosted deployment as a whole. This page covers installing the chart, its values, worker
+pods, the images, the agent CLIs and the Secret the pod reads.
 
 ## Installing
 
@@ -35,6 +35,7 @@ The pod starts on loopback only; the public listener, and so readiness, comes up
 | `networkPolicy.extraEgress` | | Egress rules for destinations on private networks, such as a self-hosted forge or model server; the default allows only public addresses |
 | `credentials.secretName`, `credentials.externalSecret.*` | | The Secret's name, and an optional ExternalSecret that makes it |
 | `backup.*` | | The nightly store backup, and an optional VolumeSnapshot after it |
+| `mode`, `seed.controllerUrl` | | `worker` for a worker pod, and the controller it links to: see [Worker pods](#worker-pods) |
 
 The `seed` values are read only when the home has no `config.yaml`. After the first start,
 change `daemon.public` in Settings or in the home's `config.yaml`.
@@ -59,6 +60,59 @@ claim `data-shepherd-0` is reused with the home and workspace on it. The seeded
 `config.yaml` on the volume is kept, so the `seed` values do not change it. The old
 manifests took a VolumeSnapshot after each store backup; the chart does that only with
 `backup.snapshot.enabled: true` (and `backup.snapshot.className`), so set it to keep them.
+
+## Worker pods
+
+A worker pod is a Shepherd daemon that runs in the cluster for its toolchain and its
+uptime: it works on the repos homed on it while laptops sleep, and it links out to your
+controller like a laptop does ([cluster.md](cluster.md)). It opens no public listener and
+takes no connections in. Clustering stays opt-in: a controller with no workers, or a
+laptop that never joins one, is a complete Shepherd.
+
+Install it from the same chart with `mode: worker`, in the same namespace as its
+controller (it uses the same `shepherd-credentials` Secret: the same push key and logins),
+under its own release and name:
+
+```yaml
+# worker-go.values.yaml
+mode: worker
+fullnameOverride: shepherd-worker-go
+image:
+  repository: ghcr.io/ubixsys/ubixshepherd
+  tag: <release>-go             # the worker image: Go, Node and make on the base
+seed:
+  controllerUrl: https://shepherd.example.com
+resources:
+  requests: {cpu: "1", memory: 2Gi}
+  limits: {memory: 8Gi}
+networkPolicy:
+  extraEgress: []               # add the controller's address if it is on a private network
+```
+
+```sh
+helm upgrade --install shepherd-worker-go deploy/charts/shepherd -n shepherd -f worker-go.values.yaml
+# on the controller: name the worker and get its one-time code
+kubectl -n shepherd exec shepherd-controller-0 -c shepherd -- shepherd worker add worker-go
+# in the worker: trade the code for its link credential (kept on its volume)
+kubectl -n shepherd exec shepherd-worker-go-0 -c shepherd -- shepherd cluster join https://shepherd.example.com <code>
+```
+
+`shepherd cluster status` on the controller then lists the worker as online. Log the
+agent CLI in once inside the worker as for the controller, and clone the repos it should
+work on into its workspace (`/data/workspace`), then `shepherd init`.
+
+| Mode | Seeded from | Listens | Readiness |
+|---|---|---|---|
+| `controller` (default) | `seed.publicUrl`, `seed.trustedProxies` | the public listener, behind the Ingress | `GET /v1/health`, once an owner account exists |
+| `worker` | `seed.controllerUrl` | loopback only | `shepherd status` |
+
+### Images
+
+The image comes in two targets. The base (the default) is what a controller runs: the
+daemon, git, glab, gh, ssh, sqlite3 and the agent CLIs. `worker-go` (tag suffix `-go`)
+adds Go, Node, npm and make, with their caches on the home volume and cgo off. For another
+toolchain, build your own image `FROM` the base: switch to root, install it, and switch
+back to user 10001.
 
 ## Agent CLIs in the image
 
