@@ -87,13 +87,14 @@ type Server struct {
 	desks                    *desk.Manager
 	hub                      *feedHub
 	deskStreams, feedStreams streamSlots
-	// Home is the Shepherd home: the daemon id and a member's link credential are kept
+	// Home is the Shepherd home: the daemon id and a worker's link credential are kept
 	// there. Run sets it from the runtime file's directory when it is empty.
 	Home string
-	// cluster is the hub's links and the member's link (cluster.go, clusterlink.go).
+	// cluster is the controller's links and the worker's link (cluster.go, clusterlink.go).
 	cluster clusterState
-	// ClusterClient is the HTTP client a member reaches its hub with; nil is the default
-	// one, which trusts the system's roots. Tests set one that trusts a test certificate.
+	// ClusterClient is the HTTP client a worker reaches its controller with; nil is the
+	// default one, which trusts the system's roots. Tests set one that trusts a test
+	// certificate.
 	ClusterClient *http.Client
 	// tokens are the scoped tokens minted since start; addr is where the API listens.
 	tokens tokens
@@ -185,10 +186,14 @@ func (s *Server) Handler() http.Handler {
 	// revoking and joining are the person's. The enrolment takes no token (auth.go) and
 	// the link takes a link credential only, so neither goes through guard.
 	handle("GET "+api.PathCluster, desk, s.clusterGet)
-	handle("POST "+api.PathClusterMembers, web, s.memberAdd)
-	handle("POST "+api.PathClusterMembers+"/{name}/revoke", web, s.memberAct("revoke"))
-	handle("POST "+api.PathClusterMembers+"/{name}/remove", web, s.memberAct("remove"))
-	handle("POST "+api.PathClusterMembers+"/{name}/confirm", web, s.memberAct("confirm"))
+	// The workers' routes are also served under their old prefix, /v1/cluster/members,
+	// for one release.
+	for _, p := range []string{api.PathClusterWorkers, api.PathClusterMembersOld} {
+		handle("POST "+p, web, s.workerAdd)
+		handle("POST "+p+"/{name}/revoke", web, s.workerAct("revoke"))
+		handle("POST "+p+"/{name}/remove", web, s.workerAct("remove"))
+		handle("POST "+p+"/{name}/confirm", web, s.workerAct("confirm"))
+	}
 	handle("POST "+api.PathClusterJoin, operatorOnly, s.clusterJoin)
 	mux.HandleFunc("POST "+api.PathClusterEnrol, s.clusterEnrol)
 	mux.HandleFunc("GET "+api.PathClusterLink, s.clusterLink)

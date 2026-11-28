@@ -65,6 +65,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Changed
 
+- The store records which tenant each row belongs to. Every store has one tenant,
+  `default`, and every existing row moves into it when the daemon upgrades, so nothing
+  changes in use. An older binary refuses to open the store afterwards, as with any new
+  migration: back up `shepherd.db` before upgrading if you might go back.
 - The Kubernetes manifests in `deploy/kubernetes/` are replaced by the Helm chart. The
   pod, its probes and its credential handling are unchanged; the labels now carry the
   release name (`app.kubernetes.io/instance`), so an existing install is replaced rather
@@ -92,6 +96,21 @@ protocol) is listed under **Interface changes** in the release that makes it.
   checkout. A missing folder is pruned from git's record, and a folder with no checkout
   is left in place and named in the close's result, while the branch and the lane close
   as usual.
+
+### Interface changes
+
+- Cluster: the hub is now the **controller** and its members are **workers**, in config,
+  commands, the HTTP API and the web UI. Config `cluster.role: controller` and
+  `cluster.controller` replace `role: hub` and `cluster.hub`; the old names are still read,
+  each with a config warning, and setting `cluster.hub` and `cluster.controller` to
+  different addresses is an error. CLI `shepherd worker add | list | revoke | remove |
+  confirm` replaces `shepherd member ...`, which still works, hidden, after a note on
+  stderr. HTTP `GET /v1/cluster` answers `role` `controller` or `worker` and lists
+  `workers` (was `members`), and the link view's `hub*` fields are now `controller*`;
+  management moves to `/v1/cluster/workers...`, with `/v1/cluster/members...` still served
+  for one release. The enrolment answer carries `controller_daemon_id` beside
+  `hub_daemon_id`, and the link's frames are unchanged, so daemons on either side of the
+  rename still enrol and link. Settings shows Workers. See [docs/cluster.md](docs/cluster.md).
 
 ## [0.0.0-test.1] - 2026-11-22
 

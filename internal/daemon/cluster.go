@@ -26,11 +26,12 @@ import (
 	"github.com/ubixsys/ubixshepherd/internal/waiting"
 )
 
-// The cluster (docs/cluster.md), phase 1: a member dials the hub over HTTPS, upgrades to
-// a WebSocket and holds it, and the hub lists its members and whether each is linked.
-// Nothing crosses the link but a hello and a status.
+// The cluster (docs/cluster.md), phase 1: a worker dials the controller over HTTPS,
+// upgrades to a WebSocket and holds it, and the controller lists its workers and whether
+// each is linked. Nothing crosses the link but a hello and a status. A daemon with no
+// cluster config is neither, and never dials anywhere.
 
-// RoleLink is a member's credential on the hub: it opens the link and nothing else.
+// RoleLink is a worker's credential on the controller: it opens the link and nothing else.
 const RoleLink = "link"
 
 const (
@@ -63,24 +64,25 @@ var (
 	linkMissedPongs = 2
 	// linkHelloWait is how long the hello may take.
 	linkHelloWait = 10 * time.Second
-	// linkRefusedRetry is the Retry-After a hub gives a member whose daemon id changed.
+	// linkRefusedRetry is the Retry-After a controller gives a worker whose daemon id
+	// changed.
 	linkRefusedRetry = 60
 )
 
-var memberName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
+var workerName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
-// clusterState is the daemon's cluster bookkeeping: the links up on a hub, and a
-// member's link to its hub.
+// clusterState is the daemon's cluster bookkeeping: the links up on a controller, and a
+// worker's link to its controller.
 type clusterState struct {
 	mu    sync.Mutex
 	links map[string]*liveLink
 	idMu  sync.Mutex
 	id    string
-	// member side (clusterlink.go)
+	// worker side (clusterlink.go)
 	link linkState
 }
 
-// liveLink is one member's link on the hub.
+// liveLink is one worker's link on the controller.
 type liveLink struct {
 	since     time.Time
 	cancel    context.CancelFunc
@@ -152,25 +154,25 @@ func newLinkCredential() (string, error) {
 	return linkTokenPrefix + t, err
 }
 
-// members is the store's members, or an error written to w when this daemon is not a hub
-// or its store keeps none.
-func (s *Server) members(w http.ResponseWriter) store.MemberStore {
-	if !s.LiveConfig().Cluster.IsHub() {
-		writeError(w, http.StatusNotFound, errors.New("this daemon is not a hub: set cluster.role: hub in the config"))
+// workers is the store's workers, or an error written to w when this daemon is not a
+// controller or its store keeps none.
+func (s *Server) workers(w http.ResponseWriter) store.WorkerStore {
+	if !s.LiveConfig().Cluster.IsController() {
+		writeError(w, http.StatusNotFound, errors.New("this daemon is not a controller: set cluster.role: controller in the config"))
 		return nil
 	}
-	ms, ok := s.Store.(interface{ Members() store.MemberStore })
+	ws, ok := s.Store.(interface{ Workers() store.WorkerStore })
 	if !ok {
-		writeError(w, http.StatusNotImplemented, errors.New("this store does not keep cluster members"))
+		writeError(w, http.StatusNotImplemented, errors.New("this store does not keep cluster workers"))
 		return nil
 	}
-	return ms.Members()
+	return ws.Workers()
 }
 
-// memberStore is the members without a request to answer.
-func (s *Server) memberStore() store.MemberStore {
-	if ms, ok := s.Store.(interface{ Members() store.MemberStore }); ok {
-		return ms.Members()
+// workerStore is the workers without a request to answer.
+func (s *Server) workerStore() store.WorkerStore {
+	if ws, ok := s.Store.(interface{ Workers() store.WorkerStore }); ok {
+		return ws.Workers()
 	}
 	return nil
 }
@@ -180,31 +182,31 @@ func (s *Server) clusterGet(w http.ResponseWriter, r *http.Request) {
 	cfg := s.LiveConfig().Cluster
 	out := api.Cluster{Role: api.RoleAlone, DaemonID: s.DaemonID()}
 	switch {
-	case cfg.IsHub():
-		out.Role = api.RoleHub
-		ms := s.memberStore()
-		if ms == nil {
+	case cfg.IsController():
+		out.Role = api.RoleController
+		ws := s.workerStore()
+		if ws == nil {
 			break
 		}
-		list, err := ms.Members(r.Context())
+		list, err := ws.Workers(r.Context())
 		if err != nil {
 			s.fail(w, err)
 			return
 		}
-		out.Members = []api.ClusterMember{}
+		out.Workers = []api.ClusterWorker{}
 		for _, m := range list {
-			out.Members = append(out.Members, s.memberView(m))
+			out.Workers = append(out.Workers, s.workerView(m))
 		}
-	case cfg.Hub != "" || s.hasLinkFile():
-		out.Role = api.RoleMember
+	case cfg.Controller != "" || s.hasLinkFile():
+		out.Role = api.RoleWorker
 		l := s.linkView()
 		out.Link = &l
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) memberView(m store.Member) api.ClusterMember {
-	v := api.ClusterMember{
+func (s *Server) workerView(m store.Worker) api.ClusterWorker {
+	v := api.ClusterWorker{
 		Name: m.Name, DaemonID: m.DaemonID, Enrolled: m.Enrolled, Since: m.LastSeen, Version: m.Version,
 		APILevel: m.APILevel, Capabilities: m.Capabilities, PendingID: m.PendingID, CodeExpires: m.CodeUntil,
 	}
@@ -220,23 +222,23 @@ func (s *Server) memberView(m store.Member) api.ClusterMember {
 	return v
 }
 
-// memberAdd is POST /v1/cluster/members: a name, and a code that enrols one machine
+// workerAdd is POST /v1/cluster/workers: a name, and a code that enrols one machine
 // under it once.
-func (s *Server) memberAdd(w http.ResponseWriter, r *http.Request) {
+func (s *Server) workerAdd(w http.ResponseWriter, r *http.Request) {
 	if ok, why := canWriteConfig(principalOf(r.Context())); !ok {
 		writeError(w, http.StatusForbidden, errors.New(why))
 		return
 	}
-	ms := s.members(w)
+	ms := s.workers(w)
 	if ms == nil {
 		return
 	}
-	var req api.MemberAdd
+	var req api.WorkerAdd
 	if !decode(w, r, &req) {
 		return
 	}
-	if !memberName.MatchString(req.Name) {
-		writeError(w, http.StatusBadRequest, errors.New("a member's name is lowercase letters, digits and dashes, up to 32, such as work or home"))
+	if !workerName.MatchString(req.Name) {
+		writeError(w, http.StatusBadRequest, errors.New("a worker's name is lowercase letters, digits and dashes, up to 32, such as work or home"))
 		return
 	}
 	code, err := newEnrolCode()
@@ -245,7 +247,7 @@ func (s *Server) memberAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	until := time.Now().Add(enrolTTL)
-	switch err := ms.AddMember(r.Context(), req.Name, hashOf(code), until); {
+	switch err := ms.AddWorker(r.Context(), req.Name, hashOf(code), until); {
 	case errors.Is(err, store.ErrConflict):
 		writeError(w, http.StatusConflict, fmt.Errorf("%s is already enrolled: revoke it first, or pick another name", req.Name))
 		return
@@ -253,19 +255,19 @@ func (s *Server) memberAdd(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("member enrolment code issued", "member", req.Name, "expires", until.UTC().Format(time.RFC3339))
+	s.Log.Info("worker enrolment code issued", "worker", req.Name, "expires", until.UTC().Format(time.RFC3339))
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, api.MemberCode{Name: req.Name, Code: code, Expires: until.UTC()})
+	writeJSON(w, http.StatusOK, api.WorkerCode{Name: req.Name, Code: code, Expires: until.UTC()})
 }
 
-// memberAct is a person's change to one member: revoke, remove or confirm.
-func (s *Server) memberAct(act string) http.HandlerFunc {
+// workerAct is a person's change to one worker: revoke, remove or confirm.
+func (s *Server) workerAct(act string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if ok, why := canWriteConfig(principalOf(r.Context())); !ok {
 			writeError(w, http.StatusForbidden, errors.New(why))
 			return
 		}
-		ms := s.members(w)
+		ms := s.workers(w)
 		if ms == nil {
 			return
 		}
@@ -273,14 +275,14 @@ func (s *Server) memberAct(act string) http.HandlerFunc {
 		var err error
 		switch act {
 		case "revoke":
-			err = ms.RevokeMember(r.Context(), name)
+			err = ms.RevokeWorker(r.Context(), name)
 		case "remove":
-			err = ms.RemoveMember(r.Context(), name)
+			err = ms.RemoveWorker(r.Context(), name)
 		case "confirm":
 			err = ms.ConfirmID(r.Context(), name)
 		}
 		if errors.Is(err, store.ErrNotFound) {
-			msg := "no member " + name
+			msg := "no worker " + name
 			if act == "confirm" {
 				msg = name + " has no changed id waiting to be confirmed"
 			}
@@ -292,16 +294,16 @@ func (s *Server) memberAct(act string) http.HandlerFunc {
 			return
 		}
 		if act != "confirm" {
-			s.dropLink(name, "the hub ended this link: "+act)
+			s.dropLink(name, "the controller ended this link: "+act)
 		}
-		s.Log.Info("member "+act, "member", name)
+		s.Log.Info("worker "+act, "worker", name)
 		writeJSON(w, http.StatusOK, struct{}{})
 	}
 }
 
 // clusterEnrol is POST /v1/cluster/enrol: a code for a credential. It takes no token.
 func (s *Server) clusterEnrol(w http.ResponseWriter, r *http.Request) {
-	ms := s.members(w)
+	ms := s.workers(w)
 	if ms == nil {
 		return
 	}
@@ -311,7 +313,7 @@ func (s *Server) clusterEnrol(w http.ResponseWriter, r *http.Request) {
 	}
 	code := normalizeCode(req.Code)
 	if code == "" || req.DaemonID == "" {
-		writeError(w, http.StatusBadRequest, errors.New("an enrolment needs a code and the member's daemon id"))
+		writeError(w, http.StatusBadRequest, errors.New("an enrolment needs a code and the worker's daemon id"))
 		return
 	}
 	cred, err := newLinkCredential()
@@ -321,33 +323,33 @@ func (s *Server) clusterEnrol(w http.ResponseWriter, r *http.Request) {
 	}
 	name, err := ms.Enrol(r.Context(), hashOf(code), req.DaemonID, newUUID(), hashOf(cred), time.Now())
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusForbidden, errors.New("that code is wrong, already used or expired: run shepherd member add on the hub for a new one"))
+		writeError(w, http.StatusForbidden, errors.New("that code is wrong, already used or expired: run shepherd worker add on the controller for a new one"))
 		return
 	}
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	s.Log.Info("member enrolled", "member", name, "daemon", req.DaemonID)
+	s.Log.Info("worker enrolled", "worker", name, "daemon", req.DaemonID)
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, api.ClusterEnrolled{Name: name, Credential: cred, HubID: s.DaemonID()})
+	writeJSON(w, http.StatusOK, api.NewClusterEnrolled(name, cred, s.DaemonID()))
 }
 
 // linkPrincipal resolves a link credential to a principal for auth. ok is false for one
-// the hub does not know or that was revoked.
+// the controller does not know or that was revoked.
 func (s *Server) linkPrincipal(r *http.Request, tok string) (principal, bool) {
-	ms := s.memberStore()
-	if ms == nil || !s.LiveConfig().Cluster.IsHub() {
+	ms := s.workerStore()
+	if ms == nil || !s.LiveConfig().Cluster.IsController() {
 		return principal{}, false
 	}
-	name, err := ms.CredentialMember(r.Context(), hashOf(tok))
+	name, err := ms.CredentialWorker(r.Context(), hashOf(tok))
 	if err != nil {
 		return principal{}, false
 	}
 	return principal{Role: RoleLink, member: name}, true
 }
 
-// dropLink closes a member's live link, if it has one.
+// dropLink closes a worker's live link, if it has one.
 func (s *Server) dropLink(name, why string) {
 	s.cluster.mu.Lock()
 	l := s.cluster.links[name]
@@ -360,24 +362,24 @@ func (s *Server) dropLink(name, why string) {
 	}
 }
 
-// clusterLink is GET /v1/cluster/link: the member's connection, upgraded to a WebSocket.
+// clusterLink is GET /v1/cluster/link: the worker's connection, upgraded to a WebSocket.
 func (s *Server) clusterLink(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r.Context())
 	if p.Role != RoleLink {
-		writeError(w, http.StatusForbidden, errors.New("the link is opened with a member's link credential"))
+		writeError(w, http.StatusForbidden, errors.New("the link is opened with a worker's link credential"))
 		return
 	}
-	ms := s.members(w)
+	ms := s.workers(w)
 	if ms == nil {
 		return
 	}
 	ctx := r.Context()
-	list, err := ms.Members(ctx)
+	list, err := ms.Workers(ctx)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	var m store.Member
+	var m store.Worker
 	for _, c := range list {
 		if c.Name == p.member {
 			m = c
@@ -386,7 +388,7 @@ func (s *Server) clusterLink(w http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get(api.DaemonIDHeader)
 	switch {
 	case id == "":
-		writeError(w, http.StatusBadRequest, errors.New("the link needs the member's daemon id in "+api.DaemonIDHeader))
+		writeError(w, http.StatusBadRequest, errors.New("the link needs the worker's daemon id in "+api.DaemonIDHeader))
 		return
 	case m.DaemonID != id:
 		// A reinstall, or a name now used by another machine: hold it until the person says.
@@ -394,9 +396,9 @@ func (s *Server) clusterLink(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, err)
 			return
 		}
-		s.Log.Warn("member link refused: its daemon id changed", "member", m.Name)
+		s.Log.Warn("worker link refused: its daemon id changed", "worker", m.Name)
 		w.Header().Set("Retry-After", strconv.Itoa(linkRefusedRetry))
-		writeError(w, http.StatusForbidden, fmt.Errorf("%s presented a different daemon id than it enrolled with; confirm it on the hub with: shepherd member confirm %s", m.Name, m.Name))
+		writeError(w, http.StatusForbidden, fmt.Errorf("%s presented a different daemon id than it enrolled with; confirm it on the controller with: shepherd worker confirm %s", m.Name, m.Name))
 		return
 	}
 	conn, err := websocket.Accept(w, r, nil)
@@ -407,7 +409,7 @@ func (s *Server) clusterLink(w http.ResponseWriter, r *http.Request) {
 	lctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	l := &liveLink{since: time.Now().UTC(), cancel: cancel, daemonID: id}
-	reason := s.runHubLink(lctx, conn, ms, m, l)
+	reason := s.runControllerLink(lctx, conn, ms, m, l)
 	s.cluster.mu.Lock()
 	if s.cluster.links[m.Name] == l {
 		delete(s.cluster.links, m.Name)
@@ -422,12 +424,12 @@ func (s *Server) clusterLink(w http.ResponseWriter, r *http.Request) {
 	}
 	conn.Close(websocket.StatusNormalClosure, reason)
 	ms.Seen(context.Background(), m.Name, time.Now())
-	s.Log.Info("member link closed", "member", m.Name, "why", reason)
+	s.Log.Info("worker link closed", "worker", m.Name, "why", reason)
 }
 
-// runHubLink is the hub's side once the connection is up: the hello, then reading
+// runControllerLink is the controller's side once the connection is up: the hello, then reading
 // statuses and pinging until the link ends. It returns why it ended.
-func (s *Server) runHubLink(ctx context.Context, conn *websocket.Conn, ms store.MemberStore, m store.Member, l *liveLink) string {
+func (s *Server) runControllerLink(ctx context.Context, conn *websocket.Conn, ms store.WorkerStore, m store.Worker, l *liveLink) string {
 	var hello api.LinkFrame
 	hctx, hcancel := context.WithTimeout(ctx, linkHelloWait)
 	err := readFrame(hctx, conn, &hello)
@@ -446,7 +448,7 @@ func (s *Server) runHubLink(ctx context.Context, conn *websocket.Conn, ms store.
 		return "could not answer the hello"
 	}
 	if err := ms.Handshake(ctx, m.Name, hello.Version, hello.APILevel, hello.Capabilities, time.Now()); err != nil {
-		s.Log.Error("record a member's handshake", "member", m.Name, "err", err)
+		s.Log.Error("record a worker's handshake", "worker", m.Name, "err", err)
 	}
 	s.cluster.mu.Lock()
 	if s.cluster.links == nil {
@@ -455,13 +457,13 @@ func (s *Server) runHubLink(ctx context.Context, conn *websocket.Conn, ms store.
 	old := s.cluster.links[m.Name]
 	s.cluster.links[m.Name] = l
 	if old != nil {
-		old.closeWith = "another link from this member took over"
+		old.closeWith = "another link from this worker took over"
 	}
 	s.cluster.mu.Unlock()
 	if old != nil {
 		old.cancel()
 	}
-	s.Log.Info("member linked", "member", m.Name, "version", hello.Version, "api_level", hello.APILevel)
+	s.Log.Info("worker linked", "worker", m.Name, "version", hello.Version, "api_level", hello.APILevel)
 
 	frames := make(chan api.LinkFrame)
 	readErr := make(chan error, 1)
@@ -493,9 +495,9 @@ func (s *Server) runHubLink(ctx context.Context, conn *websocket.Conn, ms store.
 			if ctx.Err() != nil {
 				return "link closed"
 			}
-			return "the member's connection ended: " + closeText(err)
+			return "the worker's connection ended: " + closeText(err)
 		case <-pinged:
-			return "the member stopped answering pings"
+			return "the worker stopped answering pings"
 		case <-ctx.Done():
 			return "link closed"
 		}
@@ -559,7 +561,7 @@ func writeFrame(ctx context.Context, conn *websocket.Conn, f api.LinkFrame) erro
 	return conn.Write(wctx, websocket.MessageText, b)
 }
 
-// linkCounts is what a member reports to its hub: runs going, and items waiting on the
+// linkCounts is what a worker reports to its controller: runs going, and items waiting on the
 // person.
 func (s *Server) linkCounts(ctx context.Context) (runs, wait int) {
 	if rs, err := s.Store.Runs(ctx, 0, store.RunRunning, 1000); err == nil {

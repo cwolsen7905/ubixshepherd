@@ -84,6 +84,13 @@ type upgradeCheck struct {
 }
 
 var upgradeChecks = []upgradeCheck{
+	// Tenancy: every row from before is in the default tenant, which every store has.
+	{1, `SELECT slug || '|' || name FROM tenants WHERE id = 1`, `default|Default`},
+	{1, `SELECT tenant_id FROM workspaces WHERE id = 1`, `1`},
+	{7, `SELECT group_concat(tenant_id) FROM (SELECT tenant_id FROM feed UNION ALL SELECT tenant_id FROM settings)`, `1,1`},
+	{17, `SELECT count(*) FROM usage WHERE tenant_id != 1`, `0`},
+	{23, `SELECT count(*) || '|' || sum(tenant_id = 1) FROM next_items`, `3|3`},
+	{26, `SELECT tenant_id FROM topics`, `1`},
 	{1, `SELECT name || '|' || branch || '|' || state || '|' || created FROM lanes WHERE id = 1`, `live|live|open|2026-01-02T00:00:00Z`},
 	// columns lanes gained: base, scope, closed, then the origin
 	{1, `SELECT base || '|' || scope || '|' || closed || '|' || origin_via || '|' || origin_agent || '|' || origin_session || '|' || origin_run || '|' || origin_pid || '|' || origin_dir || '|' || origin_detail FROM lanes WHERE id = 1`, `|[]|||||0|0||`},

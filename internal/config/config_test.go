@@ -670,22 +670,60 @@ repos:
 }
 
 func TestClusterConfig(t *testing.T) {
-	c, err := Parse([]byte("cluster:\n  hub: https://Shepherd.Example.com/\n"))
-	if err != nil || c.Cluster.Hub != "https://shepherd.example.com" {
-		t.Fatalf("member config: %+v, %v", c.Cluster, err)
+	c, warns, err := ParseWarn([]byte("cluster:\n  controller: https://Shepherd.Example.com/\n"))
+	if err != nil || c.Cluster.Controller != "https://shepherd.example.com" || len(warns) != 0 {
+		t.Fatalf("worker config: %+v, %q, %v", c.Cluster, warns, err)
 	}
+	pub := "daemon:\n  public:\n    listen: 0.0.0.0:8443\n    url: https://a.example.com\n    trusted_proxies: [10.0.0.0/8]\n"
 	for name, doc := range map[string]string{
-		"role":        "cluster:\n  role: queen\n",
-		"http hub":    "cluster:\n  hub: http://shepherd.example.com\n",
-		"hub, no pub": "cluster:\n  role: hub\n",
-		"hub and hub": "daemon:\n  public:\n    listen: 0.0.0.0:8443\n    url: https://a.example.com\n    trusted_proxies: [10.0.0.0/8]\ncluster:\n  role: hub\n  hub: https://b.example.com\n",
+		"role":                     "cluster:\n  role: queen\n",
+		"http controller":          "cluster:\n  controller: http://shepherd.example.com\n",
+		"controller, no pub":       "cluster:\n  role: controller\n",
+		"controller and addr":      pub + "cluster:\n  role: controller\n  controller: https://b.example.com\n",
+		"old and new disagree":     "cluster:\n  controller: https://a.example.com\n  hub: https://b.example.com\n",
+		"old role, old addr":       pub + "cluster:\n  role: hub\n  hub: https://b.example.com\n",
+		"old http hub":             "cluster:\n  hub: http://shepherd.example.com\n",
+		"old role, no pub":         "cluster:\n  role: hub\n",
+		"role member is not valid": "cluster:\n  role: member\n",
 	} {
 		if _, err := Parse([]byte(doc)); err == nil {
 			t.Errorf("%s: want an error", name)
 		}
 	}
-	ok := "daemon:\n  public:\n    listen: 0.0.0.0:8443\n    url: https://a.example.com\n    trusted_proxies: [10.0.0.0/8]\ncluster:\n  role: hub\n"
-	if c, err := Parse([]byte(ok)); err != nil || !c.Cluster.IsHub() {
-		t.Fatalf("hub config: %+v, %v", c.Cluster, err)
+	if c, warns, err := ParseWarn([]byte(pub + "cluster:\n  role: controller\n")); err != nil || !c.Cluster.IsController() || len(warns) != 0 {
+		t.Fatalf("controller config: %+v, %q, %v", c.Cluster, warns, err)
+	}
+}
+
+// The old names, role: hub and cluster.hub, still work, each with a warning that names
+// its replacement.
+func TestClusterConfigOldNames(t *testing.T) {
+	pub := "daemon:\n  public:\n    listen: 0.0.0.0:8443\n    url: https://a.example.com\n    trusted_proxies: [10.0.0.0/8]\n"
+	c, warns, err := ParseWarn([]byte(pub + "cluster:\n  role: hub\n"))
+	if err != nil || !c.Cluster.IsController() || c.Cluster.Role != ClusterRoleController {
+		t.Fatalf("role: hub: %+v, %v", c.Cluster, err)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "cluster.role: controller") {
+		t.Fatalf("role: hub warnings: %q", warns)
+	}
+
+	c, warns, err = ParseWarn([]byte("cluster:\n  hub: https://Shepherd.Example.com/\n"))
+	if err != nil || c.Cluster.Controller != "https://shepherd.example.com" || c.Cluster.Hub != "" {
+		t.Fatalf("cluster.hub: %+v, %v", c.Cluster, err)
+	}
+	if len(warns) != 1 || !strings.Contains(warns[0], "cluster.controller") {
+		t.Fatalf("cluster.hub warnings: %q", warns)
+	}
+
+	// Both names with the same address is not a conflict; it still warns once.
+	c, warns, err = ParseWarn([]byte("cluster:\n  hub: https://shepherd.example.com\n  controller: https://Shepherd.Example.com/\n"))
+	if err != nil || c.Cluster.Controller != "https://shepherd.example.com" || len(warns) != 1 {
+		t.Fatalf("same address twice: %+v, %q, %v", c.Cluster, warns, err)
+	}
+
+	// Different addresses under the two names is an error naming both keys.
+	_, err = Parse([]byte("cluster:\n  hub: https://a.example.com\n  controller: https://b.example.com\n"))
+	if err == nil || !strings.Contains(err.Error(), "cluster.hub") || !strings.Contains(err.Error(), "cluster.controller") {
+		t.Fatalf("disagreeing addresses: %v", err)
 	}
 }

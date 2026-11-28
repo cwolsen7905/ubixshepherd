@@ -10,7 +10,7 @@ import {
 } from '../model/settings'
 import { go, href } from '../router'
 import { DeviceList } from '../auth/DeviceList'
-import { MemberList } from '../cluster/MemberList'
+import { WorkerList } from '../cluster/WorkerList'
 import { Button, Chip, ErrorState, LoadingRows } from '../ui'
 import { Confirm } from '../ui/Confirm'
 import { Kbd } from '../ui/Kbd'
@@ -625,7 +625,9 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
     )
   }
 
-  const hubOn = (doc.effective.cluster as { role?: string } | undefined)?.role === 'hub'
+  // The config reads an old role: hub as controller; both still show the list.
+  const role = (doc.effective.cluster as { role?: string } | undefined)?.role
+  const controllerOn = role === 'controller' || role === 'hub'
   const hostedOn = typeof (doc.effective.daemon as { public?: unknown } | undefined)?.public === 'object'
   return (
     <div className="sh-settings" data-component="Settings">
@@ -638,7 +640,7 @@ export function SettingsPage({ scope: scopeId }: { scope?: string }) {
       </header>
       <div className="sh-settings-body">
         {hostedOn && <DeviceList onSignedOut={() => window.location.reload()} />}
-        {hubOn && <MemberList />}
+        {controllerOn && <WorkerList />}
         <div className="sh-section">
           {readOnly && <p className="banner tone-warn" role="status">{doc.why ?? 'This session cannot save settings.'} You can still change fields and review the diff.</p>}
           {doc.invalid && doc.invalid.length > 0 && (

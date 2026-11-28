@@ -375,21 +375,29 @@ describe('SettingsPage devices', () => {
   })
 })
 
-describe('SettingsPage members', () => {
-  it('lists members on a hub and shows none on a daemon on its own', async () => {
-    daemon(doc({ effective: { daemon: { max_runs: 4, budget: 20, poll: '60s' }, cluster: { role: 'hub' }, keep_going: { cap: 5 }, desk: {}, chat: {}, opencode: {} } }), (m, p) =>
-      m === 'GET' && p === '/v1/cluster'
-        ? json({ role: 'hub', daemon_id: 'hub-1', members: [{ name: 'work', enrolled: true, online: true, runs_going: 0, waiting: 0 }] })
-        : undefined,
-    )
+describe('SettingsPage workers', () => {
+  const effective = (role: string) => ({ daemon: { max_runs: 4, budget: 20, poll: '60s' }, cluster: { role }, keep_going: { cap: 5 }, desk: {}, chat: {}, opencode: {} })
+  const list = (m: string, p: string) =>
+    m === 'GET' && p === '/v1/cluster'
+      ? json({ role: 'controller', daemon_id: 'ctl-1', workers: [{ name: 'work', enrolled: true, online: true, runs_going: 0, waiting: 0 }] })
+      : undefined
+
+  it('lists workers on a controller and shows none on a daemon on its own', async () => {
+    daemon(doc({ effective: effective('controller') }), list)
     const { unmount } = render(<SettingsPage />)
-    expect(await screen.findByText('Members')).toBeTruthy()
+    expect(await screen.findByText('Workers')).toBeTruthy()
     expect(await screen.findByText('work')).toBeTruthy()
     unmount()
     const seen = daemon(doc())
     render(<SettingsPage />)
     await screen.findByText('Settings')
-    expect(screen.queryByText('Members')).toBeNull()
+    expect(screen.queryByText('Workers')).toBeNull()
     expect(seen.some((s) => s.path === '/v1/cluster')).toBe(false)
+  })
+
+  it('still lists workers when the role is the old name, hub', async () => {
+    daemon(doc({ effective: effective('hub') }), list)
+    render(<SettingsPage />)
+    expect(await screen.findByText('Workers')).toBeTruthy()
   })
 })

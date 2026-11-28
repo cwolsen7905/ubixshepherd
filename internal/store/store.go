@@ -30,6 +30,20 @@ const (
 	LaneClosed  = "closed"
 )
 
+// DefaultTenantID is the tenant every store starts with, and the one every row made
+// before tenancy belongs to. A store with only this tenant is Shepherd for one person
+// or one team.
+const DefaultTenantID int64 = 1
+
+// Tenant is a team: the unit that a store's rows belong to.
+type Tenant struct {
+	ID int64
+	// Slug is the tenant's short, unique name, such as "default".
+	Slug    string
+	Name    string
+	Created time.Time
+}
+
 // Workspace is a directory of repos that one Shepherd works over.
 type Workspace struct {
 	ID      int64     `json:"id"`
@@ -1170,6 +1184,8 @@ type Store interface {
 	SetQuestionState(ctx context.Context, id int64, state string) (Question, error)
 	// SetDecisionState does the same for a decision.
 	SetDecisionState(ctx context.Context, id int64, state string) (Decision, error)
+	// Tenants lists the tenants, oldest first. Every store has DefaultTenantID.
+	Tenants(ctx context.Context) ([]Tenant, error)
 	Driver() string
 	Close() error
 }

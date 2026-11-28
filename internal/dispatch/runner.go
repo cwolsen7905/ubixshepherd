@@ -127,6 +127,8 @@ type Runner struct {
 	// AskConversation answers a question from an adopted conversation; tests replace it.
 	AskConversation func(ctx context.Context, c store.Conversation, question string) (convo.Answer, error)
 	Log             *slog.Logger
+	// Worker starts the agents; nil is LocalWorker, this machine.
+	Worker Worker
 	// ArtifactScan lists a lane's artifact candidates at a run's end; nil scans none.
 	ArtifactScan ArtifactScan
 	// ArtifactSnapshot copies a lane's known artifacts into Shepherd's home; the daemon
@@ -291,7 +293,7 @@ func (r *Runner) Conf() config.Config {
 }
 
 type proc struct {
-	cmd     *exec.Cmd
+	ps      Process
 	stopped bool
 	// restarting: a drained restart is stopping this run; it ends interrupted, with
 	// the reason restart, and is continued after the restart.
@@ -657,10 +659,8 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		}
 		opts.ReadPaths = openCodeReadPaths(lane.Worktree, texts...)
 	}
-	cmd := exec.Command(bin, ad.Args(opts)...)
-	cmd.Dir = lane.Worktree
 	// The prompt, then end of input: headless, and off the command line (see Adapter).
-	cmd.Stdin = strings.NewReader(prompt)
+	launch := Launch{RunID: run.ID, Bin: bin, Args: ad.Args(opts), Dir: lane.Worktree, Stdin: prompt}
 	creds, token, revoke, err := r.grant(ctx, run.ID, lane.Worktree)
 	if err != nil {
 		logf.Close()
@@ -670,23 +670,14 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	// drop one inherited from whoever started the daemon. Drop the client name too: a
 	// daemon started from the front desk's tools would otherwise pass "desk" on, and
 	// the lanes an agent opened would be recorded as the desk's.
-	cmd.Env = append(withoutEnv(os.Environ(), EnvToken, EnvURL, EnvRun, EnvClient, "SHEPHERD_LANE"),
-		"GIT_TERMINAL_PROMPT=0", "SHEPHERD_LANE="+lane.Name)
-	cmd.Env = append(cmd.Env, creds...)
+	launch.Unset = []string{EnvToken, EnvURL, EnvRun, EnvClient, "SHEPHERD_LANE"}
+	launch.Env = append([]string{"GIT_TERMINAL_PROMPT=0", "SHEPHERD_LANE=" + lane.Name}, creds...)
 	if ad.Env != nil {
-		cmd.Env = append(cmd.Env, ad.Env(opts)...)
+		launch.Env = append(launch.Env, ad.Env(opts)...)
 	}
 	if !agentPushes {
-		cmd.Env = append(cmd.Env, pushBlock(ctx, lane.Worktree)...)
+		launch.Env = append(launch.Env, pushBlock(ctx, lane.Worktree)...)
 	}
-	cmd.SysProcAttr = groupAttr()
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		revoke()
-		logf.Close()
-		return run, r.fail(ctx, run, err)
-	}
-	cmd.Stderr = cmd.Stdout // one ordered stream
 
 	how := "new session"
 	if resume {
@@ -701,17 +692,18 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 		fmt.Fprintf(logf, "# policy: %s\n", n)
 	}
 	fmt.Fprintln(logf)
-	if err := cmd.Start(); err != nil {
+	ps, err := r.worker().Start(ctx, launch)
+	if err != nil {
 		revoke()
 		logf.Close()
 		return run, r.fail(ctx, run, err)
 	}
-	run.PID = cmd.Process.Pid
+	run.PID = ps.Pid()
 	run.CostEstimated = ad.EstimatesCost != nil && ad.EstimatesCost(opts)
 	if err := r.Store.UpdateRun(ctx, run); err != nil {
 		r.Log.Error("record run pid", "run", run.ID, "err", err)
 	}
-	p := &proc{cmd: cmd, token: token, revoke: revoke, done: make(chan struct{})}
+	p := &proc{ps: ps, token: token, revoke: revoke, done: make(chan struct{})}
 	p.lastOut.Store(time.Now().UnixNano())
 	r.procs[run.ID] = p
 	r.wg.Add(1)
@@ -724,7 +716,7 @@ func (r *Runner) start(ctx context.Context, req StartRequest, fromQueue bool) (s
 	if ad.ReadFor != nil {
 		p.read = ad.ReadFor(opts)
 	}
-	go r.watch(run, ad, lane, p, out, logf)
+	go r.watch(run, ad, lane, p, ps.Output(), logf)
 	if p.idle > 0 {
 		go r.idleWatch(run.ID, p)
 	}
@@ -802,7 +794,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 			}
 		}
 	}
-	err := p.cmd.Wait()
+	err := p.ps.Wait()
 	close(p.done)
 	// The agent is gone: so is what it could call the daemon with.
 	p.revoke()
@@ -814,7 +806,7 @@ func (r *Runner) watch(run store.Run, ad Adapter, lane store.Lane, p *proc, out 
 	noChange := false
 	unfinished := ""
 	procErr := ""
-	code := p.cmd.ProcessState.ExitCode()
+	code := p.ps.ExitCode()
 	run.ExitCode = &code
 	r.mu.Lock()
 	stopped, closing, idled, restarting := p.stopped, r.closing, p.idled, p.restarting
@@ -1204,12 +1196,12 @@ func (r *Runner) stop(id int64, forRestart bool) error {
 
 // terminateThenKill asks the agent to end, and kills it if it has not after a grace period.
 func (r *Runner) terminateThenKill(id int64, p *proc) {
-	terminate(p.cmd)
+	p.ps.Terminate()
 	go func() {
 		select {
 		case <-p.done:
 		case <-time.After(10 * time.Second):
-			kill(p.cmd)
+			p.ps.Kill()
 		}
 	}()
 }
@@ -1376,7 +1368,7 @@ func (r *Runner) Shutdown(ctx context.Context) {
 			p.restarting = true
 			theirs[id] = true
 		}
-		terminate(p.cmd)
+		p.ps.Terminate()
 	}
 	r.mu.Unlock()
 	done := make(chan struct{})
@@ -1386,7 +1378,7 @@ func (r *Runner) Shutdown(ctx context.Context) {
 	case <-ctx.Done():
 		r.mu.Lock()
 		for _, p := range r.procs {
-			kill(p.cmd)
+			p.ps.Kill()
 		}
 		r.mu.Unlock()
 	}

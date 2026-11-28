@@ -621,6 +621,45 @@ var migrations = []string{
 		hash    TEXT NOT NULL UNIQUE,
 		created TEXT NOT NULL
 	);`,
+	// Tenants: the team a row belongs to. Every store starts with one, `default` (id 1),
+	// and every existing row is put in it, so a tenant of one is Shepherd as it was. Each
+	// root table (tenancy.go) gets tenant_id; child tables reach a tenant through their
+	// parent. The column has no REFERENCES clause because SQLite refuses one on an added
+	// column with a non-null default; TestTenancyClassification checks it instead.
+	`CREATE TABLE tenants (
+		id      INTEGER PRIMARY KEY,
+		slug    TEXT NOT NULL UNIQUE,
+		name    TEXT NOT NULL,
+		created TEXT NOT NULL
+	);
+	INSERT INTO tenants (id, slug, name, created)
+		VALUES (1, 'default', 'Default', strftime('%Y-%m-%dT%H:%M:%SZ', 'now'));
+	ALTER TABLE workspaces      ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE settings        ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE feed            ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE spend           ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE conversations   ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE project_briefs  ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE usage           ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE next_items      ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE held_starts     ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE topics          ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE crook_verdicts  ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE muster_items    ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE cluster_members ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1;
+	CREATE INDEX workspaces_tenant      ON workspaces (tenant_id);
+	CREATE INDEX settings_tenant        ON settings (tenant_id);
+	CREATE INDEX feed_tenant            ON feed (tenant_id, id);
+	CREATE INDEX spend_tenant           ON spend (tenant_id, day);
+	CREATE INDEX conversations_tenant   ON conversations (tenant_id);
+	CREATE INDEX project_briefs_tenant  ON project_briefs (tenant_id);
+	CREATE INDEX usage_tenant           ON usage (tenant_id, day);
+	CREATE INDEX next_items_tenant      ON next_items (tenant_id, state, rank);
+	CREATE INDEX held_starts_tenant     ON held_starts (tenant_id);
+	CREATE INDEX topics_tenant          ON topics (tenant_id);
+	CREATE INDEX crook_verdicts_tenant  ON crook_verdicts (tenant_id, at);
+	CREATE INDEX muster_items_tenant    ON muster_items (tenant_id, state, id);
+	CREATE INDEX cluster_members_tenant ON cluster_members (tenant_id);`,
 }
 
 // DB is a SQLite-backed store.Store.

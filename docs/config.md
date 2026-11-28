@@ -208,6 +208,26 @@ daemon:
 
 One of `tls` and `trusted_proxies` is required. `daemon.listen` must still be a loopback address.
 
+## Cluster (`cluster`)
+
+Off by default, and opt-in: with no `cluster:` section a daemon is on its own and never dials
+anywhere. See [cluster.md](cluster.md) for what it does.
+
+```yaml
+cluster:
+  role: controller                          # on the controller, which needs daemon.public
+  # controller: https://shepherd.example.com   # on a worker, optional
+```
+
+| Key | Meaning |
+|---|---|
+| `role` | `controller` on the daemon workers link to, or empty. It needs `daemon.public` |
+| `controller` | On a worker, the `https://` address of its controller. Optional: `shepherd cluster join` keeps the credential, which names the controller, in the Shepherd home. Not with `role: controller` |
+
+The old names are still read for one release, each with a warning that names its
+replacement: `role: hub` as `role: controller`, and `cluster.hub` as `cluster.controller`.
+Setting `cluster.hub` and `cluster.controller` to different addresses is an error.
+
 ## Unknown and retired keys
 
 The file is read strictly: a key Shepherd does not know is an error, so a typo cannot
@@ -217,7 +237,8 @@ any key at that level, e.g. `repos.*.old_key`); a file that still has it loads w
 ignored and one warning per occurrence, naming the key and what replaces it. The daemon
 logs the warnings when it starts, and `shepherd daemon restart`, `daemon reload` and
 `daemon check` print them. Edit the key out of the file to silence the warning. The list
-is empty until a key is first retired.
+is empty until a key is first retired. A renamed key that is still read, such as
+`cluster.hub`, warns the same way without being ignored.
 
 ## Auto-widen
 

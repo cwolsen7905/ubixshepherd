@@ -87,27 +87,28 @@ func (n *node) cluster() api.Cluster {
 	return c
 }
 
-// hubRig is a hub behind a TLS test server that names itself shepherd.example.com, and a
-// client that trusts it. Members dial it and nothing dials them.
-type hubRig struct {
+// controllerRig is a controller behind a TLS test server that names itself
+// shepherd.example.com, and a client that trusts it. Workers dial it and nothing dials
+// them.
+type controllerRig struct {
 	*node
 	tls    *httptest.Server
 	client *http.Client
-	front  atomic.Pointer[http.Handler] // an optional handler in front of the hub's
+	front  atomic.Pointer[http.Handler] // an optional handler in front of the controller's
 }
 
-func newHubRig(t *testing.T) *hubRig {
+func newControllerRig(t *testing.T) *controllerRig {
 	t.Helper()
 	dir := t.TempDir()
 	certFile, keyFile, pool := selfSigned(t, dir)
 	cfg := config.Default()
 	cfg.Daemon.Public = &config.Public{Listen: "0.0.0.0:8443", URL: pubURL, TLS: config.PublicTLS{Cert: certFile, Key: keyFile}}
-	cfg.Cluster.Role = config.ClusterRoleHub
+	cfg.Cluster.Role = config.ClusterRoleController
 	n := newNode(t, cfg, "")
 	if err := n.s.PreparePublic(context.Background(), n.home); err != nil {
 		t.Fatal(err)
 	}
-	h := &hubRig{node: n}
+	h := &controllerRig{node: n}
 	inner := n.s.PublicHandler()
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if f := h.front.Load(); f != nil {
@@ -128,21 +129,21 @@ func newHubRig(t *testing.T) *hubRig {
 	return h
 }
 
-// member makes a member daemon whose config names the hub.
-func (h *hubRig) member(t *testing.T, home string) *node {
+// worker makes a worker daemon whose config names the controller.
+func (h *controllerRig) worker(t *testing.T, home string) *node {
 	t.Helper()
 	cfg := config.Default()
-	cfg.Cluster.Hub = pubURL
+	cfg.Cluster.Controller = pubURL
 	n := newNode(t, cfg, home)
 	n.s.ClusterClient = h.client
 	return n
 }
 
-func (h *hubRig) addMember(name string) string {
+func (h *controllerRig) addWorker(name string) string {
 	h.t.Helper()
-	var c api.MemberCode
-	if code := h.call("POST", api.PathClusterMembers, api.MemberAdd{Name: name}, &c); code != 200 {
-		h.t.Fatalf("member add: %d", code)
+	var c api.WorkerCode
+	if code := h.call("POST", api.PathClusterWorkers, api.WorkerAdd{Name: name}, &c); code != 200 {
+		h.t.Fatalf("worker add: %d", code)
 	}
 	return c.Code
 }
@@ -174,13 +175,13 @@ func fastLink(t *testing.T) {
 	})
 }
 
-func memberOf(c api.Cluster, name string) (api.ClusterMember, bool) {
-	for _, m := range c.Members {
+func workerOf(c api.Cluster, name string) (api.ClusterWorker, bool) {
+	for _, m := range c.Workers {
 		if m.Name == name {
 			return m, true
 		}
 	}
-	return api.ClusterMember{}, false
+	return api.ClusterWorker{}, false
 }
 
 func TestEnrolmentCode(t *testing.T) {
@@ -203,9 +204,9 @@ func TestEnrolmentCode(t *testing.T) {
 }
 
 func TestEnrolmentIsOnceAndFiveMinutes(t *testing.T) {
-	h := newHubRig(t)
-	m := h.member(t, "")
-	code := h.addMember("work")
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	code := h.addWorker("work")
 	if n := len(strings.Split(code, "-")); n != 8 {
 		t.Fatalf("code %q", code)
 	}
@@ -218,8 +219,8 @@ func TestEnrolmentIsOnceAndFiveMinutes(t *testing.T) {
 	if got := m.join(code); got != 502 {
 		t.Fatalf("a spent code joined again: %d", got)
 	}
-	// Expired: the hub's clock is the store's end time; write one already past.
-	if err := h.st.Members().AddMember(context.Background(), "late", hashOf("old-code"), time.Now().Add(-time.Second)); err != nil {
+	// Expired: the controller's clock is the store's end time; write one already past.
+	if err := h.st.Workers().AddWorker(context.Background(), "late", hashOf("old-code"), time.Now().Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	if got := m.join("old-code"); got != 502 {
@@ -234,61 +235,61 @@ func TestEnrolmentIsOnceAndFiveMinutes(t *testing.T) {
 	}
 }
 
-func TestMemberLinksToHubOverTLS(t *testing.T) {
+func TestWorkerLinksToControllerOverTLS(t *testing.T) {
 	fastLink(t)
-	h := newHubRig(t)
-	m := h.member(t, "")
-	if got := m.join(h.addMember("work")); got != 200 {
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	if got := m.join(h.addWorker("work")); got != 200 {
 		t.Fatalf("join: %d", got)
 	}
 	stop := m.s.StartCluster(context.Background())
 	defer stop()
 
-	eventually(t, "the member online", func() bool {
-		mb, ok := memberOf(h.cluster(), "work")
+	eventually(t, "the worker online", func() bool {
+		mb, ok := workerOf(h.cluster(), "work")
 		return ok && mb.Online
 	})
-	mb, _ := memberOf(h.cluster(), "work")
+	mb, _ := workerOf(h.cluster(), "work")
 	if mb.DaemonID != m.s.DaemonID() || mb.APILevel != api.ClusterAPILevel || len(mb.Capabilities) == 0 || mb.Version == "" || mb.Since.IsZero() {
-		t.Fatalf("member as the hub sees it: %+v", mb)
+		t.Fatalf("worker as the controller sees it: %+v", mb)
 	}
-	if c := h.cluster(); c.Role != api.RoleHub || c.DaemonID != h.s.DaemonID() {
-		t.Fatalf("hub: %+v", c)
+	if c := h.cluster(); c.Role != api.RoleController || c.DaemonID != h.s.DaemonID() {
+		t.Fatalf("controller: %+v", c)
 	}
 	mc := m.cluster()
-	if mc.Role != api.RoleMember || mc.Link == nil || mc.Link.State != api.LinkConnected || mc.Link.HubID != h.s.DaemonID() || mc.Link.Hub != pubURL {
-		t.Fatalf("member: %+v %+v", mc, mc.Link)
+	if mc.Role != api.RoleWorker || mc.Link == nil || mc.Link.State != api.LinkConnected || mc.Link.ControllerID != h.s.DaemonID() || mc.Link.Controller != pubURL {
+		t.Fatalf("worker: %+v %+v", mc, mc.Link)
 	}
 
-	// Pings flow and statuses follow: a question opened on the member shows as waiting on
-	// the hub's list, with no change to the link.
+	// Pings flow and statuses follow: a question opened on the worker shows as waiting on
+	// the controller's list, with no change to the link.
 	if _, err := m.st.AddQuestion(context.Background(), store.Question{Text: "which one?", State: store.QuestionOpen}); err != nil {
 		t.Fatal(err)
 	}
 	eventually(t, "the waiting count", func() bool {
-		mb, _ := memberOf(h.cluster(), "work")
+		mb, _ := workerOf(h.cluster(), "work")
 		return mb.Waiting == 1 && mb.Online
 	})
 }
 
 func TestLinkRedialsAfterADrop(t *testing.T) {
 	fastLink(t)
-	h := newHubRig(t)
-	m := h.member(t, "")
-	m.join(h.addMember("work"))
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	m.join(h.addWorker("work"))
 	stop := m.s.StartCluster(context.Background())
 	defer stop()
-	online := func() bool { mb, ok := memberOf(h.cluster(), "work"); return ok && mb.Online }
+	online := func() bool { mb, ok := workerOf(h.cluster(), "work"); return ok && mb.Online }
 	eventually(t, "online", online)
-	first, _ := memberOf(h.cluster(), "work")
+	first, _ := workerOf(h.cluster(), "work")
 
 	h.s.dropLink("work", "test")
 	eventually(t, "offline then online again", func() bool {
-		mb, _ := memberOf(h.cluster(), "work")
+		mb, _ := workerOf(h.cluster(), "work")
 		return mb.Online && mb.Since.After(first.Since)
 	})
 
-	// The hub asks for a wait with Retry-After: the member honours it as a floor.
+	// The controller asks for a wait with Retry-After: the worker honours it as a floor.
 	deny := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "1")
 		writeError(w, http.StatusServiceUnavailable, io.ErrUnexpectedEOF)
@@ -301,7 +302,7 @@ func TestLinkRedialsAfterADrop(t *testing.T) {
 		return v != nil && v.State == api.LinkWaiting && !v.NextTry.IsZero() && strings.Contains(v.Error, "unexpected EOF")
 	})
 	if wait := v.NextTry.Sub(v.Since); wait < 900*time.Millisecond {
-		t.Fatalf("redial in %v, under the hub's Retry-After", wait)
+		t.Fatalf("redial in %v, under the controller's Retry-After", wait)
 	}
 	h.front.Store(nil)
 	eventually(t, "online again after the Retry-After", online)
@@ -330,9 +331,9 @@ func TestLinkWaitIsFullJitterCappedAndFloored(t *testing.T) {
 }
 
 func TestLinkCredentialOpensTheLinkAndNothingElse(t *testing.T) {
-	h := newHubRig(t)
-	m := h.member(t, "")
-	m.join(h.addMember("work"))
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	m.join(h.addWorker("work"))
 	f, _ := m.s.loadLink()
 	do := func(method, path, tok string, body any) int {
 		var rd io.Reader
@@ -352,7 +353,7 @@ func TestLinkCredentialOpensTheLinkAndNothingElse(t *testing.T) {
 	for _, rt := range []struct{ method, path string }{
 		{"GET", api.PathStatus}, {"GET", api.PathCluster}, {"GET", api.PathWaiting}, {"GET", api.PathLanes},
 		{"POST", api.PathLanes}, {"POST", api.PathDecisions + "/1/answer"}, {"POST", api.PathRuns},
-		{"POST", api.PathClusterMembers}, {"POST", api.PathClusterMembers + "/work/revoke"},
+		{"POST", api.PathClusterWorkers}, {"POST", api.PathClusterWorkers + "/work/revoke"},
 		{"PUT", api.PathConfig}, {"POST", api.PathShutdown}, {"GET", "/v1/nothing"},
 	} {
 		if got := do(rt.method, rt.path, f.Credential, map[string]string{}); got != http.StatusForbidden {
@@ -375,35 +376,35 @@ func TestLinkCredentialOpensTheLinkAndNothingElse(t *testing.T) {
 
 func TestRevokedCredentialDropsTheLink(t *testing.T) {
 	fastLink(t)
-	h := newHubRig(t)
-	m := h.member(t, "")
-	m.join(h.addMember("work"))
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	m.join(h.addWorker("work"))
 	stop := m.s.StartCluster(context.Background())
 	defer stop()
-	eventually(t, "online", func() bool { mb, _ := memberOf(h.cluster(), "work"); return mb.Online })
-	if code := h.call("POST", api.PathClusterMembers+"/work/revoke", nil, nil); code != 200 {
+	eventually(t, "online", func() bool { mb, _ := workerOf(h.cluster(), "work"); return mb.Online })
+	if code := h.call("POST", api.PathClusterWorkers+"/work/revoke", nil, nil); code != 200 {
 		t.Fatalf("revoke: %d", code)
 	}
 	eventually(t, "offline and refused", func() bool {
-		mb, _ := memberOf(h.cluster(), "work")
+		mb, _ := workerOf(h.cluster(), "work")
 		v := m.cluster().Link
 		return !mb.Online && !mb.Enrolled && v.State == api.LinkRefused && strings.Contains(v.Error, "revoked")
 	})
 	// A new code enrols the same name again.
-	if got := m.join(h.addMember("work")); got != 200 {
+	if got := m.join(h.addWorker("work")); got != 200 {
 		t.Fatalf("re-enrol: %d", got)
 	}
-	eventually(t, "online again", func() bool { mb, _ := memberOf(h.cluster(), "work"); return mb.Online })
+	eventually(t, "online again", func() bool { mb, _ := workerOf(h.cluster(), "work"); return mb.Online })
 }
 
 func TestChangedDaemonIDIsRefusedUntilConfirmed(t *testing.T) {
 	fastLink(t)
 	refusedOnce.Do(func() { linkRefusedRetry = 1 })
-	h := newHubRig(t)
-	m := h.member(t, "")
-	m.join(h.addMember("work"))
+	h := newControllerRig(t)
+	m := h.worker(t, "")
+	m.join(h.addWorker("work"))
 	// A reinstall: the same credential file, a new Shepherd home and so a new daemon id.
-	other := h.member(t, "")
+	other := h.worker(t, "")
 	b, _ := os.ReadFile(filepath.Join(m.home, LinkFile))
 	os.WriteFile(filepath.Join(other.home, LinkFile), b, 0o600)
 	if other.s.DaemonID() == m.s.DaemonID() {
@@ -412,15 +413,15 @@ func TestChangedDaemonIDIsRefusedUntilConfirmed(t *testing.T) {
 	stop := other.s.StartCluster(context.Background())
 	defer stop()
 	eventually(t, "refused", func() bool {
-		mb, _ := memberOf(h.cluster(), "work")
+		mb, _ := workerOf(h.cluster(), "work")
 		v := other.cluster().Link
 		return mb.PendingID == other.s.DaemonID() && !mb.Online && v.State == api.LinkRefused && strings.Contains(v.Error, "confirm")
 	})
-	if code := h.call("POST", api.PathClusterMembers+"/work/confirm", nil, nil); code != 200 {
+	if code := h.call("POST", api.PathClusterWorkers+"/work/confirm", nil, nil); code != 200 {
 		t.Fatalf("confirm: %d", code)
 	}
 	eventually(t, "online under the new id", func() bool {
-		mb, _ := memberOf(h.cluster(), "work")
+		mb, _ := workerOf(h.cluster(), "work")
 		return mb.Online && mb.DaemonID == other.s.DaemonID() && mb.PendingID == ""
 	})
 }
@@ -446,16 +447,93 @@ func TestDaemonIDIsKeptInTheHome(t *testing.T) {
 	}
 }
 
-func TestClusterRoutesNeedTheHubRole(t *testing.T) {
+func TestClusterRoutesNeedTheControllerRole(t *testing.T) {
 	n := newNode(t, config.Default(), "")
-	if got := n.call("POST", api.PathClusterMembers, api.MemberAdd{Name: "work"}, nil); got != http.StatusNotFound {
-		t.Fatalf("member add on a daemon that is no hub: %d", got)
+	if got := n.call("POST", api.PathClusterWorkers, api.WorkerAdd{Name: "work"}, nil); got != http.StatusNotFound {
+		t.Fatalf("worker add on a daemon that is no controller: %d", got)
 	}
 	if c := n.cluster(); c.Role != api.RoleAlone {
 		t.Fatalf("role %q", c.Role)
 	}
-	h := newHubRig(t)
-	if got := h.call("POST", api.PathClusterMembers, api.MemberAdd{Name: "Bad Name"}, nil); got != http.StatusBadRequest {
+	h := newControllerRig(t)
+	if got := h.call("POST", api.PathClusterWorkers, api.WorkerAdd{Name: "Bad Name"}, nil); got != http.StatusBadRequest {
 		t.Fatalf("a bad name: %d", got)
+	}
+}
+
+// The workers' routes still answer under their old prefix, /v1/cluster/members, for one
+// release.
+func TestOldMembersRoutesStillWork(t *testing.T) {
+	h := newControllerRig(t)
+	var c api.WorkerCode
+	if code := h.call("POST", api.PathClusterMembersOld, api.WorkerAdd{Name: "work"}, &c); code != 200 || c.Code == "" {
+		t.Fatalf("add under the old prefix: %d %+v", code, c)
+	}
+	if _, ok := workerOf(h.cluster(), "work"); !ok {
+		t.Fatal("the worker added under the old prefix is not listed")
+	}
+	if code := h.call("POST", api.PathClusterMembersOld+"/work/remove", nil, nil); code != 200 {
+		t.Fatalf("remove under the old prefix: %d", code)
+	}
+	if _, ok := workerOf(h.cluster(), "work"); ok {
+		t.Fatal("the worker removed under the old prefix is still listed")
+	}
+}
+
+// A controller and a worker are upgraded at different times, so what crosses between
+// them must read either way. The enrolment answer carries the controller's id under its
+// new and its old name, a worker reads either, and the link's frames carry no role at
+// all: a frame exactly as a daemon from before the rename wrote it still reads.
+func TestClusterWireReadsAcrossTheRename(t *testing.T) {
+	var got api.ClusterEnrolled
+	if err := json.Unmarshal([]byte(`{"name":"work","credential":"shl_x","hub_daemon_id":"old-id"}`), &got); err != nil || got.ID() != "old-id" {
+		t.Fatalf("an old controller's enrolment answer: %+v %v", got, err)
+	}
+	raw, _ := json.Marshal(api.NewClusterEnrolled("work", "shl_x", "new-id"))
+	var old struct {
+		HubID string `json:"hub_daemon_id"`
+	}
+	if err := json.Unmarshal(raw, &old); err != nil || old.HubID != "new-id" || !strings.Contains(string(raw), `"controller_daemon_id":"new-id"`) {
+		t.Fatalf("a new controller's answer, as an old worker reads it: %s", raw)
+	}
+	for _, frame := range []string{
+		`{"type":"hello","daemon_id":"d1","version":"0.9.0","api_level":1,"capabilities":["status"]}`,
+		`{"type":"status","runs_going":2,"waiting":3}`,
+	} {
+		var f api.LinkFrame
+		if err := json.Unmarshal([]byte(frame), &f); err != nil || f.Type == "" {
+			t.Fatalf("an old frame %s: %+v %v", frame, f, err)
+		}
+		back, _ := json.Marshal(f)
+		if string(back) != frame {
+			t.Fatalf("an old frame does not survive a round trip: %s, then %s", frame, back)
+		}
+	}
+}
+
+// A worker that joins a controller from before the rename keeps the controller's id
+// from its old-style answer, in a link file an older build also reads.
+func TestJoinAnOldController(t *testing.T) {
+	h := newControllerRig(t)
+	w := h.worker(t, "")
+	old := http.Handler(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != api.PathClusterEnrol {
+			http.NotFound(rw, r)
+			return
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		io.WriteString(rw, `{"name":"work","credential":"`+linkTokenPrefix+`abc","hub_daemon_id":"old-controller"}`)
+	}))
+	h.front.Store(&old)
+	if got := w.join("any-code"); got != 200 {
+		t.Fatalf("join an old controller: %d", got)
+	}
+	f, ok := w.s.loadLink()
+	if !ok || f.ControllerID != "old-controller" || f.Name != "work" {
+		t.Fatalf("link file: %+v %v", f, ok)
+	}
+	b, _ := os.ReadFile(filepath.Join(w.home, LinkFile))
+	if !strings.Contains(string(b), `"hub_daemon_id": "old-controller"`) {
+		t.Fatalf("the link file is not one an older build reads: %s", b)
 	}
 }
