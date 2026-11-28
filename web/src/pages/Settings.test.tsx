@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ConfigChange, ConfigDoc } from '../api/types'
 import { SettingsPage, THEME_KEY } from './Settings'
@@ -26,14 +26,14 @@ const doc = (o: Partial<ConfigDoc> = {}): ConfigDoc => ({
 interface Seen { method: string; path: string; body?: ConfigChange }
 
 /** A daemon with the given config; `answer` replaces what a preview or save returns. */
-function daemon(d: ConfigDoc, answer: (m: string, p: string, b?: ConfigChange) => Response | undefined = () => undefined) {
+function daemon(d: ConfigDoc, answer: (m: string, p: string, b?: ConfigChange) => Response | undefined | Promise<Response | undefined> = () => undefined) {
   const seen: Seen[] = []
   vi.stubGlobal('fetch', async (path: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET'
     const body = init?.body ? (JSON.parse(String(init.body)) as ConfigChange) : undefined
     seen.push({ method, path, ...(body ? { body } : {}) })
     if (path === '/v1/web/session') return new Response(JSON.stringify({ role: 'web', csrf: 'c' }))
-    const custom = answer(method, path, body)
+    const custom = await answer(method, path, body)
     if (custom) return custom
     if (path === '/v1/status?detail=1') return new Response(JSON.stringify({ version: '1', detail: { forge: { last_poll: new Date(Date.now() - 41000).toISOString() } } }))
     if (path === '/v1/config' && method === 'GET') return new Response(JSON.stringify(d))
@@ -149,24 +149,35 @@ describe('SettingsPage sections', () => {
   it('says nothing of an agent\'s usage before it loads or when the read fails, then lanes and spend today', async () => {
     const body = { version: '1', workspaces: [{ id: 1, name: 'acme' }], detail: { forge: { last_poll: new Date().toISOString() } } }
     const claude = (path: string) => path.startsWith('/v1/history/runs') && path.includes('agent=claude')
-    // A failed read: no figures, no zeros.
-    daemon(doc(), (_m, p) => (p === '/v1/status?detail=1' ? json(body) : p.startsWith('/v1/history/runs') ? json({ error: 'down' }, 500) : undefined))
-    const failed = render(<SettingsPage />)
-    await screen.findByText('Daily cap')
-    await screen.findByText(/Polled \d+s ago/)
-    expect(document.querySelector('[data-agent="claude"]')).toBeNull()
-    failed.unmount()
-    // A read that answers: claude's totals, and nothing shown before they arrive.
-    daemon(doc(), (_m, p) => {
+    // The usage reads wait for the test, so "before it loads" is a state the page is held in, not a race.
+    let open!: () => void
+    const held = new Promise<void>((r) => (open = r))
+    let failing = false
+    const seen = daemon(doc(), async (_m, p) => {
       if (p === '/v1/status?detail=1') return json(body)
+      if (!p.startsWith('/v1/history/runs')) return undefined
+      await held
+      if (failing) return json({ error: 'down' }, 500)
       if (claude(p)) return json({ runs: [{ id: 1, lane_id: 7, agent: 'claude', cost_usd: 2 }], count: 1, cost_usd: 2, credits: 0, agents: ['claude'], lanes: [] })
-      if (p.startsWith('/v1/history/runs')) return json({ runs: [], count: 0, cost_usd: 0, credits: 0, agents: [], lanes: [] })
-      return undefined
+      return json({ runs: [], count: 0, cost_usd: 0, credits: 0, agents: [], lanes: [] })
     })
+    const tick = vi.spyOn(window, 'setInterval')
     render(<SettingsPage />)
     await screen.findByText('Daily cap')
+    await waitFor(() => expect(seen.some((s) => claude(s.path))).toBe(true))
+    // Asked and not yet answered: no figures, no zeros.
     expect(document.querySelector('[data-agent="claude"]')).toBeNull()
+    expect(screen.queryByText(/today$/)).toBeNull()
+    open()
     expect(await screen.findByText('1 lane · $2.00 today')).toBeInTheDocument()
+    // The next refresh fails: the figures go, and none take their place.
+    failing = true
+    const refreshes = tick.mock.calls.filter(([, ms]) => ms === 30_000).map(([fn]) => fn as () => void)
+    tick.mockRestore()
+    expect(refreshes.length).toBeGreaterThan(0)
+    act(() => refreshes.forEach((fn) => fn()))
+    await waitFor(() => expect(document.querySelector('[data-agent="claude"]')).toBeNull())
+    expect(screen.queryByText(/today$/)).toBeNull()
   })
 
   it('writes nothing before Save: staging previews only, Discard drops it', async () => {
