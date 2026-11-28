@@ -86,7 +86,7 @@ func readNewPassword(env Env, fromStdin bool) (string, error) {
 		return strings.TrimRight(line, "\r\n"), nil
 	}
 	if !env.Interactive {
-		return "", errors.New("shepherd account set asks for the password on a terminal; use --password-stdin in a script")
+		return "", errors.New("the password is asked for on a terminal; use --password-stdin in a script")
 	}
 	fd := int(os.Stdin.Fd())
 	fmt.Fprint(env.Stderr, "New password: ")

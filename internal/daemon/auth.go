@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/auth"
 	"github.com/ubixsys/ubixshepherd/internal/crook"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 )
@@ -49,6 +50,8 @@ type principal struct {
 	web *webSession
 	// device is the id of the device token a RoleWeb request came with (hosted mode).
 	device string
+	// user is whose device token it is (hosted mode); a session names its own.
+	user int64
 	// member is the cluster member a RoleLink credential belongs to.
 	member string
 }
@@ -68,6 +71,18 @@ func (p principal) actor() crook.Actor {
 }
 
 type principalKey struct{}
+
+// userID is the user a browser session or device token belongs to: the owner for
+// anything else, as before there were users.
+func (p principal) userID() int64 {
+	switch {
+	case p.web != nil && p.web.user != 0:
+		return p.web.user
+	case p.user != 0:
+		return p.user
+	}
+	return auth.OwnerID
+}
 
 func principalOf(ctx context.Context) principal {
 	p, _ := ctx.Value(principalKey{}).(principal)

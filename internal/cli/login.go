@@ -45,6 +45,7 @@ func hostedTarget(env Env, pos []string) (string, error) {
 func runLogin(ctx context.Context, env Env, args []string) error {
 	fs := flags("login", env)
 	name := fs.String("name", "", "the name this device is listed under (default: this machine's name)")
+	user := fs.String("user", "", "the user to log in as (default: the owner)")
 	stdin := fs.Bool("password-stdin", false, "read the password, then the code, one line each from standard input (for scripts)")
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -61,7 +62,7 @@ func runLogin(ctx context.Context, env Env, args []string) error {
 	if err != nil {
 		return err
 	}
-	creds, err := client.Login(ctx, url, hostedHTTP, client.LoginRequest{Password: pw, Code: code, Name: *name})
+	creds, err := client.Login(ctx, url, hostedHTTP, client.LoginRequest{Password: pw, Code: code, Name: *name, User: *user})
 	if err != nil {
 		return err
 	}

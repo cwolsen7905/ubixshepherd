@@ -7,11 +7,12 @@ import './Login.css'
 const CODE_HINT = { totp: 'Six-digit code from your authenticator app', recovery: 'A recovery code, like abcde-fghij. Each works once.' }
 
 /**
- * The sign-in page of a hosted daemon: the owner's password and a second-factor code. It
- * is shown when the daemon answers a read with 401, in place of the app. `onSignedIn`
- * runs once the daemon has set the session cookie.
+ * The sign-in page of a hosted daemon: the user, their password and a second-factor code.
+ * A user left empty is the owner. It is shown when the daemon answers a read with 401, in
+ * place of the app. `onSignedIn` runs once the daemon has set the session cookie.
  */
 export function LoginPage({ onSignedIn, host = window.location.host }: { onSignedIn: () => void; host?: string }) {
+  const [user, setUser] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [recovery, setRecovery] = useState(false)
@@ -19,6 +20,7 @@ export function LoginPage({ onSignedIn, host = window.location.host }: { onSigne
   const [error, setError] = useState('')
   const [wait, setWait] = useState(0)
   const first = useRef<HTMLInputElement>(null)
+  const userId = useId()
   const pwId = useId()
   const codeId = useId()
 
@@ -34,7 +36,7 @@ export function LoginPage({ onSignedIn, host = window.location.host }: { onSigne
     if (busy || wait > 0) return
     setBusy(true)
     setError('')
-    const r = await login(password, code)
+    const r = await login(password, code, undefined, user)
     setBusy(false)
     if (r.ok) {
       setPassword('')
@@ -61,10 +63,28 @@ export function LoginPage({ onSignedIn, host = window.location.host }: { onSigne
             {wait > 0 && <> Try again in {wait} s.</>}
           </div>
         )}
+        <label htmlFor={userId} className="login-label">
+          User
+        </label>
+        <input
+          id={userId}
+          ref={first}
+          className="sh-input"
+          type="text"
+          autoComplete="username"
+          autoCapitalize="none"
+          spellCheck={false}
+          value={user}
+          onChange={(e) => setUser(e.target.value)}
+          aria-describedby={`${userId}-hint`}
+        />
+        <p id={`${userId}-hint`} className="login-hint">
+          Leave empty to sign in as the owner
+        </p>
         <label htmlFor={pwId} className="login-label">
           Password
         </label>
-        <input id={pwId} ref={first} className="sh-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <input id={pwId} className="sh-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         <label htmlFor={codeId} className="login-label">
           {recovery ? 'Recovery code' : 'Code'}
         </label>

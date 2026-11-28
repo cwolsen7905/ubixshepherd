@@ -65,10 +65,15 @@ var tableTenancy = map[string]tableTenure{
 	"topic_links":        {kind: childTable, parent: "topics", via: "topic_id", sharedKeys: []string{"kind, ref"}},
 	"member_credentials": {kind: childTable, parent: "cluster_members", via: "member"},
 
-	// The tenants themselves, and the one owner account with its factors, recovery codes,
-	// device tokens and browser sessions. Tenancy phase T2 gives the account tables a user.
+	// Who is in a tenant, with what role, is that tenant's own data.
+	"memberships": {kind: rootTable},
+
+	// The tenants themselves, and the people: users are global (one person, several
+	// tenants, a membership each), and their factors, recovery codes, device tokens and
+	// browser sessions belong to a user, not a tenant.
 	"tenants":          {kind: deploymentTable},
-	"owner_account":    {kind: deploymentTable},
+	"users":            {kind: deploymentTable},
+	"user_aliases":     {kind: deploymentTable},
 	"account_factors":  {kind: deploymentTable},
 	"account_recovery": {kind: deploymentTable},
 	"device_tokens":    {kind: deploymentTable},

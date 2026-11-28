@@ -11,6 +11,13 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Added
 
+- **Users on a hosted daemon.** `shepherd user add|list|role|set-password|signout|remove` (on
+  the daemon's machine) gives more people their own login: password, second factor, recovery
+  codes, device tokens and sessions. `shepherd login --user` and the login routes' `user` field
+  name who signs in; with none it is the owner, as before. Each user sees and signs out only
+  their own devices and sessions, lockouts count per user, and an unknown user gets the
+  wrong-password answer. Users have a role per tenant (owner, admin, member, viewer), recorded
+  now and enforced in a later release. See "Users" in [docs/hosted.md](docs/hosted.md).
 - A Helm chart for Kubernetes in `deploy/charts/shepherd/`: the StatefulSet, Service,
   Ingress, NetworkPolicy and backup CronJob, with the host name, issuer, storage class,
   pull secret and private egress as values, an optional ExternalSecret for the credentials,
@@ -65,6 +72,9 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Changed
 
+- The owner account is now user `owner`. The store's migration makes it the owner of the
+  `default` tenant and keeps its password, factor, recovery codes, device tokens and
+  sessions, so nobody signs in again. A daemon one release older refuses the store afterwards.
 - The store records which tenant each row belongs to. Every store has one tenant,
   `default`, and every existing row moves into it when the daemon upgrades, so nothing
   changes in use. An older binary refuses to open the store afterwards, as with any new
@@ -99,6 +109,10 @@ protocol) is listed under **Interface changes** in the release that makes it.
 
 ### Interface changes
 
+- CLI: `shepherd user` (new), and `shepherd login --user`.
+- HTTP API: `GET` and `POST /v1/users`, and `POST /v1/users/{name}/password`, `/role`,
+  `/signout` and `/remove`, operator only, on loopback. `POST /v1/web/login` and
+  `POST /v1/device/login` take an optional `user`.
 - Cluster: the hub is now the **controller** and its members are **workers**, in config,
   commands, the HTTP API and the web UI. Config `cluster.role: controller` and
   `cluster.controller` replace `role: hub` and `cluster.hub`; the old names are still read,

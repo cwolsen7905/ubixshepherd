@@ -155,8 +155,9 @@ func TestNewRowsJoinTheDefaultTenant(t *testing.T) {
 func undoTenants(t *testing.T, db *DB) {
 	t.Helper()
 	ctx := context.Background()
+	undoUsers(t, db)
 	for name, ten := range tableTenancy {
-		if ten.kind != rootTable {
+		if ten.kind != rootTable || name == "memberships" { // undoUsers dropped it
 			continue
 		}
 		for _, q := range []string{`DROP INDEX ` + name + `_tenant`, `ALTER TABLE ` + name + ` DROP COLUMN tenant_id`} {
@@ -167,5 +168,24 @@ func undoTenants(t *testing.T, db *DB) {
 	}
 	if _, err := db.db.ExecContext(ctx, `DROP TABLE tenants`); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// undoUsers takes the store back from users to the one owner account, as tenancy phase
+// T2 found it, for tests that step the schema back over it. The owner account table
+// comes back empty: the hosted account migration that made it is re-runnable.
+func undoUsers(t *testing.T, db *DB) {
+	t.Helper()
+	ctx := context.Background()
+	qs := []string{}
+	for _, tbl := range []string{"account_factors", "account_recovery", "device_tokens", "web_sessions"} {
+		qs = append(qs, `DROP INDEX `+tbl+`_user`, `ALTER TABLE `+tbl+` DROP COLUMN user_id`)
+	}
+	qs = append(qs, `DROP TABLE memberships`, `DROP TABLE user_aliases`, `DROP TABLE users`,
+		`CREATE TABLE owner_account (id INTEGER PRIMARY KEY CHECK (id = 1), password_hash TEXT NOT NULL, created TEXT NOT NULL, updated TEXT NOT NULL)`)
+	for _, q := range qs {
+		if _, err := db.db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
 	}
 }
