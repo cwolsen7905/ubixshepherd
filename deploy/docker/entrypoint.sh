@@ -6,19 +6,22 @@
 #   list of addresses or CIDRs of the reverse proxy).
 set -eu
 home="${SHEPHERD_HOME:?SHEPHERD_HOME is not set}"
+seeds="${SHEPHERD_SEED_DIR:-/usr/share/shepherd}"
+# A value made safe for the right side of a sed s|...|...|: | & and \ would otherwise end or change it.
+sed_value() { printf '%s' "$1" | sed 's/[|&\\]/\\&/g'; }
 if [ ! -e "$home/config.yaml" ]; then
   mkdir -p "$home"
   if [ -n "${SHEPHERD_CONTROLLER_URL:-}" ]; then
     case "$SHEPHERD_CONTROLLER_URL" in https://*) ;; *) echo "shepherd: SHEPHERD_CONTROLLER_URL must be an https:// address" >&2; exit 1 ;; esac
-    sed -e "s|@CONTROLLER_URL@|$SHEPHERD_CONTROLLER_URL|" \
-        /usr/share/shepherd/config.seed-worker.yaml > "$home/config.yaml.tmp"
+    sed -e "s|@CONTROLLER_URL@|$(sed_value "$SHEPHERD_CONTROLLER_URL")|" \
+        "$seeds/config.seed-worker.yaml" > "$home/config.yaml.tmp"
   else
     : "${SHEPHERD_PUBLIC_URL:?set SHEPHERD_PUBLIC_URL (https://shepherd.example.com) to seed a new home, or SHEPHERD_CONTROLLER_URL for a worker}"
     : "${SHEPHERD_TRUSTED_PROXIES:?set SHEPHERD_TRUSTED_PROXIES (the reverse proxy address or CIDR) to seed a new home}"
     case "$SHEPHERD_TRUSTED_PROXIES" in REPLACE*) echo "shepherd: SHEPHERD_TRUSTED_PROXIES is still the placeholder; set the reverse proxy address or CIDR" >&2; exit 1 ;; esac
-    sed -e "s|@PUBLIC_URL@|$SHEPHERD_PUBLIC_URL|" \
-        -e "s|@TRUSTED_PROXIES@|$SHEPHERD_TRUSTED_PROXIES|" \
-        /usr/share/shepherd/config.seed.yaml > "$home/config.yaml.tmp"
+    sed -e "s|@PUBLIC_URL@|$(sed_value "$SHEPHERD_PUBLIC_URL")|" \
+        -e "s|@TRUSTED_PROXIES@|$(sed_value "$SHEPHERD_TRUSTED_PROXIES")|" \
+        "$seeds/config.seed.yaml" > "$home/config.yaml.tmp"
   fi
   mv "$home/config.yaml.tmp" "$home/config.yaml"
   echo "shepherd: seeded $home/config.yaml"
