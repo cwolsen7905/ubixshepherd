@@ -100,7 +100,7 @@ func (s *Server) PreparePublic(ctx context.Context, home string) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	ap, ok := s.Store.(interface{ Accounts() auth.Store })
+	ap, ok := s.Store.(interface{ Users() auth.Users })
 	if !ok {
 		return errors.New("daemon.public: this store does not keep accounts")
 	}
@@ -116,13 +116,16 @@ func (s *Server) PreparePublic(ctx context.Context, home string) error {
 			s.Store.AddFeed(ctx, store.FeedSession, auth.KeyFallbackWarning, 0)
 		}
 	}
-	st := ap.Accounts()
+	users := ap.Users()
+	st := users.ForUser(auth.OwnerID)
 	h := &hosted{pub: pub, key: key, accountSet: make(chan struct{}), log: func(msg string, a ...any) { s.Log.Info(msg, a...) }}
 	h.svc = &auth.Service{
-		Store:    st,
-		Factor:   &auth.TOTP{Store: st, Key: key},
-		Limiter:  auth.NewLimiter(auth.Limits{}),
-		Sessions: sessionEnder{s},
+		Store:     st,
+		Factor:    &auth.TOTP{Store: st, Key: key},
+		Users:     users,
+		NewFactor: func(st auth.Store) auth.SecondFactor { return &auth.TOTP{Store: st, Key: key} },
+		Limiter:   auth.NewLimiter(auth.Limits{}),
+		Sessions:  sessionEnder{s},
 		OnLock: func(addr netip.Addr, until time.Time) {
 			msg := fmt.Sprintf("sign-in locked until %s after repeated failures", until.UTC().Format("15:04 MST"))
 			s.Log.Warn("sign-in locked", "until", until.UTC().Format(time.RFC3339), "addr", addr.String())
@@ -141,6 +144,10 @@ func (s *Server) PreparePublic(ctx context.Context, home string) error {
 type sessionEnder struct{ s *Server }
 
 func (e sessionEnder) EndAllSessions(context.Context) (int, error) { return e.s.web.end(nil), nil }
+
+func (e sessionEnder) EndUserSessions(_ context.Context, user int64) (int, error) {
+	return e.s.web.endUser(user), nil
+}
 
 func (s *Server) hostedNow() *hosted {
 	s.web.hosted.mu.Lock()
@@ -222,12 +229,17 @@ func (s *Server) deviceAuth(w http.ResponseWriter, r *http.Request, header strin
 		writeError(w, http.StatusInternalServerError, errors.New("could not check the token"))
 		return principal{}, false
 	}
-	return principal{Role: RoleWeb, Human: true, device: d.ID}, true
+	return principal{Role: RoleWeb, Human: true, device: d.ID, user: d.UserID}, true
 }
 
-// StartSession starts a browser session on the public listener after a good login.
-func (s *Server) StartSession(context.Context) (string, time.Duration, string, error) {
-	val, ws, err := s.web.start(publicPort, true)
+// StartSession starts a browser session on the public listener after a good login, for
+// the user who signed in (the owner when ctx names none).
+func (s *Server) StartSession(ctx context.Context) (string, time.Duration, string, error) {
+	user := auth.OwnerID
+	if u, ok := auth.UserFrom(ctx); ok && u.ID != 0 {
+		user = u.ID
+	}
+	val, ws, err := s.web.startFor(publicPort, true, user)
 	if err != nil {
 		return "", 0, "", err
 	}
@@ -270,9 +282,24 @@ func (s *Server) accountRoute(w http.ResponseWriter, r *http.Request) bool {
 		r.SetPathValue("id", strings.TrimSuffix(strings.TrimPrefix(path, api.PathDevices+"/"), "/revoke"))
 		s.auth(guard("POST "+api.PathDevices+"/{id}/revoke", forWeb, s.deviceRevoke)).ServeHTTP(w, r)
 	default:
-		return false
+		return s.userRoute(w, r)
 	}
 	return true
+}
+
+// mine is the service of the user a session or device token belongs to, or nil with the
+// error written.
+func (s *Server) mine(w http.ResponseWriter, r *http.Request) *auth.Service {
+	svc := s.service(w, r)
+	if svc == nil {
+		return nil
+	}
+	u, err := svc.LookupID(r.Context(), principalOf(r.Context()).userID())
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, errors.New("log in again"))
+		return nil
+	}
+	return svc.ForUser(u)
 }
 
 // service is the login a request is served by, or an error written to w.
@@ -311,7 +338,7 @@ func (s *Server) accountSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deviceList(w http.ResponseWriter, r *http.Request) {
-	svc := s.service(w, r)
+	svc := s.mine(w, r)
 	if svc == nil {
 		return
 	}
@@ -328,7 +355,7 @@ func (s *Server) deviceList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deviceRevoke(w http.ResponseWriter, r *http.Request) {
-	svc := s.service(w, r)
+	svc := s.mine(w, r)
 	if svc == nil {
 		return
 	}
@@ -346,7 +373,7 @@ func (s *Server) deviceRevoke(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) signOutAll(w http.ResponseWriter, r *http.Request) {
-	svc := s.service(w, r)
+	svc := s.mine(w, r)
 	if svc == nil {
 		return
 	}

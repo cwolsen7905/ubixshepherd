@@ -4,9 +4,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -84,4 +86,20 @@ func CheckPassword(hash, pw string) bool {
 func UseCheapHashingForTests() {
 	passwordCost = argonParams{Time: 1, Memory: 64, Threads: 1}
 	codeCost = passwordCost
+}
+
+var dummy struct {
+	once sync.Once
+	hash string
+}
+
+// dummyHash is a hash no password matches, checked for a user who does not exist so
+// that answer takes as long as a wrong password for one who does.
+func dummyHash() string {
+	dummy.once.Do(func() {
+		raw := make([]byte, 16)
+		rand.Read(raw)
+		dummy.hash, _ = HashPassword(hex.EncodeToString(raw))
+	})
+	return dummy.hash
 }

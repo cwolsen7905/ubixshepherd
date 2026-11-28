@@ -51,6 +51,7 @@ import (
 	"time"
 
 	"github.com/ubixsys/ubixshepherd/internal/api"
+	"github.com/ubixsys/ubixshepherd/internal/auth"
 	"github.com/ubixsys/ubixshepherd/internal/login"
 	"github.com/ubixsys/ubixshepherd/internal/store"
 	"github.com/ubixsys/ubixshepherd/internal/webui"
@@ -118,6 +119,8 @@ type webSession struct {
 	// allowSettings says this session may save config changes. It is memory only: a
 	// session loaded from the store after a restart reads settings but cannot write.
 	allowSettings bool
+	// user is whose session it is: the owner for one the sign-in link started.
+	user int64
 }
 
 func (ws *webSession) key() string { return hex.EncodeToString(ws.hash[:]) }
@@ -148,7 +151,10 @@ func (a *webAuth) load() {
 		if err != nil || len(raw) != 32 {
 			continue
 		}
-		ws := &webSession{csrf: r.CSRF, port: r.Port, created: r.Created, lastSeen: r.LastSeen, saved: r.LastSeen, slid: r.LastSeen, expires: r.Expires}
+		ws := &webSession{csrf: r.CSRF, port: r.Port, created: r.Created, lastSeen: r.LastSeen, saved: r.LastSeen, slid: r.LastSeen, expires: r.Expires, user: r.UserID}
+		if ws.user == 0 {
+			ws.user = auth.OwnerID
+		}
 		copy(ws.hash[:], raw)
 		a.sessions[ws.hash] = ws
 	}
@@ -233,8 +239,14 @@ func (a *webAuth) spend(code string) (allowSettings, ok bool) {
 	return allowSettings, true
 }
 
-// start begins a browser session: its cookie value, and the session.
+// start begins a browser session for the owner: its cookie value, and the session.
 func (a *webAuth) start(port string, allowSettings bool) (string, *webSession, error) {
+	return a.startFor(port, allowSettings, auth.OwnerID)
+}
+
+// startFor begins a browser session for a user. The cap on live sessions is per user, so
+// one person signing in again and again ends only their own oldest session.
+func (a *webAuth) startFor(port string, allowSettings bool, user int64) (string, *webSession, error) {
 	val, err := newToken()
 	if err != nil {
 		return "", nil, err
@@ -251,26 +263,30 @@ func (a *webAuth) start(port string, allowSettings bool) (string, *webSession, e
 	}
 	now := a.clock()
 	var oldest *webSession
+	mine := 0
 	for k, s := range a.sessions {
 		if !now.Before(s.expires) {
 			delete(a.sessions, k)
 			a.forget(s)
-		} else if oldest == nil || s.expires.Before(oldest.expires) {
-			oldest = s
+		} else if s.user == user {
+			mine++
+			if oldest == nil || s.expires.Before(oldest.expires) {
+				oldest = s
+			}
 		}
 	}
-	if len(a.sessions) >= maxWebSessions && oldest != nil {
+	if mine >= maxWebSessions && oldest != nil {
 		delete(a.sessions, oldest.hash)
 		a.forget(oldest)
 	}
 	ws := &webSession{hash: sha256.Sum256([]byte(val)), csrf: csrf, port: port,
-		created: now, lastSeen: now, saved: now, slid: now, expires: now.Add(webSessionTTL), allowSettings: allowSettings}
+		created: now, lastSeen: now, saved: now, slid: now, expires: now.Add(webSessionTTL), allowSettings: allowSettings, user: user}
 	if a.st != nil {
 		// Bounded: the lock is held, and a stalled store must not stall every request.
 		ctx, cancel := context.WithTimeout(context.Background(), webStoreTimeout)
 		defer cancel()
 		err := a.st.SaveWebSession(ctx, store.WebSession{
-			Hash: ws.key(), CSRF: csrf, Port: port, Created: now, LastSeen: now, Expires: ws.expires})
+			Hash: ws.key(), CSRF: csrf, Port: port, Created: now, LastSeen: now, Expires: ws.expires, UserID: user})
 		if err != nil {
 			return "", nil, fmt.Errorf("keep the session: %w", err)
 		}
@@ -362,6 +378,22 @@ func (a *webAuth) extend(ws *webSession) (live, moved bool, err error) {
 	}
 	moved, err = a.push(ws, now)
 	return true, moved, err
+}
+
+// endUser ends every session of one user, in memory and in the store, and says how many.
+func (a *webAuth) endUser(user int64) int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.load()
+	n := 0
+	for k, s := range a.sessions {
+		if s.user == user {
+			delete(a.sessions, k)
+			a.forget(s)
+			n++
+		}
+	}
+	return n
 }
 
 // end ends one session, or every one when ws is nil, and says how many ended.

@@ -9,9 +9,9 @@ import (
 
 func (s *DB) SaveWebSession(ctx context.Context, ws store.WebSession) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT OR REPLACE INTO web_sessions (hash, csrf, port, created, last_seen, expires)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		ws.Hash, ws.CSRF, ws.Port, tstr(ws.Created), tstr(ws.LastSeen), tstr(ws.Expires))
+		INSERT OR REPLACE INTO web_sessions (hash, csrf, port, created, last_seen, expires, user_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		ws.Hash, ws.CSRF, ws.Port, tstr(ws.Created), tstr(ws.LastSeen), tstr(ws.Expires), ownerIfNone(ws.UserID))
 	return err
 }
 
@@ -40,7 +40,7 @@ func (s *DB) LiveWebSessions(ctx context.Context, now time.Time) ([]store.WebSes
 		return nil, err
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT hash, csrf, port, created, last_seen, expires FROM web_sessions ORDER BY created, hash`)
+		SELECT hash, csrf, port, created, last_seen, expires, user_id FROM web_sessions ORDER BY created, hash`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func (s *DB) LiveWebSessions(ctx context.Context, now time.Time) ([]store.WebSes
 	for rows.Next() {
 		var ws store.WebSession
 		var created, seen, expires string
-		if err := rows.Scan(&ws.Hash, &ws.CSRF, &ws.Port, &created, &seen, &expires); err != nil {
+		if err := rows.Scan(&ws.Hash, &ws.CSRF, &ws.Port, &created, &seen, &expires, &ws.UserID); err != nil {
 			return nil, err
 		}
 		ws.Created, ws.LastSeen, ws.Expires = parseTime(created), parseTime(seen), parseTime(expires)
@@ -60,3 +60,12 @@ func (s *DB) LiveWebSessions(ctx context.Context, now time.Time) ([]store.WebSes
 
 // tstr formats a time the way parseTime reads it, fixed-width so it sorts as text.
 func tstr(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z07:00") }
+
+// ownerIfNone is the user a session is kept for: the owner when it names none, as a
+// session started before there were users did.
+func ownerIfNone(user int64) int64 {
+	if user == 0 {
+		return store.DefaultUserID
+	}
+	return user
+}

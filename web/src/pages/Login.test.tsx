@@ -33,6 +33,19 @@ describe('LoginPage', () => {
     expect(Object.keys(init.headers as object).join()).not.toMatch(/csrf/i)
   })
 
+  it('sends the user when one is typed, and none when it is left empty', async () => {
+    const f = reply(200, { csrf: 'x' })
+    vi.stubGlobal('fetch', f)
+    const done = vi.fn()
+    render(<LoginPage onSignedIn={done} host="shepherd.example.com" />)
+    await userEvent.setup().type(screen.getByLabelText('User'), ' alice ')
+    await fill('123456')
+    await waitFor(() => expect(done).toHaveBeenCalled())
+    const [, init] = f.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ user: 'alice', password: 'correct horse battery', code: '123456' })
+    expect(screen.getByLabelText('User')).toHaveAccessibleDescription('Leave empty to sign in as the owner')
+  })
+
   it('shows a wrong code as a failure with words, and clears the code', async () => {
     vi.stubGlobal('fetch', reply(401, { error: 'wrong password or code' }))
     const done = vi.fn()

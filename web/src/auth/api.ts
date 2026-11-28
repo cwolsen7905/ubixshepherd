@@ -12,15 +12,19 @@ export interface LoginFailure {
 
 export type LoginResult = { ok: true } | ({ ok: false } & LoginFailure)
 
-/** POST /v1/web/login: the password and a TOTP or recovery code, for a session cookie. */
-export async function login(password: string, code: string, signal?: AbortSignal): Promise<LoginResult> {
+/**
+ * POST /v1/web/login: the user, the password and a TOTP or recovery code, for a session
+ * cookie. An empty user is the owner, and is not sent, so a daemon that knows no users
+ * still takes the request.
+ */
+export async function login(password: string, code: string, signal?: AbortSignal, user = ''): Promise<LoginResult> {
   let res: Response
   try {
     res = await fetch('/v1/web/login', {
       method: 'POST',
       signal,
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ password, code }),
+      body: JSON.stringify(user.trim() ? { user: user.trim(), password, code } : { password, code }),
     })
   } catch {
     return { ok: false, message: 'The daemon could not be reached. Check the address and try again.' }

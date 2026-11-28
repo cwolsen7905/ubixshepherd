@@ -76,15 +76,41 @@ refused. Setting the password again, or changing the second factor, signs everyt
 | Browser | `POST /v1/web/login`, from a page whose Origin is `daemon.public.url` | A session cookie named `__Host-shepherd_session` (Secure, HttpOnly, SameSite=Strict, Path `/`), and the CSRF token the page sends on every write |
 | CLI | `POST /v1/device/login`, by `shepherd login` | A named device token, kept in a file in the client's home |
 
-The login routes send `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
-Every wrong password, wrong code and reused code gives the same answer: "wrong password or
-code".
+Both take `user`, the name to sign in as; with none it is the owner, so a login that names
+no user works as it always has. The login routes send `X-Content-Type-Options: nosniff` and
+`Cache-Control: no-store`. Every wrong password, wrong code, reused code and unknown user
+gives the same answer: "wrong password or code", after the same work.
+
+### Users
+
+The owner account is user `owner`. More people get users of their own, each with their own
+password, second factor, recovery codes, device tokens and sessions:
+
+```
+shepherd user add alice                  # asks for her password; prints her TOTP enrolment and recovery codes once
+shepherd user list
+shepherd user role alice default admin   # owner, admin, member or viewer; none takes the membership away
+shepherd user set-password alice         # a new password, second factor and recovery codes; signs her out
+shepherd user signout alice              # ends her sessions and device tokens
+shepherd user remove alice               # removes her and everything of hers
+```
+
+Like `shepherd account`, these run on the daemon's machine with the operator token, and
+never over `--host`. A user is one person across tenants, with a role in each tenant they
+belong to (`default` is the only tenant for now, and a new user is a member of it unless
+`--role` says otherwise). A tenant's last owner can be neither removed nor given another
+role. Roles are recorded now and enforced from a later release; until then every user who
+signs in can do what the owner can, so add only people you would give the owner's login.
+
+Upgrading turns the owner account into user `owner`, the owner of `default`, with its
+password, factor, recovery codes, device tokens and sessions: nobody signs in again. A
+daemon one release older refuses the store afterwards.
 
 ### Rate limiting
 
-Both per account and per client address. Five failures on the account, or ten from one
+Both per user and per client address. Five failures on one user, or ten from one
 address (a whole IPv6 /64 counts as one), within 15 minutes lock it for 15 minutes. A
-locked account refuses the right password too, answers 429 with `Retry-After`, and puts one
+locked user refuses the right password too, answers 429 with `Retry-After`, and puts one
 item in the feed. The client address is the connection's, or, when the connection is from
 a trusted proxy, the first address in `X-Forwarded-For` (walking from the right) that is not
 itself a trusted proxy. From anyone else the header is ignored.
@@ -97,7 +123,8 @@ a fresh login is needed however often it was used. A token that is unknown, revo
 expired gets one answer, "log in again", which says nothing of its age.
 
 Logging out ends one session. "Sign out everywhere" ends every session and every device
-token. Both are rows in the store, so they hold across a restart.
+token of the user who asks, and no one else's. Both are rows in the store, so they hold
+across a restart.
 
 ## Using the CLI against a hosted daemon
 
@@ -113,7 +140,8 @@ shepherd logout https://shepherd.example.com
 
 `shepherd login` asks for the password (not shown) and a code: an authenticator code, or one
 recovery code. For a script, `--password-stdin` reads the password and then the code, one
-line each. `--name` sets the name the device is listed under (the machine's name by default).
+line each. `--user` names the user to log in as (the owner by default). `--name` sets the
+name the device is listed under (the machine's name by default).
 Neither secret is ever a flag or an environment variable.
 
 | Thing | Rule |
@@ -153,8 +181,9 @@ credentials, forge tokens and git push keys.
 
 | Where | What |
 |---|---|
-| Settings, "Signed-in devices" | Lists each device token by name and times, revokes one, or signs out everywhere. Shown only on a hosted daemon |
-| `shepherd account sign-out-all` | The same sign-out, from the daemon's machine |
+| Settings, "Signed-in devices" | Lists your own device tokens by name and times, revokes one, or signs you out everywhere. Shown only on a hosted daemon |
+| `shepherd account sign-out-all` | The owner's sign-out, from the daemon's machine |
+| `shepherd user signout <name>` | Another user's, from the daemon's machine |
 | `GET /v1/devices`, `POST /v1/devices/{id}/revoke`, `POST /v1/web/signout-all` | The routes behind them, for a session or a device token |
 
 A sign-in link (`shepherd web`) is not accepted on the public listener: sessions there come
@@ -192,7 +221,10 @@ Hosted mode's tests run a daemon with a fake agent that prints secrets, sign in 
 public handler, and read every route a signed-in person can, the feed and the daemon's log:
 none of the daemon's tokens, the password, recovery codes, TOTP secret and key, their
 hashes or the agent's secret appears. They also cover logout and sign-out-everywhere across a
-restart, the 404 for the operator token, and a TLS listener started from a certificate.
+restart, the 404 for the operator token, and a TLS listener started from a certificate. With
+two users, each lists only their own device tokens, signing out everywhere ends only the
+caller's, an unknown user gets the wrong-password answer, and a removed user's session and
+token stop working.
 
 ## Deployment examples
 

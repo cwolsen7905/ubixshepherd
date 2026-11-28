@@ -43,6 +43,8 @@ type Device struct {
 	Created  time.Time
 	LastUsed time.Time
 	Expires  time.Time
+	// UserID is whose token it is, set by Service.CheckDevice; stores leave it alone.
+	UserID int64
 }
 
 // Store is what the daemon keeps for the account. The sqlite store implements it in
@@ -81,4 +83,10 @@ type Store interface {
 // SessionEnder ends the daemon's browser sessions, which live outside this package.
 type SessionEnder interface {
 	EndAllSessions(ctx context.Context) (int, error)
+}
+
+// UserSessionEnder ends one user's browser sessions. A SessionEnder that has it is asked
+// for one user's when a service knows its user.
+type UserSessionEnder interface {
+	EndUserSessions(ctx context.Context, user int64) (int, error)
 }

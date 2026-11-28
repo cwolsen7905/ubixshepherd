@@ -127,7 +127,7 @@ func commands() []command {
 		{"host", "List the machines this one can reach, and check that one answers",
 			"shepherd host list | check [NAME]", runHost},
 		{"login", "Log in to a hosted daemon, keeping this machine's device token in its home",
-			"shepherd login [URL] [--name NAME] [--password-stdin]", runLogin},
+			"shepherd login [URL] [--user NAME] [--name NAME] [--password-stdin]", runLogin},
 		{"cluster", "Link this daemon to a controller, and see what a controller or worker is: workers, links and their state",
 			"shepherd cluster status [--json] | join <https URL> <code>", runCluster},
 		// member is the old name of worker's machine subcommands, hidden, for one release.
@@ -136,6 +136,8 @@ func commands() []command {
 			"shepherd logout [URL]", runLogout},
 		{"account", "Set a hosted daemon's owner password and second factor, on the daemon's own machine",
 			"shepherd account set [--password-stdin] | sign-out-all", runAccount},
+		{"user", "Add, list and remove a hosted daemon's users, set their passwords and roles, or sign them out, on the daemon's own machine",
+			"shepherd user add <name> [--role R] [--tenant T] [--password-stdin] | list [--json] | role <name> <tenant> <role|none> | set-password <name> [--password-stdin] | signout <name> | remove <name>", runUser},
 		{"version", "Print the version", "shepherd version", runVersion},
 	}
 }

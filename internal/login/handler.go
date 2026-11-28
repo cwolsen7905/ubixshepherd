@@ -18,7 +18,8 @@ const CookieName = "__Host-shepherd_session"
 
 // SessionStarter begins a browser session after a good login, in the daemon's
 // web_sessions: the random cookie value (kept only as a hash), how long it lasts, and
-// the CSRF token the page sends on every write.
+// the CSRF token the page sends on every write. The user who signed in is in ctx
+// (auth.UserFrom).
 type SessionStarter interface {
 	StartSession(ctx context.Context) (value string, ttl time.Duration, csrf string, err error)
 }
@@ -45,6 +46,8 @@ type Handler struct {
 }
 
 type body struct {
+	// User is who signs in; empty is the owner.
+	User     string `json:"user"`
 	Password string `json:"password"`
 	Code     string `json:"code"`
 	Name     string `json:"name"`
@@ -90,12 +93,14 @@ func (h *Handler) read(w http.ResponseWriter, r *http.Request) (body, bool) {
 	return b, true
 }
 
-func (h *Handler) attempt(w http.ResponseWriter, r *http.Request, b body) bool {
-	err := h.Auth.Login(r.Context(), auth.Attempt{Password: b.Password, Code: b.Code, Addr: ClientAddr(r)})
+// attempt checks the login and gives the signed-in user's service, or writes the refusal
+// and gives nil.
+func (h *Handler) attempt(w http.ResponseWriter, r *http.Request, b body) *auth.Service {
+	us, err := h.Auth.LoginUser(r.Context(), auth.Attempt{User: b.User, Password: b.Password, Code: b.Code, Addr: ClientAddr(r)})
 	var locked *auth.LockedError
 	switch {
 	case err == nil:
-		return true
+		return us
 	case errors.As(err, &locked):
 		w.Header().Set("Retry-After", strconv.Itoa(max(int(time.Until(locked.Until)/time.Second), 1)))
 		send(w, http.StatusTooManyRequests, reply{Error: locked.Error()})
@@ -106,7 +111,7 @@ func (h *Handler) attempt(w http.ResponseWriter, r *http.Request, b body) bool {
 	default:
 		send(w, http.StatusInternalServerError, reply{Error: "login failed"})
 	}
-	return false
+	return nil
 }
 
 // Browser is POST /v1/web/login: password and code for a session cookie. The page's
@@ -120,10 +125,11 @@ func (h *Handler) Browser(w http.ResponseWriter, r *http.Request) {
 		send(w, http.StatusForbidden, reply{Error: "cross-origin request refused"})
 		return
 	}
-	if !h.attempt(w, r, b) {
+	us := h.attempt(w, r, b)
+	if us == nil {
 		return
 	}
-	val, ttl, csrf, err := h.Sessions.StartSession(r.Context())
+	val, ttl, csrf, err := h.Sessions.StartSession(auth.WithUser(r.Context(), us.User()))
 	if err != nil {
 		send(w, http.StatusInternalServerError, reply{Error: "login failed"})
 		return
@@ -143,10 +149,11 @@ func (h *Handler) Device(w http.ResponseWriter, r *http.Request) {
 		send(w, http.StatusForbidden, reply{Error: "not for browsers"})
 		return
 	}
-	if !h.attempt(w, r, b) {
+	us := h.attempt(w, r, b)
+	if us == nil {
 		return
 	}
-	tok, d, err := h.Auth.IssueDevice(r.Context(), b.Name)
+	tok, d, err := us.IssueDevice(r.Context(), b.Name)
 	if err != nil {
 		send(w, http.StatusBadRequest, reply{Error: err.Error()})
 		return

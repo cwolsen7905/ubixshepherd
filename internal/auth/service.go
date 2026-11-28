@@ -55,6 +55,63 @@ type Service struct {
 	// OnLock is called once each time repeated failure locks the account (one feed item).
 	OnLock func(addr netip.Addr, until time.Time)
 	Now    func() time.Time
+	// Users is the directory of users. Nil is the owner alone, with Store and Factor; set,
+	// Store and Factor are the owner's, and NewFactor builds another user's factor.
+	Users     Users
+	NewFactor func(Store) SecondFactor
+
+	// user is set on a service ForUser made: Store and Factor are this user's.
+	user User
+}
+
+// ForUser is the service for one user: their store, their factor, their sessions. Without
+// a directory there is only the owner, and that is s.
+func (s *Service) ForUser(u User) *Service {
+	if s.Users == nil {
+		c := *s
+		c.user = u
+		return &c
+	}
+	c := *s
+	c.Store = s.Users.ForUser(u.ID)
+	c.Factor = s.NewFactor(c.Store)
+	c.user = u
+	return &c
+}
+
+// User is the user this service is for: the owner on a service ForUser did not make.
+func (s *Service) User() User {
+	if s.user.ID != 0 {
+		return s.user
+	}
+	return User{ID: OwnerID, Name: AccountName}
+}
+
+// Lookup finds a user by the name they sign in with; an empty name is the owner.
+// ErrNoUser when there is none.
+func (s *Service) Lookup(ctx context.Context, name string) (User, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = AccountName
+	}
+	if s.Users == nil {
+		if name != AccountName {
+			return User{}, ErrNoUser
+		}
+		return User{ID: OwnerID, Name: AccountName}, nil
+	}
+	return s.Users.UserByAlias(ctx, AliasLocal, name)
+}
+
+// LookupID finds a user by id.
+func (s *Service) LookupID(ctx context.Context, id int64) (User, error) {
+	if s.Users == nil {
+		if id != OwnerID {
+			return User{}, ErrNoUser
+		}
+		return User{ID: OwnerID, Name: AccountName}, nil
+	}
+	return s.Users.User(ctx, id)
 }
 
 func (s *Service) now() time.Time {
@@ -98,7 +155,7 @@ func (s *Service) SetPassword(ctx context.Context, pw string) (Setup, error) {
 			return Setup{}, err
 		}
 	}
-	enrol, err := s.Factor.Enrol(ctx, AccountName)
+	enrol, err := s.Factor.Enrol(ctx, s.User().Name)
 	if err != nil {
 		return Setup{}, err
 	}
@@ -107,7 +164,11 @@ func (s *Service) SetPassword(ctx context.Context, pw string) (Setup, error) {
 		return Setup{}, err
 	}
 	if s.Limiter != nil {
-		s.Limiter.Reset()
+		if s.Users == nil {
+			s.Limiter.Reset()
+		} else {
+			s.Limiter.Succeed(s.User().Name) // other users' locks, and addresses', stay
+		}
 	}
 	if _, _, err := s.SignOutEverywhere(ctx); err != nil {
 		return Setup{}, err
@@ -129,7 +190,7 @@ func (s *Service) ResetSecondFactor(ctx context.Context) (Setup, error) {
 			return Setup{}, err
 		}
 	}
-	enrol, err := s.Factor.Enrol(ctx, AccountName)
+	enrol, err := s.Factor.Enrol(ctx, s.User().Name)
 	if err != nil {
 		return Setup{}, err
 	}
@@ -166,44 +227,74 @@ func (s *Service) newRecoveryCodes(ctx context.Context) ([]string, error) {
 	return plain, s.Store.ReplaceRecovery(ctx, rows)
 }
 
-// Attempt is one login: the password and either a TOTP code or a recovery code, from
-// the client address the request counts against (see ClientAddr).
+// Attempt is one login: the user, the password and either a TOTP code or a recovery
+// code, from the client address the request counts against (see ClientAddr). An empty
+// User is the owner.
 type Attempt struct {
+	User           string
 	Password, Code string
 	Addr           netip.Addr
 }
 
 // Login checks an attempt. It returns nil only when the password and a code both hold;
 // ErrInvalid for any wrong, reused or missing part; *LockedError when limits say stop.
-// Every failure counts against the account and the address.
+// Every failure counts against the user and the address.
 func (s *Service) Login(ctx context.Context, a Attempt) error {
+	_, err := s.LoginUser(ctx, a)
+	return err
+}
+
+// LoginUser is Login that also gives the service of the user who signed in. An unknown
+// user, or one with no password yet, is ErrInvalid like a wrong password, after the same
+// work, so the answer says nothing of who exists.
+func (s *Service) LoginUser(ctx context.Context, a Attempt) (*Service, error) {
 	now := s.now()
+	name := strings.TrimSpace(a.User)
+	if name == "" {
+		name = AccountName
+	}
 	if s.Limiter != nil {
-		if until, blocked := s.Limiter.Blocked(AccountName, a.Addr, now); blocked {
-			return &LockedError{Until: until}
+		if until, blocked := s.Limiter.Blocked(name, a.Addr, now); blocked {
+			return nil, &LockedError{Until: until}
 		}
 	}
-	acct, err := s.Store.Account(ctx)
+	fail := func() (*Service, error) {
+		if s.Limiter != nil && s.Limiter.Fail(name, a.Addr, now) && s.OnLock != nil {
+			s.OnLock(a.Addr, now.Add(s.Limiter.L.Lock))
+		}
+		return nil, ErrInvalid
+	}
+	u, err := s.Lookup(ctx, name)
+	if errors.Is(err, ErrNoUser) {
+		CheckPassword(dummyHash(), a.Password)
+		return fail()
+	}
 	if err != nil {
-		return err
+		return nil, err
+	}
+	us := s.ForUser(u)
+	acct, err := us.Store.Account(ctx)
+	if errors.Is(err, ErrNoAccount) && u.ID != OwnerID {
+		CheckPassword(dummyHash(), a.Password)
+		return fail()
+	}
+	if err != nil {
+		return nil, err
 	}
 	ok := CheckPassword(acct.PasswordHash, a.Password)
 	if ok {
-		ok, err = s.checkCode(ctx, a.Code, now)
+		ok, err = us.checkCode(ctx, a.Code, now)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if !ok {
-		if s.Limiter != nil && s.Limiter.Fail(AccountName, a.Addr, now) && s.OnLock != nil {
-			s.OnLock(a.Addr, now.Add(s.Limiter.L.Lock))
-		}
-		return ErrInvalid
+		return fail()
 	}
 	if s.Limiter != nil {
-		s.Limiter.Succeed(AccountName)
+		s.Limiter.Succeed(name)
 	}
-	return nil
+	return us, nil
 }
 
 // checkCode takes a TOTP code from the factor, or else a recovery code, which works once.
@@ -275,6 +366,23 @@ func (s *Service) CheckDevice(ctx context.Context, tok string) (Device, error) {
 	if !strings.HasPrefix(tok, deviceToken) {
 		return Device{}, ErrLoginAgain
 	}
+	if s.Users != nil && s.user.ID == 0 {
+		id, found, err := s.Users.DeviceUser(ctx, HashToken(tok))
+		if err != nil {
+			return Device{}, err
+		}
+		if !found {
+			return Device{}, ErrLoginAgain
+		}
+		u, err := s.Users.User(ctx, id)
+		if errors.Is(err, ErrNoUser) {
+			return Device{}, ErrLoginAgain
+		}
+		if err != nil {
+			return Device{}, err
+		}
+		return s.ForUser(u).CheckDevice(ctx, tok)
+	}
 	d, found, err := s.Store.DeviceByHash(ctx, HashToken(tok))
 	if err != nil {
 		return Device{}, err
@@ -299,6 +407,7 @@ func (s *Service) CheckDevice(ctx context.Context, tok string) (Device, error) {
 		return Device{}, err
 	}
 	d.LastUsed, d.Expires = now, next
+	d.UserID = s.User().ID
 	return d, nil
 }
 
@@ -320,7 +429,12 @@ func (s *Service) RevokeDevice(ctx context.Context, id string) (bool, error) {
 // the store, so it holds across a restart.
 func (s *Service) SignOutEverywhere(ctx context.Context) (sessions, devices int, err error) {
 	if s.Sessions != nil {
-		if sessions, err = s.Sessions.EndAllSessions(ctx); err != nil {
+		if ue, ok := s.Sessions.(UserSessionEnder); ok && s.Users != nil {
+			sessions, err = ue.EndUserSessions(ctx, s.User().ID)
+		} else {
+			sessions, err = s.Sessions.EndAllSessions(ctx)
+		}
+		if err != nil {
 			return 0, 0, err
 		}
 	}

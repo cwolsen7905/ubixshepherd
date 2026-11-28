@@ -872,7 +872,13 @@ type WebSession struct {
 	Created  time.Time
 	LastSeen time.Time
 	Expires  time.Time
+	// UserID is whose session it is; 0 is the owner.
+	UserID int64
 }
+
+// DefaultUserID is the first user, the owner. It is auth.OwnerID, named here so the store
+// need not import auth.
+const DefaultUserID int64 = 1
 
 // Store is Shepherd's state.
 type Store interface {

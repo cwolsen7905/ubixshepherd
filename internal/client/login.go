@@ -40,6 +40,9 @@ type Credentials struct {
 // recovery code), and the name the device token is listed under.
 type LoginRequest struct {
 	Password, Code, Name string
+	// User is who logs in; empty is the owner, and is not sent, so an older daemon,
+	// which knows no users, still takes the request.
+	User string
 }
 
 // CredentialsPath is the file for the host at url (normalised) in the tokens directory.
@@ -110,7 +113,11 @@ func Login(ctx context.Context, url string, hc *http.Client, r LoginRequest) (Cr
 	if hc == nil {
 		hc = NewHTTPClient()
 	}
-	body, _ := json.Marshal(map[string]string{"password": r.Password, "code": r.Code, "name": r.Name})
+	fields := map[string]string{"password": r.Password, "code": r.Code, "name": r.Name}
+	if r.User != "" {
+		fields["user"] = r.User
+	}
+	body, _ := json.Marshal(fields)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+api.PathDeviceLogin, bytes.NewReader(body))
 	if err != nil {
 		return Credentials{}, err

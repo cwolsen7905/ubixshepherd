@@ -660,6 +660,47 @@ var migrations = []string{
 	CREATE INDEX crook_verdicts_tenant  ON crook_verdicts (tenant_id, at);
 	CREATE INDEX muster_items_tenant    ON muster_items (tenant_id, state, id);
 	CREATE INDEX cluster_members_tenant ON cluster_members (tenant_id);`,
+	// Users in place of the one owner account. A user is one person across tenants: a
+	// password hash, aliases (how they sign in: `local` and their name for a password),
+	// and a membership with a role per tenant. The owner account becomes user 1, `owner`,
+	// with the owner role in `default`, and every second factor, recovery code, device
+	// token and browser session is the owner's, so nobody signs in again. The account
+	// table goes: users is the one place a password is kept. user_id has no REFERENCES
+	// clause for the same reason as tenant_id; deleting a user deletes those rows itself.
+	`CREATE TABLE users (
+		id            INTEGER PRIMARY KEY,
+		name          TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL DEFAULT '',
+		created       TEXT NOT NULL,
+		updated       TEXT NOT NULL
+	);
+	CREATE TABLE user_aliases (
+		user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+		method  TEXT NOT NULL,
+		subject TEXT NOT NULL,
+		PRIMARY KEY (method, subject)
+	);
+	CREATE INDEX user_aliases_user ON user_aliases (user_id);
+	CREATE TABLE memberships (
+		user_id   INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+		tenant_id INTEGER NOT NULL REFERENCES tenants (id),
+		role      TEXT NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+		PRIMARY KEY (user_id, tenant_id)
+	);
+	CREATE INDEX memberships_tenant ON memberships (tenant_id);
+	INSERT INTO users (id, name, password_hash, created, updated)
+		SELECT 1, 'owner', password_hash, created, updated FROM owner_account WHERE id = 1;
+	INSERT INTO user_aliases (user_id, method, subject) SELECT id, 'local', name FROM users;
+	INSERT INTO memberships (user_id, tenant_id, role) SELECT id, 1, 'owner' FROM users;
+	DROP TABLE owner_account;
+	ALTER TABLE account_factors  ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE account_recovery ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE device_tokens    ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1;
+	ALTER TABLE web_sessions     ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1;
+	CREATE INDEX account_factors_user  ON account_factors (user_id);
+	CREATE INDEX account_recovery_user ON account_recovery (user_id, seq);
+	CREATE INDEX device_tokens_user    ON device_tokens (user_id);
+	CREATE INDEX web_sessions_user     ON web_sessions (user_id);`,
 }
 
 // DB is a SQLite-backed store.Store.
